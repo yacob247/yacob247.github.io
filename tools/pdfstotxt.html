@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Local PDF Text Extractor</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+:root{--ink:#102033;--muted:#66758a;--line:#dce5f2;--bg:#f4f7fb;--blue:#216bff;--green:#10b981;--red:#ef4444;--panel:#fff}
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+.wrap{max-width:1180px;margin:0 auto;padding:24px}
+.top{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:16px}
+h1{margin:0 0 6px;font-size:30px;letter-spacing:0}
+p{margin:0;color:var(--muted);line-height:1.5}
+.grid{display:grid;grid-template-columns:360px minmax(0,1fr);gap:16px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;box-shadow:0 12px 32px rgba(16,32,51,.06)}
+.drop{border:2px dashed #b8c7dc;border-radius:10px;min-height:170px;display:grid;place-items:center;text-align:center;padding:20px;background:#f8fbff;cursor:pointer}
+.drop.drag{border-color:var(--blue);background:#eef5ff}
+input[type=file]{display:none}
+.btns{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+button{border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:8px;padding:10px 12px;font-weight:700;cursor:pointer}
+button.primary{border-color:var(--blue);background:var(--blue);color:#fff}
+button.good{border-color:var(--green);background:#ecfdf5;color:#047857}
+button:disabled{opacity:.5;cursor:not-allowed}
+.meta{font-size:13px;color:var(--muted);font-weight:700;margin-top:10px}
+.log{height:210px;overflow:auto;background:#0b1220;color:#d7e2f2;border-radius:8px;padding:10px;font:12px Consolas,monospace;margin-top:12px}
+.ok{color:#86efac}.err{color:#fca5a5}.info{color:#93c5fd}
+label{display:block;font-size:12px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin:12px 0 6px}
+textarea{width:100%;min-height:520px;resize:vertical;border:1px solid var(--line);border-radius:8px;padding:12px;font:12px Consolas,monospace;line-height:1.45;color:#102033}
+.output-actions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.progress{height:8px;background:#dbe6f5;border-radius:999px;overflow:hidden;margin-top:12px}
+.bar{height:100%;width:0;background:var(--blue);transition:width .2s ease}
+@media(max-width:850px){.grid{grid-template-columns:1fr}.top{display:block}}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <div class="top">
+    <div>
+      <h1>Local PDF Text Extractor</h1>
+      <p>Runs in this browser tab. No build, no module imports/exports, no server, no AI quota. Select or drop PDFs, then copy the extracted text or generated JSON.</p>
+    </div>
+  </div>
+
+  <div class="grid">
+    <section class="panel">
+      <label>PDF files</label>
+      <div class="drop" id="drop-zone">
+        <div>
+          <strong>Drop PDFs here</strong>
+          <p>or click to choose files from Year 12 Material</p>
+        </div>
+      </div>
+      <input id="file-input" type="file" accept="application/pdf,.pdf" multiple>
+      <div class="meta" id="file-meta">No files selected.</div>
+      <div class="progress"><div class="bar" id="bar"></div></div>
+      <div class="btns">
+        <button class="primary" id="extract-btn" disabled>Extract text</button>
+        <button id="clear-btn">Clear</button>
+      </div>
+      <div class="btns">
+        <button class="good" id="copy-text-btn" disabled>Copy text</button>
+        <button class="good" id="copy-json-btn" disabled>Copy JSON</button>
+      </div>
+      <button style="width:100%;margin-top:8px" id="download-btn" disabled>Download JSON</button>
+      <div class="log" id="log">Waiting for PDFs...</div>
+    </section>
+
+    <section class="panel">
+      <div class="output-actions">
+        <button id="view-text-btn">Text output</button>
+        <button id="view-json-btn">Course JSON output</button>
+      </div>
+      <label id="output-label">Extracted text</label>
+      <textarea id="output" spellcheck="false" placeholder="Extracted text will appear here."></textarea>
+    </section>
+  </div>
+</main>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+var fileInput = document.getElementById("file-input");
+var dropZone = document.getElementById("drop-zone");
+var extractBtn = document.getElementById("extract-btn");
+var clearBtn = document.getElementById("clear-btn");
+var copyTextBtn = document.getElementById("copy-text-btn");
+var copyJsonBtn = document.getElementById("copy-json-btn");
+var downloadBtn = document.getElementById("download-btn");
+var viewTextBtn = document.getElementById("view-text-btn");
+var viewJsonBtn = document.getElementById("view-json-btn");
+var fileMeta = document.getElementById("file-meta");
+var output = document.getElementById("output");
+var outputLabel = document.getElementById("output-label");
+var logBox = document.getElementById("log");
+var bar = document.getElementById("bar");
+var selectedFiles = [];
+var extractedRows = [];
+var textOutput = "";
+var jsonOutput = "";
+
+function log(message, type){
+  var line = document.createElement("div");
+  line.className = type || "";
+  line.textContent = "[" + new Date().toLocaleTimeString() + "] " + message;
+  if(logBox.textContent === "Waiting for PDFs...") logBox.textContent = "";
+  logBox.appendChild(line);
+  logBox.scrollTop = logBox.scrollHeight;
+}
+
+function setProgress(done, total){
+  bar.style.width = total ? Math.round((done / total) * 100) + "%" : "0";
+}
+
+function setFiles(files){
+  selectedFiles = Array.prototype.slice.call(files).filter(function(file){
+    return /\.pdf$/i.test(file.name) || file.type === "application/pdf";
+  });
+  fileMeta.textContent = selectedFiles.length ? selectedFiles.length + " PDF file(s) ready." : "No PDF files selected.";
+  extractBtn.disabled = selectedFiles.length === 0;
+  log(selectedFiles.length ? "Ready: " + selectedFiles.length + " file(s)." : "No PDF files found.", selectedFiles.length ? "info" : "err");
+}
+
+function cleanText(value){
+  return String(value || "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function subjectGuess(name){
+  var n = name.toLowerCase();
+  if(n.indexOf("biology") >= 0) return "biology";
+  if(n.indexOf("chemistry") >= 0 || n.indexOf("surfing chemistry") >= 0) return "chemistry";
+  if(n.indexOf("physics") >= 0) return "physics";
+  if(n.indexOf("business") >= 0 || n.indexOf("bs hsc") >= 0 || n.indexOf("bs-hsc") >= 0) return "business-studies";
+  if(n.indexOf("economy") >= 0 || n.indexOf("economics") >= 0) return "economics";
+  if(n.indexOf("legal") >= 0) return "legal-studies";
+  if(n.indexOf("modern history") >= 0 || n.indexOf("key features") >= 0) return "modern-history";
+  if(n.indexOf("pdhpe") >= 0) return "pdhpe";
+  if(n.indexOf("quoideneuf") >= 0 || n.indexOf("french") >= 0) return "french";
+  if(n.indexOf("engineering") >= 0 || n.indexOf("mechanics") >= 0) return "engineering-studies";
+  if(n.indexOf("hospitality") >= 0) return "hospitality";
+  if(n.indexOf("software") >= 0) return "software-design-development";
+  if(n.indexOf("religion") >= 0) return "studies-of-religion";
+  if(n.indexOf("standard mathematics") >= 0) return "mathematics-standard-2";
+  if(n.indexOf("extension 2") >= 0 || n.indexOf("ext 2") >= 0) return "mathematics-extension-2";
+  if(n.indexOf("extension 1") >= 0 || n.indexOf("fitzpatrick") >= 0 || n.indexOf("foundation") >= 0 || n.indexOf("development") >= 0) return "mathematics-extension-1";
+  if(n.indexOf("mathematics advanced") >= 0 || n.indexOf("chapter") >= 0 || /^[56][a-h]/i.test(name)) return "mathematics-advanced";
+  return "";
+}
+
+function titleFromFile(name){
+  return name.replace(/\.pdf$/i, "").replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+async function extractPdf(file){
+  var arrayBuffer = await file.arrayBuffer();
+  var pdf = await pdfjsLib.getDocument({data: arrayBuffer}).promise;
+  var pages = [];
+  for(var pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++){
+    var page = await pdf.getPage(pageNumber);
+    var content = await page.getTextContent();
+    var pageText = "";
+    var lastY = null;
+    for(var i = 0; i < content.items.length; i++){
+      var item = content.items[i];
+      var y = item.transform && item.transform.length ? item.transform[5] : null;
+      if(lastY !== null && y !== null && Math.abs(y - lastY) > 5) pageText += "\n";
+      else if(pageText && item.str && item.str.trim()) pageText += " ";
+      pageText += item.str || "";
+      if(y !== null) lastY = y;
+    }
+    pages.push({page: pageNumber, text: cleanText(pageText)});
+  }
+  return pages;
+}
+
+function buildOutputs(){
+  textOutput = extractedRows.map(function(row){
+    return "## " + row.file + "\nSubject: " + (row.subject || "unmatched") + "\n\n" + row.pages.map(function(page){
+      return "--- Page " + page.page + " ---\n" + page.text;
+    }).join("\n\n");
+  }).join("\n\n");
+
+  jsonOutput = JSON.stringify({
+    generatedAtLocal: new Date().toISOString(),
+    files: extractedRows.map(function(row){
+      return {
+        file: row.file,
+        subject: row.subject,
+        title: row.title,
+        path: "../Year%2012%20Material/" + encodeURIComponent(row.file),
+        text: row.pages.map(function(page){ return page.text; }).join("\n\n")
+      };
+    })
+  }, null, 2);
+
+  output.value = textOutput;
+  outputLabel.textContent = "Extracted text";
+}
+
+async function extractAll(){
+  if(!selectedFiles.length) return;
+  extractedRows = [];
+  textOutput = "";
+  jsonOutput = "";
+  output.value = "";
+  logBox.textContent = "";
+  extractBtn.disabled = true;
+  copyTextBtn.disabled = true;
+  copyJsonBtn.disabled = true;
+  downloadBtn.disabled = true;
+  setProgress(0, selectedFiles.length);
+
+  for(var i = 0; i < selectedFiles.length; i++){
+    var file = selectedFiles[i];
+    try{
+      log("Extracting " + file.name + "...", "info");
+      var pages = await extractPdf(file);
+      extractedRows.push({
+        file: file.name,
+        title: titleFromFile(file.name),
+        subject: subjectGuess(file.name),
+        pages: pages
+      });
+      log("Done: " + file.name + " (" + pages.length + " pages)", "ok");
+    }catch(error){
+      log("Failed: " + file.name + " - " + (error.message || error), "err");
+    }
+    setProgress(i + 1, selectedFiles.length);
+  }
+
+  buildOutputs();
+  extractBtn.disabled = false;
+  copyTextBtn.disabled = !textOutput;
+  copyJsonBtn.disabled = !jsonOutput;
+  downloadBtn.disabled = !jsonOutput;
+  log("Finished. Copy the output into course-data/admin as needed.", "ok");
+}
+
+function copyValue(value){
+  output.focus();
+  output.select();
+  if(navigator.clipboard && navigator.clipboard.writeText) {
+    return navigator.clipboard.writeText(value);
+  }
+  document.execCommand("copy");
+  return Promise.resolve();
+}
+
+dropZone.addEventListener("click", function(){ fileInput.click(); });
+fileInput.addEventListener("change", function(){ setFiles(fileInput.files); });
+dropZone.addEventListener("dragover", function(event){ event.preventDefault(); dropZone.classList.add("drag"); });
+dropZone.addEventListener("dragleave", function(){ dropZone.classList.remove("drag"); });
+dropZone.addEventListener("drop", function(event){
+  event.preventDefault();
+  dropZone.classList.remove("drag");
+  setFiles(event.dataTransfer.files);
+});
+extractBtn.addEventListener("click", extractAll);
+clearBtn.addEventListener("click", function(){
+  selectedFiles = [];
+  extractedRows = [];
+  textOutput = "";
+  jsonOutput = "";
+  output.value = "";
+  fileInput.value = "";
+  fileMeta.textContent = "No files selected.";
+  logBox.textContent = "Waiting for PDFs...";
+  extractBtn.disabled = true;
+  copyTextBtn.disabled = true;
+  copyJsonBtn.disabled = true;
+  downloadBtn.disabled = true;
+  setProgress(0, 0);
+});
+copyTextBtn.addEventListener("click", function(){ copyValue(textOutput).then(function(){ log("Copied text.", "ok"); }); });
+copyJsonBtn.addEventListener("click", function(){ copyValue(jsonOutput).then(function(){ log("Copied JSON.", "ok"); }); });
+viewTextBtn.addEventListener("click", function(){ output.value = textOutput; outputLabel.textContent = "Extracted text"; });
+viewJsonBtn.addEventListener("click", function(){ output.value = jsonOutput; outputLabel.textContent = "Course JSON output"; });
+downloadBtn.addEventListener("click", function(){
+  var blob = new Blob([jsonOutput], {type:"application/json;charset=utf-8"});
+  var url = URL.createObjectURL(blob);
+  var link = document.createElement("a");
+  link.href = url;
+  link.download = "year-12-material-text.json";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+});
+</script>
+</body>
+</html>

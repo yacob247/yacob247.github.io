@@ -1,0 +1,1269 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <script async src="https://fundingchoicesmessages.google.com/i/pub-5812524294035974?ers=1"></script><script>(function() {function signalGooglefcPresent() {if (!window.frames['googlefcPresent']) {if (document.body) {const iframe = document.createElement('iframe'); iframe.style = 'width: 0; height: 0; border: none; z-index: -1000; left: -1000px; top: -1000px;'; iframe.style.display = 'none'; iframe.name = 'googlefcPresent'; document.body.appendChild(iframe);} else {setTimeout(signalGooglefcPresent, 0);}}}signalGooglefcPresent();})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MediaForge Pro - Client-Side Frame Extractor & Lossless Audio Clipper</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter & JetBrains Mono -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Lucide Icons CDN -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- JSZip CDN for batch exports -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    
+    <!-- Custom styling & Tailwind Configuration -->
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#eef2ff',
+                            100: '#e0e7ff',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            700: '#4338ca',
+                            950: '#030712'
+                        },
+                        studio: {
+                            900: '#0F111A',
+                            800: '#141724',
+                            700: '#1C2035',
+                            600: '#2A304D',
+                            500: '#3F476C'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Custom scrollbars for timeline and queues */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0F111A;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #2A304D;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #3F476C;
+        }
+        /* Custom neon subtle glow */
+        .neon-glow {
+            box-shadow: 0 0 15px rgba(99, 102, 241, 0.15);
+        }
+        /* Lock pointer-events on timeline overlay elements */
+        .no-pointer {
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body class="bg-studio-900 text-slate-100 font-sans h-screen flex flex-col overflow-hidden select-none">
+
+    <!-- Top Bar / App Navigation -->
+    <header class="bg-studio-800 border-b border-studio-700/50 px-6 py-3 flex items-center justify-between z-10">
+        <div class="flex items-center space-x-3">
+            <div class="bg-gradient-to-tr from-indigo-500 to-violet-600 p-2 rounded-xl text-white shadow-lg shadow-indigo-500/10">
+                <i data-lucide="video" class="w-6 h-6"></i>
+            </div>
+            <div>
+                <h1 class="text-base font-bold tracking-tight text-white flex items-center gap-2">
+                    MediaForge <span class="text-indigo-400 text-xs px-2 py-0.5 rounded-full bg-indigo-500/10 border border-indigo-500/20">Studio Pro v1.2</span>
+                </h1>
+                <p class="text-[10px] text-slate-400 font-medium">100% Client-Side WebCodecs & Audio Pipeline</p>
+            </div>
+        </div>
+
+        <!-- Real-time Status Indicators -->
+        <div class="hidden md:flex items-center space-x-4 text-xs font-mono">
+            <div class="flex items-center space-x-2 bg-studio-700/30 px-3 py-1.5 rounded-lg border border-studio-600/30">
+                <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span class="text-slate-300">GPU Acceleration: Active</span>
+            </div>
+            <div id="audioEngineStatus" class="flex items-center space-x-2 bg-studio-700/30 px-3 py-1.5 rounded-lg border border-studio-600/30 text-slate-400">
+                <i data-lucide="cpu" class="w-3.5 h-3.5"></i>
+                <span>Audio Engine: Idle</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Master Drop Zone Overlay for raw Video File Drops -->
+    <div id="dropZone" class="flex-1 flex flex-col items-center justify-center p-8 transition-all duration-300 relative group">
+        <input type="file" id="fileInput" class="hidden" accept="video/*" />
+        
+        <!-- Animated Backdrop Elements -->
+        <div class="absolute inset-0 bg-gradient-to-br from-indigo-950/20 via-studio-900 to-studio-900 z-0"></div>
+        
+        <div class="z-10 max-w-2xl w-full text-center bg-studio-800/40 backdrop-blur-md border-2 border-dashed border-studio-600/60 hover:border-indigo-500/50 p-12 rounded-2xl cursor-pointer transition-all duration-300 transform group-hover:scale-[1.01] hover:shadow-xl hover:shadow-indigo-500/5 flex flex-col items-center" onclick="document.getElementById('fileInput').click()">
+            <div class="bg-studio-700/50 p-5 rounded-2xl mb-6 relative">
+                <i data-lucide="cloud-lightning" class="w-12 h-12 text-indigo-400 animate-bounce"></i>
+                <div class="absolute -top-1 -right-1 w-3 h-3 bg-indigo-500 rounded-full animate-ping"></div>
+            </div>
+            <h2 class="text-xl font-bold mb-2 text-slate-200">Ingest Media File</h2>
+            <p class="text-sm text-slate-400 mb-6 max-w-md">Drag & drop high-definition MP4, WebM, MKV, or MOV. Fully decoded directly inside memory with complete data integrity.</p>
+            
+            <div class="flex flex-wrap gap-3 justify-center text-xs font-mono text-slate-400">
+                <span class="px-2.5 py-1 bg-studio-700/40 rounded border border-studio-600/30">✓ Lossless Frame Extraction</span>
+                <span class="px-2.5 py-1 bg-studio-700/40 rounded border border-studio-600/30">✓ 16-bit PCM WAV Ripping</span>
+                <span class="px-2.5 py-1 bg-studio-700/40 rounded border border-studio-600/30">✓ Real-time Waveform Rendering</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Studio Workspace Grid -->
+    <div id="studioWorkspace" class="hidden flex-1 flex flex-col overflow-hidden">
+        
+        <!-- Top Split: Video Viewer & Workspace Toolsets -->
+        <div class="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-hidden border-b border-studio-700/50">
+            
+            <!-- Left Panel (Col span 7): High Precision Video Viewport and playback deck -->
+            <div class="lg:col-span-7 flex flex-col bg-studio-950 overflow-hidden relative border-r border-studio-700/50">
+                
+                <!-- Precise Loading Indicator Overlay -->
+                <div id="seekingOverlay" class="absolute inset-0 bg-studio-900/60 backdrop-blur-sm z-20 flex items-center justify-center opacity-0 pointer-events-none transition-all duration-200">
+                    <div class="text-center">
+                        <div class="w-10 h-10 border-4 border-t-indigo-500 border-r-transparent border-b-transparent border-l-transparent rounded-full animate-spin mx-auto mb-3"></div>
+                        <p class="text-xs font-mono tracking-widest text-indigo-400 uppercase">Synchronizing Frames...</p>
+                    </div>
+                </div>
+
+                <!-- Video Viewport -->
+                <div class="flex-1 relative flex items-center justify-center p-4">
+                    <video id="mainVideo" class="max-w-full max-h-full rounded-lg shadow-2xl object-contain aspect-video" preload="auto" playsinline></video>
+                </div>
+
+                <!-- Visual Timeline Deck Metadata Bar -->
+                <div class="bg-studio-800/80 px-4 py-2 flex items-center justify-between border-t border-studio-700/30 font-mono text-xs text-slate-400">
+                    <div class="flex items-center space-x-4">
+                        <span class="text-indigo-400 font-bold">MONITOR VIEW</span>
+                        <span>RES: <span id="videoResolutionText" class="text-slate-200">1920x1080</span></span>
+                        <span>FPS: <span id="videoFpsText" class="text-slate-200">30.00</span></span>
+                    </div>
+                    <div class="flex items-center space-x-2 bg-studio-900 px-3 py-1 rounded border border-studio-700/30">
+                        <span class="text-slate-400 text-[10px]">TIME:</span>
+                        <span id="videoFrameTimeText" class="text-indigo-400 font-semibold tracking-wider">00:00:00.000</span>
+                    </div>
+                </div>
+
+                <!-- Precision Playback Deck Controls -->
+                <div class="bg-studio-800 p-4 flex flex-wrap items-center justify-between gap-4 border-t border-studio-700/50">
+                    <!-- Left Section: Frame-Perfect Jumps -->
+                    <div class="flex items-center space-x-1.5">
+                        <button onclick="stepFrames(-30)" class="p-2 bg-studio-700/40 hover:bg-studio-700 text-slate-300 hover:text-white rounded-lg transition-colors border border-studio-600/30" title="Step Back 30 Frames">
+                            <i data-lucide="chevrons-left" class="w-4 h-4"></i>
+                        </button>
+                        <button onclick="stepFrames(-1)" class="p-2 bg-studio-700/40 hover:bg-studio-700 text-slate-300 hover:text-white rounded-lg transition-colors border border-studio-600/30 font-mono text-xs" title="Previous Frame (Left Arrow)">
+                            -1F
+                        </button>
+                        <button onclick="stepMilliseconds(-10)" class="p-2 bg-studio-700/40 hover:bg-studio-700 text-slate-300 hover:text-white rounded-lg transition-colors border border-studio-600/30 font-mono text-[10px]" title="Step Back 10ms">
+                            -10ms
+                        </button>
+                    </div>
+
+                    <!-- Middle: Main Playback Block -->
+                    <div class="flex items-center space-x-3">
+                        <button id="btnPlayPause" onclick="togglePlay()" class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 hover:shadow-lg hover:shadow-indigo-500/20 text-white font-semibold rounded-xl transition-all flex items-center gap-2">
+                            <i data-lucide="play" id="iconPlay" class="w-4 h-4 fill-white"></i>
+                            <span id="textPlay">PLAY</span>
+                        </button>
+                    </div>
+
+                    <!-- Right Section: Frame Forward Jumps -->
+                    <div class="flex items-center space-x-1.5">
+                        <button onclick="stepMilliseconds(10)" class="p-2 bg-studio-700/40 hover:bg-studio-700 text-slate-300 hover:text-white rounded-lg transition-colors border border-studio-600/30 font-mono text-[10px]" title="Step Forward 10ms">
+                            +10ms
+                        </button>
+                        <button onclick="stepFrames(1)" class="p-2 bg-studio-700/40 hover:bg-studio-700 text-slate-300 hover:text-white rounded-lg transition-colors border border-studio-600/30 font-mono text-xs" title="Next Frame (Right Arrow)">
+                            +1F
+                        </button>
+                        <button onclick="stepFrames(30)" class="p-2 bg-studio-700/40 hover:bg-studio-700 text-slate-300 hover:text-white rounded-lg transition-colors border border-studio-600/30" title="Step Forward 30 Frames">
+                            <i data-lucide="chevrons-right" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Panel (Col span 5): Controls, Metadata, Frame Capturing Queue & Audio Clipper parameters -->
+            <div class="lg:col-span-5 flex flex-col bg-studio-800 overflow-hidden">
+                
+                <!-- Utility Mode Toggles -->
+                <div class="flex border-b border-studio-700/50 bg-studio-900/40">
+                    <button id="tabFrameBtn" onclick="switchUtilityTab('frame')" class="flex-1 py-3 text-sm font-semibold border-b-2 border-indigo-500 text-white flex items-center justify-center gap-2 transition-all">
+                        <i data-lucide="camera" class="w-4 h-4"></i>
+                        <span>Frame Extractor</span>
+                    </button>
+                    <button id="tabAudioBtn" onclick="switchUtilityTab('audio')" class="flex-1 py-3 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 hover:bg-studio-700/20 flex items-center justify-center gap-2 transition-all">
+                        <i data-lucide="music" class="w-4 h-4"></i>
+                        <span>Audio Clipper</span>
+                    </button>
+                </div>
+
+                <!-- Active Utility Tab Content Window -->
+                <div class="flex-1 overflow-y-auto p-6 space-y-6">
+                    
+                    <!-- TAB 1: FRAME EXTRACTOR WORKSPACE -->
+                    <div id="tabFrameWorkspace" class="space-y-6">
+                        <!-- Capture Config Box -->
+                        <div class="bg-studio-700/30 border border-studio-600/30 rounded-xl p-4 space-y-4">
+                            <h3 class="text-xs font-bold text-indigo-400 uppercase tracking-widest flex items-center justify-between">
+                                <span>Capture Options</span>
+                                <i data-lucide="settings" class="w-4 h-4 text-studio-500"></i>
+                            </h3>
+                            
+                            <!-- Scale / Quality Grid -->
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-400 mb-1">IMAGE FORMAT</label>
+                                    <select id="selectImageFormat" class="w-full bg-studio-900 border border-studio-700 rounded-lg py-1.5 px-3 text-xs text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono">
+                                        <option value="image/png">Lossless PNG</option>
+                                        <option value="image/webp">Lossless WebP</option>
+                                        <option value="image/jpeg">High Quality JPEG</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-400 mb-1">FPS CALIBRATION</label>
+                                    <input type="number" id="inputFpsCalibration" value="30.0" step="0.001" min="1" class="w-full bg-studio-900 border border-studio-700 rounded-lg py-1.5 px-3 text-xs text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono" />
+                                </div>
+                            </div>
+
+                            <!-- Single Grab Action -->
+                            <button onclick="captureCurrentFrame()" class="w-full py-3 bg-indigo-600/20 hover:bg-indigo-600/30 hover:shadow-md border border-indigo-500/40 hover:border-indigo-500/60 text-indigo-300 hover:text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2">
+                                <i data-lucide="aperture" class="w-5 h-5"></i>
+                                <span>Grab Exact Millisecond Frame</span>
+                            </button>
+                        </div>
+
+                        <!-- Frame Queue Panel -->
+                        <div class="space-y-3">
+                            <div class="flex items-center justify-between">
+                                <h3 class="text-xs font-bold text-slate-400 tracking-wider">MARKED FRAMES QUEUE (<span id="queueCount">0</span>)</h3>
+                                <div class="flex items-center space-x-2">
+                                    <button onclick="clearFrameQueue()" class="text-[10px] text-slate-400 hover:text-rose-400 font-mono flex items-center gap-1 transition-colors">
+                                        <i data-lucide="trash-2" class="w-3 h-3"></i> Clear
+                                    </button>
+                                    <span class="text-studio-500">|</span>
+                                    <button onclick="batchExportZip()" class="text-[10px] text-indigo-400 hover:text-indigo-300 font-bold flex items-center gap-1 transition-colors">
+                                        <i data-lucide="archive" class="w-3.5 h-3.5"></i> Export ZIP
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Empty Queue State -->
+                            <div id="queueEmptyState" class="border border-dashed border-studio-700 rounded-xl p-8 text-center text-slate-500 text-xs">
+                                <i data-lucide="camera-off" class="w-8 h-8 mx-auto mb-2 text-studio-600"></i>
+                                <p>No frames grabbed yet. Move the timeline pointer and click "Grab" to add accurate frames to the queue.</p>
+                            </div>
+
+                            <!-- Scrollable Queue list -->
+                            <div id="frameQueueList" class="space-y-3 max-h-[300px] overflow-y-auto pr-1"></div>
+                        </div>
+                    </div>
+
+                    <!-- TAB 2: LOSSLESS AUDIO CLIPPER WORKSPACE -->
+                    <div id="tabAudioWorkspace" class="hidden space-y-6">
+                        <div class="bg-studio-700/30 border border-studio-600/30 rounded-xl p-4 space-y-4">
+                            <div class="flex items-center justify-between">
+                                <h3 class="text-xs font-bold text-indigo-400 uppercase tracking-widest">Audio Ripping Specs</h3>
+                                <span class="bg-indigo-500/15 border border-indigo-500/30 text-[10px] font-mono font-bold text-indigo-300 px-2 py-0.5 rounded">PCM Lossless</span>
+                            </div>
+
+                            <p class="text-xs text-slate-400 leading-relaxed">
+                                Decodes raw uncompressed audio data out of the container directly into a linear stereo PCM WAV file. 100% loss-free capture suitable for professional archival.
+                            </p>
+
+                            <!-- In/Out Time Parameters -->
+                            <div class="grid grid-cols-2 gap-3 font-mono">
+                                <div class="bg-studio-900 border border-studio-700/60 p-2.5 rounded-lg">
+                                    <label class="block text-[9px] font-bold text-slate-500 mb-1 tracking-wider uppercase">Mark In Point</label>
+                                    <div class="flex items-center justify-between">
+                                        <span id="txtAudioIn" class="text-xs text-emerald-400 font-bold">00:00:00.000</span>
+                                        <button onclick="setClipPoint('start')" class="p-1 bg-studio-700 hover:bg-studio-600 rounded text-[9px] text-slate-300">Mark</button>
+                                    </div>
+                                </div>
+                                <div class="bg-studio-900 border border-studio-700/60 p-2.5 rounded-lg">
+                                    <label class="block text-[9px] font-bold text-slate-500 mb-1 tracking-wider uppercase">Mark Out Point</label>
+                                    <div class="flex items-center justify-between">
+                                        <span id="txtAudioOut" class="text-xs text-rose-400 font-bold">00:00:00.000</span>
+                                        <button onclick="setClipPoint('end')" class="p-1 bg-studio-700 hover:bg-studio-600 rounded text-[9px] text-slate-300">Mark</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Selected Segment Duration Summary -->
+                            <div class="flex items-center justify-between text-xs bg-studio-900/40 p-3 rounded-lg border border-studio-700/40 font-mono">
+                                <span class="text-slate-400">Target Clip Duration:</span>
+                                <span id="txtAudioClipDuration" class="text-indigo-300 font-bold">0.00 seconds</span>
+                            </div>
+
+                            <!-- Audio Output Options -->
+                            <div class="space-y-2">
+                                <label class="block text-[10px] font-bold text-slate-400 tracking-wider">SAMPLE EXPORT QUALITY</label>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <button id="btnAudioStereo" onclick="selectAudioCh(2)" class="py-2 px-3 bg-indigo-600 border border-indigo-500 text-white rounded-lg text-xs font-semibold hover:bg-indigo-500 transition-colors flex items-center justify-center gap-1.5">
+                                        <i data-lucide="radio" class="w-3.5 h-3.5"></i> Stereo Channel
+                                    </button>
+                                    <button id="btnAudioMono" onclick="selectAudioCh(1)" class="py-2 px-3 bg-studio-700 border border-studio-600 text-slate-300 rounded-lg text-xs font-semibold hover:bg-studio-600 transition-colors flex items-center justify-center gap-1.5">
+                                        <i data-lucide="mic" class="w-3.5 h-3.5"></i> Mono Mixdown
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Action button -->
+                            <button id="btnRipAudio" onclick="ripLosslessAudio()" class="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 hover:shadow-lg hover:shadow-indigo-500/20 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2">
+                                <i data-lucide="scissors" class="w-4 h-4"></i>
+                                <span>Rip & Download Lossless WAV</span>
+                            </button>
+
+                            <!-- Audio Processing Overlay Progress inside Tab -->
+                            <div id="audioProcessProgress" class="hidden space-y-2 pt-2">
+                                <div class="flex items-center justify-between text-xs font-mono">
+                                    <span class="text-indigo-400 animate-pulse">Rendering PCM data...</span>
+                                    <span id="audioProgressPercent" class="text-slate-300">0%</span>
+                                </div>
+                                <div class="w-full bg-studio-900 h-2 rounded-full overflow-hidden">
+                                    <div id="audioProgressBar" class="bg-gradient-to-r from-indigo-500 to-violet-500 h-full w-0 transition-all duration-100"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Technical Information Panel -->
+                        <div class="bg-studio-900/50 rounded-xl p-4 border border-studio-700/40 text-[11px] text-slate-400 space-y-2 font-mono">
+                            <span class="font-bold text-slate-300">WAVE PIPE METADATA:</span>
+                            <div class="grid grid-cols-2 gap-1 mt-1 text-slate-400">
+                                <div>Decoded Sample Rate:</div>
+                                <div class="text-slate-200 text-right" id="lblSampleRate">N/A</div>
+                                <div>Target Precision:</div>
+                                <div class="text-slate-200 text-right">0.02ms (Sample Level)</div>
+                                <div>Bit Depth:</div>
+                                <div class="text-slate-200 text-right">16-bit Signed integer</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom Section: Dual timeline slider & Master Waveform Engine -->
+        <div class="bg-studio-800 p-6 flex flex-col space-y-4">
+            
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <h3 class="text-xs font-bold text-indigo-400 uppercase tracking-widest flex items-center gap-1">
+                        <i data-lucide="waves" class="w-4 h-4 text-indigo-500"></i>
+                        <span>High-Resolution Timeline & Audio Waveform</span>
+                    </h3>
+                    <span id="waveformLoadingText" class="text-xs text-amber-500 font-medium hidden flex items-center gap-1">
+                        <span class="inline-block w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
+                        Scanning and decoding video audio (this might take a few seconds)...
+                    </span>
+                </div>
+
+                <!-- Range Slider Marker Actions -->
+                <div class="flex items-center space-x-2 font-mono text-xs">
+                    <button onclick="setClipPoint('start')" class="px-2.5 py-1 bg-emerald-900/40 border border-emerald-500/30 text-emerald-400 rounded hover:bg-emerald-800/40 transition-colors flex items-center gap-1">
+                        [ Mark In
+                    </button>
+                    <button onclick="setClipPoint('end')" class="px-2.5 py-1 bg-rose-900/40 border border-rose-500/30 text-rose-400 rounded hover:bg-rose-800/40 transition-colors flex items-center gap-1">
+                        Mark Out ]
+                    </button>
+                </div>
+            </div>
+
+            <!-- Double handle Waveform Seek Slider Core Container -->
+            <div class="relative bg-studio-950 rounded-xl border border-studio-700/60 p-1 select-none">
+                <!-- Master canvas for drawing multi-channel Audio Waveform visualizer -->
+                <canvas id="waveformCanvas" class="w-full h-24 rounded-lg bg-studio-900 cursor-pointer block"></canvas>
+                
+                <!-- Overlay Elements representing boundaries / Range and cursor tracker -->
+                <div id="timelineOverlay" class="absolute inset-0 no-pointer overflow-hidden rounded-xl">
+                    
+                    <!-- Clip Out-Of-Bounds Overlays (Darkened regions outside clipping parameters) -->
+                    <div id="outOfBoundsStart" class="absolute top-0 bottom-0 left-0 bg-studio-950/80 border-r border-indigo-500/20" style="width: 0%;"></div>
+                    <div id="outOfBoundsEnd" class="absolute top-0 bottom-0 right-0 bg-studio-950/80 border-l border-indigo-500/20" style="width: 0%;"></div>
+
+                    <!-- Custom Drag Handles (Visual Marker representation) -->
+                    <div id="visualStartMarker" class="absolute top-0 bottom-0 w-1 bg-emerald-500 cursor-ew-resize no-pointer" style="left: 0%;">
+                        <div class="absolute top-1 -left-1.5 w-4 h-4 bg-emerald-500 rounded-full flex items-center justify-center text-[8px] font-bold text-black shadow-md border border-white/20">I</div>
+                    </div>
+                    <div id="visualEndMarker" class="absolute top-0 bottom-0 w-1 bg-rose-500 cursor-ew-resize no-pointer" style="left: 100%;">
+                        <div class="absolute bottom-1 -right-1.5 w-4 h-4 bg-rose-500 rounded-full flex items-center justify-center text-[8px] font-bold text-white shadow-md border border-white/20">O</div>
+                    </div>
+
+                    <!-- Precise Playback Progress Line Tracking Head -->
+                    <div id="playheadCursor" class="absolute top-0 bottom-0 w-[2px] bg-white pointer-events-none transition-all duration-100 ease-out shadow-[0_0_8px_rgba(255,255,255,1)]" style="left: 0%;">
+                        <!-- Dynamic current elapsed overlay bubble inside playhead -->
+                        <div class="absolute -top-1 -left-1.5 w-3 h-3 bg-white rounded-full"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Keyboard & Interaction Quick Info -->
+            <div class="flex items-center justify-between text-[10px] text-slate-500">
+                <p>💡 Interactive Touch/Click Waveform to seek. Use Left/Right keys for millisecond-exact precision steps.</p>
+                <div class="flex items-center gap-3 font-mono">
+                    <span>Play/Pause: <kbd class="px-1.5 py-0.5 bg-studio-700 text-slate-300 rounded font-sans text-[9px] font-bold">SPACE</kbd></span>
+                    <span>Set In: <kbd class="px-1.5 py-0.5 bg-studio-700 text-slate-300 rounded font-sans text-[9px] font-bold">I</kbd></span>
+                    <span>Set Out: <kbd class="px-1.5 py-0.5 bg-studio-700 text-slate-300 rounded font-sans text-[9px] font-bold">O</kbd></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom elegant Toast Alert Notification Box -->
+    <div id="toastBox" class="fixed bottom-6 right-6 z-50 transform translate-y-24 opacity-0 transition-all duration-300 pointer-events-none max-w-sm">
+        <div class="bg-studio-800 border-l-4 border-indigo-500 p-4 rounded-r-xl shadow-2xl neon-glow flex items-start gap-3">
+            <div class="p-1 rounded-full bg-indigo-500/10 text-indigo-400 mt-0.5">
+                <i id="toastIcon" data-lucide="info" class="w-4 h-4"></i>
+            </div>
+            <div class="flex-1">
+                <h4 id="toastTitle" class="text-sm font-bold text-white">System Notification</h4>
+                <p id="toastMessage" class="text-xs text-slate-400 mt-1">Message content goes here.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /* Immersive Web App State Variables */
+        let currentFile = null;
+        let audioCtx = null;
+        let audioBuffer = null;
+        let targetChannels = 2; // Stereo by default
+        let isDecodingAudio = false;
+
+        // Selection / Navigation Values
+        let videoFps = 30.0;
+        let videoDuration = 0;
+        let videoWidth = 1920;
+        let videoHeight = 1080;
+        let clipStartTime = 0;
+        let clipEndTime = 0;
+        let isScrubbing = false;
+
+        // Custom Queue Store for Marked Frames
+        let markedFrames = [];
+
+        // DOM Elements
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const studioWorkspace = document.getElementById('studioWorkspace');
+        const mainVideo = document.getElementById('mainVideo');
+        const audioEngineStatus = document.getElementById('audioEngineStatus');
+        
+        const videoResolutionText = document.getElementById('videoResolutionText');
+        const videoFpsText = document.getElementById('videoFpsText');
+        const videoFrameTimeText = document.getElementById('videoFrameTimeText');
+        const seekingOverlay = document.getElementById('seekingOverlay');
+
+        // Playback Buttons
+        const btnPlayPause = document.getElementById('btnPlayPause');
+        const iconPlay = document.getElementById('iconPlay');
+        const textPlay = document.getElementById('textPlay');
+
+        // Timeline Components
+        const waveformCanvas = document.getElementById('waveformCanvas');
+        const waveformLoadingText = document.getElementById('waveformLoadingText');
+        const timelineOverlay = document.getElementById('timelineOverlay');
+        const playheadCursor = document.getElementById('playheadCursor');
+        const visualStartMarker = document.getElementById('visualStartMarker');
+        const visualEndMarker = document.getElementById('visualEndMarker');
+        const outOfBoundsStart = document.getElementById('outOfBoundsStart');
+        const outOfBoundsEnd = document.getElementById('outOfBoundsEnd');
+
+        // Capture Controls
+        const selectImageFormat = document.getElementById('selectImageFormat');
+        const inputFpsCalibration = document.getElementById('inputFpsCalibration');
+        const frameQueueList = document.getElementById('frameQueueList');
+        const queueEmptyState = document.getElementById('queueEmptyState');
+        const queueCount = document.getElementById('queueCount');
+
+        // Audio Clipper Elements
+        const txtAudioIn = document.getElementById('txtAudioIn');
+        const txtAudioOut = document.getElementById('txtAudioOut');
+        const txtAudioClipDuration = document.getElementById('txtAudioClipDuration');
+        const btnAudioStereo = document.getElementById('btnAudioStereo');
+        const btnAudioMono = document.getElementById('btnAudioMono');
+        const btnRipAudio = document.getElementById('btnRipAudio');
+        const audioProcessProgress = document.getElementById('audioProcessProgress');
+        const audioProgressPercent = document.getElementById('audioProgressPercent');
+        const audioProgressBar = document.getElementById('audioProgressBar');
+        const lblSampleRate = document.getElementById('lblSampleRate');
+
+        /* Initialize Lucide icons on boot */
+        window.addEventListener('load', () => {
+            lucide.createIcons();
+            setupDragAndDrop();
+            setupInteractiveCanvas();
+            setupKeyboardShortcuts();
+        });
+
+        /* Replaces browser native alert/confirm popups */
+        function triggerToast(title, message, type = 'info') {
+            const toastBox = document.getElementById('toastBox');
+            const toastTitle = document.getElementById('toastTitle');
+            const toastMessage = document.getElementById('toastMessage');
+            const toastIcon = document.getElementById('toastIcon');
+
+            toastTitle.textContent = title;
+            toastMessage.textContent = message;
+
+            // Type styles
+            if (type === 'error') {
+                toastBox.firstElementChild.style.borderColor = '#ef4444';
+                toastIcon.setAttribute('data-lucide', 'alert-circle');
+            } else if (type === 'success') {
+                toastBox.firstElementChild.style.borderColor = '#10b981';
+                toastIcon.setAttribute('data-lucide', 'check-circle2');
+            } else {
+                toastBox.firstElementChild.style.borderColor = '#6366f1';
+                toastIcon.setAttribute('data-lucide', 'info');
+            }
+
+            lucide.createIcons();
+
+            // Slide up animation
+            toastBox.classList.remove('translate-y-24', 'opacity-0', 'pointer-events-none');
+            toastBox.classList.add('translate-y-0', 'opacity-100');
+
+            // Automatically dismiss toast after 3.5 seconds
+            setTimeout(() => {
+                toastBox.classList.remove('translate-y-0', 'opacity-100');
+                toastBox.classList.add('translate-y-24', 'opacity-0', 'pointer-events-none');
+            }, 3500);
+        }
+
+        /* Ingest System: Drag and Drop Media Validation */
+        function setupDragAndDrop() {
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropZone.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dropZone.classList.add('border-indigo-500', 'bg-studio-800/60');
+                }, false);
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dropZone.classList.remove('border-indigo-500', 'bg-studio-800/60');
+                }, false);
+            });
+
+            dropZone.addEventListener('drop', (e) => {
+                const dt = e.dataTransfer;
+                const files = dt.files;
+                if (files.length > 0) {
+                    processUploadedFile(files[0]);
+                }
+            }, false);
+
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    processUploadedFile(e.target.files[0]);
+                }
+            });
+        }
+
+        /* Read file context on target and feed media pipeline */
+        function processUploadedFile(file) {
+            if (!file.type.startsWith('video/')) {
+                triggerToast('Unsupported File Format', 'Please upload a valid high-fidelity media video file.', 'error');
+                return;
+            }
+
+            currentFile = file;
+            const fileUrl = URL.createObjectURL(file);
+
+            // Animate Drop zone exit & workspace entrance
+            dropZone.classList.add('hidden');
+            studioWorkspace.classList.remove('hidden');
+
+            // Load Video source context
+            mainVideo.src = fileUrl;
+            mainVideo.load();
+
+            mainVideo.onloadedmetadata = function() {
+                videoDuration = mainVideo.duration;
+                videoWidth = mainVideo.videoWidth;
+                videoHeight = mainVideo.videoHeight;
+                
+                // Set bounds limits
+                clipStartTime = 0;
+                clipEndTime = videoDuration;
+
+                // Sync UI specs text values
+                videoResolutionText.textContent = `${videoWidth}x${videoHeight}`;
+                videoFpsText.textContent = videoFps.toFixed(2);
+                
+                // Clear any leftover frame markers
+                markedFrames = [];
+                updateFrameQueueUI();
+
+                // Update UI intervals
+                updateTimeDisplay();
+                updateClampingVisualMarkers();
+
+                // Fire high resolution canvas timeline background audio wave scanner
+                startAudioChannelScanner();
+            };
+
+            // Capture Video metadata rendering
+            mainVideo.addEventListener('seeked', () => {
+                seekingOverlay.classList.remove('opacity-100');
+                seekingOverlay.classList.add('pointer-events-none', 'opacity-0');
+                updateTimeDisplay();
+            });
+
+            triggerToast('Workspace Ingested', 'Fully loaded video into local browser context.', 'success');
+        }
+
+        /* Reads the full file context into memory chunk to extract raw uncompressed PCM stream */
+        async function startAudioChannelScanner() {
+            if (!currentFile) return;
+
+            waveformLoadingText.classList.remove('hidden');
+            audioEngineStatus.innerHTML = `<i data-lucide="loader" class="w-3.5 h-3.5 animate-spin text-amber-500"></i><span class="text-amber-500 font-bold">Decoding Audio Channels...</span>`;
+            lucide.createIcons();
+
+            isDecodingAudio = true;
+            try {
+                // Read ArrayBuffer representation
+                const fileReader = new FileReader();
+                fileReader.onload = async function() {
+                    const arrayBuffer = this.result;
+                    
+                    // Create un-blocked browser audio context
+                    if (!audioCtx) {
+                        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                    }
+
+                    audioCtx.decodeAudioData(arrayBuffer, (decodedBuffer) => {
+                        audioBuffer = decodedBuffer;
+                        
+                        // Render full resolution waveform
+                        drawWaveform(decodedBuffer);
+                        lblSampleRate.textContent = `${decodedBuffer.sampleRate.toLocaleString()} Hz`;
+
+                        waveformLoadingText.classList.add('hidden');
+                        audioEngineStatus.innerHTML = `<i data-lucide="check" class="w-3.5 h-3.5 text-emerald-400"></i><span class="text-slate-300">Audio Channels Decoded</span>`;
+                        lucide.createIcons();
+                        
+                        isDecodingAudio = false;
+                        triggerToast('Acoustic Scan Complete', 'Successfully decoded audio buffer and generated waveform visualization!', 'success');
+                    }, (err) => {
+                        console.error('Failed to decode audio context format', err);
+                        drawWaveformFallback();
+                        waveformLoadingText.classList.add('hidden');
+                        audioEngineStatus.innerHTML = `<i data-lucide="alert-triangle" class="w-3.5 h-3.5 text-amber-500"></i><span class="text-amber-500">PCM Decode Error (WAV Ripping Active)</span>`;
+                        lucide.createIcons();
+                        isDecodingAudio = false;
+                    });
+                };
+
+                fileReader.readAsArrayBuffer(currentFile);
+            } catch (err) {
+                console.error("Audio Engine error", err);
+                waveformLoadingText.classList.add('hidden');
+                isDecodingAudio = false;
+            }
+        }
+
+        /* Draws high-fidelity, dual-channel audio waveform amplitudes visually onto custom HTML canvas */
+        function drawWaveform(buffer) {
+            const canvas = waveformCanvas;
+            const ctx = canvas.getContext('2d');
+            const dpr = window.devicePixelRatio || 1;
+            
+            // Adjust to physical screen pixel resolution
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            ctx.scale(dpr, dpr);
+
+            const width = rect.width;
+            const height = rect.height;
+
+            // Paint deep studio backdrop theme color
+            ctx.fillStyle = '#0F111A';
+            ctx.fillRect(0, 0, width, height);
+
+            // Channel separation layout
+            const channel1 = buffer.getChannelData(0);
+            const hasStereo = buffer.numberOfChannels > 1;
+            const channel2 = hasStereo ? buffer.getChannelData(1) : channel1;
+
+            const step = Math.ceil(channel1.length / width);
+            const amp = height / 2;
+
+            // Draw center reference bar
+            ctx.strokeStyle = '#1C2035';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(0, height / 2);
+            ctx.lineTo(width, height / 2);
+            ctx.stroke();
+
+            // Render stereo amplitude lines (Top/Bottom visual representation)
+            ctx.lineWidth = 1.5;
+            for (let i = 0; i < width; i++) {
+                let minL = 1.0;
+                let maxL = -1.0;
+                let minR = 1.0;
+                let maxR = -1.0;
+
+                // Scan frame ranges
+                const startIdx = i * step;
+                const endIdx = Math.min(startIdx + step, channel1.length);
+                for (let j = startIdx; j < endIdx; j += Math.max(1, Math.floor(step / 10))) {
+                    const sampleL = channel1[j];
+                    const sampleR = channel2[j];
+                    if (sampleL < minL) minL = sampleL;
+                    if (sampleL > maxL) maxL = sampleL;
+                    if (sampleR < minR) minR = sampleR;
+                    if (sampleR > maxR) maxR = sampleR;
+                }
+
+                // Drawing paths
+                ctx.strokeStyle = `rgba(99, 102, 241, ${0.45 + (maxL * 0.5)})`;
+                ctx.beginPath();
+                ctx.moveTo(i, amp + (minL * amp * 0.85));
+                ctx.lineTo(i, amp + (maxL * amp * 0.85));
+                ctx.stroke();
+            }
+        }
+
+        /* Fallback rendering when video does not have an audio track */
+        function drawWaveformFallback() {
+            const canvas = waveformCanvas;
+            const ctx = canvas.getContext('2d');
+            const dpr = window.devicePixelRatio || 1;
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            ctx.scale(dpr, dpr);
+
+            ctx.fillStyle = '#0F111A';
+            ctx.fillRect(0, 0, rect.width, rect.height);
+
+            // Draw clean subtle timeline background lines
+            ctx.strokeStyle = '#2A304D';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([5, 5]);
+            for (let x = 0; x < rect.width; x += 30) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, rect.height);
+                ctx.stroke();
+            }
+            ctx.setLineDash([]);
+            
+            ctx.fillStyle = '#4F46E5';
+            ctx.font = '10px "Inter", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText("Audio data scan unavailable — Seek timeline fallback active", rect.width / 2, rect.height / 2 + 3);
+        }
+
+        /* Time Display formatter */
+        function formatPreciseTime(seconds) {
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = Math.floor(seconds % 60);
+            const ms = Math.floor((seconds % 1) * 1000);
+            return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(ms).padStart(3, '0')}`;
+        }
+
+        /* Continuous UI updating logic */
+        function updateTimeDisplay() {
+            const t = mainVideo.currentTime;
+            videoFrameTimeText.textContent = formatPreciseTime(t);
+
+            // Frame count math (currentTime * fps calibration rate)
+            const calFps = parseFloat(inputFpsCalibration.value) || 30.0;
+
+            // Sync Timeline cursor position
+            if (videoDuration > 0) {
+                const pct = (t / videoDuration) * 100;
+                playheadCursor.style.left = `${pct}%`;
+            }
+        }
+
+        /* Updates both numeric clip inputs and absolute timeline marker constraints */
+        function updateClampingVisualMarkers() {
+            if (videoDuration <= 0) return;
+
+            // Percentage locations
+            const startPct = (clipStartTime / videoDuration) * 100;
+            const endPct = (clipEndTime / videoDuration) * 100;
+
+            // Sync visual handles
+            visualStartMarker.style.left = `${startPct}%`;
+            visualEndMarker.style.left = `${endPct}%`;
+
+            // Out-of-bounds dark covers
+            outOfBoundsStart.style.width = `${startPct}%`;
+            outOfBoundsEnd.style.width = `${100 - endPct}%`;
+
+            // Text representation sync
+            txtAudioIn.textContent = formatPreciseTime(clipStartTime);
+            txtAudioOut.textContent = formatPreciseTime(clipEndTime);
+            
+            const durationSec = Math.max(0, clipEndTime - clipStartTime);
+            txtAudioClipDuration.textContent = `${durationSec.toFixed(3)} seconds`;
+        }
+
+        /* Sets up continuous scrubbing listeners for full timeline manipulation */
+        function setupInteractiveCanvas() {
+            const seekTimeline = (e) => {
+                const rect = waveformCanvas.getBoundingClientRect();
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const posPct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+                const targetTime = posPct * videoDuration;
+                
+                // Jump to seek time
+                mainVideo.currentTime = targetTime;
+                updateTimeDisplay();
+            };
+
+            // Touch support for swiping timeline
+            waveformCanvas.addEventListener('mousedown', (e) => {
+                isScrubbing = true;
+                seekingOverlay.classList.remove('pointer-events-none', 'opacity-0');
+                seekingOverlay.classList.add('opacity-100');
+                seekTimeline(e);
+            });
+
+            window.addEventListener('mousemove', (e) => {
+                if (isScrubbing) seekTimeline(e);
+            });
+
+            window.addEventListener('mouseup', () => {
+                if (isScrubbing) {
+                    isScrubbing = false;
+                }
+            });
+
+            waveformCanvas.addEventListener('touchstart', (e) => {
+                isScrubbing = true;
+                seekTimeline(e);
+            }, { passive: true });
+
+            waveformCanvas.addEventListener('touchmove', (e) => {
+                if (isScrubbing) seekTimeline(e);
+            }, { passive: true });
+
+            waveformCanvas.addEventListener('touchend', () => {
+                isScrubbing = false;
+            });
+        }
+
+        /* Space bars, Left-arrow frame steps, and Set limits via physical triggers */
+        function setupKeyboardShortcuts() {
+            window.addEventListener('keydown', (e) => {
+                // Ignore commands inside text boxes
+                if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'SELECT') {
+                    return;
+                }
+
+                switch (e.key.toLowerCase()) {
+                    case ' ':
+                        e.preventDefault();
+                        togglePlay();
+                        break;
+                    case 'arrowleft':
+                        e.preventDefault();
+                        stepFrames(-1);
+                        break;
+                    case 'arrowright':
+                        e.preventDefault();
+                        stepFrames(1);
+                        break;
+                    case 'i':
+                        setClipPoint('start');
+                        break;
+                    case 'o':
+                        setClipPoint('end');
+                        break;
+                    case 'm':
+                        captureCurrentFrame();
+                        break;
+                }
+            });
+        }
+
+        /* Controls Playback States */
+        function togglePlay() {
+            if (mainVideo.paused) {
+                mainVideo.play();
+                iconPlay.setAttribute('data-lucide', 'pause');
+                textPlay.textContent = "PAUSE";
+                requestAnimationFrame(playbackTrackerLoop);
+            } else {
+                mainVideo.pause();
+                iconPlay.setAttribute('data-lucide', 'play');
+                textPlay.textContent = "PLAY";
+            }
+            lucide.createIcons();
+        }
+
+        /* Visual playhead continuous tracker */
+        function playbackTrackerLoop() {
+            if (!mainVideo.paused) {
+                updateTimeDisplay();
+                requestAnimationFrame(playbackTrackerLoop);
+            }
+        }
+
+        /* Seek Frames forward or backwards */
+        function stepFrames(multiplier) {
+            const calFps = parseFloat(inputFpsCalibration.value) || 30.0;
+            const timeStep = multiplier * (1.0 / calFps);
+            stepMilliseconds(timeStep * 1000);
+        }
+
+        /* Seek Milliseconds exact and trigger precise video seek */
+        function stepMilliseconds(ms) {
+            seekingOverlay.classList.remove('pointer-events-none', 'opacity-0');
+            seekingOverlay.classList.add('opacity-100');
+            
+            const target = Math.max(0, Math.min(videoDuration, mainVideo.currentTime + (ms / 1000)));
+            mainVideo.currentTime = target;
+        }
+
+        /* Configures Clip Limits (In and Out Points) */
+        function setClipPoint(type) {
+            const t = mainVideo.currentTime;
+            if (type === 'start') {
+                if (t >= clipEndTime) {
+                    triggerToast('Out of Bounds', 'Start clip index must precede ending segment mark.', 'error');
+                    return;
+                }
+                clipStartTime = t;
+                triggerToast('In Point Marked', `Set clipping boundary to ${formatPreciseTime(t)}`, 'success');
+            } else {
+                if (t <= clipStartTime) {
+                    triggerToast('Out of Bounds', 'Ending clip index must succeed starting segment mark.', 'error');
+                    return;
+                }
+                clipEndTime = t;
+                triggerToast('Out Point Marked', `Set clipping boundary to ${formatPreciseTime(t)}`, 'success');
+            }
+            updateClampingVisualMarkers();
+        }
+
+        /* Switch tabs */
+        function switchUtilityTab(tab) {
+            const isFrame = tab === 'frame';
+            
+            // Adjust toggles
+            document.getElementById('tabFrameBtn').className = isFrame 
+                ? 'flex-1 py-3 text-sm font-semibold border-b-2 border-indigo-500 text-white flex items-center justify-center gap-2 transition-all'
+                : 'flex-1 py-3 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 hover:bg-studio-700/20 flex items-center justify-center gap-2 transition-all';
+            
+            document.getElementById('tabAudioBtn').className = !isFrame 
+                ? 'flex-1 py-3 text-sm font-semibold border-b-2 border-indigo-500 text-white flex items-center justify-center gap-2 transition-all'
+                : 'flex-1 py-3 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 hover:bg-studio-700/20 flex items-center justify-center gap-2 transition-all';
+
+            // Swap viewports
+            document.getElementById('tabFrameWorkspace').className = isFrame ? 'space-y-6' : 'hidden';
+            document.getElementById('tabAudioWorkspace').className = !isFrame ? 'space-y-6' : 'hidden';
+        }
+
+        /* Grabs full quality canvas pixels at current exact elapsed frame timestamp */
+        function captureCurrentFrame() {
+            if (!mainVideo) return;
+
+            seekingOverlay.classList.remove('pointer-events-none', 'opacity-0');
+            seekingOverlay.classList.add('opacity-100');
+
+            // Draw to dynamic off-screen capturing element
+            const canvas = document.createElement('canvas');
+            canvas.width = videoWidth;
+            canvas.height = videoHeight;
+            const ctx = canvas.getContext('2d');
+            
+            ctx.drawImage(mainVideo, 0, 0, videoWidth, videoHeight);
+
+            const format = selectImageFormat.value;
+            const dataUrl = canvas.toDataURL(format, 1.0); // Full scale lossless
+
+            const curTime = mainVideo.currentTime;
+            
+            // Generate visual thumbnail representation
+            const frameObj = {
+                id: Date.now() + Math.random(),
+                timestamp: curTime,
+                format: format,
+                data: dataUrl,
+                fileName: `Frame_${formatPreciseTime(curTime).replace(/:/g, '-')}.${format === 'image/jpeg' ? 'jpg' : format.split('/')[1]}`
+            };
+
+            markedFrames.push(frameObj);
+            updateFrameQueueUI();
+
+            seekingOverlay.classList.remove('opacity-100');
+            seekingOverlay.classList.add('pointer-events-none', 'opacity-0');
+
+            triggerToast('Frame Captured', `Added frame at ${formatPreciseTime(curTime)} to export queue.`, 'success');
+        }
+
+        /* Renders frame items in interactive list with delete handlers */
+        function updateFrameQueueUI() {
+            queueCount.textContent = markedFrames.length;
+
+            if (markedFrames.length === 0) {
+                queueEmptyState.classList.remove('hidden');
+                frameQueueList.innerHTML = '';
+                return;
+            }
+
+            queueEmptyState.classList.add('hidden');
+            frameQueueList.innerHTML = '';
+
+            markedFrames.forEach((frame) => {
+                const row = document.createElement('div');
+                row.className = "flex items-center justify-between bg-studio-900 border border-studio-700/50 hover:border-indigo-500/30 p-2.5 rounded-lg transition-all gap-3 group";
+                row.innerHTML = `
+                    <div class="flex items-center gap-3 cursor-pointer overflow-hidden flex-1" onclick="jumpToQueuedTime(${frame.timestamp})">
+                        <img src="${frame.data}" class="w-16 h-10 object-cover rounded border border-studio-700 group-hover:border-indigo-500/40 transition-all flex-shrink-0" />
+                        <div class="overflow-hidden">
+                            <p class="text-[11px] font-mono font-bold text-slate-200 truncate">${frame.fileName}</p>
+                            <p class="text-[9px] font-mono text-indigo-400 mt-0.5">Time: ${formatPreciseTime(frame.timestamp)}</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-1">
+                        <button onclick="downloadSingleFrame('${frame.id}')" class="p-1.5 bg-studio-800 hover:bg-studio-700 text-slate-400 hover:text-indigo-400 rounded transition-colors" title="Export File">
+                            <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                        </button>
+                        <button onclick="deleteFrameFromQueue('${frame.id}')" class="p-1.5 bg-studio-800 hover:bg-studio-700 text-slate-400 hover:text-rose-400 rounded transition-colors" title="Delete Frame">
+                            <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                        </button>
+                    </div>
+                `;
+                frameQueueList.appendChild(row);
+            });
+
+            lucide.createIcons();
+        }
+
+        /* Click handler to jump seeker to queued frame timestamp */
+        function jumpToQueuedTime(time) {
+            mainVideo.currentTime = time;
+            updateTimeDisplay();
+        }
+
+        /* Download individual captured frame element */
+        function downloadSingleFrame(id) {
+            const frame = markedFrames.find(f => f.id == id);
+            if (!frame) return;
+
+            const a = document.createElement('a');
+            a.href = frame.data;
+            a.download = frame.fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
+        /* Delete selected item from visual list array */
+        function deleteFrameFromQueue(id) {
+            markedFrames = markedFrames.filter(f => f.id != id);
+            updateFrameQueueUI();
+        }
+
+        /* Empties array queue completely */
+        function clearFrameQueue() {
+            markedFrames = [];
+            updateFrameQueueUI();
+            triggerToast('Queue Flushed', 'Cleared all marked frame items.', 'info');
+        }
+
+        /* Compiles all captured frame data into single instant zip file on client */
+        async function batchExportZip() {
+            if (markedFrames.length === 0) {
+                triggerToast('No Items Detected', 'Mark and capture frame sequences before exporting ZIP bundles.', 'error');
+                return;
+            }
+
+            triggerToast('ZIP Packing Initialized', 'Compressing high-fidelity frame packets on CPU. Please wait...', 'info');
+
+            const zip = new JSZip();
+            markedFrames.forEach((frame) => {
+                // Parse base64 header representation out of frame data to export pure binary
+                const base64Data = frame.data.split(',')[1];
+                zip.file(frame.fileName, base64Data, { base64: true });
+            });
+
+            const zipBlob = await zip.generateAsync({ type: 'blob' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(zipBlob);
+            a.download = `MediaForge_Captured_Frames_${Date.now()}.zip`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+
+            triggerToast('ZIP Export Successful', `Downloaded ${markedFrames.length} lossless captured frames!`, 'success');
+        }
+
+        /* Channel export setup toggles */
+        function selectAudioCh(ch) {
+            targetChannels = ch;
+            if (ch === 2) {
+                btnAudioStereo.className = "py-2 px-3 bg-indigo-600 border border-indigo-500 text-white rounded-lg text-xs font-semibold hover:bg-indigo-500 transition-colors flex items-center justify-center gap-1.5";
+                btnAudioMono.className = "py-2 px-3 bg-studio-700 border border-studio-600 text-slate-300 rounded-lg text-xs font-semibold hover:bg-studio-600 transition-colors flex items-center justify-center gap-1.5";
+                triggerToast('Stereo Extraction Active', 'Will export full separated Left/Right dynamic audio waves.', 'info');
+            } else {
+                btnAudioStereo.className = "py-2 px-3 bg-studio-700 border border-studio-600 text-slate-300 rounded-lg text-xs font-semibold hover:bg-studio-600 transition-colors flex items-center justify-center gap-1.5";
+                btnAudioMono.className = "py-2 px-3 bg-indigo-600 border border-indigo-500 text-white rounded-lg text-xs font-semibold hover:bg-indigo-500 transition-colors flex items-center justify-center gap-1.5";
+                triggerToast('Mono Downmix Active', 'Left & Right signals will merge directly into unified center channels.', 'info');
+            }
+        }
+
+        /* Slices exact samples out of the decoded audio buffer & builds dynamic lossless WAV file binary */
+        async function ripLosslessAudio() {
+            if (!audioBuffer) {
+                triggerToast('PCM Decoding Unfinished', 'Please wait until waveform decoding finishes scanning.', 'error');
+                return;
+            }
+
+            const ripStart = clipStartTime;
+            const ripEnd = clipEndTime;
+            const clipDur = ripEnd - ripStart;
+
+            if (clipDur <= 0) {
+                triggerToast('Invalid Time Bounds', 'Marked range contains negative limits.', 'error');
+                return;
+            }
+
+            // Show active processing progress overlays
+            btnRipAudio.disabled = true;
+            btnRipAudio.classList.add('opacity-50', 'pointer-events-none');
+            audioProcessProgress.classList.remove('hidden');
+
+            // Wait brief tick for frame layout redraw
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            try {
+                const sampleRate = audioBuffer.sampleRate;
+                const totalSamples = audioBuffer.length;
+                
+                // Map indices to sample array positions
+                const startSample = Math.max(0, Math.floor(ripStart * sampleRate));
+                const endSample = Math.min(totalSamples, Math.floor(ripEnd * sampleRate));
+                const extractedLength = endSample - startSample;
+
+                // Wave chunk headers layout configuration
+                const bitDepth = 16;
+                const bytesPerSample = bitDepth / 8;
+                const numChannels = targetChannels;
+                const blockAlign = numChannels * bytesPerSample;
+                const byteRate = sampleRate * blockAlign;
+                const subChunk2Size = extractedLength * blockAlign;
+                const chunkSize = 36 + subChunk2Size;
+
+                // Create full binary buffer for wav write file header (RIFF WAV is 44 bytes header + payload)
+                const headerBuffer = new ArrayBuffer(44);
+                const view = new DataView(headerBuffer);
+
+                const writeString = (offset, string) => {
+                    for (let i = 0; i < string.length; i++) {
+                        view.setUint8(offset + i, string.charCodeAt(i));
+                    }
+                };
+
+                /* Write RIFF Wave Headers */
+                writeString(0, 'RIFF');
+                view.setUint32(4, chunkSize, true);
+                writeString(8, 'WAVE');
+                writeString(12, 'fmt ');
+                view.setUint32(16, 16, true); // Subchunk1Size
+                view.setUint16(20, 1, true);  // AudioFormat (1 is PCM Integer)
+                view.setUint16(22, numChannels, true);
+                view.setUint32(24, sampleRate, true);
+                view.setUint32(28, byteRate, true);
+                view.setUint16(32, blockAlign, true);
+                view.setUint16(34, bitDepth, true);
+                writeString(36, 'data');
+                view.setUint32(40, subChunk2Size, true);
+
+                // Setup channels data array pointers
+                const chL = audioBuffer.getChannelData(0);
+                const chR = audioBuffer.numberOfChannels > 1 ? audioBuffer.getChannelData(1) : chL;
+
+                // Set up block chunks of sample writes to prevent blocking web animations thread
+                const samplesPayload = new Int16Array(extractedLength * numChannels);
+                let payloadIdx = 0;
+
+                const sliceBatchCount = 100000; // Sample steps per frames loop
+                for (let i = 0; i < extractedLength; i += sliceBatchCount) {
+                    const maxSlice = Math.min(i + sliceBatchCount, extractedLength);
+                    
+                    for (let s = i; s < maxSlice; s++) {
+                        const originalSampleIndex = startSample + s;
+                        
+                        if (numChannels === 2) {
+                            // Left Channel sample
+                            const valL = Math.max(-1, Math.min(1, chL[originalSampleIndex]));
+                            samplesPayload[payloadIdx++] = valL < 0 ? valL * 0x8000 : valL * 0x7FFF;
+
+                            // Right Channel sample
+                            const valR = Math.max(-1, Math.min(1, chR[originalSampleIndex]));
+                            samplesPayload[payloadIdx++] = valR < 0 ? valR * 0x8000 : valR * 0x7FFF;
+                        } else {
+                            // Mono Average sample downmix
+                            const avgVal = (chL[originalSampleIndex] + chR[originalSampleIndex]) / 2;
+                            const valM = Math.max(-1, Math.min(1, avgVal));
+                            samplesPayload[payloadIdx++] = valM < 0 ? valM * 0x8000 : valM * 0x7FFF;
+                        }
+                    }
+
+                    // Update UI ProgressBar
+                    const progressVal = Math.floor((maxSlice / extractedLength) * 100);
+                    audioProgressPercent.textContent = `${progressVal}%`;
+                    audioProgressBar.style.width = `${progressVal}%`;
+                    
+                    // Yield thread briefly to repaint UI progress indicators
+                    await new Promise(resolve => setTimeout(resolve, 0));
+                }
+
+                // Combine WAV headers binary with extracted Int16 PCM signals
+                const wavBlob = new Blob([headerBuffer, samplesPayload], { type: 'audio/wav' });
+
+                // Download completed binary files to user client folder
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(wavBlob);
+                link.download = `Clipped_Lossless_Audio_${formatPreciseTime(ripStart).replace(/:/g, '-')}_to_${formatPreciseTime(ripEnd).replace(/:/g, '-')}.wav`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+
+                triggerToast('Audio Ripped successfully', 'Lossless PCM WAV generated & downloaded directly to client!', 'success');
+            } catch (err) {
+                console.error("PCM ripping failure", err);
+                triggerToast('Process Error', 'Ripping failed on sample encoding pipelines.', 'error');
+            } finally {
+                // Return button controls
+                btnRipAudio.disabled = false;
+                btnRipAudio.classList.remove('opacity-50', 'pointer-events-none');
+                audioProcessProgress.classList.add('hidden');
+                audioProgressBar.style.width = '0%';
+                audioProgressPercent.textContent = '0%';
+            }
+        }
+
+        
+    </script>
+</body>
+</html>

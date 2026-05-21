@@ -1,0 +1,114 @@
+================================================================
+PATCH 1 — app.js
+================================================================
+
+Two changes needed. Both are surgical — nothing else in the file changes.
+
+────────────────────────────────────────────────────────────────
+CHANGE A: renderCards() — make game cards navigate to game.html
+────────────────────────────────────────────────────────────────
+
+Find this line (around line 1037):
+  grid.innerHTML = entries.map(e=>{
+
+And find this line inside the map (around line 1051):
+  return `<div class="card ${isTool?'tool-card':''}" onclick="openModal('${e.id}')">
+
+Replace that single line with these three lines:
+
+    const cardTag = isTool ? 'div' : 'a';
+    const cardNav = isTool ? `onclick="openModal('${e.id}')"` : `href="game.html?id=${e.id}"`;
+    return `<${cardTag} class="card ${isTool?'tool-card':''}" ${cardNav}>
+
+Then find the CLOSING tag of the card (around line 1068):
+    </div>`;
+
+Replace it with:
+    </${cardTag}>`;
+
+Also add this CSS to index.html's <style> block (or to the card styles in app.js if using a stylesheet):
+  a.card { text-decoration: none; color: inherit; display: flex; flex-direction: column; }
+
+
+────────────────────────────────────────────────────────────────
+CHANGE B: Guard index-only code so game.html can safely load app.js
+────────────────────────────────────────────────────────────────
+
+Find this block near the bottom of app.js (around line 1141):
+
+  // Event Listeners
+  document.getElementById('modal-close').onclick = closeModal;
+
+Replace it with:
+
+  // ── Index-page-only code (game.html loads app.js too, so guard this) ──
+  if (document.getElementById('grid')) {
+
+Then scroll to the VERY END of app.js (around line 1201):
+  });
+
+Add ONE closing brace after it:
+  }); // end DOMContentLoaded
+} // end if(grid) guard
+
+That wraps everything from "Event Listeners" to the end of the file
+inside the guard, so game.html won't throw errors when it loads app.js.
+
+
+================================================================
+PATCH 2 — index.html
+================================================================
+
+────────────────────────────────────────────────────────────────
+CHANGE: Add Blog link to the nav
+────────────────────────────────────────────────────────────────
+
+Find the nav-stats div (around line 465):
+  <div class="nav-stats" id="nav-stats"></div>
+
+Replace it with:
+
+  <div style="display:flex;align-items:center;gap:0.75rem">
+    <a href="blog.html" style="
+      text-decoration:none; color:#9b51e0; font-size:0.9rem; font-weight:700;
+      padding:0.45rem 1.1rem; border-radius:30px;
+      border:1px solid rgba(155,81,224,0.2); background:rgba(155,81,224,0.06);
+    ">📝 Blog</a>
+    <div class="nav-stats" id="nav-stats"></div>
+  </div>
+
+
+================================================================
+FILE PLACEMENT SUMMARY
+================================================================
+
+Drop all new files in the same folder as your index.html and app.js:
+
+  index.html        ← already exists (add Blog link to nav)
+  app.js            ← already exists (apply the two patches above)
+  game.html         ← NEW — individual game review pages
+  blog.html         ← NEW — blog listing
+  blog-post.html    ← NEW — individual blog posts
+  blog-data.js      ← NEW — all blog post content (edit this to add posts)
+
+
+================================================================
+HOW URLS WORK
+================================================================
+
+Game pages:    game.html?id=witcher3
+               game.html?id=rdr2
+               game.html?id=bg3
+
+Blog listing:  blog.html
+
+Blog posts:    blog-post.html?id=top-5-rpgs-right-now
+               blog-post.html?id=best-free-to-play-games
+
+To add a new blog post, open blog-data.js and push a new object
+into the POSTS array at the top. The listing and navigation update
+automatically — you never need to touch blog.html or blog-post.html.
+
+To get cleaner URLs (/games/witcher-3 instead of game.html?id=witcher3),
+add a _redirects file (Netlify) or vercel.json rules that rewrite those
+paths to the query-string versions. The SEO benefit is identical.

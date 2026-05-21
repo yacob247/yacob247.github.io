@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Unsubscribe - Electroni</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;700;800&family=Nunito:wght@500;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;font-family:Nunito,Arial,sans-serif;background:#F4F7FB;color:#102033}.card{width:min(100%,520px);background:#fff;border:1px solid #DCE5F2;border-radius:12px;padding:28px;box-shadow:0 18px 45px rgba(16,32,51,.08)}h1{font-family:Sora,Arial,sans-serif;font-size:2rem;margin:0 0 .6rem}p{color:#66758A;line-height:1.6;margin:0 0 1rem}.eyebrow{font-size:.72rem;font-weight:900;letter-spacing:1.3px;text-transform:uppercase;color:#216BFF}label{display:grid;gap:.35rem;font-size:.82rem;font-weight:900;margin:1rem 0;color:#102033}input,textarea{width:100%;border:1.5px solid #D4DEEB;border-radius:8px;padding:.75rem .85rem;font:inherit}textarea{min-height:90px;resize:vertical}.actions{display:flex;gap:.65rem;flex-wrap:wrap;margin-top:1rem}button,a.btn{border:0;border-radius:999px;background:#216BFF;color:#fff;padding:.75rem 1rem;font:800 .82rem Sora,Arial,sans-serif;cursor:pointer;text-decoration:none}a.btn.ghost{background:#fff;color:#102033;border:1.5px solid #D4DEEB}.status{min-height:1.4rem;margin-top:1rem;font-weight:900}.ok{color:#047857}.bad{color:#B91C1C}
+</style>
+</head>
+<body>
+<main class="card">
+  <p class="eyebrow">Account access</p>
+  <h1>Unsubscribe from Electroni</h1>
+  <p>This removes local access on this device and sends the unsubscribe request to the Electroni owner.</p>
+  <form id="unsubscribe-form">
+    <label>Email address<input id="email" type="email" placeholder="you@example.com" required></label>
+    <label>Reason, optional<textarea id="reason" placeholder="Tell us why you are leaving..."></textarea></label>
+    <div class="actions">
+      <button id="submit-btn" type="submit">Unsubscribe</button>
+      <a class="btn ghost" href="electroni.html">Back</a>
+    </div>
+  </form>
+  <div class="status" id="status" aria-live="polite"></div>
+</main>
+<script src="electroni-mail.js"></script>
+<script>
+const params = new URLSearchParams(location.search);
+const emailInput = document.getElementById('email');
+const statusEl = document.getElementById('status');
+const form = document.getElementById('unsubscribe-form');
+emailInput.value = params.get('email') || getUser()?.email || '';
+
+function getUser(){
+  try { return JSON.parse(localStorage.getItem('Electroni_auth_user') || 'null'); }
+  catch(error) { return null; }
+}
+
+function applicationIdFor(email){
+  return String(email || 'unknown').toLowerCase().replace(/[^a-z0-9._-]/g, '_');
+}
+
+function markLocalUnsubscribed(email, reason){
+  const user = getUser() || {};
+  const id = applicationIdFor(email || user.email);
+  const updated = {
+    ...user,
+    id,
+    email: email || user.email || '',
+    status:'unsubscribed',
+    paymentStatus:'unpaid',
+    subscriptionStatus:'unsubscribed',
+    paidSubjects:[],
+    unsubscribeReason:reason || '',
+    unsubscribedAtLocal:new Date().toISOString()
+  };
+  const apps = JSON.parse(localStorage.getItem('electroni_applications') || '[]');
+  const index = apps.findIndex(app => (app.id || applicationIdFor(app.email)) === id);
+  if(index >= 0) apps[index] = {...apps[index], ...updated};
+  else apps.unshift(updated);
+  localStorage.setItem('electroni_applications', JSON.stringify(apps));
+  localStorage.setItem('Electroni_auth_user', JSON.stringify(updated));
+}
+
+form.addEventListener('submit', async event => {
+  event.preventDefault();
+  const email = emailInput.value.trim();
+  const reason = document.getElementById('reason').value.trim();
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    statusEl.textContent = 'Enter a valid email address.';
+    statusEl.className = 'status bad';
+    return;
+  }
+  document.getElementById('submit-btn').disabled = true;
+  markLocalUnsubscribed(email, reason);
+  if(window.ElectroniMail) {
+    await window.ElectroniMail.sendOwnerEmail({
+      subject:`Electroni unsubscribe: ${email}`,
+      topic:'electroni-unsubscribe',
+      text:[`Email: ${email}`, `Reason: ${reason || 'Not provided'}`].join('\n'),
+      data:{userEmail:email, reason}
+    }).catch(error => console.warn(error));
+  }
+  localStorage.removeItem('Electroni_auth_user');
+  statusEl.textContent = 'You have been unsubscribed. Opening the appeal page...';
+  statusEl.className = 'status ok';
+  setTimeout(() => { location.href = `unsubscribe-appeal.html?email=${encodeURIComponent(email)}`; }, 900);
+});
+</script>
+</body>
+</html>
