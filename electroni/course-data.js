@@ -273,164 +273,142 @@ window.Electroni_COURSE_DATA = {
       "title": "Business Studies",
       "year": "Year 12",
       "area": "economics",
-      "textbook": "../Year%2012%20Material/BS%20HSC%20CHAPTER%201%20ROLE%20OP%20MANAGEMENT.pdf",
+      "textbook": "https://drive.google.com/file/d/1VbpG6b4wkohbwWXL-HOGcr4cpdtNE8K6/view?usp=drive_link",
       "resources": [],
       "topics": [
         {
           "code": "BS-CHAPTER-1",
           "title": "BS HSC Chapter 1 Role of Operations Management",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/BS%20HSC%20CHAPTER%201%20ROLE%20OP%20MANAGEMENT.pdf",
-          "resources": [
-            {
-              "type": "Operations",
-              "title": "BS HSC Chapter 1 Role of Operations Management",
-              "href": "../Year%2012%20Material/BS%20HSC%20CHAPTER%201%20ROLE%20OP%20MANAGEMENT.pdf"
-            }
-          ]
+          "textbook": "https://drive.google.com/file/d/1mNcjW4VNMUE85IcY3DRTVahw85PmhsUr/view?usp=drive_link",
+          "resources": []
         },
         {
           "code": "BS-CHAPTER-2",
           "title": "BS HSC Chapter 2 Influences on Operations Management",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/BS%20HSC%20CHAPTER%202%20INFLUENCES%20OP%20MANAGEMENT.pdf",
-          "resources": [
-            {
-              "type": "Operations",
-              "title": "BS HSC Chapter 2 Influences on Operations Management",
-              "href": "../Year%2012%20Material/BS%20HSC%20CHAPTER%202%20INFLUENCES%20OP%20MANAGEMENT.pdf"
-            }
-          ]
+          "textbook": "https://drive.google.com/file/d/1hVXspAxlrFsZ2HuPMfk-CBXNs7q9Q3Wm/view?usp=drive_link",
+          "resources": []
         },
         {
           "code": "BS-CHAPTER-3",
           "title": "BS HSC Chapter 3 Operations Processes",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/BS%20HSC%20CHAPTER%203%20OPERATIONS%20PROCESSES.pdf",
-          "resources": [
-            {
-              "type": "Operations",
-              "title": "BS HSC Chapter 3 Operations Processes",
-              "href": "../Year%2012%20Material/BS%20HSC%20CHAPTER%203%20OPERATIONS%20PROCESSES.pdf"
-            }
-          ]
+          "textbook": "https://drive.google.com/file/d/1d5BNU4r-HHFMP7OVloCyoDhg1hzAjQ0X/view?usp=drive_link",
+          "resources": []
+        },
+        {
+          "code": "BS-CHAPTER-4",
+          "title": " BS HSC CHAPTER 4 OP STRATEGIES",
+          "youtubeId": "",
+          "textbook": "https://drive.google.com/file/d/1CSfKPDgtWo0Q2mQXNFGG-BKkGZ5Luyz7/view?usp=drive_link",
+          "lessonText": "",
+          "summary": "",
+          "imageUrl": "",
+          "resources": []
         },
         {
           "code": "BS-CHAPTER-5",
           "title": "BS HSC Chapter 5 Role of Marketing",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/BS%20HSC%20CHAPTER%205%20ROLE%20OF%20MARKETING.pdf",
-          "resources": [
-            {
-              "type": "Marketing",
-              "title": "BS HSC Chapter 5 Role of Marketing",
-              "href": "../Year%2012%20Material/BS%20HSC%20CHAPTER%205%20ROLE%20OF%20MARKETING.pdf"
-            }
-          ]
+          "textbook": "https://drive.google.com/file/d/1QguMwFSd4yx6Wkvf7Xi3hFnxXAW5wcCx/view?usp=drive_link",
+          "resources": []
         },
         {
           "code": "BS-CHAPTER-6",
           "title": "BS HSC Chapter 6 Influences on Marketing",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/BS%20HSC%20CHAPTER%206%20INFLUENCES%20ON%20MARKETING.pdf",
-          "resources": [
-            {
-              "type": "Marketing",
-              "title": "BS HSC Chapter 6 Influences on Marketing",
-              "href": "../Year%2012%20Material/BS%20HSC%20CHAPTER%206%20INFLUENCES%20ON%20MARKETING.pdf"
-            }
-          ]
+          "textbook": "https://drive.google.com/file/d/1q4Ns6f6SpGKpkONEwXtyKVWgKKiOZhYG/view?usp=drive_link",
+          "resources": []
         },
         {
           "code": "BS-CHAPTER-7",
           "title": "BS HSC Chapter 7 Marketing Process",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/BS%20HSC%20CHAPTER%207%20MARKETING%20PROCESS.pdf",
-          "resources": [
-            {
-              "type": "Marketing",
-              "title": "BS HSC Chapter 7 Marketing Process",
-              "href": "../Year%2012%20Material/BS%20HSC%20CHAPTER%207%20MARKETING%20PROCESS.pdf"
-            }
-          ]
+          "textbook": "https://drive.google.com/file/d/1phrz7nDamGK7ecIWjpMLhQDRuLliAkEz/view?usp=drive_link",
+          "resources": []
         },
         {
           "code": "BS-CHAPTER-8",
           "title": "BS HSC Chapter 8 Marketing Strategies",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/BS-HSC%20CHAPTER%208%20MARKETING%20STRATEGIES.pdf",
-          "resources": [
-            {
-              "type": "Marketing",
-              "title": "BS HSC Chapter 8 Marketing Strategies",
-              "href": "../Year%2012%20Material/BS-HSC%20CHAPTER%208%20MARKETING%20STRATEGIES.pdf"
-            }
-          ]
+          "textbook": "https://drive.google.com/file/d/1ykuNa72p0Km51hnYcHoLbrBrfRtq8uvx/view?usp=drive_link",
+          "resources": []
+        },
+        {
+          "code": "BS-CHAPTER-9",
+          "title": "BS HSC CHAPTER 9 ROLE FINANCIAL MNGT",
+          "youtubeId": "",
+          "textbook": "https://drive.google.com/file/d/1jC2ghyo2-Z6qMGFNRxhb8MskVYJiFt1g/view?usp=drive_link",
+          "lessonText": "",
+          "summary": "",
+          "imageUrl": "",
+          "resources": []
         },
         {
           "code": "BS-CHAPTER-10",
           "title": "BS HSC Chapter 10 Influences on Financial Management",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/BS-HSC%20CHAPTER%2010%20INFLUENCES%20FINANCIAL%20MNGT.pdf",
-          "resources": [
-            {
-              "type": "Finance",
-              "title": "BS HSC Chapter 10 Influences on Financial Management",
-              "href": "../Year%2012%20Material/BS-HSC%20CHAPTER%2010%20INFLUENCES%20FINANCIAL%20MNGT.pdf"
-            }
-          ]
+          "textbook": "https://drive.google.com/file/d/1eAG8hxrIHo66MWpGl1gJHE6YVymBJZv1/view?usp=drive_link",
+          "resources": []
         },
         {
           "code": "BS-CHAPTER-11",
           "title": "BS HSC Chapter 11 Processes of Financial Management",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/BS-HSC%20CHAPTER%2011%20PROCESSES%20FINANCIAL%20MNGT.pdf",
-          "resources": [
-            {
-              "type": "Finance",
-              "title": "BS HSC Chapter 11 Processes of Financial Management",
-              "href": "../Year%2012%20Material/BS-HSC%20CHAPTER%2011%20PROCESSES%20FINANCIAL%20MNGT.pdf"
-            }
-          ]
+          "textbook": "https://drive.google.com/file/d/1Fj0oSqKbbT9Z3d9wCSFpiqZrmtqMbRNQ/view?usp=drive_link",
+          "resources": []
         },
         {
           "code": "BS-CHAPTER-12",
           "title": "BS HSC Chapter 12 Financial Management Strategies",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/BS-HSC%20CHAPTER%2012%20FINANCIAL%20MNGT%20STRATEGIES.pdf",
-          "resources": [
-            {
-              "type": "Finance",
-              "title": "BS HSC Chapter 12 Financial Management Strategies",
-              "href": "../Year%2012%20Material/BS-HSC%20CHAPTER%2012%20FINANCIAL%20MNGT%20STRATEGIES.pdf"
-            }
-          ]
+          "textbook": "https://drive.google.com/file/d/1hTEeIbv-kgxE0FI5MUejWtLygrQ_FK1_/view?usp=drive_link",
+          "resources": []
+        },
+        {
+          "code": "BS-CHAPTER-13",
+          "title": "BS HSC CHAPTER 13 ROLE HR MANAGEMENT",
+          "youtubeId": "",
+          "textbook": "https://drive.google.com/file/d/1c1yqPOXqf8M-rCtH2Tjegvvd6Xry3AG-/view?usp=drive_link",
+          "lessonText": "",
+          "summary": "",
+          "imageUrl": "",
+          "resources": []
         },
         {
           "code": "BS-CHAPTER-14",
           "title": "BS HSC Chapter 14 Key Influences on HR Management",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/BS-HSC%20CHAPTER%2014%20KEY%20INFLUENCES%20HR%20MANAGEMENT.pdf",
-          "resources": [
-            {
-              "type": "Human Resources",
-              "title": "BS HSC Chapter 14 Key Influences on HR Management",
-              "href": "../Year%2012%20Material/BS-HSC%20CHAPTER%2014%20KEY%20INFLUENCES%20HR%20MANAGEMENT.pdf"
-            }
-          ]
+          "textbook": "https://drive.google.com/file/d/1w3pvb6ySRTMS5zwGBq9ykTFInO-Qv6sh/view?usp=drive_link",
+          "resources": []
+        },
+        {
+          "code": "BS-CHAPTER-15",
+          "title": "BS HSC CHAPTER 15 PROCESSES HR MANAGEMENT",
+          "youtubeId": "",
+          "textbook": "https://drive.google.com/file/d/1QWFgNkTRBdOzvld6OfkPeN9xdCTzVSat/view?usp=drive_link",
+          "lessonText": "",
+          "summary": "",
+          "imageUrl": "",
+          "resources": []
         },
         {
           "code": "BS-CHAPTER-16",
           "title": "BS HSC Chapter 16 Strategies in HR Management",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/BS-HSC%20CHAPTER%2016%20STRATEGIES%20IN%20HR%20MANAGEMENT.pdf",
-          "resources": [
-            {
-              "type": "Human Resources",
-              "title": "BS HSC Chapter 16 Strategies in HR Management",
-              "href": "../Year%2012%20Material/BS-HSC%20CHAPTER%2016%20STRATEGIES%20IN%20HR%20MANAGEMENT.pdf"
-            }
-          ]
+          "textbook": "https://drive.google.com/file/d/1qD9yGeUNP9DrB9PSxjrxNz6limjmlo3A/view?usp=drive_link",
+          "resources": []
+        },
+        {
+          "code": "BS-CHAPTER-17",
+          "title": "BS HSC CHAPTER 17 EFFECTIVNESS HR MANAGEMENT",
+          "youtubeId": "",
+          "textbook": "https://drive.google.com/file/d/195GIEj67IB3bErpkJH-r6Dbg1PnVUceN/view?usp=drive_link",
+          "lessonText": "",
+          "summary": "",
+          "imageUrl": "",
+          "resources": []
         }
       ]
     },
