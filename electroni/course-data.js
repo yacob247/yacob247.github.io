@@ -18,314 +18,8 @@ window.Electroni_COURSE_DATA = {
           "code": "CAMBRIDGE-MA",
           "title": "Cambridge - Mathematics Advanced",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "https://drive.google.com/file/d/1c7AJQ2V74XTx8zsTLh-m3dAwCrCpb2Lw/view?usp=drive_link",
+          "textbook": "https://drive.google.com/file/d/1c7AJQ2V74XTx8zsTLh-m3dAwCrCpb2Lw/view?usp=drive_link ",
           "resources": []
-        },
-        {
-          "code": "CHAPTER-1",
-          "title": "Chapter 1",
-          "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/Chapter%201.pdf",
-          "resources": []
-        },
-        {
-          "code": "CHAPTER-2",
-          "title": "Chapter 2",
-          "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/Chapter%202.pdf",
-          "resources": [
-            {
-              "type": "Chapter",
-              "title": "Chapter 2",
-              "href": "../Year%2012%20Material/Chapter%202.pdf"
-            }
-          ]
-        },
-        {
-          "code": "CHAPTER-3",
-          "title": "Chapter 3",
-          "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/Chapter%203.pdf",
-          "resources": [
-            {
-              "type": "Chapter",
-              "title": "Chapter 3",
-              "href": "../Year%2012%20Material/Chapter%203.pdf"
-            }
-          ]
-        },
-        {
-          "code": "CHAPTER-4",
-          "title": "Chapter 4",
-          "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/Chapter%204.pdf",
-          "resources": [
-            {
-              "type": "Chapter",
-              "title": "Chapter 4",
-              "href": "../Year%2012%20Material/Chapter%204.pdf"
-            }
-          ]
-        },
-        {
-          "code": "CHAPTER-5",
-          "title": "Chapter 5",
-          "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/Chapter%205.pdf",
-          "resources": [
-            {
-              "type": "Chapter",
-              "title": "Chapter 5",
-              "href": "../Year%2012%20Material/Chapter%205.pdf"
-            }
-          ]
-        },
-        {
-          "code": "CHAPTER-6",
-          "title": "Chapter 6",
-          "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/Chapter%206.pdf",
-          "resources": [
-            {
-              "type": "Chapter",
-              "title": "Chapter 6",
-              "href": "../Year%2012%20Material/Chapter%206.pdf"
-            }
-          ]
-        },
-        {
-          "code": "CHAPTER-7",
-          "title": "Chapter 7",
-          "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/Chapter%207.pdf",
-          "resources": [
-            {
-              "type": "Chapter",
-              "title": "Chapter 7",
-              "href": "../Year%2012%20Material/Chapter%207.pdf"
-            }
-          ]
-        },
-        {
-          "code": "CHAPTER-8",
-          "title": "Chapter 8",
-          "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/Chapter%208.pdf",
-          "resources": [
-            {
-              "type": "Chapter",
-              "title": "Chapter 8",
-              "href": "../Year%2012%20Material/Chapter%208.pdf"
-            }
-          ]
-        },
-        {
-          "code": "CHAPTER-9",
-          "title": "Chapter 9",
-          "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/Chapter%209.pdf",
-          "resources": [
-            {
-              "type": "Chapter",
-              "title": "Chapter 9",
-              "href": "../Year%2012%20Material/Chapter%209.pdf"
-            }
-          ]
-        },
-        {
-          "code": "CHAPTER-11",
-          "title": "Chapter 11",
-          "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/Chapter%2011.pdf",
-          "resources": [
-            {
-              "type": "Chapter",
-              "title": "Chapter 11",
-              "href": "../Year%2012%20Material/Chapter%2011.pdf"
-            }
-          ]
-        },
-        {
-          "code": "CHAPTER-12",
-          "title": "Chapter 12",
-          "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/Chapter%2012.pdf",
-          "resources": [
-            {
-              "type": "Chapter",
-              "title": "Chapter 12",
-              "href": "../Year%2012%20Material/Chapter%2012.pdf"
-            }
-          ]
-        },
-        {
-          "code": "CHAPTER-13",
-          "title": "Chapter 13",
-          "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/Chapter%2013.pdf",
-          "resources": [
-            {
-              "type": "Chapter",
-              "title": "Chapter 13",
-              "href": "../Year%2012%20Material/Chapter%2013.pdf"
-            }
-          ]
-        },
-        {
-          "code": "CHAPTER-14",
-          "title": "Chapter 14",
-          "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/Chapter%2014.pdf",
-          "resources": [
-            {
-              "type": "Chapter",
-              "title": "Chapter 14",
-              "href": "../Year%2012%20Material/Chapter%2014.pdf"
-            }
-          ]
-        },
-        {
-          "code": "CHAPTER-15",
-          "title": "Chapter 15",
-          "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/Chapter%2015.pdf",
-          "resources": [
-            {
-              "type": "Chapter",
-              "title": "Chapter 15",
-              "href": "../Year%2012%20Material/Chapter%2015.pdf"
-            }
-          ]
-        },
-        {
-          "code": "CHAPTER-16",
-          "title": "Chapter 16",
-          "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/Chapter%2016.pdf",
-          "resources": [
-            {
-              "type": "Chapter",
-              "title": "Chapter 16",
-              "href": "../Year%2012%20Material/Chapter%2016.pdf"
-            }
-          ]
-        },
-        {
-          "code": "CHAPTER-17",
-          "title": "Chapter 17",
-          "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/Chapter%2017.pdf",
-          "resources": [
-            {
-              "type": "Chapter",
-              "title": "Chapter 17",
-              "href": "../Year%2012%20Material/Chapter%2017.pdf"
-            }
-          ]
-        },
-        {
-          "code": "CHAPTER-5H-REVIEW",
-          "title": "5H chapter review",
-          "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/5H%20(ch%20review).pdf",
-          "resources": [
-            {
-              "type": "Review",
-              "title": "5H chapter review",
-              "href": "../Year%2012%20Material/5H%20(ch%20review).pdf"
-            }
-          ]
-        },
-        {
-          "code": "CHAPTER-6B",
-          "title": "6B",
-          "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/6B.pdf",
-          "resources": [
-            {
-              "type": "Chapter",
-              "title": "6B",
-              "href": "../Year%2012%20Material/6B.pdf"
-            }
-          ]
-        },
-        {
-          "code": "CHAPTER-6C",
-          "title": "6C",
-          "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/6C.pdf",
-          "resources": [
-            {
-              "type": "Chapter",
-              "title": "6C",
-              "href": "../Year%2012%20Material/6C.pdf"
-            }
-          ]
-        },
-        {
-          "code": "CHAPTER-6D",
-          "title": "6D",
-          "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/6D.pdf",
-          "resources": [
-            {
-              "type": "Chapter",
-              "title": "6D",
-              "href": "../Year%2012%20Material/6D.pdf"
-            }
-          ]
-        },
-        {
-          "code": "CHAPTER-6E",
-          "title": "6E",
-          "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/6E.pdf",
-          "resources": [
-            {
-              "type": "Chapter",
-              "title": "6E",
-              "href": "../Year%2012%20Material/6E.pdf"
-            }
-          ]
-        },
-        {
-          "code": "CHAPTER-6F",
-          "title": "6F",
-          "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/6F.pdf",
-          "resources": [
-            {
-              "type": "Chapter",
-              "title": "6F",
-              "href": "../Year%2012%20Material/6F.pdf"
-            }
-          ]
-        },
-        {
-          "code": "CHAPTER-6G",
-          "title": "6G",
-          "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/6G.pdf",
-          "resources": [
-            {
-              "type": "Chapter",
-              "title": "6G",
-              "href": "../Year%2012%20Material/6G.pdf"
-            }
-          ]
-        },
-        {
-          "code": "CHAPTER-6H-REVIEW",
-          "title": "6H chapter review",
-          "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/6H%20(ch%20review).pdf",
-          "resources": [
-            {
-              "type": "Review",
-              "title": "6H chapter review",
-              "href": "../Year%2012%20Material/6H%20(ch%20review).pdf"
-            }
-          ]
         }
       ]
     },
@@ -486,7 +180,7 @@ window.Electroni_COURSE_DATA = {
       "title": "Biology",
       "year": "Year 12",
       "area": "sciences",
-      "textbook": "../Year%2012%20Material/Pearson%20Biology%20Y12.pdf",
+      "textbook": "https://drive.google.com/file/d/1mSa1tAq_6NFZSCidyxFRx2D13CBe_Dy4/view?usp=drive_link",
       "resources": [
         {
           "type": "Textbook",
@@ -499,7 +193,7 @@ window.Electroni_COURSE_DATA = {
           "code": "PEARSON-BIOLOGY-Y12",
           "title": "Pearson Biology Y12",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/Pearson%20Biology%20Y12.pdf",
+          "textbook": "https://drive.google.com/file/d/1mSa1tAq_6NFZSCidyxFRx2D13CBe_Dy4/view?usp=drive_link",
           "resources": [
             {
               "type": "Textbook",
@@ -515,7 +209,7 @@ window.Electroni_COURSE_DATA = {
       "title": "Chemistry",
       "year": "Year 12",
       "area": "sciences",
-      "textbook": "../Year%2012%20Material/Chemistry%20in%20Focus%20Y12.pdf",
+      "textbook": "https://drive.google.com/file/d/1-nBQNaDe0fXO5smZk9CVgxfBQFMm30mV/view?usp=drive_link",
       "resources": [
         {
           "type": "Textbook",
@@ -538,7 +232,7 @@ window.Electroni_COURSE_DATA = {
           "code": "CHEMISTRY-IN-FOCUS-Y12",
           "title": "Chemistry in Focus Y12",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/Chemistry%20in%20Focus%20Y12.pdf",
+          "textbook": "https://drive.google.com/file/d/1-nBQNaDe0fXO5smZk9CVgxfBQFMm30mV/view?usp=drive_link",
           "resources": [
             {
               "type": "Textbook",
@@ -551,7 +245,7 @@ window.Electroni_COURSE_DATA = {
           "code": "SURFING-CHEMISTRY-MODULES-7-8",
           "title": "Surfing Chemistry Modules 7 & 8",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/Surfing%20Chemistry%20Modules%207%20%26%208.pdf",
+          "textbook": "https://drive.google.com/file/d/1Zc5qfsSmQkuFY5dEUvBdx6W8yGxzDvev/view?usp=drive_link",
           "resources": [
             {
               "type": "Modules",
@@ -564,7 +258,7 @@ window.Electroni_COURSE_DATA = {
           "code": "CAMBRIDGE-CHECKPOINTS-CHEMISTRY",
           "title": "Year 12 Cambridge Checkpoints Chemistry 2019-2020",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/Year%2012%20Cambridge%20Checkpoints%20Chemistry%202019-2020.pdf",
+          "textbook": "https://drive.google.com/file/d/1gprJhjswil3TVUiMIaVn_trd8SIh5db4/view?usp=drive_link",
           "resources": [
             {
               "type": "Checkpoints",
@@ -580,7 +274,7 @@ window.Electroni_COURSE_DATA = {
       "title": "Physics",
       "year": "Year 12",
       "area": "sciences",
-      "textbook": "../Year%2012%20Material/Y12%20Physics%20in%20Focus.pdf",
+      "textbook": "https://drive.google.com/file/d/1Qzz0Ty-VIlQZq8dVnAx_YrUYRI91zqBQ/view?usp=drive_link",
       "resources": [
         {
           "type": "Textbook",
@@ -593,7 +287,7 @@ window.Electroni_COURSE_DATA = {
           "code": "Y12-PHYSICS-IN-FOCUS",
           "title": "Y12 Physics in Focus",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/Y12%20Physics%20in%20Focus.pdf",
+          "textbook": "https://drive.google.com/file/d/1Qzz0Ty-VIlQZq8dVnAx_YrUYRI91zqBQ/view?usp=drive_link",
           "resources": [
             {
               "type": "Textbook",
@@ -833,7 +527,7 @@ window.Electroni_COURSE_DATA = {
       "title": "Modern History",
       "year": "Year 12",
       "area": "humanities",
-      "textbook": "../Year%2012%20Material/Modern%20History%20Transformed.pdf",
+      "textbook": "https://drive.google.com/file/d/1Qzz0Ty-VIlQZq8dVnAx_YrUYRI91zqBQ/view?usp=drive_link",
       "resources": [
         {
           "type": "Textbook",
@@ -851,7 +545,7 @@ window.Electroni_COURSE_DATA = {
           "code": "MODERN-HISTORY-TRANSFORMED",
           "title": "Modern History Transformed",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/Modern%20History%20Transformed.pdf",
+          "textbook": "https://drive.google.com/file/d/1Qzz0Ty-VIlQZq8dVnAx_YrUYRI91zqBQ/view?usp=drive_link",
           "resources": [
             {
               "type": "Textbook",
@@ -864,7 +558,7 @@ window.Electroni_COURSE_DATA = {
           "code": "KEY-FEATURES-MODERN-HISTORY",
           "title": "Key Features of Modern History 2 5th Edition",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/Key%20Features%20of%20Modern%20History%202%205th%20Edition.pdf",
+          "textbook": "https://drive.google.com/file/d/1OB89E2I2tBAinrbwI34xtNVpi19QLnYJ/view?usp=drive_link",
           "resources": [
             {
               "type": "Reference",
@@ -1050,7 +744,7 @@ window.Electroni_COURSE_DATA = {
       "title": "Software Design and Development",
       "year": "Year 12",
       "area": "technologies",
-      "textbook": "../Year%2012%20Material/Software%20Design%20and%20Development%202nd%20Edition.pdf",
+      "textbook": "https://drive.google.com/file/d/1PSHWehY2DSnliV31pUGcc0Soy2IaInwT/view?usp=drive_link",
       "resources": [
         {
           "type": "Textbook",
@@ -1063,7 +757,7 @@ window.Electroni_COURSE_DATA = {
           "code": "SOFTWARE-DESIGN-DEVELOPMENT-2ND-EDITION",
           "title": "Software Design and Development 2nd Edition",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/Software%20Design%20and%20Development%202nd%20Edition.pdf",
+          "textbook": "https://drive.google.com/file/d/1PSHWehY2DSnliV31pUGcc0Soy2IaInwT/view?usp=drive_link",
           "resources": [
             {
               "type": "Textbook",
@@ -1079,7 +773,7 @@ window.Electroni_COURSE_DATA = {
       "title": "Studies of Religion",
       "year": "Year 12",
       "area": "humanities",
-      "textbook": "../Year%2012%20Material/Pearson%20Living%20Religion%204th%20Ed.pdf",
+      "textbook": "https://drive.google.com/file/d/1_IPwioAehbAa8keAwplTc731CB1ppauj/view?usp=drive_link",
       "resources": [
         {
           "type": "Textbook",
@@ -1092,7 +786,7 @@ window.Electroni_COURSE_DATA = {
           "code": "PEARSON-LIVING-RELIGION-4TH-ED",
           "title": "Pearson Living Religion 4th Ed",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/Pearson%20Living%20Religion%204th%20Ed.pdf",
+          "textbook": "https://drive.google.com/file/d/1_IPwioAehbAa8keAwplTc731CB1ppauj/view?usp=drive_link",
           "resources": [
             {
               "type": "Textbook",
