@@ -417,7 +417,7 @@ window.Electroni_COURSE_DATA = {
       "title": "Economics",
       "year": "Year 12",
       "area": "economics",
-      "textbook": "../Year%2012%20Material/Pearson%20Australia%20in%20the%20Global%20Economy%202024%20edition.pdf",
+      "textbook": "https://drive.google.com/file/d/1CFSNkNHVDJB9vxz1NwrAYse4ikdMrrcg/view?usp=drive_link",
       "resources": [
         {
           "type": "Textbook",
@@ -430,7 +430,7 @@ window.Electroni_COURSE_DATA = {
           "code": "PEARSON-AUSTRALIA-GLOBAL-ECONOMY",
           "title": "Pearson Australia in the Global Economy 2024 edition",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/Pearson%20Australia%20in%20the%20Global%20Economy%202024%20edition.pdf",
+          "textbook": "https://drive.google.com/file/d/1CFSNkNHVDJB9vxz1NwrAYse4ikdMrrcg/view?usp=drive_link",
           "resources": [
             {
               "type": "Textbook",
