@@ -23,7 +23,7 @@ window.Electroni_COURSE_DATA = {
             {
               "type": "Textbook",
               "title": "Cambridge - Mathematics Advanced",
-              "href": "../Year%2012%20Material/Cambridge%20-%20Mathematics%20Advanced.pdf"
+              "href": "https://drive.google.com/file/d/1c7AJQ2V74XTx8zsTLh-m3dAwCrCpb2Lw/view?usp=drive_link"
             }
           ]
         },
@@ -32,13 +32,7 @@ window.Electroni_COURSE_DATA = {
           "title": "Chapter 1",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
           "textbook": "../Year%2012%20Material/Chapter%201.pdf",
-          "resources": [
-            {
-              "type": "Chapter",
-              "title": "Chapter 1",
-              "href": "../Year%2012%20Material/Chapter%201.pdf"
-            }
-          ]
+          "resources": []
         },
         {
           "code": "CHAPTER-2",
