@@ -609,7 +609,7 @@ window.Electroni_COURSE_DATA = {
       "title": "Hospitality",
       "year": "Year 12",
       "area": "technologies",
-      "textbook": "../Year%2012%20Material/Cambridge%20Hospitality.pdf",
+      "textbook": "https://drive.google.com/file/d/1fgz_gxDpE1f-kMEVs5ZFEfySF6EJfVb-/view?usp=drive_link",
       "resources": [
         {
           "type": "Textbook",
@@ -622,14 +622,8 @@ window.Electroni_COURSE_DATA = {
           "code": "CAMBRIDGE-HOSPITALITY",
           "title": "Cambridge Hospitality",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/Cambridge%20Hospitality.pdf",
-          "resources": [
-            {
-              "type": "Textbook",
-              "title": "Cambridge Hospitality",
-              "href": "../Year%2012%20Material/Cambridge%20Hospitality.pdf"
-            }
-          ]
+          "textbook": "https://drive.google.com/file/d/1fgz_gxDpE1f-kMEVs5ZFEfySF6EJfVb-/view?usp=drive_link",
+          "resources": []
         }
       ]
     },
