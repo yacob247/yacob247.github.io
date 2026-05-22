@@ -194,13 +194,7 @@ window.Electroni_COURSE_DATA = {
           "title": "Pearson Biology Y12",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
           "textbook": "https://drive.google.com/file/d/1mSa1tAq_6NFZSCidyxFRx2D13CBe_Dy4/view?usp=drive_link",
-          "resources": [
-            {
-              "type": "Textbook",
-              "title": "Pearson Biology Y12",
-              "href": "../Year%2012%20Material/Pearson%20Biology%20Y12.pdf"
-            }
-          ]
+          "resources": []
         }
       ]
     },
@@ -233,39 +227,21 @@ window.Electroni_COURSE_DATA = {
           "title": "Chemistry in Focus Y12",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
           "textbook": "https://drive.google.com/file/d/1-nBQNaDe0fXO5smZk9CVgxfBQFMm30mV/view?usp=drive_link",
-          "resources": [
-            {
-              "type": "Textbook",
-              "title": "Chemistry in Focus Y12",
-              "href": "../Year%2012%20Material/Chemistry%20in%20Focus%20Y12.pdf"
-            }
-          ]
+          "resources": []
         },
         {
           "code": "SURFING-CHEMISTRY-MODULES-7-8",
           "title": "Surfing Chemistry Modules 7 & 8",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
           "textbook": "https://drive.google.com/file/d/1Zc5qfsSmQkuFY5dEUvBdx6W8yGxzDvev/view?usp=drive_link",
-          "resources": [
-            {
-              "type": "Modules",
-              "title": "Surfing Chemistry Modules 7 & 8",
-              "href": "../Year%2012%20Material/Surfing%20Chemistry%20Modules%207%20%26%208.pdf"
-            }
-          ]
+          "resources": []
         },
         {
           "code": "CAMBRIDGE-CHECKPOINTS-CHEMISTRY",
           "title": "Year 12 Cambridge Checkpoints Chemistry 2019-2020",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
           "textbook": "https://drive.google.com/file/d/1gprJhjswil3TVUiMIaVn_trd8SIh5db4/view?usp=drive_link",
-          "resources": [
-            {
-              "type": "Checkpoints",
-              "title": "Year 12 Cambridge Checkpoints Chemistry 2019-2020",
-              "href": "../Year%2012%20Material/Year%2012%20Cambridge%20Checkpoints%20Chemistry%202019-2020.pdf"
-            }
-          ]
+          "resources": []
         }
       ]
     },
@@ -288,13 +264,7 @@ window.Electroni_COURSE_DATA = {
           "title": "Y12 Physics in Focus",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
           "textbook": "https://drive.google.com/file/d/1Qzz0Ty-VIlQZq8dVnAx_YrUYRI91zqBQ/view?usp=drive_link",
-          "resources": [
-            {
-              "type": "Textbook",
-              "title": "Y12 Physics in Focus",
-              "href": "../Year%2012%20Material/Y12%20Physics%20in%20Focus.pdf"
-            }
-          ]
+          "resources": []
         }
       ]
     },
@@ -546,26 +516,14 @@ window.Electroni_COURSE_DATA = {
           "title": "Modern History Transformed",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
           "textbook": "https://drive.google.com/file/d/1Qzz0Ty-VIlQZq8dVnAx_YrUYRI91zqBQ/view?usp=drive_link",
-          "resources": [
-            {
-              "type": "Textbook",
-              "title": "Modern History Transformed",
-              "href": "../Year%2012%20Material/Modern%20History%20Transformed.pdf"
-            }
-          ]
+          "resources": []
         },
         {
           "code": "KEY-FEATURES-MODERN-HISTORY",
           "title": "Key Features of Modern History 2 5th Edition",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
           "textbook": "https://drive.google.com/file/d/1OB89E2I2tBAinrbwI34xtNVpi19QLnYJ/view?usp=drive_link",
-          "resources": [
-            {
-              "type": "Reference",
-              "title": "Key Features of Modern History 2 5th Edition",
-              "href": "../Year%2012%20Material/Key%20Features%20of%20Modern%20History%202%205th%20Edition.pdf"
-            }
-          ]
+          "resources": []
         }
       ]
     },
@@ -758,13 +716,7 @@ window.Electroni_COURSE_DATA = {
           "title": "Software Design and Development 2nd Edition",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
           "textbook": "https://drive.google.com/file/d/1PSHWehY2DSnliV31pUGcc0Soy2IaInwT/view?usp=drive_link",
-          "resources": [
-            {
-              "type": "Textbook",
-              "title": "Software Design and Development 2nd Edition",
-              "href": "../Year%2012%20Material/Software%20Design%20and%20Development%202nd%20Edition.pdf"
-            }
-          ]
+          "resources": []
         }
       ]
     },
@@ -787,13 +739,7 @@ window.Electroni_COURSE_DATA = {
           "title": "Pearson Living Religion 4th Ed",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
           "textbook": "https://drive.google.com/file/d/1_IPwioAehbAa8keAwplTc731CB1ppauj/view?usp=drive_link",
-          "resources": [
-            {
-              "type": "Textbook",
-              "title": "Pearson Living Religion 4th Ed",
-              "href": "../Year%2012%20Material/Pearson%20Living%20Religion%204th%20Ed.pdf"
-            }
-          ]
+          "resources": []
         }
       ]
     }
