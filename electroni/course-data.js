@@ -446,7 +446,7 @@ window.Electroni_COURSE_DATA = {
       "title": "Legal Studies",
       "year": "Year 12",
       "area": "humanities",
-      "textbook": "../Year%2012%20Material/Cambridge%20Legal%20Studies%206th%20edition%20(2025).pdf",
+      "textbook": "https://drive.google.com/file/d/1-dIJTnGhA4rWVsXrAzrKCKnlIr9ZrjZn/view?usp=drive_link",
       "resources": [
         {
           "type": "Textbook",
@@ -459,7 +459,7 @@ window.Electroni_COURSE_DATA = {
           "code": "CAMBRIDGE-LEGAL-STUDIES-6TH-EDITION",
           "title": "Cambridge Legal Studies 6th edition (2025)",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/Cambridge%20Legal%20Studies%206th%20edition%20(2025).pdf",
+          "textbook": "https://drive.google.com/file/d/1-dIJTnGhA4rWVsXrAzrKCKnlIr9ZrjZn/view?usp=drive_link",
           "resources": [
             {
               "type": "Textbook",
