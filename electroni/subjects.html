@@ -86,6 +86,12 @@ nav{height:68px;background:rgba(255,255,255,.94);border-bottom:1px solid var(--l
         <p id="library-subtitle">Select a subject to begin learning.</p>
       </div>
       <a class="filter-clear" href="subjects.html" id="clear-filter" hidden>Show all</a>
+    </div>
+    
+    <!-- FIX 1: The course grid container was missing entirely from the original file -->
+    <div id="subject-grid" class="course-grid"></div>
+  </section>
+</main>
 
 <script src="../firebase-config.js"></script>
 <script src="course-data.js"></script>
@@ -106,6 +112,7 @@ const AREA_ALIASES = {"commerce":"economics","economics and business":"economics
 
 const FIREBASE_VERSION = "10.12.5";
 const FIREBASE_APP_URL = `https://www.gstatic.com/firebasejs/${FIREBASE_VERSION}/firebase-app-compat.js`;
+const FIREBASE_AUTH_URL = `https://www.gstatic.com/firebasejs/${FIREBASE_VERSION}/firebase-auth-compat.js`;
 const FIREBASE_FIRESTORE_URL = `https://www.gstatic.com/firebasejs/${FIREBASE_VERSION}/firebase-firestore-compat.js`;
 
 function loadScript(src){
@@ -124,12 +131,23 @@ function loadScript(src){
   });
 }
 
+// FIX 2: Ensure Auth loads so security rules allow reading your profile
 async function getDb(){
   if(!window.ENVIZION_FIREBASE_CONFIG) return null;
   await loadScript(FIREBASE_APP_URL);
+  await loadScript(FIREBASE_AUTH_URL); 
   await loadScript(FIREBASE_FIRESTORE_URL);
   if(!window.firebase) return null;
   if(!firebase.apps.length) firebase.initializeApp(window.ENVIZION_FIREBASE_CONFIG);
+  
+  if(firebase.auth) {
+    await new Promise(resolve => {
+      const unsubscribe = firebase.auth().onAuthStateChanged(user => {
+        unsubscribe();
+        resolve();
+      });
+    });
+  }
   return firebase.firestore();
 }
 
@@ -149,9 +167,14 @@ function escapeHtml(value){
   return String(value || "").replace(/[&<>"']/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
 }
 
+function getAppIdFor(email){
+  return String(email||"unknown").toLowerCase().replace(/[^a-z0-9._-]/g,"_");
+}
+
 function getUser(){
   try {
     const user = JSON.parse(localStorage.getItem("Electroni_auth_user") || "null");
+    // Fallback for legacy admin-centric local caching 
     if (user && user.email) {
       const apps = JSON.parse(localStorage.getItem('electroni_applications') || '[]');
       const currentApp = apps.find(a => String(a.email).toLowerCase() === String(user.email).toLowerCase());
@@ -301,25 +324,67 @@ function renderSubjects(){
     emptyHtml = `<div class="empty-state">No subjects found in <strong>${escapeHtml(activeLabel || "this category")}</strong> based on your current access.</div>`;
   }
 
-  grid.innerHTML = filtered.map(subject => {
-    const href = `${encodeURIComponent(subject.slug)}.html`;
-    return `
-      <a class="course-card" href="${href}" target="_blank" rel="noopener" title="Open subject in a new tab">
-        <div>
-          <span class="tag">${escapeHtml(subject.year || "Year 12")} / ${escapeHtml(subject.area || "Subject")}</span>
-          <h3>${escapeHtml(subject.title)}</h3>
-          <p>Paid access confirmed. Click to view lessons.</p>
-        </div>
-        <div class="course-footer">
-          <span class="topic-count">${(subject.topics || []).length} topic code${(subject.topics || []).length === 1 ? "" : "s"}</span>
-          <span class="open-pill">Open</span>
-        </div>
-      </a>
-    `;
-  }).join("") || emptyHtml;
+  // Prevents crashing if elements are missing
+  if(grid) {
+    grid.innerHTML = filtered.map(subject => {
+      const href = `${encodeURIComponent(subject.slug)}.html`;
+      return `
+        <a class="course-card" href="${href}" target="_blank" rel="noopener" title="Open subject in a new tab">
+          <div>
+            <span class="tag">${escapeHtml(subject.year || "Year 12")} / ${escapeHtml(subject.area || "Subject")}</span>
+            <h3>${escapeHtml(subject.title)}</h3>
+            <p>Paid access confirmed. Click to view lessons.</p>
+          </div>
+          <div class="course-footer">
+            <span class="topic-count">${(subject.topics || []).length} topic code${(subject.topics || []).length === 1 ? "" : "s"}</span>
+            <span class="open-pill">Open</span>
+          </div>
+        </a>
+      `;
+    }).join("") || emptyHtml;
+  }
 }
 
-window.loadFirestoreCourseData(getDb).finally(renderSubjects);
+// FIX 3: Fetch latest approval directly from Firebase to override offline cache
+async function initApp() {
+  try {
+    const db = await getDb();
+    if(db) {
+      const authUser = firebase.auth && firebase.auth().currentUser;
+      let docSnap = null;
+      
+      // Pull by exact Auth UID if logged in
+      if(authUser) {
+         docSnap = await db.collection("Electroni_users").doc(authUser.uid).get().catch(()=>null);
+      }
+      
+      const localUser = JSON.parse(localStorage.getItem("Electroni_auth_user") || "null");
+      
+      // Fallback: Check global email registry (how Admin panel tracks them initially)
+      if ((!docSnap || !docSnap.exists) && localUser && localUser.email) {
+         docSnap = await db.collection("Electroni_users_by_email").doc(getAppIdFor(localUser.email)).get().catch(()=>null);
+      }
+      
+      if(docSnap && docSnap.exists) {
+         const remoteData = docSnap.data();
+         const merged = { ...localUser, ...remoteData };
+         localStorage.setItem("Electroni_auth_user", JSON.stringify(merged));
+      }
+    }
+  } catch(e) {
+    console.warn("Firebase sync failed, using offline data.");
+  }
+
+  // Gracefully handle dynamic loading of remote courses
+  if (typeof window.loadFirestoreCourseData === "function") {
+     try { await window.loadFirestoreCourseData(getDb); } catch(e) {}
+  }
+  
+  // Finally, render interface dynamically
+  renderSubjects();
+}
+
+initApp();
 </script>
 </body>
 </html>
