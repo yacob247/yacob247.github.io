@@ -583,7 +583,7 @@ function renderList() {
   list.innerHTML = filtered.map(s => `
     <div class="subj-item ${s.slug === activeSlug ? 'active' : ''}" onclick="selectSubject('${esc(s.slug)}')">
       <div class="subj-item-name">${esc(s.title || s.slug)}</div>
-      <div class="subj-item-meta">${esc(s.year || '')} · ${esc(s.area || '')} · ${(s.topics || []).length} topics</div>
+      <div class="subj-item-meta">${esc(s.year || '')} / ${esc(s.area || '')} / ${(s.topics || []).length} lessons</div>
     </div>`).join('');
 }
 
@@ -641,6 +641,7 @@ function syncSubject(fromTitle = false) {
   s.year = document.getElementById('f-year')?.value || '';
   s.area = document.getElementById('f-area')?.value || '';
   s.textbook = document.getElementById('f-textbook')?.value || '';
+  s.syllabus = document.getElementById('f-syllabus')?.value || '';
   markDirty();
   renderList();
 }
@@ -684,20 +685,24 @@ function renderEditor() {
           <label>Default Textbook / PDF Path</label>
           <input id="f-textbook" value="${esc(s.textbook)}" oninput="syncSubject()" placeholder="../Year%2012%20Material/textbook.pdf">
         </div>
+        <div class="field col-span-2">
+          <label>Subject Syllabus Dot Points</label>
+          <textarea id="f-syllabus" oninput="syncSubject()" placeholder="One syllabus dot point per line.">${esc(s.syllabus || '')}</textarea>
+        </div>
       </div>
     </div>
 
-    <!-- Topics -->
+    <!-- Lessons -->
     <div class="card">
       <div class="card-header">
-        <span class="card-title">Topics (${(s.topics || []).length})</span>
+        <span class="card-title">Lessons (${(s.topics || []).length})</span>
         <button class="btn btn-sm btn-primary" onclick="addTopic()">
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          Add Topic
+          Add Lesson
         </button>
       </div>
       <div id="topics-container">
-        ${(s.topics || []).map((t, i) => topicHTML(t, i)).join('') || '<p class="help-text">No topics yet. Add your first topic above.</p>'}
+        ${(s.topics || []).map((t, i) => topicHTML(t, i)).join('') || '<p class="help-text">No lessons yet. Add your first lesson above.</p>'}
       </div>
     </div>
 
@@ -719,12 +724,13 @@ function renderEditor() {
 ═══════════════════════════════════════════════ */
 function topicHTML(t, i) {
   const resources = Array.isArray(t.resources) ? t.resources : [];
+  const syllabusCount = String(t.syllabus || '').split(/\r?\n|;/).map(v => v.trim()).filter(Boolean).length;
   return `
   <div class="topic-block" id="topic-block-${i}">
     <div class="topic-head" onclick="toggleTopic(${i})">
       <div>
-        <div class="topic-head-label">${esc(t.code || 'Topic ' + (i + 1))}: ${esc(t.title || '(untitled)')}</div>
-        <div class="topic-head-meta">${resources.length} resource${resources.length !== 1 ? 's' : ''} · ${t.youtubeId || t.youtubeUrl ? '🎬 Video' : 'No video'} · ${t.quiz?.question ? '✓ Quiz' : 'No quiz'}</div>
+        <div class="topic-head-label">${esc(t.code || 'Lesson ' + (i + 1))}: ${esc(t.title || '(untitled)')}</div>
+        <div class="topic-head-meta">${syllabusCount} syllabus point${syllabusCount !== 1 ? 's' : ''} / ${resources.length} material${resources.length !== 1 ? 's' : ''} / ${t.youtubeId || t.youtubeUrl ? 'Video' : 'No video'} / ${t.quiz?.question ? 'Quiz' : 'No quiz'}</div>
       </div>
       <div class="topic-head-actions" onclick="event.stopPropagation()">
         <button class="btn btn-sm" onclick="moveTopic(${i}, -1)">↑</button>
@@ -738,20 +744,21 @@ function topicHTML(t, i) {
         <button class="tab-btn active" onclick="switchTab(this, ${i}, 0)">Setup</button>
         <button class="tab-btn" onclick="switchTab(this, ${i}, 1)">Lesson</button>
         <button class="tab-btn" onclick="switchTab(this, ${i}, 2)">Media</button>
-        <button class="tab-btn" onclick="switchTab(this, ${i}, 3)">Resources</button>
+        <button class="tab-btn" onclick="switchTab(this, ${i}, 3)">Materials</button>
         <button class="tab-btn" onclick="switchTab(this, ${i}, 4)">Quiz</button>
       </div>
 
       <!-- Pane 0: Setup -->
       <div class="tab-pane active" id="tp-${i}-0">
-        <div class="field"><label>Topic Code</label><input data-i="${i}" data-k="code" value="${esc(t.code)}" oninput="syncTopic(this)"></div>
+        <div class="field"><label>Lesson Code</label><input data-i="${i}" data-k="code" value="${esc(t.code)}" oninput="syncTopic(this)"></div>
         <div class="field"><label>Title</label><input data-i="${i}" data-k="title" value="${esc(t.title)}" oninput="syncTopic(this)"></div>
-        <div class="field"><label>Textbook / PDF path</label><input data-i="${i}" data-k="textbook" value="${esc(t.textbook || '')}" oninput="syncTopic(this)"></div>
+        <div class="field"><label>Primary Material / PDF path</label><input data-i="${i}" data-k="textbook" value="${esc(t.textbook || '')}" oninput="syncTopic(this)"></div>
         <div class="field"><label>YouTube URL or Video ID</label><input data-i="${i}" data-k="youtubeId" value="${esc(t.youtubeId || t.youtubeUrl || '')}" oninput="syncTopic(this)" placeholder="https://youtube.com/watch?v=..."></div>
       </div>
 
       <!-- Pane 1: Lesson -->
       <div class="tab-pane single" id="tp-${i}-1" style="display:none">
+        <div class="field col-span-2"><label>Syllabus Dot Points</label><textarea data-i="${i}" data-k="syllabus" oninput="syncTopic(this)" placeholder="One syllabus dot point per line. These display above the lesson text.">${esc(t.syllabus || '')}</textarea></div>
         <div class="field col-span-2"><label>Lesson Text</label><textarea data-i="${i}" data-k="lessonText" oninput="syncTopic(this)" placeholder="Paste lesson text or curriculum notes here.">${esc(t.lessonText || '')}</textarea></div>
         <div class="field col-span-2"><label>Short Summary</label><textarea data-i="${i}" data-k="summary" oninput="syncTopic(this)" placeholder="Optional one-paragraph summary.">${esc(t.summary || '')}</textarea></div>
       </div>
@@ -764,12 +771,12 @@ function topicHTML(t, i) {
         ${t.imageUrl ? `<div class="field col-span-2"><label>Preview</label><img class="img-preview" src="${esc(t.imageUrl)}" alt=""></div>` : ''}
       </div>
 
-      <!-- Pane 3: Resources -->
+      <!-- Pane 3: Materials -->
       <div class="tab-pane single" id="tp-${i}-3" style="display:none">
         <div id="res-container-${i}">
-          ${resources.map((r, ri) => resourceHTML(r, i, ri)).join('') || '<p class="help-text">No resources yet. Add PDFs, worksheets, or external links.</p>'}
+          ${resources.map((r, ri) => resourceHTML(r, i, ri)).join('') || '<p class="help-text">No materials yet. Add only the PDFs, worksheets, or links that belong to this lesson/chapter.</p>'}
         </div>
-        <button class="btn btn-sm" onclick="addResource(${i})">+ Add Resource</button>
+        <button class="btn btn-sm" onclick="addResource(${i})">+ Add Material</button>
       </div>
 
       <!-- Pane 4: Quiz -->
@@ -806,7 +813,7 @@ function addTopic() {
   const s = subjectBySlug();
   if (!s) return;
   s.topics = s.topics || [];
-  s.topics.push({ code: `TOPIC-${s.topics.length + 1}`, title: '', youtubeId: '', textbook: s.textbook || '', lessonText: '', summary: '', imageUrl: '', resources: [] });
+  s.topics.push({ code: `LESSON-${s.topics.length + 1}`, title: '', youtubeId: '', textbook: '', syllabus: '', lessonText: '', summary: '', imageUrl: '', resources: [] });
   markDirty();
   renderEditor();
 }

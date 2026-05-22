@@ -97,6 +97,8 @@
     renderShell();
     await loadScript("../firebase-config.js");
     await loadScript("course-data.js");
+    await loadScript("electroni-mail.js");
+    await loadScript("missed-work.js");
     await loadScript("course.js");
   }
 

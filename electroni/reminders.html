@@ -15,22 +15,25 @@ nav { height: 68px; background: rgba(255,255,255,.94); border-bottom: 1px solid 
 .nav-links { display: flex; gap: 1rem; font-size: .86rem; font-weight: 800; color: var(--muted); }
 .nav-links a { text-decoration: none; color: inherit; }
 .nav-links a:hover { color: var(--blue); }
-.container { max-width: 900px; margin: 40px auto; padding: 0 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
+.container { max-width: 1120px; margin: 40px auto; padding: 0 20px; display: grid; grid-template-columns: minmax(280px,.85fr) minmax(320px,1.15fr); gap: 24px; align-items: start; }
 .card { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.03); }
 h1, h2, h3 { font-family: 'Sora', sans-serif; margin-top: 0; }
 .card h2 { font-size: 1.25rem; margin-bottom: 20px; border-bottom: 1px solid var(--line); padding-bottom: 12px; }
 .settings-grid { display: grid; gap: 16px; }
 label { display: grid; gap: 6px; font-size: 0.85rem; font-weight: 700; color: var(--muted); }
 input, select { padding: 10px 14px; border: 1px solid var(--line); border-radius: 8px; font-family: 'Nunito', sans-serif; font-size: 0.95rem; width: 100%; box-sizing: border-box; }
+select[multiple] { min-height: 138px; padding: 8px; }
+select[multiple] option { padding: 7px 8px; border-radius: 6px; white-space: normal; }
 .btn { display: inline-flex; justify-content: center; padding: 10px 18px; border-radius: 8px; font-weight: 700; cursor: pointer; border: none; font-family: 'Nunito', sans-serif; transition: 0.2s; }
 .btn.primary { background: var(--blue); color: #fff; }
 .btn.ghost { background: transparent; border: 1px solid var(--line); color: var(--ink); }
 .btn:hover { opacity: 0.9; transform: translateY(-1px); }
 .muted { color: var(--muted); font-size: 0.85rem; }
 .btn-group { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
-.missed-item { padding: 14px; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 12px; background: #F8FAFC; }
+.missed-item { display: grid; gap: 3px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 12px; background: #F8FAFC; text-decoration: none; }
 .missed-item strong { display: block; color: var(--blue); font-size: 0.95rem; margin-bottom: 4px; }
 .missed-item span { font-size: 0.85rem; color: var(--muted); }
+.selector-hint { margin: -6px 0 0; color: var(--muted); font-size: .78rem; line-height: 1.45; }
 @media(max-width: 768px) {
   .container { grid-template-columns: 1fr; }
 }
@@ -68,6 +71,16 @@ input, select { padding: 10px 14px; border: 1px solid var(--line); border-radius
                     <option value="10080">Weekly</option>
                 </select>
             </label>
+            <label>Subject/s
+                <select id="reminder-subjects" multiple></select>
+            </label>
+            <p class="selector-hint">Hold Ctrl or Shift to select more than one item.</p>
+            <label>Topic/s
+                <select id="reminder-topics" multiple></select>
+            </label>
+            <label>Lesson/s
+                <select id="reminder-lessons" multiple></select>
+            </label>
             <label>Due date
                 <input id="reminder-due" type="datetime-local">
             </label>
@@ -95,11 +108,13 @@ input, select { padding: 10px 14px; border: 1px solid var(--line); border-radius
 <script src="../firebase-config.js"></script>
 <script src="course-data.js"></script>
 <script src="electroni-mail.js"></script>
+<script src="missed-work.js"></script>
 <script>
     const FIREBASE_VERSION = "10.12.5";
     const FIREBASE_APP_URL = `https://www.gstatic.com/firebasejs/${FIREBASE_VERSION}/firebase-app-compat.js`;
     const FIREBASE_FIRESTORE_URL = `https://www.gstatic.com/firebasejs/${FIREBASE_VERSION}/firebase-firestore-compat.js`;
     const MAIL_APP_URL = window.ENVIZION_MAIL_APP_URL || "https://script.google.com/macros/s/AKfycbyYsr03oyOeBTaI2wImBWVjbsVwR0LHYT_6o0R6-vUuZVb9VmjtWiYFZgSduppvPhpj/exec";
+    let reminderTimer = null;
 
     function loadScript(src){
       return new Promise((resolve, reject) => {
@@ -149,6 +164,112 @@ input, select { padding: 10px 14px; border: 1px solid var(--line); border-radius
     if (saved.offsetMinutes !== undefined) document.getElementById("reminder-offset").value = saved.offsetMinutes;
     if (saved.nextDueAt) document.getElementById("next-reminder").textContent = new Date(saved.nextDueAt).toLocaleString();
 
+    function escapeHtml(value){
+        return String(value || "").replace(/[&<>"']/g, char => ({
+            "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"
+        }[char]));
+    }
+
+    function selectedValues(id){
+        return Array.from(document.getElementById(id)?.selectedOptions || []).map(option => option.value).filter(Boolean);
+    }
+
+    function setSelectedValues(id, values){
+        const selected = new Set(values || []);
+        Array.from(document.getElementById(id)?.options || []).forEach(option => {
+            option.selected = selected.has(option.value);
+        });
+    }
+
+    function allSubjects(){
+        return (window.Electroni_COURSE_DATA?.subjects || []).filter(subject => subject && subject.slug && subject.title);
+    }
+
+    function subjectBySlug(slug){
+        return allSubjects().find(subject => subject.slug === slug);
+    }
+
+    function topicValue(subject, topic){
+        return `${subject.slug}::${topic.code || topic.title}`;
+    }
+
+    function parseTopicValue(value){
+        const [subjectSlug, topicCode] = String(value || "").split("::");
+        const subject = subjectBySlug(subjectSlug);
+        const topic = subject?.topics?.find(item => String(item.code || item.title) === topicCode);
+        return {subject, topic};
+    }
+
+    function lessonOptionsFor(subject, topic){
+        if(Array.isArray(topic?.lessons) && topic.lessons.length) {
+            return topic.lessons.map((lesson, index) => ({
+                value: `${subject.slug}::${topic.code || topic.title}::${lesson.code || lesson.id || index}`,
+                label: `${subject.title} / ${topic.title} / ${lesson.title || lesson.name || lesson.code || `Lesson ${index + 1}`}`
+            }));
+        }
+        return [{
+            value: topicValue(subject, topic),
+            label: `${subject.title} / ${topic.code || "Lesson"} / ${topic.title || "Untitled lesson"}`
+        }];
+    }
+
+    function selectedReminderItems(settings = currentReminderSettings()){
+        const lessons = settings.lessons?.length ? settings.lessons : settings.topics || [];
+        return lessons.map(value => {
+            const {subject, topic} = parseTopicValue(value);
+            if(!subject || !topic) return null;
+            return {
+                subject: subject.title,
+                topic: topic.title || topic.code,
+                lesson: topic.code || topic.title,
+                url: new URL(`${subject.slug}.html?subject=${encodeURIComponent(subject.slug)}&topic=${encodeURIComponent(topic.code || "")}`, location.href).href
+            };
+        }).filter(Boolean);
+    }
+
+    function renderReminderSelectors(){
+        const subjectSelect = document.getElementById("reminder-subjects");
+        const topicSelect = document.getElementById("reminder-topics");
+        const lessonSelect = document.getElementById("reminder-lessons");
+        const previousSubjects = selectedValues("reminder-subjects");
+        const previousTopics = selectedValues("reminder-topics");
+        const previousLessons = selectedValues("reminder-lessons");
+
+        subjectSelect.innerHTML = allSubjects().map(subject => `<option value="${escapeHtml(subject.slug)}">${escapeHtml(subject.title)}</option>`).join("");
+        setSelectedValues("reminder-subjects", previousSubjects.length ? previousSubjects : (saved.subjects || []));
+
+        const activeSubjects = selectedValues("reminder-subjects").length
+            ? selectedValues("reminder-subjects").map(subjectBySlug).filter(Boolean)
+            : allSubjects();
+        topicSelect.innerHTML = activeSubjects.flatMap(subject => (subject.topics || []).map(topic => `
+            <option value="${escapeHtml(topicValue(subject, topic))}">${escapeHtml(subject.title)} / ${escapeHtml(topic.code || "Topic")} / ${escapeHtml(topic.title || "Untitled")}</option>
+        `)).join("");
+        setSelectedValues("reminder-topics", previousTopics.length ? previousTopics : (saved.topics || []));
+
+        const activeTopics = selectedValues("reminder-topics").length
+            ? selectedValues("reminder-topics").map(parseTopicValue).filter(item => item.subject && item.topic)
+            : activeSubjects.flatMap(subject => (subject.topics || []).map(topic => ({subject, topic})));
+        lessonSelect.innerHTML = activeTopics.flatMap(item => lessonOptionsFor(item.subject, item.topic).map(lesson => `
+            <option value="${escapeHtml(lesson.value)}">${escapeHtml(lesson.label)}</option>
+        `)).join("");
+        setSelectedValues("reminder-lessons", previousLessons.length ? previousLessons : (saved.lessons || []));
+    }
+
+    function currentReminderSettings(){
+        const interval = Number(document.getElementById("reminder-interval").value);
+        return {
+            email: document.getElementById("reminder-email").value.trim(),
+            intervalMinutes: interval,
+            subjects: selectedValues("reminder-subjects"),
+            topics: selectedValues("reminder-topics"),
+            lessons: selectedValues("reminder-lessons"),
+            dueAt: document.getElementById("reminder-due").value,
+            offsetMinutes: Number(document.getElementById("reminder-offset").value || -1440),
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "local",
+            nextDueAt: calculateNextReminder(interval)
+        };
+    }
+
     function calculateNextReminder(intervalMinutes){
         const due = document.getElementById("reminder-due").value;
         if(due) {
@@ -174,31 +295,46 @@ input, select { padding: 10px 14px; border: 1px solid var(--line); border-radius
         }, {merge:true});
     }
 
+    function scheduleReminder(settings){
+        clearTimeout(reminderTimer);
+        if(!settings?.email || !settings?.nextDueAt) return;
+        const delay = new Date(settings.nextDueAt).getTime() - Date.now();
+        if(delay <= 0) {
+            sendReminderEmail(settings);
+            settings.nextDueAt = settings.dueAt ? "" : new Date(Date.now() + Number(settings.intervalMinutes || 1440) * 60000).toISOString();
+            localStorage.setItem(storageKey("revision"), JSON.stringify(settings));
+            if(settings.nextDueAt) scheduleReminder(settings);
+            return;
+        }
+        reminderTimer = setTimeout(() => {
+            sendReminderEmail(settings);
+            settings.nextDueAt = settings.dueAt ? "" : new Date(Date.now() + Number(settings.intervalMinutes || 1440) * 60000).toISOString();
+            localStorage.setItem(storageKey("revision"), JSON.stringify(settings));
+            document.getElementById("next-reminder").textContent = settings.nextDueAt ? new Date(settings.nextDueAt).toLocaleString() : "Not set";
+            if(settings.nextDueAt) scheduleReminder(settings);
+        }, Math.min(delay, 2147483647));
+    }
+
     // Event listener: Save reminders
     document.getElementById("save-reminders").addEventListener("click", async () => {
-        const interval = Number(document.getElementById("reminder-interval").value);
-        const email = document.getElementById("reminder-email").value.trim();
+        const settings = currentReminderSettings();
         
-        if(!email) {
+        if(!settings.email) {
             document.getElementById("status-msg").textContent = "Please provide an email address.";
             document.getElementById("status-msg").style.color = "var(--orange)";
             return;
         }
-
-        const nextDueAt = calculateNextReminder(interval);
-        
-        const settings = {
-            email,
-            intervalMinutes: interval,
-            dueAt: document.getElementById("reminder-due").value,
-            offsetMinutes: Number(document.getElementById("reminder-offset").value || -1440),
-            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "local",
-            nextDueAt
-        };
+        if(!settings.subjects.length && !settings.topics.length && !settings.lessons.length) {
+            document.getElementById("status-msg").textContent = "Select at least one subject, topic, or lesson.";
+            document.getElementById("status-msg").style.color = "var(--orange)";
+            return;
+        }
         
         localStorage.setItem(storageKey("revision"), JSON.stringify(settings));
         await saveReminderToFirestore(settings).catch(error => console.warn("Reminder Firestore save skipped:", error));
-        document.getElementById("next-reminder").textContent = new Date(nextDueAt).toLocaleString();
+        await sendReminderEmail(settings, true).catch(error => console.warn("Reminder confirmation email skipped:", error));
+        scheduleReminder(settings);
+        document.getElementById("next-reminder").textContent = new Date(settings.nextDueAt).toLocaleString();
         
         const status = document.getElementById("status-msg");
         status.textContent = "Reminders saved successfully!";
@@ -206,13 +342,31 @@ input, select { padding: 10px 14px; border: 1px solid var(--line); border-radius
         setTimeout(() => status.textContent = "", 3000);
     });
 
-    async function sendReminderEmail(settings){
+    async function sendReminderEmail(settings, confirmation = false){
         const missed = document.getElementById("missed-list").innerText || "Open Electroni to continue your revision.";
+        const selected = selectedReminderItems(settings);
+        const targetText = selected.length
+            ? selected.map(item => `- ${item.subject} / ${item.topic} / ${item.lesson}\n  ${item.url}`).join("\n")
+            : "No specific lessons selected.";
+        const text = [
+            confirmation ? "Your Electroni revision reminder has been saved." : "Your Electroni revision reminder is due.",
+            "",
+            `Next reminder: ${settings.nextDueAt ? new Date(settings.nextDueAt).toLocaleString() : "Not set"}`,
+            `Due date: ${settings.dueAt ? new Date(settings.dueAt).toLocaleString() : "No due date"}`,
+            `Timezone: ${settings.timezone || "local"}`,
+            "",
+            "Selected revision work:",
+            targetText,
+            "",
+            `Missed work:\n${missed}`,
+            "",
+            `Open reminders: ${location.href}`
+        ].join("\n");
         if(window.ElectroniMail && window.ElectroniMail.sendUserEmail) {
             await window.ElectroniMail.sendUserEmail({
                 to: settings.email,
-                subject: "Electroni revision reminder",
-                text: `Your Electroni revision reminder is due.\n\nMissed work:\n${missed}\n\nOpen: ${location.href}`,
+                subject: confirmation ? "Electroni revision reminder saved" : "Electroni revision reminder",
+                text,
                 topic: "electroni-revision"
             });
             return;
@@ -225,8 +379,8 @@ input, select { padding: 10px 14px; border: 1px solid var(--line); border-radius
                 to: [settings.email],
                 recipient: settings.email,
                 email: settings.email,
-                subject: "Electroni revision reminder",
-                text: `Your Electroni revision reminder is due.\n\nMissed work:\n${missed}\n\nOpen: ${location.href}`,
+                subject: confirmation ? "Electroni revision reminder saved" : "Electroni revision reminder",
+                text,
                 site: "Electroni",
                 topic: "electroni-revision"
             })
@@ -257,25 +411,28 @@ input, select { padding: 10px 14px; border: 1px solid var(--line); border-radius
         if(window.loadFirestoreCourseData) {
             await window.loadFirestoreCourseData(getDb);
         }
+        if(window.ElectroniMissedWork) await window.ElectroniMissedWork.loadAssignments(getDb);
+        renderReminderSelectors();
+        ["reminder-subjects", "reminder-topics"].forEach(id => {
+            document.getElementById(id).addEventListener("change", renderReminderSelectors);
+        });
+        if(saved?.email && saved?.nextDueAt) scheduleReminder(saved);
         
-        // Load Missed Work from user's progress tree
-        const progress = JSON.parse(localStorage.getItem(storageKey("progress")) || "{}");
-        
-        // Find missing topics across the entire course-data array
-        const allTopics = window.Electroni_COURSE_DATA?.subjects?.flatMap(s => s.topics?.map(t => ({subject: s, topic: t}))) || [];
-        const missed = allTopics.filter(item => {
-            const state = progress[item.topic.code] || {};
-            return !state.completed;
-        }).slice(0, 10);
+        const missed = window.ElectroniMissedWork
+          ? window.ElectroniMissedWork.findMissed(window.Electroni_COURSE_DATA?.subjects || []).slice(0, 10)
+          : [];
 
         const missedList = document.getElementById("missed-list");
         if (missed.length > 0) {
             missedList.innerHTML = missed.map(item => `
-              <div class="missed-item">
-                <strong>${item.topic.code || 'Topic Code'}</strong>
-                <span>${item.subject.title || 'Course'} / ${item.topic.title || 'Lesson Title'}</span>
-              </div>
+              <a class="missed-item" href="${window.ElectroniMissedWork.lessonUrl(item.subject, item.topic)}">
+                <strong>${item.subject.title || 'Course'}</strong>
+                <span>Topic: ${item.topic.title || item.topic.code || 'Lesson Title'}</span>
+                <span>Lesson: ${item.topic.code || item.topic.title || 'Lesson'}</span>
+                <span>Due: ${window.ElectroniMissedWork.formatDue(item.state.dueAt)}</span>
+              </a>
             `).join("");
+            window.ElectroniMissedWork.notifyNewMissed(missed);
         } else {
             missedList.innerHTML = '<p class="muted">You have no missed work right now. Great job!</p>';
         }

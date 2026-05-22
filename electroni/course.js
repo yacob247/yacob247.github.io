@@ -4,91 +4,6 @@
   const FIREBASE_FIRESTORE_URL = `https://www.gstatic.com/firebasejs/${FIREBASE_VERSION}/firebase-firestore-compat.js`;
   const MAIL_APP_URL = window.ENVIZION_MAIL_APP_URL || "https://script.google.com/macros/s/AKfycbyYsr03oyOeBTaI2wImBWVjbsVwR0LHYT_6o0R6-vUuZVb9VmjtWiYFZgSduppvPhpj/exec";
   const BRAND_NAME = "Electroni";
-  const MATERIAL_ROOT = "../Year%2012%20Material/";
-  const MATERIALS_BY_SUBJECT = {
-    "mathematics-advanced": [
-      ["Textbook", "Cambridge - Mathematics Advanced.pdf"],
-      ["Chapter", "Chapter 1.pdf"],
-      ["Chapter", "Chapter 2.pdf"],
-      ["Chapter", "Chapter 3.pdf"],
-      ["Chapter", "Chapter 4.pdf"],
-      ["Chapter", "Chapter 5.pdf"],
-      ["Chapter", "Chapter 6.pdf"],
-      ["Chapter", "Chapter 7.pdf"],
-      ["Chapter", "Chapter 8.pdf"],
-      ["Chapter", "Chapter 9.pdf"],
-      ["Chapter", "Chapter 11.pdf"],
-      ["Chapter", "Chapter 12.pdf"],
-      ["Chapter", "Chapter 13.pdf"],
-      ["Chapter", "Chapter 14.pdf"],
-      ["Chapter", "Chapter 15.pdf"],
-      ["Chapter", "Chapter 16.pdf"],
-      ["Chapter", "Chapter 17.pdf"],
-      ["Review", "5H (ch review).pdf"],
-      ["Chapter", "6B.pdf"],
-      ["Chapter", "6C.pdf"],
-      ["Chapter", "6D.pdf"],
-      ["Chapter", "6E.pdf"],
-      ["Chapter", "6F.pdf"],
-      ["Chapter", "6G.pdf"],
-      ["Review", "6H (ch review).pdf"]
-    ],
-    "mathematics-standard-2": [
-      ["Textbook", "Cambridge - Standard Mathematics 2.pdf"]
-    ],
-    "mathematics-extension-1": [
-      ["Textbook", "[Fitzpatrick, 2019] New Senior Mathematics Extension 1 (Year 11 and 12).pdf"],
-      ["Chapter", "Chapter 1 Foundation.pdf"],
-      ["Chapter", "Chapter 2 Foundation.pdf"],
-      ["Chapter", "Chapter 2 Development.pdf"],
-      ["Worked solutions", "Chapter-1-worked-solutions-Development-questions.pdf"]
-    ],
-    "mathematics-extension-2": [
-      ["Textbook", "[Lee, 2019] New Advanced Mathematics Extension 2.pdf"],
-      ["Answers", "CAMB Answers Ext 2.pdf"]
-    ],
-    "biology": [["Textbook", "Pearson Biology Y12.pdf"]],
-    "chemistry": [
-      ["Textbook", "Chemistry in Focus Y12.pdf"],
-      ["Modules", "Surfing Chemistry Modules 7 & 8.pdf"],
-      ["Checkpoints", "Year 12 Cambridge Checkpoints Chemistry 2019-2020.pdf"]
-    ],
-    "physics": [["Textbook", "Y12 Physics in Focus.pdf"]],
-    "business-studies": [
-      ["Operations", "BS HSC CHAPTER 1 ROLE OP MANAGEMENT.pdf"],
-      ["Operations", "BS HSC CHAPTER 2 INFLUENCES OP MANAGEMENT.pdf"],
-      ["Operations", "BS HSC CHAPTER 3 OPERATIONS PROCESSES.pdf"],
-      ["Marketing", "BS HSC CHAPTER 5 ROLE OF MARKETING.pdf"],
-      ["Marketing", "BS HSC CHAPTER 6 INFLUENCES ON MARKETING.pdf"],
-      ["Marketing", "BS HSC CHAPTER 7 MARKETING PROCESS.pdf"],
-      ["Marketing", "BS-HSC CHAPTER 8 MARKETING STRATEGIES.pdf"],
-      ["Finance", "BS-HSC CHAPTER 10 INFLUENCES FINANCIAL MNGT.pdf"],
-      ["Finance", "BS-HSC CHAPTER 11 PROCESSES FINANCIAL MNGT.pdf"],
-      ["Finance", "BS-HSC CHAPTER 12 FINANCIAL MNGT STRATEGIES.pdf"],
-      ["Human resources", "BS-HSC CHAPTER 14 KEY INFLUENCES HR MANAGEMENT.pdf"],
-      ["Human resources", "BS-HSC CHAPTER 16 STRATEGIES IN HR MANAGEMENT.pdf"]
-    ],
-    "economics": [["Textbook", "Pearson Australia in the Global Economy 2024 edition.pdf"]],
-    "legal-studies": [["Textbook", "Cambridge Legal Studies 6th edition (2025).pdf"]],
-    "modern-history": [
-      ["Textbook", "Modern History Transformed.pdf"],
-      ["Reference", "Key Features of Modern History 2 5th Edition.pdf"]
-    ],
-    "pdhpe": [
-      ["Textbook", "Cambridge PDHPE textbook.pdf"],
-      ["Outcomes", "PDHPE Outcomes 2.pdf"]
-    ],
-    "french": [["Textbook", "Quoideneuf Senior 2nd Ed.pdf"]],
-    "engineering-studies": [
-      ["Textbook", "Year 12 Excel Engineering Studies.pdf"],
-      ["Workbook", "John Rochford - Engineering Studies Workbook.pdf"],
-      ["Mechanics", "Jacaranda Intro to Engineering Mechanics - Textbook.pdf"]
-    ],
-    "hospitality": [["Textbook", "Cambridge Hospitality.pdf"]],
-    "software-design-development": [["Textbook", "Software Design and Development 2nd Edition.pdf"]],
-    "studies-of-religion": [["Textbook", "Pearson Living Religion 4th Ed.pdf"]]
-  };
-
   let player;
   let activeSubject;
   let activeTopic;
@@ -307,7 +222,7 @@
     renderCourseNavControls();
     $("subject-title").textContent = activeSubject.title;
     $("subject-meta").textContent = `${activeSubject.year || "Year 12"} / ${activeSubject.area || "Course"}`;
-    const defaultTextbook = activeSubject.textbook || fallbackMaterials(activeSubject.slug).find(item => item.type === "Textbook")?.href || "";
+    const defaultTextbook = activeSubject.textbook || "";
     $("textbook-link").href = defaultTextbook || "#";
     $("textbook-link").textContent = defaultTextbook ? "Open textbook" : "No textbook linked";
 
@@ -381,6 +296,7 @@
     if(push) history.pushState({subject: activeSubject.slug, topic: activeTopic.code}, "", url);
     renderTopicList();
     renderTopic();
+    renderMissedWork();
     renderBreadcrumbs();
   }
 
@@ -390,16 +306,18 @@
     const topics = activeSubject.topics || [];
     
     if (topics.length === 0) {
-      list.innerHTML = `<div style="padding: 1.5rem 1rem; text-align: center; color: var(--muted); font-size: 0.82rem; background: #F8FAFD; border-radius: 8px; border: 1px dashed var(--line);">No topics configured.</div>`;
+      list.innerHTML = `<div style="padding: 1.5rem 1rem; text-align: center; color: var(--muted); font-size: 0.82rem; background: #F8FAFD; border-radius: 8px; border: 1px dashed var(--line);">No lessons configured.</div>`;
       return;
     }
 
     list.innerHTML = topics.map(topic => {
-      const done = progress[topic.code]?.completed;
+      const state = window.ElectroniMissedWork?.getTopicState(activeSubject, topic, progress) || progress[topic.code] || {};
+      const done = state.completed;
+      const missed = window.ElectroniMissedWork?.isMissed(activeSubject, topic, state);
       return `<button class="topic-row ${activeTopic?.code === topic.code ? "active" : ""}" data-code="${escapeHtml(topic.code)}">
         <span>${escapeHtml(topic.code)}</span>
         <strong>${escapeHtml(topic.title)}</strong>
-        <em>${done ? "Complete" : "Open"}</em>
+        <em>${done ? "Complete" : missed ? "Missed" : state.openedAt ? "In progress" : "Open"}</em>
       </button>`;
     }).join("");
     
@@ -427,7 +345,7 @@ function renderTopic(){
           emptyMsg.style.cssText = "padding: 6rem 2rem; text-align: center; color: var(--muted); display: flex; flex-direction: column; align-items: center; justify-content: center;";
           emptyMsg.innerHTML = `<div style="font-size: 3.5rem; margin-bottom: 1rem; opacity: 0.3;">📭</div>
             <h2 style="color: var(--ink); margin-bottom: 0.5rem; font-family: Sora, sans-serif;">No lessons published yet</h2>
-            <p style="max-width: 400px; line-height: 1.6; margin: 0 auto;">Curriculum topics for this subject will appear here once they are added via the Admin CMS.</p>`;
+            <p style="max-width: 400px; line-height: 1.6; margin: 0 auto;">Lessons for this subject will appear here once they are added via the Admin CMS.</p>`;
           mainPanel.appendChild(emptyMsg);
         }
         emptyMsg.style.display = 'flex';
@@ -446,8 +364,9 @@ function renderTopic(){
 
     $("topic-code").textContent = activeTopic.code;
     $("topic-title").textContent = activeTopic.title;
-    $("topic-notes").value = getProgress()[activeTopic.code]?.notes || "";
-    const topicTextbook = activeTopic.textbook || activeSubject.textbook || fallbackMaterials(activeSubject.slug).find(item => item.type === "Textbook")?.href || "";
+    if(window.ElectroniMissedWork) window.ElectroniMissedWork.markOpened(activeSubject, activeTopic);
+    $("topic-notes").value = (window.ElectroniMissedWork?.getTopicState(activeSubject, activeTopic) || getProgress()[activeTopic.code] || {}).notes || "";
+    const topicTextbook = activeTopic.textbook || "";
     $("topic-textbook-link").href = topicTextbook || "#";
     $("topic-textbook-link").hidden = !topicTextbook;
     renderVideo();
@@ -459,13 +378,9 @@ function renderTopic(){
   function materialList(topic){
     const seen = new Set();
     const items = [];
-    const fallback = fallbackMaterials(activeSubject?.slug);
     [
       ...(Array.isArray(topic?.resources) ? topic.resources : []),
-      ...(topic?.textbook ? [{title:"Topic textbook", href:topic.textbook, type:"Reading"}] : []),
-      ...(Array.isArray(activeSubject?.resources) ? activeSubject.resources : []),
-      ...(activeSubject?.textbook ? [{title:"Subject textbook", href:activeSubject.textbook, type:"Textbook"}] : []),
-      ...fallback
+      ...(topic?.textbook ? [{title:topic.title || "Lesson material", href:topic.textbook, type:"PDF"}] : [])
     ].forEach(item => {
       const href = item.href || item.url || item.path || "";
       if(!href || seen.has(href)) return;
@@ -475,12 +390,9 @@ function renderTopic(){
     return items;
   }
 
-  function fallbackMaterials(slug){
-    return (MATERIALS_BY_SUBJECT[slug] || []).map(([type, filename]) => ({
-      type,
-      title: filename.replace(/\.pdf$/i, ""),
-      href: MATERIAL_ROOT + encodeURIComponent(filename)
-    }));
+  function dotPoints(value){
+    if(Array.isArray(value)) return value.map(item => String(item || "").trim()).filter(Boolean);
+    return String(value || "").split(/\r?\n|;/).map(item => item.trim()).filter(Boolean);
   }
 
   function renderLessonMaterials(){
@@ -496,7 +408,12 @@ function renderTopic(){
     }
     const resources = materialList(activeTopic);
     const text = activeTopic.lessonText || activeTopic.summary || `Use the linked course materials to work through ${activeTopic.title}. Read the relevant section, write your notes, then complete the quiz to check understanding.`;
+    const syllabus = dotPoints(activeTopic.syllabus || activeTopic.syllabusDotPoints || "");
     section.innerHTML = `
+      ${syllabus.length ? `<div class="syllabus-block">
+        <h3>Syllabus Dot Points</h3>
+        <ul>${syllabus.map(point => `<li>${escapeHtml(point)}</li>`).join("")}</ul>
+      </div>` : ""}
       <div class="lesson-copy">
         <h3>Lesson Text</h3>
         ${activeTopic.imageUrl ? `<img class="lesson-image" src="${escapeHtml(activeTopic.imageUrl)}" alt="">` : ""}
@@ -553,18 +470,18 @@ function renderTopic(){
 
   function bindVideoControls(){
     clearInterval(progressTimer);
-    maxWatchedTime = getProgress()[activeTopic.code]?.videoMaxTime || 0;
-    const alreadyWatched = !!getProgress()[activeTopic.code]?.videoWatched;
+    maxWatchedTime = (window.ElectroniMissedWork?.getTopicState(activeSubject, activeTopic) || getProgress()[activeTopic.code] || {}).videoMaxTime || 0;
+    const alreadyWatched = !!(window.ElectroniMissedWork?.getTopicState(activeSubject, activeTopic) || getProgress()[activeTopic.code] || {}).videoWatched;
     $("play-btn").onclick = () => player.playVideo();
     $("pause-btn").onclick = () => player.pauseVideo();
     $("back-btn").onclick = () => player.seekTo(Math.max(0, player.getCurrentTime() - 10), true);
     $("forward-btn").disabled = !alreadyWatched;
     $("forward-btn").onclick = () => {
-      if(getProgress()[activeTopic.code]?.videoWatched) player.seekTo(player.getCurrentTime() + 10, true);
+      if((window.ElectroniMissedWork?.getTopicState(activeSubject, activeTopic) || getProgress()[activeTopic.code] || {}).videoWatched) player.seekTo(player.getCurrentTime() + 10, true);
     };
     $("speed-select").onchange = event => player.setPlaybackRate(Number(event.target.value));
     $("video-progress").oninput = event => {
-      if(!getProgress()[activeTopic.code]?.videoWatched) {
+      if(!(window.ElectroniMissedWork?.getTopicState(activeSubject, activeTopic) || getProgress()[activeTopic.code] || {}).videoWatched) {
         $("video-progress").value = player.getDuration() ? Math.round(((player.getCurrentTime() || 0) / player.getDuration()) * 100) : 0;
         return;
       }
@@ -575,16 +492,19 @@ function renderTopic(){
       if(!player?.getDuration) return;
       const duration = player.getDuration() || 0;
       const current = player.getCurrentTime() || 0;
-      const watched = !!getProgress()[activeTopic.code]?.videoWatched;
+      const watched = !!(window.ElectroniMissedWork?.getTopicState(activeSubject, activeTopic) || getProgress()[activeTopic.code] || {}).videoWatched;
       if(!watched && current > maxWatchedTime + 2) {
         player.seekTo(maxWatchedTime, true);
         return;
       }
       if(!watched && current > maxWatchedTime) {
         maxWatchedTime = current;
-        const progress = getProgress();
-        progress[activeTopic.code] = {...progress[activeTopic.code], videoMaxTime:maxWatchedTime};
-        setProgress(progress);
+        if(window.ElectroniMissedWork) window.ElectroniMissedWork.saveTopicState(activeSubject, activeTopic, {videoMaxTime:maxWatchedTime});
+        else {
+          const progress = getProgress();
+          progress[activeTopic.code] = {...progress[activeTopic.code], videoMaxTime:maxWatchedTime};
+          setProgress(progress);
+        }
       }
       if(duration) $("video-progress").value = Math.round((current / duration) * 100);
     }, 800);
@@ -602,7 +522,7 @@ function renderTopic(){
       link.textContent = "Download";
       controls.appendChild(link);
     }
-    const watched = !!getProgress()[activeTopic.code]?.videoWatched;
+    const watched = !!(window.ElectroniMissedWork?.getTopicState(activeSubject, activeTopic) || getProgress()[activeTopic.code] || {}).videoWatched;
     const url = activeTopic.videoDownloadUrl || activeTopic.videoFile || "";
     link.hidden = !watched || !url;
     link.href = url || "#";
@@ -610,9 +530,12 @@ function renderTopic(){
   }
 
   function markVideoWatched(){
-    const progress = getProgress();
-    progress[activeTopic.code] = {...progress[activeTopic.code], videoWatched:true};
-    setProgress(progress);
+    if(window.ElectroniMissedWork) window.ElectroniMissedWork.saveTopicState(activeSubject, activeTopic, {videoWatched:true});
+    else {
+      const progress = getProgress();
+      progress[activeTopic.code] = {...progress[activeTopic.code], videoWatched:true};
+      setProgress(progress);
+    }
     syncProgress();
     if($("forward-btn")) $("forward-btn").disabled = false;
     renderDownloadControl();
@@ -647,14 +570,19 @@ function renderTopic(){
       return;
     }
     const correct = Number(selected.value) === Number(activeTopic.quiz?.answerIndex || 0);
-    const progress = getProgress();
-    progress[activeTopic.code] = {
-      ...progress[activeTopic.code],
+    const current = window.ElectroniMissedWork?.getTopicState(activeSubject, activeTopic) || getProgress()[activeTopic.code] || {};
+    const nextState = {
+      ...current,
       quizCorrect: correct,
-      completed: correct && !!progress[activeTopic.code]?.videoWatched,
+      completed: correct && !!current.videoWatched,
       answeredAt: new Date().toISOString()
     };
-    setProgress(progress);
+    if(window.ElectroniMissedWork) window.ElectroniMissedWork.saveTopicState(activeSubject, activeTopic, nextState);
+    else {
+      const progress = getProgress();
+      progress[activeTopic.code] = nextState;
+      setProgress(progress);
+    }
     updateRanking(correct);
     syncProgress({lastQuizTopic: activeTopic.code, lastQuizCorrect: correct});
     $("quiz-result").textContent = correct ? "Correct. This topic is ready to revise." : "Not yet. This topic has been added to missed work.";
@@ -719,29 +647,29 @@ function renderTopic(){
   }
 
   function saveNotes(){
-    const progress = getProgress();
-    progress[activeTopic.code] = {...progress[activeTopic.code], notes:$("topic-notes").value};
-    setProgress(progress);
+    if(window.ElectroniMissedWork) window.ElectroniMissedWork.saveTopicState(activeSubject, activeTopic, {notes:$("topic-notes").value});
+    else {
+      const progress = getProgress();
+      progress[activeTopic.code] = {...progress[activeTopic.code], notes:$("topic-notes").value};
+      setProgress(progress);
+    }
     syncProgress();
     $("notes-status").textContent = "Saved.";
     setTimeout(() => $("notes-status").textContent = "", 1800);
   }
 
   function renderMissedWork(){
-    const progress = getProgress();
-    const missed = [];
-    data().subjects.filter(subjectMatchesUserClasses).forEach(subject => {
-      (subject.topics || []).forEach(topic => {
-        const state = progress[topic.code] || {};
-        if(!state.completed) missed.push({subject, topic, state});
-      });
-    });
+    const subjects = data().subjects.filter(subjectMatchesUserClasses);
+    const missed = window.ElectroniMissedWork ? window.ElectroniMissedWork.findMissed(subjects) : [];
     $("missed-list").innerHTML = missed.slice(0, 8).map(item => `
-      <div class="missed-item">
-        <strong>${escapeHtml(item.topic.code)}</strong>
-        <span>${escapeHtml(item.subject.title)} / ${escapeHtml(item.topic.title)}</span>
-      </div>
+      <a class="missed-item" href="${escapeHtml(window.ElectroniMissedWork.lessonUrl(item.subject, item.topic))}">
+        <strong>${escapeHtml(item.subject.title)}</strong>
+        <span>Topic: ${escapeHtml(item.topic.title || item.topic.code)}</span>
+        <span>Lesson: ${escapeHtml(item.topic.code || item.topic.title)}</span>
+        <span>Due: ${escapeHtml(window.ElectroniMissedWork.formatDue(item.state.dueAt))}</span>
+      </a>
     `).join("") || "<p class=\"muted\">No missed work yet.</p>";
+    if(window.ElectroniMissedWork) window.ElectroniMissedWork.notifyNewMissed(missed);
   }
 
   function renderRevisionSettings(){
@@ -921,6 +849,7 @@ function renderTopic(){
 
   async function init(){
     await loadFirestoreCourseData();
+    if(window.ElectroniMissedWork) await window.ElectroniMissedWork.loadAssignments(window.getDb || getDbFallback);
     render();
     if(eventsBound) return;
     eventsBound = true;
