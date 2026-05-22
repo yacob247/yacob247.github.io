@@ -539,7 +539,7 @@ window.Electroni_COURSE_DATA = {
       "title": "French",
       "year": "Year 12",
       "area": "languages",
-      "textbook": "../Year%2012%20Material/Quoideneuf%20Senior%202nd%20Ed.pdf",
+      "textbook": "https://drive.google.com/file/d/1QwrMbAFvqJRUjtKBfykpkSv8T2TCH654/view?usp=drive_link",
       "resources": [
         {
           "type": "Textbook",
@@ -552,14 +552,8 @@ window.Electroni_COURSE_DATA = {
           "code": "QUOIDENEUF-SENIOR-2ND-ED",
           "title": "Quoideneuf Senior 2nd Ed",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/Quoideneuf%20Senior%202nd%20Ed.pdf",
-          "resources": [
-            {
-              "type": "Textbook",
-              "title": "Quoideneuf Senior 2nd Ed",
-              "href": "../Year%2012%20Material/Quoideneuf%20Senior%202nd%20Ed.pdf"
-            }
-          ]
+          "textbook": "https://drive.google.com/file/d/1QwrMbAFvqJRUjtKBfykpkSv8T2TCH654/view?usp=drive_link",
+          "resources": []
         }
       ]
     },
@@ -568,7 +562,7 @@ window.Electroni_COURSE_DATA = {
       "title": "Engineering Studies",
       "year": "Year 12",
       "area": "technologies",
-      "textbook": "../Year%2012%20Material/Year%2012%20Excel%20Engineering%20Studies.pdf",
+      "textbook": "https://drive.google.com/file/d/1qZcR_Ew3AUqwVzKa0fYwdgX94eLiuZ0Y/view?usp=drive_link",
       "resources": [
         {
           "type": "Textbook",
@@ -591,40 +585,22 @@ window.Electroni_COURSE_DATA = {
           "code": "EXCEL-ENGINEERING-STUDIES",
           "title": "Year 12 Excel Engineering Studies",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/Year%2012%20Excel%20Engineering%20Studies.pdf",
-          "resources": [
-            {
-              "type": "Textbook",
-              "title": "Year 12 Excel Engineering Studies",
-              "href": "../Year%2012%20Material/Year%2012%20Excel%20Engineering%20Studies.pdf"
-            }
-          ]
+          "textbook": "https://drive.google.com/file/d/1qZcR_Ew3AUqwVzKa0fYwdgX94eLiuZ0Y/view?usp=drive_link",
+          "resources": []
         },
         {
           "code": "ENGINEERING-STUDIES-WORKBOOK",
           "title": "John Rochford - Engineering Studies Workbook",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/John%20Rochford%20-%20Engineering%20Studies%20Workbook.pdf",
-          "resources": [
-            {
-              "type": "Workbook",
-              "title": "John Rochford - Engineering Studies Workbook",
-              "href": "../Year%2012%20Material/John%20Rochford%20-%20Engineering%20Studies%20Workbook.pdf"
-            }
-          ]
+          "textbook": "https://drive.google.com/file/d/1g4Il3C4ff_o35J-AjhwOsf0OwJb9n2PE/view?usp=drive_link",
+          "resources": []
         },
         {
           "code": "ENGINEERING-MECHANICS-TEXTBOOK",
           "title": "Jacaranda Intro to Engineering Mechanics - Textbook",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/Jacaranda%20Intro%20to%20Engineering%20Mechanics%20-%20Textbook.pdf",
-          "resources": [
-            {
-              "type": "Mechanics",
-              "title": "Jacaranda Intro to Engineering Mechanics - Textbook",
-              "href": "../Year%2012%20Material/Jacaranda%20Intro%20to%20Engineering%20Mechanics%20-%20Textbook.pdf"
-            }
-          ]
+          "textbook": "https://drive.google.com/file/d/1g4Il3C4ff_o35J-AjhwOsf0OwJb9n2PE/view?usp=drive_link",
+          "resources": []
         }
       ]
     },
