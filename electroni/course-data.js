@@ -504,7 +504,7 @@ window.Electroni_COURSE_DATA = {
       "title": "PDHPE",
       "year": "Year 12",
       "area": "health-pe",
-      "textbook": "../Year%2012%20Material/Cambridge%20PDHPE%20textbook.pdf",
+      "textbook": "https://drive.google.com/file/d/1o2jNUtKgjXXyGCy1EqhtDSaQkFp2BxNb/view?usp=drive_link",
       "resources": [
         {
           "type": "Textbook",
@@ -522,27 +522,15 @@ window.Electroni_COURSE_DATA = {
           "code": "CAMBRIDGE-PDHPE-TEXTBOOK",
           "title": "Cambridge PDHPE textbook",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/Cambridge%20PDHPE%20textbook.pdf",
-          "resources": [
-            {
-              "type": "Textbook",
-              "title": "Cambridge PDHPE textbook",
-              "href": "../Year%2012%20Material/Cambridge%20PDHPE%20textbook.pdf"
-            }
-          ]
+          "textbook": "https://drive.google.com/file/d/1o2jNUtKgjXXyGCy1EqhtDSaQkFp2BxNb/view?usp=drive_link",
+          "resources": []
         },
         {
           "code": "PDHPE-OUTCOMES-2",
           "title": "PDHPE Outcomes 2",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/PDHPE%20Outcomes%202.pdf",
-          "resources": [
-            {
-              "type": "Outcomes",
-              "title": "PDHPE Outcomes 2",
-              "href": "../Year%2012%20Material/PDHPE%20Outcomes%202.pdf"
-            }
-          ]
+          "textbook": "https://drive.google.com/file/d/1T5f1cRzDCLGcuiT1sjFWpg0ErCWltnBl/view?usp=drive_link",
+          "resources": []
         }
       ]
     },
