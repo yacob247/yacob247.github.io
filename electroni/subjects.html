@@ -86,10 +86,7 @@ nav{height:68px;background:rgba(255,255,255,.94);border-bottom:1px solid var(--l
         <p id="library-subtitle">Select a subject to begin learning.</p>
       </div>
       <a class="filter-clear" href="subjects.html" id="clear-filter" hidden>Show all</a>
-    </div>
-    <div class="course-grid" id="subject-grid"></div>
-  </section>
-</main>
+
 <script src="../firebase-config.js"></script>
 <script src="course-data.js"></script>
 <script>
@@ -134,51 +131,6 @@ async function getDb(){
   if(!window.firebase) return null;
   if(!firebase.apps.length) firebase.initializeApp(window.ENVIZION_FIREBASE_CONFIG);
   return firebase.firestore();
-}
-
-function normalizeCourseData(input){
-  if(Array.isArray(input)) return {subjects:input, schoolCodes:[]};
-  return {
-    subjects:Array.isArray(input?.subjects) ? input.subjects : [],
-    schoolCodes:Array.isArray(input?.schoolCodes) ? input.schoolCodes : []
-  };
-}
-
-function mergeCourseData(baseData, remoteData){
-  const base = normalizeCourseData(baseData);
-  const remote = normalizeCourseData(remoteData);
-  const subjects = new Map();
-  base.subjects.forEach(subject => subject?.slug && subjects.set(subject.slug, subject));
-  remote.subjects.forEach(subject => subject?.slug && subjects.set(subject.slug, {...subjects.get(subject.slug), ...subject}));
-  return {subjects:Array.from(subjects.values()), schoolCodes:[...base.schoolCodes, ...remote.schoolCodes]};
-}
-
-async function loadFirestoreCourseData(){
-  const db = await getDb().catch(error => {
-    console.warn("Firestore course sync skipped:", error);
-    return null;
-  });
-  if(!db) return;
-  let remote = null;
-  try {
-    const snap = await db.collection("Electroni_course_data").doc("active").get();
-    if(snap.exists) {
-      const value = snap.data() || {};
-      remote = value.data || value.courseData || value;
-    }
-  } catch(error) {
-    console.warn("Course data document sync skipped:", error);
-  }
-  if(!remote) {
-    try {
-      const snap = await db.collection("Electroni_subjects").get();
-      const subjects = snap.docs.map(doc => ({slug:doc.id, ...doc.data()}));
-      if(subjects.length) remote = {subjects};
-    } catch(error) {
-      console.warn("Course subjects collection sync skipped:", error);
-    }
-  }
-  if(remote) window.Electroni_COURSE_DATA = mergeCourseData(window.Electroni_COURSE_DATA, remote);
 }
 
 function areaKey(value){
@@ -246,32 +198,6 @@ function paidClasses(user = getUser()){
   return selected;
 }
 
-const HARDCODED_FILES = [
-  { slug: "biology", title: "Biology", area: "sciences", year: "Year 12" },
-  { slug: "business-studies", title: "Business Studies", area: "economics", year: "Year 12" },
-  { slug: "chemistry", title: "Chemistry", area: "sciences", year: "Year 12" },
-  { slug: "economics", title: "Economics", area: "economics", year: "Year 12" },
-  { slug: "engineering-studies", title: "Engineering Studies", area: "technologies", year: "Year 12" },
-  { slug: "french", title: "French", area: "languages", year: "Year 12" },
-  { slug: "hospitality", title: "Hospitality", area: "technologies", year: "Year 12" },
-  { slug: "legal-studies", title: "Legal Studies", area: "humanities", year: "Year 12" },
-  { slug: "mathematics-advanced", title: "Mathematics Advanced", area: "mathematics", year: "Year 12" }
-];
-
-function subjectMatchesClass(subject, className){
-  const klass = normalizeClass(className);
-  if(!klass) return false;
-  if(klass === "all subjects" || klass === "all") return true;
-  const title = normalizeClass(subject.title);
-  const slug = normalizeClass(subject.slug || "");
-  const targetClassNormalized = normalizeClass(className);
-  return title === klass || slug === klass || slug === targetClassNormalized || title === targetClassNormalized;
-}
-
-function subjectIsUnlocked(subject){
-  return paidClasses().some(item => subjectMatchesClass(subject, item));
-}
-
 function renderClasses(){
   const list = document.getElementById("class-list");
   const banner = document.getElementById("access-banner");
@@ -326,11 +252,9 @@ function renderCategories(activeArea){
 function renderSubjects(){
   const params = new URLSearchParams(location.search);
   const activeArea = areaKey(params.get("area") || "");
-  
   const fetchedSubjects = (window.Electroni_COURSE_DATA && window.Electroni_COURSE_DATA.subjects) || [];
   
   const allSubjectsMap = new Map();
-  HARDCODED_FILES.forEach(item => allSubjectsMap.set(item.slug, item));
   fetchedSubjects.forEach(item => {
     if (item && item.slug) {
       allSubjectsMap.set(item.slug, {
@@ -344,16 +268,19 @@ function renderSubjects(){
   });
 
   const allSubjects = Array.from(allSubjectsMap.values());
-  const unlockedSubjects = allSubjects.filter(subjectIsUnlocked);
+  const unlockedSubjects = allSubjects.filter(subject => paidClasses().some(item => normalizeClass(item) === normalizeClass(subject.title) || normalizeClass(item) === normalizeClass(subject.slug) || normalizeClass(item) === "all subjects"));
   const filtered = activeArea ? unlockedSubjects.filter(subject => areaKey(subject.area) === activeArea) : unlockedSubjects;
   const activeLabel = SUBJECT_AREAS.find(area => area.key === activeArea)?.label || "";
+
+  SUBJECT_AREAS.forEach(area => {
+    const count = allSubjects.filter(s => areaKey(s.area) === area.key).length;
+    area.count = count < 10 ? "0" + count : String(count);
+  });
 
   renderCategories(activeArea);
   renderClasses();
 
-  // Changed library text to be much more straightforward
   document.getElementById("library-title").textContent = activeLabel ? `${activeLabel}` : "Your Subjects";
-
   const subtitleEl = document.getElementById("library-subtitle");
   if(activeArea) {
     subtitleEl.innerHTML = `Showing courses in this category. <a href="subjects.html" style="color:var(--blue);font-weight:900">Show all</a>`;
@@ -366,7 +293,6 @@ function renderSubjects(){
   const user = getUser();
   let emptyHtml = "";
   
-  // Vastly simplified and friendlier empty state messaging
   if (!user) {
     emptyHtml = `<div class="empty-state">Please log in to view your subjects.</div>`;
   } else if (!isApproved(user) && !isTeacherOrSchool(user)) {
@@ -393,7 +319,7 @@ function renderSubjects(){
   }).join("") || emptyHtml;
 }
 
-loadFirestoreCourseData().finally(renderSubjects);
+window.loadFirestoreCourseData(getDb).finally(renderSubjects);
 </script>
 </body>
 </html>

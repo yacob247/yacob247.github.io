@@ -253,27 +253,35 @@ input, select { padding: 10px 14px; border: 1px solid var(--line); border-radius
         setTimeout(() => status.textContent = "", 3000);
     });
 
-    // Load Missed Work from user's progress tree
-    const progress = JSON.parse(localStorage.getItem(storageKey("progress")) || "{}");
-    
-    // Find missing topics across the entire course-data array
-    const allTopics = window.Electroni_COURSE_DATA?.subjects?.flatMap(s => s.topics?.map(t => ({subject: s, topic: t}))) || [];
-    const missed = allTopics.filter(item => {
-        const state = progress[item.topic.code] || {};
-        return !state.completed;
-    }).slice(0, 10);
+    async function initMissedWork() {
+        if(window.loadFirestoreCourseData) {
+            await window.loadFirestoreCourseData(getDb);
+        }
+        
+        // Load Missed Work from user's progress tree
+        const progress = JSON.parse(localStorage.getItem(storageKey("progress")) || "{}");
+        
+        // Find missing topics across the entire course-data array
+        const allTopics = window.Electroni_COURSE_DATA?.subjects?.flatMap(s => s.topics?.map(t => ({subject: s, topic: t}))) || [];
+        const missed = allTopics.filter(item => {
+            const state = progress[item.topic.code] || {};
+            return !state.completed;
+        }).slice(0, 10);
 
-    const missedList = document.getElementById("missed-list");
-    if (missed.length > 0) {
-        missedList.innerHTML = missed.map(item => `
-          <div class="missed-item">
-            <strong>${item.topic.code || 'Topic Code'}</strong>
-            <span>${item.subject.title || 'Course'} / ${item.topic.title || 'Lesson Title'}</span>
-          </div>
-        `).join("");
-    } else {
-        missedList.innerHTML = '<p class="muted">You have no missed work right now. Great job!</p>';
+        const missedList = document.getElementById("missed-list");
+        if (missed.length > 0) {
+            missedList.innerHTML = missed.map(item => `
+              <div class="missed-item">
+                <strong>${item.topic.code || 'Topic Code'}</strong>
+                <span>${item.subject.title || 'Course'} / ${item.topic.title || 'Lesson Title'}</span>
+              </div>
+            `).join("");
+        } else {
+            missedList.innerHTML = '<p class="muted">You have no missed work right now. Great job!</p>';
+        }
     }
+    
+    initMissedWork();
 </script>
 </body>
 </html>

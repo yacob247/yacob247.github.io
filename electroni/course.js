@@ -117,7 +117,15 @@
     });
   }
 
-  async function getDb(){
+  async function loadFirestoreCourseData(){
+    if (window.loadFirestoreCourseData) {
+      await window.loadFirestoreCourseData(window.getDb || getDbFallback);
+      liveCourseData = window.Electroni_COURSE_DATA;
+    }
+    return liveCourseData;
+  }
+
+  async function getDbFallback(){
     if(!window.ENVIZION_FIREBASE_CONFIG) return null;
     await loadScript(FIREBASE_APP_URL);
     await loadScript(FIREBASE_FIRESTORE_URL);
@@ -126,73 +134,9 @@
     return firebase.firestore();
   }
 
-  function normalizeCourseData(input){
-    if(Array.isArray(input)) return {subjects: input, schoolCodes: []};
-    return {
-      subjects: Array.isArray(input?.subjects) ? input.subjects : [],
-      schoolCodes: Array.isArray(input?.schoolCodes) ? input.schoolCodes : []
-    };
-  }
-
-  function mergeCourseData(baseData, remoteData){
-    const base = normalizeCourseData(baseData);
-    const remote = normalizeCourseData(remoteData);
-    const subjects = new Map();
-    base.subjects.forEach(subject => subject?.slug && subjects.set(subject.slug, subject));
-    remote.subjects.forEach(subject => subject?.slug && subjects.set(subject.slug, {...subjects.get(subject.slug), ...subject}));
-    return {
-      subjects: Array.from(subjects.values()),
-      schoolCodes: [...base.schoolCodes, ...remote.schoolCodes]
-    };
-  }
-
-  async function loadFirestoreCourseData(){
-    const base = normalizeCourseData(window.Electroni_COURSE_DATA);
-    const db = await getDb().catch(error => {
-      console.warn("Firestore course sync skipped:", error);
-      return null;
-    });
-    if(!db) return base;
-
-    let remote = null;
-    try {
-      const snap = await db.collection("Electroni_course_data").doc("active").get();
-      if(snap.exists) {
-        const value = snap.data() || {};
-        remote = value.data || value.courseData || value;
-      }
-    } catch(error) {
-      console.warn("Course data document sync skipped:", error);
-    }
-
-    if(!remote) {
-      try {
-        const snap = await db.collection("Electroni_subjects").get();
-        const subjects = snap.docs.map(doc => ({slug: doc.id, ...doc.data()}));
-        if(subjects.length) remote = {subjects};
-      } catch(error) {
-        console.warn("Course subjects collection sync skipped:", error);
-      }
-    }
-
-    try {
-      const schoolSnap = await db.collection("Electroni_school_codes").get();
-      const schoolCodes = schoolSnap.docs.map(doc => ({code: doc.id, ...doc.data()}));
-      if(schoolCodes.length) remote = mergeCourseData(remote || {}, {schoolCodes});
-    } catch(error) {
-      console.warn("School code sync skipped:", error);
-    }
-
-    liveCourseData = mergeCourseData(base, remote || {});
-    window.Electroni_COURSE_DATA = liveCourseData;
-    return liveCourseData;
-  }
-
   function data(){
     return liveCourseData || window.Electroni_COURSE_DATA || {subjects:[], schoolCodes:[]};
   }
-
-  // Dynamic real-time sync with application objects written by CMS
   function getUser(){
     try {
       const user = JSON.parse(localStorage.getItem("Electroni_auth_user") || "null");

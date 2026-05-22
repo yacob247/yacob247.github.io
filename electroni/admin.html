@@ -34,6 +34,29 @@
   <div class="top">
     <div>
       <h1>Course Data</h1>
+</head>
+<body>
+<aside class="side">
+  <div class="head">
+    <div class="logo">Electron<span>i</span> Admin</div>
+    <div id="status" class="status">Not connected</div>
+    <div class="actions">
+      <button class="btn" onclick="connectGitHub()">Connect</button>
+      <button class="btn" onclick="pullCourses()">Pull</button>
+      <button class="btn primary" onclick="publishCourses()">Publish</button>
+      <button class="btn orange" onclick="newSubject()">New Subject</button>
+      <button class="btn" onclick="showApplications()">Applications</button>
+      <button class="btn" onclick="showCourses()">Courses</button>
+    </div>
+    <input id="search" class="search" type="search" placeholder="Search subjects" oninput="renderList()">
+    <div id="count" class="meta">0 subjects</div>
+  </div>
+  <div id="list" class="list"><div class="empty">Pull course data from GitHub to start.</div></div>
+</aside>
+<main class="main">
+  <div class="top">
+    <div>
+      <h1>Course Data</h1>
       <p>Edits publish to <strong>electroni/course-data.js</strong>. This admin manages subjects, topics, quizzes, textbooks, videos, and school codes.</p>
     </div>
     <a class="btn" href="electroni.html" target="_blank">Open Electroni</a>
@@ -47,6 +70,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+<script src="electroni-mail.js"></script>
 <script>
 const OWNER_KEY="Electroni_git_owner",REPO_KEY="Electroni_git_repo",TOKEN_KEY="Electroni_git_token";
 const DEFAULT_OWNER="yacob247",DEFAULT_REPO="yacob247.github.io",COURSE_PATH="electroni/course-data.js";
@@ -56,8 +80,25 @@ function esc(v){return String(v??"").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&
 function slugify(v){return String(v||"").toLowerCase().trim().replace(/[^a-z0-9\s-]/g,"").replace(/\s+/g,"-").replace(/-+/g,"-").replace(/^-|-$/g,"")}
 function status(text,cls=""){const el=document.getElementById("status");el.textContent=text;el.className="status "+cls}function toast(msg,type=""){const el=document.getElementById("toast");el.textContent=msg;el.className="toast show "+type;setTimeout(()=>el.className="toast",2600)}function markDirty(){dirty=true;status("Unsaved local changes","err")}
 function connectGitHub(){const o=prompt("GitHub owner",owner())||owner();const r=prompt("GitHub repo",repo())||repo();const t=prompt("GitHub token",token())||token();localStorage.setItem(OWNER_KEY,o);localStorage.setItem(REPO_KEY,r);if(t)localStorage.setItem(TOKEN_KEY,t);status(t?`Connected: ${o}/${r}`:"Token missing",t?"ok":"err")}
-async function pullCourses(){if(!token())connectGitHub();if(!token())return toast("GitHub token required","error");status("Pulling from GitHub...");try{const res=await fetch(`https://api.github.com/repos/${owner()}/${repo()}/contents/${COURSE_PATH}?cb=${Date.now()}`,{headers:headers()});const file=await res.json();if(!res.ok)throw new Error(file.message||res.statusText);remoteSha=file.sha;const text=decodeURIComponent(escape(atob(file.content)));const loaded=new Function("window",`${text}; return window.Electroni_COURSE_DATA || {subjects:[], schoolCodes:[]};`)({});data=JSON.parse(JSON.stringify(loaded||{}));data.subjects ||= [];data.schoolCodes ||= [];activeSlug=data.subjects[0]?.slug||"";dirty=false;status(`Live: ${COURSE_PATH}`,"ok");renderList();renderEditor();toast(`Pulled ${data.subjects.length} subjects`,"success")}catch(e){status("Pull failed","err");toast(e.message,"error")}}
-async function publishCourses(){if(!token())connectGitHub();if(!token())return toast("GitHub token required","error");saveSubject(false);status("Publishing...");try{if(!remoteSha){const latest=await fetch(`https://api.github.com/repos/${owner()}/${repo()}/contents/${COURSE_PATH}?cb=${Date.now()}`,{headers:headers()});if(latest.ok)remoteSha=(await latest.json()).sha}const payload={message:"Electroni Admin: update course data",content:btoa(unescape(encodeURIComponent(serializeCourses())))};if(remoteSha)payload.sha=remoteSha;const res=await fetch(`https://api.github.com/repos/${owner()}/${repo()}/contents/${COURSE_PATH}`,{method:"PUT",headers:headers(),body:JSON.stringify(payload)});const out=await res.json();if(!res.ok)throw new Error(out.message||res.statusText);remoteSha=out.content?.sha||remoteSha;await saveCoursesToFirestore().catch(error=>console.warn("Course Firestore publish skipped:",error));dirty=false;status(`Published: ${COURSE_PATH} and Firestore`,"ok");toast("Published to GitHub and Firestore","success")}catch(e){status("Publish failed","err");toast(e.message,"error")}}
+async function pullCourses(){if(!token())connectGitHub();if(!token())return toast("GitHub token required","error");status("Pulling from GitHub...");try{const res=await fetch(`https://api.github.com/repos/${owner()}/${repo()}/contents/${COURSE_PATH}?cb=${Date.now()}`,{headers:headers()});const file=await res.json();if(!res.ok)throw new Error(file.message||res.statusText);remoteSha=file.sha;const text=decodeURIComponent(escape(atob(file.content.replace(/\n/g, ''))));const loaded=new Function("window",`${text}; return window.Electroni_COURSE_DATA || {subjects:[], schoolCodes:[]};`)({});data=JSON.parse(JSON.stringify(loaded||{}));data.subjects ||= [];data.schoolCodes ||= [];activeSlug=data.subjects[0]?.slug||"";dirty=false;status(`Live: ${COURSE_PATH}`,"ok");renderList();renderEditor();toast(`Pulled ${data.subjects.length} subjects`,"success")}catch(e){status("Pull failed","err");toast(e.message,"error")}}
+async function publishCourses(){if(!token())connectGitHub();if(!token())return toast("GitHub token required","error");saveSubject(false);status("Publishing...");try{if(!remoteSha){const latest=await fetch(`https://api.github.com/repos/${owner()}/${repo()}/contents/${COURSE_PATH}?cb=${Date.now()}`,{headers:headers()});if(latest.ok)remoteSha=(await latest.json()).sha}const payload={message:"Electroni Admin: update course data",content:btoa(unescape(encodeURIComponent(serializeCourses())))};if(remoteSha)payload.sha=remoteSha;const res=await fetch(`https://api.github.com/repos/${owner()}/${repo()}/contents/${COURSE_PATH}`,{method:"PUT",headers:headers(),body:JSON.stringify(payload)});const out=await res.json();if(!res.ok)throw new Error(out.message||res.statusText);remoteSha=out.content?.sha||remoteSha;await saveCoursesToFirestore().catch(error=>console.warn("Course Firestore publish skipped:",error));await ensureSubjectPagesExist();dirty=false;status(`Published: ${COURSE_PATH} and Firestore`,"ok");toast("Published to GitHub and Firestore","success")}catch(e){status("Publish failed","err");toast(e.message,"error")}}
+async function ensureSubjectPagesExist(){
+  for(const subject of data.subjects||[]){
+    const path = `electroni/${subject.slug}.html`;
+    try {
+      const check = await fetch(`https://api.github.com/repos/${owner()}/${repo()}/contents/${path}`, {headers:headers()});
+      if(check.status === 404) {
+        const html = `<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="UTF-8">\n<title>${subject.title} - Electroni</title>\n<link rel="stylesheet" href="course.css">\n</head>\n<body data-subject="${subject.slug}">\n<script src="course-shell.js"><\/script>\n</body>\n</html>`;
+        await fetch(`https://api.github.com/repos/${owner()}/${repo()}/contents/${path}`, {
+          method:"PUT", headers:headers(), body:JSON.stringify({
+            message: `Create ${subject.slug}.html page`,
+            content: btoa(html)
+          })
+        });
+      }
+    } catch(e){ console.warn("Failed to check/create subject page", path, e); }
+  }
+}
 function serializeCourses(){return `window.Electroni_COURSE_DATA = ${JSON.stringify(data,null,2)};\n`}
 async function saveCoursesToFirestore(){const db=await getDb();if(!db)return;await db.collection("Electroni_course_data").doc("active").set({subjects:data.subjects||[],schoolCodes:data.schoolCodes||[],updatedAtLocal:new Date().toISOString(),updatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true});for(const subject of data.subjects||[]){if(subject.slug)await db.collection("Electroni_subjects").doc(subject.slug).set({...subject,updatedAtLocal:new Date().toISOString(),updatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true})}}
 function renderList(){if(activeAdminView==="applications")return renderApplicationList();const q=document.getElementById("search").value.toLowerCase();const subjects=data.subjects.filter(s=>[s.title,s.slug,s.area,s.year].some(v=>String(v||"").toLowerCase().includes(q)));document.getElementById("count").textContent=`${subjects.length} of ${data.subjects.length} subjects`;document.getElementById("list").innerHTML=subjects.length?subjects.map(s=>`<div class="item ${s.slug===activeSlug?"active":""}" onclick="selectSubject('${esc(s.slug)}')"><strong>${esc(s.title||s.slug)}</strong><span>${esc(s.year||"")} / ${esc(s.area||"")} / ${(s.topics||[]).length} topics</span></div>`).join(""):`<div class="empty">No subjects found.</div>`}
@@ -92,6 +133,11 @@ async function getDb(){
     await new Promise(resolve => {
       const unsubscribe = auth.onAuthStateChanged(user => {
         unsubscribe();
+        if(user && user.email === "envizionupdates@gmail.com") { // Example admin check or just check if logged in
+          document.body.style.display = 'grid'; // Admin verified
+        } else {
+          document.body.innerHTML = '<div style="padding:40px;text-align:center"><h2>Admin Access Only</h2><p>Please log in with an admin account.</p><a href="login.html">Login</a></div>';
+        }
         resolve(user);
       });
     });
@@ -380,7 +426,9 @@ async function setApplicationStatus(id, nextStatus){
   renderApplications();
 }
 window.addEventListener("beforeunload",e=>{if(dirty){e.preventDefault();e.returnValue=""}});if(token())status(`Connected: ${owner()}/${repo()}`,"ok");
+// Hide body initially to prevent unauthorized access flickering
+document.body.style.display = 'none';
+getDb(); // trigger auth check
 </script>
-<script src="electroni-mail.js"></script>
 </body>
 </html>
