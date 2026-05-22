@@ -18,7 +18,7 @@ window.Electroni_COURSE_DATA = {
           "code": "CAMBRIDGE-MA",
           "title": "Cambridge - Mathematics Advanced",
           "lessonText": "This lesson is backed by the linked PDF material. Open the reading, complete your notes, then mark this topic through your progress tools.",
-          "textbook": "../Year%2012%20Material/Cambridge%20-%20Mathematics%20Advanced.pdf",
+          "textbook": "https://drive.google.com/file/d/1c7AJQ2V74XTx8zsTLh-m3dAwCrCpb2Lw/view?usp=drive_link",
           "resources": [
             {
               "type": "Textbook",
