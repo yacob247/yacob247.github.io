@@ -1,670 +1,622 @@
-// ==========================================================================
-// 1. MULTITHREADED WEB WORKER CODE (Embedded as a string for self-containment)
-// ==========================================================================
-const workerCode = `
-    self.onmessage = function(e) {
-        const { id, buffer, w, h, tolerancePercent, featherAmount, seedPoint } = e.data;
-        const data = new Uint8ClampedArray(buffer); // Reconstruct array from ArrayBuffer
+    /**
+         * Core Application Logic for AutoRemove Pro
+         * Consolidated into a single file for robust execution and cross-origin safety.
+         */
 
-        const mappedTol = (tolerancePercent / 100) * 442;
-        const tolSq = mappedTol * mappedTol;
+        // Application State
+        const state = {
+            images: [], // { id, originalFile, originalDataUrl, processedDataUrl, blob, name }
+            settings: {
+                tolerance: 15,
+                feathering: 2,
+                bgColor: 'transparent', // 'transparent', '#ffffff', etc.
+                shadow: false,
+                shadowVal: 15,
+                size: 'original',
+                format: 'png',
+                prefix: '',
+                trim: true
+            },
+            isProcessing: false,
+            worker: null
+        };
 
-        const queue = new Int32Array(w * h);
-        const visited = new Uint8Array(w * h);
-        let head = 0, tail = 0;
-        let tR = 0, tG = 0, tB = 0;
+        // DOM Elements
+        const DOM = {
+            uploadContainer: document.getElementById('upload-container'),
+            fileInput: document.getElementById('file-input'),
+            workspace: document.getElementById('workspace'),
+            imageGrid: document.getElementById('image-grid'),
+            addMoreInput: document.getElementById('add-more-input'),
+            imageCount: document.getElementById('image-count'),
+            
+            // Settings Controls
+            tolSlider: document.getElementById('tolerance-slider'),
+            tolVal: document.getElementById('tolerance-val'),
+            featherSlider: document.getElementById('feather-slider'),
+            featherVal: document.getElementById('feather-val'),
+            bgBtns: document.querySelectorAll('.bg-btn'),
+            customBg: document.getElementById('custom-bg-color'),
+            shadowToggle: document.getElementById('shadow-toggle'),
+            shadowSlider: document.getElementById('shadow-slider'),
+            sizeSelect: document.getElementById('size-select'),
+            trimToggle: document.getElementById('trim-toggle'),
+            formatSelect: document.getElementById('format-select'),
+            prefixInput: document.getElementById('file-prefix'),
+            
+            // Actions
+            clearBtn: document.getElementById('clear-btn'),
+            downloadBtn: document.getElementById('download-zip-btn'),
+            progressContainer: document.getElementById('progress-container'),
+            progressBar: document.getElementById('progress-bar'),
 
-        if (seedPoint) {
-            const seedX = Math.min(w - 1, Math.max(0, Math.floor(seedPoint.x * w)));
-            const seedY = Math.min(h - 1, Math.max(0, Math.floor(seedPoint.y * h)));
-            const seedIdx = seedY * w + seedX;
-            tR = data[seedIdx * 4];
-            tG = data[seedIdx * 4 + 1];
-            tB = data[seedIdx * 4 + 2];
-            queue[tail++] = seedIdx;
-            visited[seedIdx] = 1;
-        } else {
-            tR = data[0]; tG = data[1]; tB = data[2];
-            // Grab edges
-            for (let x = 0; x < w; x++) { queue[tail++] = x; queue[tail++] = (h - 1) * w + x; }
-            for (let y = 1; y < h - 1; y++) { queue[tail++] = y * w; queue[tail++] = y * w + w - 1; }
-            for (let i = 0; i < tail; i++) { visited[queue[i]] = 1; }
-        }
+            // Comparison Modal
+            modal: document.getElementById('compare-modal'),
+            modalContent: document.getElementById('compare-modal-content'),
+            closeBtn: document.getElementById('close-modal-btn'),
+            compOriginal: document.getElementById('compare-original'),
+            compProcessed: document.getElementById('compare-processed'),
+            compSlider: document.getElementById('compare-slider'),
+            compLine: document.getElementById('compare-line')
+        };
 
-        // Flood fill algorithm to detect and remove background
-        while (head < tail) {
-            const idx = queue[head++];
-            const pIdx = idx * 4;
-            const r = data[pIdx], g = data[pIdx + 1], b = data[pIdx + 2];
-            const distSq = (r - tR)**2 + (g - tG)**2 + (b - tB)**2;
+        // --- 1. WEB WORKER DEFINITION (Inline to avoid multiple files) ---
+        // This worker handles the CPU-intensive pixel manipulation off the main thread.
+        const workerCode = `
+            self.onmessage = function(e) {
+                const { id, imageData, tolerance, feathering, trim } = e.data;
+                const data = imageData.data;
+                const width = imageData.width;
+                const height = imageData.height;
 
-            if (distSq <= tolSq) {
-                data[pIdx + 3] = 0; // Set Alpha (transparency) to 0
-                const x = idx % w, y = Math.floor(idx / w);
-                if (x > 0 && !visited[idx - 1]) { visited[idx - 1] = 1; queue[tail++] = idx - 1; }
-                if (x < w - 1 && !visited[idx + 1]) { visited[idx + 1] = 1; queue[tail++] = idx + 1; }
-                if (y > 0 && !visited[idx - w]) { visited[idx - w] = 1; queue[tail++] = idx - w; }
-                if (y < h - 1 && !visited[idx + w]) { visited[idx + w] = 1; queue[tail++] = idx + w; }
-            }
-        }
+                // 1. Determine Background Color by sampling corners
+                const corners = [
+                    0, // Top-Left
+                    (width - 1) * 4, // Top-Right
+                    (height - 1) * width * 4, // Bottom-Left
+                    ((height - 1) * width + (width - 1)) * 4 // Bottom-Right
+                ];
+                
+                // Average the corners to find a solid background baseline
+                let rSum = 0, gSum = 0, bSum = 0;
+                corners.forEach(idx => {
+                    rSum += data[idx]; gSum += data[idx+1]; bSum += data[idx+2];
+                });
+                const bgR = rSum / 4; const bgG = gSum / 4; const bgB = bSum / 4;
 
-        // Fast Box Blur Feathering for clean edges
-        if (featherAmount > 0) {
-            for (let f = 0; f < featherAmount; f++) {
-                const outAlpha = new Uint8Array(w * h);
-                for (let y = 0; y < h; y++) {
-                    for (let x = 0; x < w; x++) {
-                        const idx = (y * w + x) * 4;
-                        if (y === 0 || x === 0 || y === h - 1 || x === w - 1) {
-                            outAlpha[y * w + x] = data[idx + 3]; continue;
+                // Track bounds for auto-trimming
+                let minX = width, minY = height, maxX = 0, maxY = 0;
+
+                // 2. Process Pixels (Color Distance)
+                const maxDistance = 441.67; // Math.sqrt(255^2 * 3)
+
+                for (let y = 0; y < height; y++) {
+                    for (let x = 0; x < width; x++) {
+                        const i = (y * width + x) * 4;
+                        const r = data[i], g = data[i+1], b = data[i+2], a = data[i+3];
+                        
+                        if (a === 0) continue; // Already transparent
+
+                        const distance = Math.sqrt(Math.pow(r - bgR, 2) + Math.pow(g - bgG, 2) + Math.pow(b - bgB, 2));
+                        const normalizedDist = (distance / maxDistance) * 100;
+
+                        if (normalizedDist <= tolerance) {
+                            data[i+3] = 0; // Fully transparent
+                        } else if (normalizedDist <= tolerance + feathering) {
+                            // Feathering: Smooth gradient for edges
+                            const factor = (normalizedDist - tolerance) / feathering;
+                            data[i+3] = Math.floor(255 * factor);
                         }
-                        let sum = data[idx - 4 + 3] + data[idx + 4 + 3] + data[idx - w * 4 + 3] + data[idx + w * 4 + 3] + (data[idx + 3] * 4);
-                        outAlpha[y * w + x] = sum / 8;
+
+                        // Update Bounds if pixel is not transparent
+                        if (data[i+3] > 10) {
+                            if (x < minX) minX = x;
+                            if (x > maxX) maxX = x;
+                            if (y < minY) minY = y;
+                            if (y > maxY) maxY = y;
+                        }
                     }
                 }
-                for (let i = 0; i < w * h; i++) { data[i * 4 + 3] = outAlpha[i]; }
-            }
-        }
 
-        // Send processed buffer back to main thread via fast transfer
-        self.postMessage({ id, buffer: data.buffer, w, h }, [data.buffer]);
-    };
-`;
+                // Default bounds if empty
+                if (minX > maxX) { minX = 0; maxX = width; minY = 0; maxY = height; }
 
-// ==========================================================================
-// 2. SETUP THE RUNNING WEB WORKER
-// ==========================================================================
-const workerBlob = new Blob([workerCode], { type: "text/javascript" });
-const workerUrl = window.URL.createObjectURL(workerBlob);
-const bgWorker = new Worker(workerUrl);
-
-// ==========================================================================
-// 3. APPLICATION STATE MANAGEMENT
-// ==========================================================================
-let images = [];
-let isProcessingAlphaQueue = false;
-let isProcessingRenderQueue = false;
-
-// Global settings configurations
-const settings = {
-    tolerance: 10,
-    feather: 2,
-    bgColor: 'transparent',
-    bgHex: '#ffffff', // Active color selection fallback
-    shadowEnabled: false,
-    shadowBlur: 15,
-    format: 'png', // png or jpeg
-    jpegQuality: 0.9,
-    size: 'original', // original, 1080, 800
-    prefix: ''
-};
-
-// ==========================================================================
-// 4. CACHED DOM ELEMENTS
-// ==========================================================================
-const DOM = {
-    uploadContainer: document.getElementById('upload-container'),
-    workspace: document.getElementById('workspace'),
-    fileInput: document.getElementById('file-input'),
-    addMoreInput: document.getElementById('add-more-input'),
-    imageGrid: document.getElementById('image-grid'),
-    addMoreCard: document.getElementById('add-more-card'),
-    clearBtn: document.getElementById('clear-btn'),
-    downloadZipBtn: document.getElementById('download-zip-btn'),
-    progressContainer: document.getElementById('progress-container'),
-    progressBar: document.getElementById('progress-bar'),
-    // Modals
-    modal: document.getElementById('compare-modal'),
-    modalContent: document.getElementById('compare-modal-content'),
-    modalClose: document.getElementById('close-modal-btn'),
-    compWrapper: document.getElementById('compare-wrapper'),
-    compOrig: document.getElementById('compare-original'),
-    compProc: document.getElementById('compare-processed'),
-    compSlider: document.getElementById('compare-slider'),
-    compLine: document.getElementById('compare-line'),
-    labelOriginal: document.getElementById('label-original'),
-    labelProcessed: document.getElementById('label-processed')
-};
-
-// ==========================================================================
-// 5. EVENT LISTENERS INITIALIZATION
-// ==========================================================================
-function initListeners() {
-    // Drag & Drop / File Upload Actions
-    DOM.uploadContainer.addEventListener('click', () => DOM.fileInput.click());
-    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(evt => {
-        DOM.uploadContainer.addEventListener(evt, e => e.preventDefault());
-    });
-    DOM.uploadContainer.addEventListener('drop', e => {
-        if (e.dataTransfer.files) handleFiles(e.dataTransfer.files);
-    });
-    DOM.fileInput.addEventListener('change', e => handleFiles(e.target.files));
-    DOM.addMoreInput.addEventListener('change', e => handleFiles(e.target.files));
-    DOM.clearBtn.addEventListener('click', clearAll);
-    DOM.downloadZipBtn.addEventListener('click', downloadZip);
-
-    // Tolerance Adjustment
-    document.getElementById('tolerance-slider').addEventListener('input', (e) => {
-        settings.tolerance = parseInt(e.target.value);
-        document.getElementById('tolerance-val').textContent = settings.tolerance + '%';
-        triggerPhase1(); // Needs full re-extraction
-    });
-
-    // Feathering Adjustment
-    document.getElementById('feather-slider').addEventListener('input', (e) => {
-        settings.feather = parseInt(e.target.value);
-        document.getElementById('feather-val').textContent = settings.feather + 'px';
-        triggerPhase1(); // Needs full re-extraction
-    });
-
-    // Solid/Transparent Background Color Selection
-    const bgBtns = document.querySelectorAll('.bg-btn');
-    const customBgInput = document.getElementById('custom-bg-color');
-    
-    function updateBgSelection(selectedBtn) {
-        bgBtns.forEach(b => {
-            b.classList.remove('ring-2', 'ring-blue-500', 'ring-offset-1');
-            b.classList.add('border-slate-300');
-        });
-        selectedBtn.classList.add('ring-2', 'ring-blue-500', 'ring-offset-1');
-        selectedBtn.classList.remove('border-slate-300');
-    }
-
-    bgBtns.forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            settings.bgColor = e.target.dataset.bg;
-            updateBgSelection(e.target);
-            checkFormatCompatibility();
-            triggerPhase2(); // Only needs visual re-render
-        });
-    });
-
-    customBgInput.addEventListener('input', (e) => {
-        settings.bgColor = e.target.value;
-        settings.bgHex = e.target.value;
-        updateBgSelection(customBgInput.parentElement);
-        checkFormatCompatibility();
-        triggerPhase2();
-    });
-
-    // Drop Shadow Toggles
-    const shadowToggle = document.getElementById('shadow-toggle');
-    const shadowSlider = document.getElementById('shadow-slider');
-    shadowToggle.addEventListener('change', (e) => {
-        settings.shadowEnabled = e.target.checked;
-        shadowSlider.disabled = !settings.shadowEnabled;
-        shadowSlider.classList.toggle('opacity-50', !settings.shadowEnabled);
-        triggerPhase2();
-    });
-    shadowSlider.addEventListener('input', (e) => {
-        settings.shadowBlur = parseInt(e.target.value);
-        triggerPhase2();
-    });
-
-    // Output File Format and Sizing Config
-    const formatSelect = document.getElementById('format-select');
-    const qualityContainer = document.getElementById('quality-container');
-    const qualitySlider = document.getElementById('quality-slider');
-    
-    formatSelect.addEventListener('change', (e) => {
-        settings.format = e.target.value;
-        qualityContainer.classList.toggle('hidden', settings.format !== 'jpeg');
-        checkFormatCompatibility();
-        triggerPhase2();
-    });
-
-    qualitySlider.addEventListener('input', (e) => {
-        settings.jpegQuality = parseInt(e.target.value) / 100;
-        document.getElementById('quality-val').textContent = e.target.value + '%';
-        triggerPhase2();
-    });
-
-    document.getElementById('size-select').addEventListener('change', (e) => {
-        settings.size = e.target.value;
-        triggerPhase2();
-    });
-
-    document.getElementById('file-prefix').addEventListener('input', (e) => {
-        settings.prefix = e.target.value;
-    });
-
-    // Comparison Modal Drag and Drop Slider UI
-    DOM.modalClose.addEventListener('click', closeModal);
-    
-    const handleSliderMove = (val) => {
-        DOM.compProc.style.clipPath = `polygon(0 0, ${val}% 0, ${val}% 100%, 0% 100%)`;
-        DOM.compLine.style.left = `${val}%`;
-        
-        // Gradually fade out original/processed label overlays when sliding starts
-        const opacityVal = Math.max(0, 1 - (Math.abs(50 - val) / 30));
-        DOM.labelOriginal.style.opacity = opacityVal;
-        DOM.labelProcessed.style.opacity = opacityVal;
-    };
-
-    DOM.compSlider.addEventListener('input', (e) => handleSliderMove(e.target.value));
-    DOM.compSlider.addEventListener('change', (e) => handleSliderMove(e.target.value));
-}
-
-function checkFormatCompatibility() {
-    // JPEG doesn't support transparency. Defaults to white if transparent is selected.
-    if (settings.format === 'jpeg' && settings.bgColor === 'transparent') {
-        // Fallback handled gracefully in visual renderer step
-    }
-}
-
-// ==========================================================================
-// 6. PROCESSING SCHEDULER & PIPELINE
-// ==========================================================================
-let phase1Timeout;
-function triggerPhase1() {
-    clearTimeout(phase1Timeout);
-    phase1Timeout = setTimeout(() => {
-        images.forEach(img => { if(img.status !== 'processing_alpha') img.status = 'pending_alpha'; });
-        updateUI();
-        processAlphaQueue();
-    }, 400);
-}
-
-let phase2Timeout;
-function triggerPhase2() {
-    clearTimeout(phase2Timeout);
-    phase2Timeout = setTimeout(() => {
-        images.forEach(img => { if(img.status === 'done') img.status = 'pending_render'; });
-        updateUI();
-        processRenderQueue();
-    }, 200);
-}
-
-function handleFiles(files) {
-    const newFiles = Array.from(files).filter(file => file.type.startsWith('image/'));
-    if (newFiles.length === 0) return;
-
-    newFiles.forEach(file => {
-        images.push({
-            id: crypto.randomUUID(),
-            file: file,
-            originalUrl: URL.createObjectURL(file), // base
-            alphaDataUrl: null, // intermediate transparent image
-            processedUrl: null, // final customized image
-            status: 'pending_alpha', // pending_alpha, processing_alpha, pending_render, done, error
-            seedPoint: null,
-            w: 0, h: 0
-        });
-    });
-
-    updateUI();
-    processAlphaQueue();
-}
-
-function clearAll() {
-    images = [];
-    DOM.progressContainer.classList.add('hidden');
-    updateUI();
-}
-
-function updateUI() {
-    if (images.length === 0) {
-        DOM.uploadContainer.classList.remove('hidden');
-        DOM.workspace.classList.add('hidden');
-    } else {
-        DOM.uploadContainer.classList.add('hidden');
-        DOM.workspace.classList.remove('hidden');
-    }
-
-    const total = images.length;
-    const doneCount = images.filter(i => i.status === 'done').length;
-    const pendingCount = total - doneCount;
-
-    // Progress Bar Feedback
-    if (total > 0) {
-        DOM.progressContainer.classList.remove('hidden');
-        const percent = Math.round((doneCount / total) * 100);
-        DOM.progressBar.style.width = `${percent}%`;
-    }
-
-    if (doneCount > 0 && pendingCount === 0) {
-        DOM.downloadZipBtn.disabled = false;
-        DOM.downloadZipBtn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg> Download ZIP (${doneCount})`;
-    } else {
-        DOM.downloadZipBtn.disabled = true;
-        DOM.downloadZipBtn.innerHTML = pendingCount > 0 ? `Processing (${pendingCount} left)...` : `Download ZIP`;
-    }
-
-    renderGrid();
-}
-
-function renderGrid() {
-    const cards = DOM.imageGrid.querySelectorAll('.image-card');
-    cards.forEach(c => c.remove());
-
-    images.forEach(img => {
-        const card = document.createElement('div');
-        card.className = "image-card bg-white p-3 rounded-2xl border border-slate-200 shadow-sm flex flex-col relative group transition-all hover:shadow-md";
-        
-        let contentHTML = '';
-        if (img.status === 'done' && img.processedUrl) {
-            contentHTML = `<img src="${img.processedUrl}" class="w-full h-full object-contain pointer-events-none" alt="Processed Output">`;
-        } else if (img.status === 'error') {
-            contentHTML = `<div class="text-red-500 text-xs text-center font-bold">Failed</div>`;
-        } else {
-            contentHTML = `<div class="text-blue-500 text-xs text-center font-bold animate-pulse">Processing...</div>`;
-        }
-
-        // Determine grid checkerboard pattern background vs solid background
-        let gridBgClass = settings.bgColor === 'transparent' ? 'bg-checkerboard' : '';
-        let customBgStyle = settings.bgColor !== 'transparent' ? `background-color: ${settings.bgColor};` : '';
-
-        card.innerHTML = `
-            <button class="absolute -top-2 -right-2 bg-white border border-slate-200 text-slate-500 hover:text-red-500 hover:border-red-200 rounded-full w-7 h-7 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all z-20 shadow-sm" onclick="removeImg('${img.id}')" aria-label="Remove">&times;</button>
-            
-            <div class="aspect-square relative rounded-xl overflow-hidden ${gridBgClass} mb-3 shadow-inner group/target border border-slate-100" style="${customBgStyle}">
-                <div class="w-full h-full flex flex-col items-center justify-center absolute inset-0 z-0">${contentHTML}</div>
-                
-                <img src="${img.originalUrl}" class="original-target absolute inset-0 w-full h-full object-contain cursor-crosshair transition-opacity ${img.processedUrl ? 'opacity-0 group-hover/target:opacity-45' : 'opacity-100'} z-10" title="Click anywhere to target a custom background color" alt="Original">
-                
-                ${img.seedPoint ? `<div class="absolute top-1 left-1 bg-slate-900/80 backdrop-blur border border-white/20 text-white text-[9px] px-1.5 py-0.5 rounded z-20 pointer-events-none">Color Targeted</div>` : ''}
-                
-                ${img.status === 'done' ? `
-                    <div class="absolute inset-0 bg-slate-900/60 opacity-0 group-hover/target:opacity-100 transition-opacity flex items-center justify-center z-10">
-                        <button class="bg-white/20 hover:bg-white/40 backdrop-blur-md text-white font-bold text-xs py-1.5 px-3 rounded-full transition-colors flex items-center gap-1 shadow-lg" onclick="openModal('${img.id}')">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg> Compare
-                        </button>
-                    </div>
-                ` : ''}
-            </div>
-
-            <div class="flex items-center justify-between px-1 mt-auto">
-                <p class="text-[11px] text-slate-500 truncate font-medium max-w-[70%]" title="${img.file.name}">${img.file.name}</p>
-                ${img.status === 'done' ? `<button class="text-blue-600 hover:text-blue-800 text-[10px] font-bold px-2 py-1 rounded bg-blue-50 hover:bg-blue-100 transition-colors uppercase" onclick="downloadSingle('${img.id}')">Save</button>` : ''}
-            </div>
+                self.postMessage({ 
+                    id, 
+                    imageData, 
+                    bounds: { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 } 
+                }, [imageData.data.buffer]);
+            };
         `;
 
-        // Direct-Click Color targeted logic handler
-        const targetImg = card.querySelector('.original-target');
-        targetImg.addEventListener('click', (e) => {
-            const rect = e.currentTarget.getBoundingClientRect();
-            const x = (e.clientX - rect.left) / rect.width;
-            const y = (e.clientY - rect.top) / rect.height;
-            const reference = images.find(i => i.id === img.id);
-            if(reference) {
-                reference.seedPoint = {x, y};
-                triggerPhase1();
+        // Create the worker from the string Blob
+        const blob = new Blob([workerCode], { type: 'application/javascript' });
+        state.worker = new Worker(URL.createObjectURL(blob));
+
+        // --- 2. EVENT LISTENERS & UI LOGIC ---
+
+        // Drag & Drop
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            DOM.uploadContainer.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) { e.preventDefault(); e.stopPropagation(); }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            DOM.uploadContainer.addEventListener(eventName, () => {
+                DOM.uploadContainer.classList.add('border-blue-500', 'bg-blue-50/50');
+            });
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            DOM.uploadContainer.addEventListener(eventName, () => {
+                DOM.uploadContainer.classList.remove('border-blue-500', 'bg-blue-50/50');
+            });
+        });
+
+        DOM.uploadContainer.addEventListener('drop', (e) => handleFiles(e.dataTransfer.files));
+        DOM.fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+        DOM.addMoreInput.addEventListener('change', (e) => handleFiles(e.target.files));
+
+        DOM.uploadContainer.addEventListener('click', () => DOM.fileInput.click());
+
+        // Process newly added files
+        async function handleFiles(files) {
+            const validFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
+            if (validFiles.length === 0) return;
+
+            DOM.uploadContainer.classList.add('hidden');
+            DOM.workspace.classList.remove('hidden');
+
+            for (let file of validFiles) {
+                const id = 'img_' + Math.random().toString(36).substring(2, 9);
+                const dataUrl = await readFileAsDataURL(file);
+                
+                const imgObj = {
+                    id,
+                    file,
+                    name: file.name.split('.')[0], // Name without extension
+                    originalDataUrl: dataUrl,
+                    processedDataUrl: null,
+                    blob: null
+                };
+                
+                state.images.push(imgObj);
+                createGridItem(imgObj);
+            }
+            
+            updateImageCount();
+            processAllImages();
+        }
+
+        function readFileAsDataURL(file) {
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onload = (e) => resolve(e.target.result);
+                reader.readAsDataURL(file);
+            });
+        }
+
+        // --- 3. PROCESSING PIPELINE ---
+
+        // Debounce processing to prevent lag when sliding
+        let processTimeout;
+        function queueProcessing() {
+            clearTimeout(processTimeout);
+            processTimeout = setTimeout(() => processAllImages(), 300);
+        }
+
+        async function processAllImages() {
+            if (state.images.length === 0) return;
+            state.isProcessing = true;
+            DOM.downloadBtn.disabled = true;
+            DOM.progressContainer.classList.remove('hidden');
+            
+            let processedCount = 0;
+            updateProgress(0);
+
+            for (let imgObj of state.images) {
+                // Show loading spinner on item
+                const card = document.getElementById(`card-${imgObj.id}`);
+                const overlay = card.querySelector('.loading-overlay');
+                if(overlay) overlay.classList.remove('hidden');
+
+                try {
+                    await processSingleImage(imgObj);
+                } catch(e) {
+                    console.error("Error processing image:", e);
+                }
+
+                processedCount++;
+                updateProgress((processedCount / state.images.length) * 100);
+            }
+
+            state.isProcessing = false;
+            DOM.downloadBtn.disabled = false;
+            setTimeout(() => DOM.progressContainer.classList.add('hidden'), 1000);
+        }
+
+        function updateProgress(percent) {
+            DOM.progressBar.style.width = `${percent}%`;
+        }
+
+        function processSingleImage(imgObj) {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => {
+                    // 1. Draw to canvas to get raw pixel data
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                    
+                    // Optimization: max processing resolution to prevent memory crashes on massive files
+                    const MAX_DIM = 2000;
+                    let pWidth = img.width; let pHeight = img.height;
+                    if(pWidth > MAX_DIM || pHeight > MAX_DIM) {
+                        const ratio = Math.min(MAX_DIM / pWidth, MAX_DIM / pHeight);
+                        pWidth = Math.floor(pWidth * ratio);
+                        pHeight = Math.floor(pHeight * ratio);
+                    }
+
+                    canvas.width = pWidth;
+                    canvas.height = pHeight;
+                    ctx.drawImage(img, 0, 0, pWidth, pHeight);
+                    
+                    const imageData = ctx.getImageData(0, 0, pWidth, pHeight);
+
+                    // 2. Send to Web Worker
+                    const handleWorkerResponse = function(e) {
+                        if(e.data.id !== imgObj.id) return; // Ignore if not our image
+                        
+                        state.worker.removeEventListener('message', handleWorkerResponse);
+                        const processedData = e.data.imageData;
+                        const bounds = e.data.bounds;
+
+                        // 3. Post-Process via Canvas (Trim, Background, Shadow, Resize)
+                        applyFinalRender(imgObj, processedData, bounds, pWidth, pHeight).then(resolve);
+                    };
+
+                    state.worker.addEventListener('message', handleWorkerResponse);
+                    state.worker.postMessage({
+                        id: imgObj.id,
+                        imageData: imageData,
+                        tolerance: state.settings.tolerance,
+                        feathering: state.settings.feathering,
+                        trim: state.settings.trim
+                    }, [imageData.data.buffer]); // Transfer buffer for performance
+                };
+                img.src = imgObj.originalDataUrl;
+            });
+        }
+
+        function applyFinalRender(imgObj, imageData, bounds, origW, origH) {
+            return new Promise(resolve => {
+                // Determine target dimensions
+                let targetW = origW;
+                let targetH = origH;
+                
+                // Create temporary canvas with the removed background
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = origW;
+                tempCanvas.height = origH;
+                const tempCtx = tempCanvas.getContext('2d');
+                tempCtx.putImageData(imageData, 0, 0);
+
+                // Final Output Canvas
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+
+                // Determine Output Size (Scaling/Trimming logic)
+                if (state.settings.size !== 'original') {
+                    const boxSize = parseInt(state.settings.size);
+                    canvas.width = boxSize;
+                    canvas.height = boxSize;
+                } else if (state.settings.trim && bounds.w > 0 && bounds.h > 0) {
+                    // Trim output to subject
+                    canvas.width = bounds.w;
+                    canvas.height = bounds.h;
+                } else {
+                    canvas.width = origW;
+                    canvas.height = origH;
+                }
+
+                // Draw Background Color
+                if (state.settings.bgColor !== 'transparent') {
+                    ctx.fillStyle = state.settings.bgColor;
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                }
+
+                // Draw Image (with optional shadow and scaling)
+                ctx.save();
+                
+                if (state.settings.shadow && state.settings.bgColor !== 'transparent') {
+                    // Shadows only look good if we have a solid background or format is PNG
+                    ctx.shadowColor = 'rgba(0,0,0,0.5)';
+                    ctx.shadowBlur = parseInt(state.settings.shadowVal);
+                    ctx.shadowOffsetY = ctx.shadowBlur / 2;
+                }
+
+                // Calculate drawing coordinates
+                let dx = 0, dy = 0, dw = origW, dh = origH;
+                let sx = 0, sy = 0, sw = origW, sh = origH;
+
+                if (state.settings.trim) {
+                    sx = bounds.x; sy = bounds.y; sw = bounds.w; sh = bounds.h;
+                }
+
+                if (state.settings.size !== 'original') {
+                    const boxSize = parseInt(state.settings.size);
+                    // Fit inside square while maintaining aspect ratio
+                    const scale = Math.min(boxSize / sw, boxSize / sh) * 0.9; // 90% to leave a slight margin
+                    dw = sw * scale;
+                    dh = sh * scale;
+                    dx = (boxSize - dw) / 2;
+                    dy = (boxSize - dh) / 2;
+                } else if (state.settings.trim) {
+                    dw = sw; dh = sh;
+                }
+
+                ctx.drawImage(tempCanvas, sx, sy, sw, sh, dx, dy, dw, dh);
+                ctx.restore();
+
+                // Convert to Blob
+                const mimeType = state.settings.format === 'jpeg' ? 'image/jpeg' : 'image/png';
+                const quality = 0.92;
+
+                canvas.toBlob((blob) => {
+                    imgObj.blob = blob;
+                    imgObj.processedDataUrl = URL.createObjectURL(blob);
+                    
+                    // Update UI Image
+                    const imgEl = document.getElementById(`img-${imgObj.id}`);
+                    if (imgEl) {
+                        imgEl.src = imgObj.processedDataUrl;
+                        // Determine grid background based on setting
+                        if (state.settings.bgColor === 'transparent') {
+                            imgEl.parentElement.classList.add('bg-checkerboard');
+                            imgEl.parentElement.style.backgroundColor = '';
+                        } else {
+                            imgEl.parentElement.classList.remove('bg-checkerboard');
+                            imgEl.parentElement.style.backgroundColor = state.settings.bgColor;
+                        }
+                    }
+
+                    // Hide Loader
+                    const overlay = document.getElementById(`card-${imgObj.id}`).querySelector('.loading-overlay');
+                    if(overlay) overlay.classList.add('hidden');
+
+                    resolve();
+                }, mimeType, quality);
+            });
+        }
+
+        // --- 4. UI BUILDERS & SETTINGS BINDINGS ---
+
+        function createGridItem(imgObj) {
+            const div = document.createElement('div');
+            div.id = `card-${imgObj.id}`;
+            div.className = 'relative rounded-xl border border-slate-200 overflow-hidden shadow-sm aspect-square group bg-checkerboard cursor-pointer hover:ring-2 hover:ring-blue-500 transition-all';
+            
+            div.innerHTML = `
+                <img id="img-${imgObj.id}" src="" class="w-full h-full object-contain p-2" alt="Processed">
+                
+                <div class="absolute inset-0 bg-slate-900/60 flex items-center justify-center flex-col gap-2 img-card-overlay">
+                    <button class="bg-white text-slate-800 font-semibold px-4 py-1.5 rounded-full text-xs shadow-lg hover:bg-blue-50 transition-colors compare-trigger">
+                        Compare
+                    </button>
+                    <button class="text-white hover:text-red-400 text-xs mt-1 transition-colors delete-trigger">
+                        Remove
+                    </button>
+                </div>
+
+                <div class="loading-overlay absolute inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center">
+                    <div class="loader"></div>
+                </div>
+            `;
+
+            // Insert before the "Add More" card
+            DOM.imageGrid.insertBefore(div, document.getElementById('add-more-card'));
+
+            // Bind interactions
+            div.querySelector('.compare-trigger').addEventListener('click', (e) => {
+                e.stopPropagation();
+                openCompareModal(imgObj);
+            });
+
+            div.querySelector('.delete-trigger').addEventListener('click', (e) => {
+                e.stopPropagation();
+                removeImage(imgObj.id);
+            });
+        }
+
+        function removeImage(id) {
+            state.images = state.images.filter(img => img.id !== id);
+            const card = document.getElementById(`card-${id}`);
+            if(card) card.remove();
+            updateImageCount();
+            if(state.images.length === 0) {
+                DOM.workspace.classList.add('hidden');
+                DOM.uploadContainer.classList.remove('hidden');
+            }
+        }
+
+        function updateImageCount() {
+            DOM.imageCount.textContent = state.images.length;
+        }
+
+        // Bind Settings UI
+        DOM.tolSlider.addEventListener('input', (e) => {
+            DOM.tolVal.textContent = e.target.value + '%';
+            state.settings.tolerance = parseInt(e.target.value);
+            queueProcessing();
+        });
+
+        DOM.featherSlider.addEventListener('input', (e) => {
+            DOM.featherVal.textContent = e.target.value + 'px';
+            state.settings.feathering = parseInt(e.target.value);
+            queueProcessing();
+        });
+
+        DOM.bgBtns.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                // Update active state visually
+                DOM.bgBtns.forEach(b => b.classList.remove('ring-2', 'ring-blue-500', 'ring-offset-2', 'border-blue-500'));
+                DOM.customBg.parentElement.classList.remove('ring-2', 'ring-blue-500', 'ring-offset-2');
+                
+                const target = e.target;
+                target.classList.add('ring-2', 'ring-blue-500', 'ring-offset-2', 'border-blue-500');
+                
+                state.settings.bgColor = target.dataset.bg;
+                queueProcessing();
+            });
+        });
+
+        DOM.customBg.addEventListener('input', (e) => {
+            DOM.bgBtns.forEach(b => b.classList.remove('ring-2', 'ring-blue-500', 'ring-offset-2', 'border-blue-500'));
+            DOM.customBg.parentElement.classList.add('ring-2', 'ring-blue-500', 'ring-offset-2');
+            state.settings.bgColor = e.target.value;
+            queueProcessing();
+        });
+
+        DOM.shadowToggle.addEventListener('change', (e) => {
+            state.settings.shadow = e.target.checked;
+            DOM.shadowSlider.disabled = !e.target.checked;
+            DOM.shadowSlider.classList.toggle('opacity-50', !e.target.checked);
+            DOM.shadowSlider.classList.toggle('cursor-not-allowed', !e.target.checked);
+            queueProcessing();
+        });
+
+        DOM.shadowSlider.addEventListener('input', (e) => {
+            state.settings.shadowVal = e.target.value;
+            queueProcessing(); // Will debounce
+        });
+
+        DOM.sizeSelect.addEventListener('change', (e) => {
+            state.settings.size = e.target.value;
+            queueProcessing();
+        });
+
+        DOM.trimToggle.addEventListener('change', (e) => {
+            state.settings.trim = e.target.checked;
+            queueProcessing();
+        });
+
+        DOM.formatSelect.addEventListener('change', (e) => {
+            state.settings.format = e.target.value;
+            // Force solid background if JPEG is selected to avoid black backgrounds
+            if (e.target.value === 'jpeg' && state.settings.bgColor === 'transparent') {
+                document.querySelector('[data-bg="#ffffff"]').click(); 
+            }
+            queueProcessing();
+        });
+
+        DOM.prefixInput.addEventListener('input', (e) => {
+            state.settings.prefix = e.target.value;
+        });
+
+        DOM.clearBtn.addEventListener('click', () => {
+            state.images = [];
+            document.querySelectorAll('[id^="card-"]').forEach(el => el.remove());
+            DOM.workspace.classList.add('hidden');
+            DOM.uploadContainer.classList.remove('hidden');
+        });
+
+        // --- 5. COMPARISON MODAL LOGIC ---
+
+        function openCompareModal(imgObj) {
+            DOM.compOriginal.src = imgObj.originalDataUrl;
+            DOM.compProcessed.src = imgObj.processedDataUrl;
+            
+            // Set modal background based on setting
+            const wrapper = document.getElementById('compare-wrapper');
+            if(state.settings.bgColor === 'transparent') {
+                wrapper.classList.add('bg-checkerboard');
+                wrapper.style.backgroundColor = '';
+            } else {
+                wrapper.classList.remove('bg-checkerboard');
+                wrapper.style.backgroundColor = state.settings.bgColor;
+            }
+
+            // Reset Slider
+            DOM.compSlider.value = 50;
+            updateCompareSlider(50);
+
+            DOM.modal.classList.remove('hidden');
+            // Small delay for transition
+            requestAnimationFrame(() => {
+                DOM.modal.classList.remove('opacity-0');
+                DOM.modalContent.classList.remove('scale-95');
+            });
+        }
+
+        function closeCompareModal() {
+            DOM.modal.classList.add('opacity-0');
+            DOM.modalContent.classList.add('scale-95');
+            setTimeout(() => DOM.modal.classList.add('hidden'), 300);
+        }
+
+        DOM.closeBtn.addEventListener('click', closeCompareModal);
+        DOM.modal.addEventListener('click', (e) => {
+            if (e.target === DOM.modal) closeCompareModal();
+        });
+
+        DOM.compSlider.addEventListener('input', (e) => {
+            updateCompareSlider(e.target.value);
+        });
+
+        function updateCompareSlider(val) {
+            // Clip the original image to show only on the LEFT
+            DOM.compOriginal.style.clipPath = `polygon(0 0, ${val}% 0, ${val}% 100%, 0 100%)`;
+
+            // Clip the top image (Processed) from left edge to 'val' percentage.
+            // Meaning original shows on the LEFT, Processed shows on the RIGHT.
+            DOM.compProcessed.style.clipPath = `polygon(${val}% 0, 100% 0, 100% 100%, ${val}% 100%)`;
+            DOM.compLine.style.left = `${val}%`;
+            
+            // Fade labels slightly based on position
+            document.getElementById('label-original').style.opacity = val < 20 ? 0 : 1;
+            document.getElementById('label-processed').style.opacity = val > 80 ? 0 : 1;
+        }
+
+        // --- 6. ZIP DOWNLOAD LOGIC ---
+
+        DOM.downloadBtn.addEventListener('click', async () => {
+            if (state.images.length === 0 || state.isProcessing) return;
+
+            DOM.downloadBtn.innerHTML = `<div class="loader w-4 h-4 border-2"></div> Zipping...`;
+            DOM.downloadBtn.disabled = true;
+
+            const zip = new JSZip();
+            const extension = state.settings.format === 'jpeg' ? 'jpg' : 'png';
+            const prefix = state.settings.prefix ? state.settings.prefix.trim() : '';
+
+            state.images.forEach((img, index) => {
+                if (!img.blob) return;
+                
+                // Construct Filename
+                let fileName = img.name;
+                if (prefix) fileName = `${prefix}${fileName}`;
+                
+                // Handle duplicate names
+                fileName = `${fileName}.${extension}`;
+                
+                zip.file(fileName, img.blob);
+            });
+
+            try {
+                const content = await zip.generateAsync({ type: "blob" });
+                const url = URL.createObjectURL(content);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `AutoRemove_Batch_${new Date().getTime()}.zip`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            } catch (err) {
+                console.error("ZIP Generation failed", err);
+                alert("Failed to generate ZIP file.");
+            } finally {
+                DOM.downloadBtn.innerHTML = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg> Download ZIP`;
+                DOM.downloadBtn.disabled = false;
             }
         });
-
-        DOM.imageGrid.insertBefore(card, DOM.addMoreCard);
-    });
-}
-
-// ==========================================================================
-// 7. PHASE 1: BACKGROUND REMOVAL (Web Worker Pipeline)
-// ==========================================================================
-async function processAlphaQueue() {
-    if (isProcessingAlphaQueue) return;
-    const nextIdx = images.findIndex(img => img.status === 'pending_alpha');
-    if (nextIdx === -1) {
-        updateUI();
-        return;
-    }
-
-    isProcessingAlphaQueue = true;
-    const img = images[nextIdx];
-    img.status = 'processing_alpha';
-    updateUI();
-
-    try {
-        const imgElement = new Image();
-        imgElement.crossOrigin = "Anonymous";
-        
-        await new Promise((resolve, reject) => {
-            imgElement.onload = resolve;
-            imgElement.onerror = reject;
-            imgElement.src = img.originalUrl;
-        });
-
-        const cvs = document.createElement("canvas");
-        let w = imgElement.width, h = imgElement.height;
-        const MAX_RES = 1600;
-        if (w > MAX_RES || h > MAX_RES) {
-            const ratio = Math.min(MAX_RES / w, MAX_RES / h);
-            w = Math.floor(w * ratio);
-            h = Math.floor(h * ratio);
-        }
-        cvs.width = w; cvs.height = h;
-
-        const ctx = cvs.getContext("2d");
-        ctx.drawImage(imgElement, 0, 0, w, h);
-        
-        const imgData = ctx.getImageData(0, 0, w, h);
-        bgWorker.postMessage({
-            id: img.id,
-            buffer: imgData.data.buffer,
-            w: w, h: h,
-            tolerancePercent: settings.tolerance,
-            featherAmount: settings.feather,
-            seedPoint: img.seedPoint
-        }, [imgData.data.buffer]);
-
-    } catch (err) {
-        console.error("Alpha extraction error:", err);
-        img.status = 'error';
-        isProcessingAlphaQueue = false;
-        processAlphaQueue();
-    }
-}
-
-// ==========================================================================
-// 8. PHASE 2: VISUAL RENDERING (Canvas Post-Processing)
-// ==========================================================================
-async function processRenderQueue() {
-    if (isProcessingRenderQueue) return;
-    const nextIdx = images.findIndex(img => img.status === 'pending_render');
-    if (nextIdx === -1) {
-        updateUI();
-        return;
-    }
-
-    isProcessingRenderQueue = true;
-    const img = images[nextIdx];
-
-    try {
-        const alphaImg = new Image();
-        await new Promise((resolve, reject) => {
-            alphaImg.onload = resolve;
-            alphaImg.onerror = reject;
-            alphaImg.src = img.alphaDataUrl;
-        });
-
-        const cvs = document.createElement("canvas");
-        const ctx = cvs.getContext("2d");
-
-        // Set output sizing constraints
-        let outW = img.w, outH = img.h;
-        if (settings.size !== 'original') {
-            outW = parseInt(settings.size);
-            outH = parseInt(settings.size);
-        }
-        cvs.width = outW; cvs.height = outH;
-
-        // Draw custom chosen background backplate
-        if (settings.bgColor !== 'transparent') {
-            ctx.fillStyle = settings.bgColor;
-            ctx.fillRect(0, 0, outW, outH);
-        } else if (settings.format === 'jpeg') {
-            // JPEGs cannot support transparent layers. Force White canvas
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(0, 0, outW, outH);
-        }
-
-        // Calculate dimensional scaling ratios
-        let drawW = img.w, drawH = img.h;
-        let drawX = 0, drawY = 0;
-
-        if (settings.size !== 'original') {
-            const ratio = Math.min(outW / img.w, outH / img.h) * 0.9; // 90% contain padding
-            drawW = img.w * ratio;
-            drawH = img.h * ratio;
-            drawX = (outW - drawW) / 2;
-            drawY = (outH - drawH) / 2;
-        }
-
-        // Apply Drop Shadows if active
-        if (settings.shadowEnabled) {
-            ctx.shadowColor = 'rgba(0, 0, 0, 0.4)';
-            ctx.shadowBlur = settings.shadowBlur;
-            ctx.shadowOffsetX = settings.shadowBlur / 3;
-            ctx.shadowOffsetY = settings.shadowBlur / 3;
-        }
-
-        // Draw subject above background and shadow layers
-        ctx.drawImage(alphaImg, drawX, drawY, drawW, drawH);
-        
-        // Reset canvas context states
-        ctx.shadowColor = 'transparent';
-
-        // Save generated URL
-        const mimeType = settings.format === 'jpeg' ? 'image/jpeg' : 'image/png';
-        img.processedUrl = cvs.toDataURL(mimeType, settings.jpegQuality);
-        img.status = 'done';
-
-    } catch (err) {
-        console.error("Rendering error:", err);
-        img.status = 'error';
-    } finally {
-        isProcessingRenderQueue = false;
-        processRenderQueue(); // Continue processing next in queue
-    }
-}
-
-// ==========================================================================
-// 9. DOWNLOAD UTILITIES
-// ==========================================================================
-window.removeImg = function(id) {
-    images = images.filter(img => img.id !== id);
-    updateUI();
-}
-
-function generateFileName(originalName, index) {
-    const ext = settings.format === 'jpeg' ? '.jpg' : '.png';
-    if (settings.prefix.trim() !== '') {
-        return `${settings.prefix.trim()}${index + 1}${ext}`;
-    }
-    return originalName.replace(/\.[^/.]+$/, "") + `-processed${ext}`;
-}
-
-window.downloadSingle = function(id) {
-    const index = images.findIndex(i => i.id === id);
-    const img = images[index];
-    if(img && img.processedUrl) {
-        const a = document.createElement("a");
-        a.href = img.processedUrl;
-        a.download = generateFileName(img.file.name, index);
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-    }
-}
-
-async function downloadZip() {
-    DOM.downloadZipBtn.disabled = true;
-    DOM.downloadZipBtn.innerText = "Zipping...";
-    
-    const zip = new JSZip();
-    let addedFiles = 0;
-
-    images.forEach((img, index) => {
-        if (img.status === 'done' && img.processedUrl) {
-            addedFiles++;
-            const base64Data = img.processedUrl.split(',')[1];
-            const fileName = generateFileName(img.file.name, index);
-            zip.file(fileName, base64Data, { base64: true });
-        }
-    });
-
-    if (addedFiles === 0) {
-        updateUI();
-        return;
-    }
-
-    try {
-        const content = await zip.generateAsync({ type: "blob" });
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(content);
-        a.download = settings.prefix ? `${settings.prefix.trim()}batch.zip` : "auto-remove-batch.zip";
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-    } catch (e) {
-        console.error("Zip generation failed:", e);
-    } finally {
-        updateUI();
-    }
-}
-
-// ==========================================================================
-// 10. COMPARISON SLIDER VIEW PORT BUILDER
-// ==========================================================================
-window.openModal = function(id) {
-    const img = images.find(i => i.id === id);
-    if (!img) return;
-
-    // Unhide modal container layout so width measurements are valid (prevents 0px container bug)
-    DOM.modal.classList.remove('hidden');
-
-    const tempImg = new Image();
-    tempImg.src = img.originalUrl;
-    tempImg.onload = function() {
-        const nativeW = tempImg.width;
-        const nativeH = tempImg.height;
-
-        const outerContainer = DOM.compWrapper.parentElement;
-        const maxAvailableW = outerContainer.clientWidth - 48; // p-6 outer offset
-        const maxAvailableH = window.innerHeight * 0.55; // Fit perfectly inside 55vh container limit
-
-        // Calculate dynamic proportions to prevent letterbox alignment failures
-        const scale = Math.min(maxAvailableW / nativeW, maxAvailableH / nativeH);
-        const displayW = Math.floor(nativeW * scale);
-        const displayH = Math.floor(nativeH * scale);
-
-        // Adjust interactive display surface to exact image dimensions
-        DOM.compWrapper.style.width = `${displayW}px`;
-        DOM.compWrapper.style.height = `${displayH}px`;
-
-        DOM.compOrig.src = img.originalUrl;
-        DOM.compProc.src = img.processedUrl;
-        
-        // Match chosen custom color background inside comparison modal
-        if(settings.bgColor === 'transparent') {
-            DOM.compWrapper.style.backgroundColor = '';
-            DOM.compWrapper.classList.add('bg-checkerboard');
-        } else {
-            DOM.compWrapper.style.backgroundColor = settings.bgColor;
-            DOM.compWrapper.classList.remove('bg-checkerboard');
-        }
-
-        DOM.compSlider.value = 50;
-        DOM.compProc.style.clipPath = `polygon(0 0, 50% 0, 50% 100%, 0% 100%)`;
-        DOM.compLine.style.left = `50%`;
-        DOM.labelOriginal.style.opacity = 1;
-        DOM.labelProcessed.style.opacity = 1;
-
-        // Apply slide animation transition trigger
-        setTimeout(() => {
-            DOM.modal.classList.remove('opacity-0');
-            DOM.modalContent.classList.remove('scale-95');
-        }, 10);
-    };
-}
-
-function closeModal() {
-    DOM.modal.classList.add('opacity-0');
-    DOM.modalContent.classList.add('scale-95');
-    setTimeout(() => {
-        DOM.modal.classList.add('hidden');
-        DOM.compOrig.src = '';
-        DOM.compProc.src = '';
-    }, 300);
-}
-
-// Start listeners instantly
-initListeners();
