@@ -1,4 +1,4 @@
-        /* Immersive Web App State Variables */
+         /* Immersive Web App State Variables */
         let currentFile = null;
         let audioCtx = null;
         let audioBuffer = null;
