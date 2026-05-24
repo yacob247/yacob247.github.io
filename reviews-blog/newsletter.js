@@ -225,7 +225,7 @@
       lastName,
       displayName,
       topics,
-      sourcePage: window.location.pathname.split('/').pop() || 'index.html',
+      sourcePage: window.location.pathname.split('/').pop() || 'reviews-blog/index.html',
       sourceUrl: window.location.href,
       updatedAtLocal: new Date().toISOString()
     };

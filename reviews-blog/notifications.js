@@ -58,15 +58,15 @@
   function getContentUrl(content) {
     if (content.type === 'blog') {
       const id = content.id || content.slug;
-      return absoluteUrl(`blog-post.html?id=${encodeURIComponent(id)}`);
+      return absoluteUrl(`reviews-blog/blog-post.html?id=${encodeURIComponent(id)}`);
     }
     if (content.url) return absoluteUrl(content.url);
-    return absoluteUrl(`game.html?id=${encodeURIComponent(content.id)}`);
+    return absoluteUrl(`reviews-blog/game.html?id=${encodeURIComponent(content.id)}`);
   }
 
   function getUnsubscribeUrl(subscriber) {
     const id = subscriberId(subscriber.email);
-    return absoluteUrl(`unsubscribe.html?id=${encodeURIComponent(id)}`);
+    return absoluteUrl(`reviews-blog/unsubscribe.html?id=${encodeURIComponent(id)}`);
   }
 
   function getTopicForContent(content) {
@@ -98,7 +98,7 @@
     const isBlog = content.type === 'blog';
     const title = content.title || (isBlog ? 'New Envizion blog post' : 'New Envizion game review');
     const url = getContentUrl(content);
-    const unsubscribeUrl = subscriber ? getUnsubscribeUrl(subscriber) : absoluteUrl('unsubscribe.html');
+    const unsubscribeUrl = subscriber ? getUnsubscribeUrl(subscriber) : absoluteUrl('reviews-blog/unsubscribe.html');
     const label = isBlog ? 'New blog post' : 'New game review';
     const subject = `${label}: ${title}`;
     const excerpt = content.excerpt || content.tagline || 'A new Envizion update is ready for you.';
