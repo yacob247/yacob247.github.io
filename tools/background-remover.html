@@ -61,113 +61,223 @@
         @keyframes fade-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .animate-fade-in { animation: fade-in 0.3s ease-out forwards; }
 
-        .glass-panel {
-            background: rgba(255, 255, 255, 0.85);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-        }
-
         /* Toasts */
         .toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 10px; }
         .toast {
             padding: 12px 20px; border-radius: 8px; background: #1e293b; color: white; font-size: 14px;
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); display: flex; items-center; gap: 8px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); display: flex; align-items: center; gap: 8px;
             animation: slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         }
         @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
         @keyframes slideOut { to { transform: translateX(100%); opacity: 0; } }
+
+        /* --- RESPONSIVE LAYOUT MAGIC --- */
+        /* Mobile Default: Flex Column with explicit visual ordering */
+        body {
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            overflow-x: hidden;
+            background-color: #f1f5f9;
+        }
+        .layout-logo      { order: 1; }
+        .layout-header    { order: 2; }
+        .layout-progress  { order: 3; }
+        .layout-ad        { order: 4; background-color: #f8fafc; border-bottom: 1px solid #e2e8f0; padding: 1rem; text-align: center; overflow: hidden; }
+        .layout-upload    { order: 5; }
+        .layout-sidebar   { order: 6; } /* Tools appear below Upload area */
+        .layout-workspace { order: 7; } /* Images appear below Tools */
+
+        /* Desktop Layout: CSS Grid mapping */
+        @media (min-width: 768px) {
+            body {
+                display: grid;
+                grid-template-columns: 20rem 1fr;
+                grid-template-rows: min-content min-content min-content minmax(0, 1fr);
+                height: 100vh;
+                overflow: hidden; /* Lock body scrolling on desktop */
+            }
+            .layout-logo {
+                grid-column: 1;
+                grid-row: 1;
+                border-right: 1px solid #e2e8f0;
+                border-bottom: 1px solid #f8fafc;
+            }
+            .layout-header {
+                grid-column: 2;
+                grid-row: 1;
+            }
+            .layout-progress {
+                grid-column: 2;
+                grid-row: 2;
+            }
+            .layout-ad {
+                grid-column: 2;
+                grid-row: 3;
+            }
+            .layout-sidebar {
+                grid-column: 1;
+                grid-row: 2 / span 3;
+                overflow-y: auto;
+                border-right: 1px solid #e2e8f0;
+            }
+            .layout-upload, .layout-workspace {
+                grid-column: 2;
+                grid-row: 4;
+                overflow-y: auto;
+            }
+        }
+        @media (min-width: 1024px) {
+            body { grid-template-columns: 24rem 1fr; }
+        }
     </style>
 </head>
-<body class="bg-slate-100 text-slate-800 h-screen overflow-hidden flex flex-col md:flex-row antialiased">
+<body class="text-slate-800 antialiased">
 
-    <!-- Sidebar Settings Panel -->
-    <aside class="w-full md:w-80 lg:w-96 bg-white border-r border-slate-200 h-full flex flex-col shadow-[4px_0_24px_rgba(0,0,0,0.02)] z-20 flex-shrink-0">
-        
-        <!-- Header / Logo -->
-        <div class="h-16 flex items-center px-6 border-b border-slate-100 flex-shrink-0">
-            <h1 class="font-extrabold text-xl tracking-tight text-slate-900 flex items-center gap-2">
-                <i data-lucide="layers" class="text-indigo-600 w-6 h-6"></i>
-                AutoRemove<span class="text-indigo-600">Pro</span>
-            </h1>
-            <span class="ml-auto text-[10px] font-bold bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded uppercase tracking-wider">V2.0</span>
+    <!-- 1. LOGO HEADER -->
+    <div class="layout-logo h-16 flex items-center px-4 md:px-6 bg-white border-b border-slate-200 md:border-b-0 flex-shrink-0 z-20 shadow-sm md:shadow-none">
+        <h1 class="font-extrabold text-xl tracking-tight text-slate-900 flex items-center gap-2">
+            <i data-lucide="layers" class="text-indigo-600 w-6 h-6"></i>
+            AutoRemove<span class="text-indigo-600">Pro</span>
+        </h1>
+        <span class="ml-auto text-[10px] font-bold bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded uppercase tracking-wider">V2.0</span>
+    </div>
+
+    <!-- 2. TOOLBAR HEADER -->
+    <header class="layout-header h-16 bg-white/80 backdrop-blur-md border-b border-slate-200 flex items-center justify-between px-4 md:px-6 z-10 flex-shrink-0 sticky top-0 md:static">
+        <div class="flex items-center gap-3 md:gap-4">
+            <div class="bg-indigo-100 text-indigo-700 w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm shadow-inner" id="image-count">0</div>
+            <div>
+                <h2 class="font-bold text-slate-800 text-sm md:text-base leading-tight">Batch Processing</h2>
+                <p class="text-[10px] text-slate-500 uppercase tracking-wider font-semibold"><span class="text-emerald-500">●</span> 100% Local Privacy</p>
+            </div>
         </div>
 
-        <!-- Scrollable Tools -->
-        <div class="flex-1 overflow-y-auto p-6 space-y-8">
-            
-            <!-- 1. Extraction Tools -->
+        <div class="flex items-center gap-2 md:gap-3">
+            <button id="clear-btn" style="display:none;" class="text-xs px-3 py-2 md:px-4 font-semibold text-slate-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-200">
+                Clear<span class="hidden md:inline"> All</span>
+            </button>
+            <button id="download-zip-btn" class="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold text-sm px-4 md:px-5 py-2 rounded-lg flex items-center gap-2 transition-all shadow-md hover:shadow-lg">
+                <i data-lucide="folder-down" class="w-4 h-4"></i>
+                <span class="hidden md:inline">Download ZIP</span>
+                <span class="md:hidden">Save</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- 3. PROGRESS BAR -->
+    <div id="progress-container" class="layout-progress w-full bg-slate-200 h-1 hidden z-10 flex-shrink-0">
+        <div id="progress-bar" class="bg-indigo-500 h-full transition-all duration-300 ease-out" style="width: 0%"></div>
+    </div>
+
+    <!-- AD SENSE CONTAINER -->
+    <div class="layout-ad">
+        <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5812524294035974" crossorigin="anonymous"></script>
+        <!-- ADD -->
+        <ins class="adsbygoogle"
+             style="display:block"
+             data-ad-client="ca-pub-5812524294035974"
+             data-ad-slot="9312358743"
+             data-ad-format="auto"
+             data-full-width-responsive="true"></ins>
+        <script>
+             (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+    </div>
+
+    <!-- 4. UPLOAD AREA (Top on mobile, Main area on desktop) -->
+    <div id="upload-container" class="layout-upload p-4 md:p-8 relative transition-all duration-300">
+        <div class="w-full h-full min-h-[250px] md:min-h-[400px] border-2 border-dashed border-slate-300 rounded-3xl flex flex-col items-center justify-center bg-white cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/50 transition-all duration-300 group shadow-sm" onclick="document.getElementById('file-input').click()">
+            <div class="w-16 h-16 md:w-20 md:h-20 bg-indigo-50 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300 shadow-inner">
+                <i data-lucide="image-plus" class="w-8 h-8 md:w-10 md:h-10 text-indigo-500"></i>
+            </div>
+            <h2 class="text-xl md:text-3xl font-extrabold text-slate-800 mb-2 text-center tracking-tight">Tap or Drop Images</h2>
+            <p class="text-slate-500 text-center mb-6 max-w-sm text-xs md:text-sm px-4">
+                Drag and drop bulk images. Processed entirely offline in your browser.
+            </p>
+            <button class="bg-slate-900 hover:bg-slate-800 text-white font-medium px-5 md:px-6 py-2.5 md:py-3 rounded-xl transition-all shadow-lg text-xs md:text-sm flex items-center gap-2 pointer-events-none">
+                Select Files
+            </button>
+            <input type="file" multiple accept="image/*" id="file-input" class="hidden">
+        </div>
+    </div>
+
+    <!-- 5. SIDEBAR / CONTROLS (Middle on mobile, Left on desktop) -->
+    <aside class="layout-sidebar bg-white flex flex-col shadow-[4px_0_24px_rgba(0,0,0,0.02)] z-10">
+        
+        <div class="flex-1 p-4 md:p-6 space-y-8">
+            <h2 class="md:hidden text-lg font-bold text-slate-800 border-b border-slate-100 pb-2">Editor Tools</h2>
+
+            <!-- Extraction Tools -->
             <div class="space-y-4">
                 <h3 class="text-xs font-bold uppercase tracking-widest text-slate-400 flex items-center gap-2">
                     <i data-lucide="scissors" class="w-4 h-4"></i> Extraction Engine
                 </h3>
                 
-                <!-- Target Color -->
                 <div class="space-y-2">
-                    <label class="text-sm font-semibold text-slate-700 flex justify-between">
-                        Target Color Mode
-                    </label>
+                    <label class="text-sm font-semibold text-slate-700 flex justify-between">Target Color Mode</label>
                     <div class="flex gap-2">
-                        <button class="flex-1 text-xs py-1.5 rounded-md border font-medium transition-colors bg-indigo-50 border-indigo-200 text-indigo-700" id="mode-auto" onclick="setRemovalMode('auto')">Auto Detect</button>
-                        <button class="flex-1 text-xs py-1.5 rounded-md border font-medium transition-colors bg-white border-slate-200 text-slate-600 hover:bg-slate-50" id="mode-custom" onclick="setRemovalMode('custom')">Pick Color</button>
+                        <button class="flex-1 text-xs py-2 rounded-md border font-medium transition-colors bg-indigo-50 border-indigo-200 text-indigo-700 shadow-sm" id="mode-auto" onclick="setRemovalMode('auto')">Auto Detect</button>
+                        <button class="flex-1 text-xs py-2 rounded-md border font-medium transition-colors bg-white border-slate-200 text-slate-600 hover:bg-slate-50 shadow-sm" id="mode-custom" onclick="setRemovalMode('custom')">Pick Color</button>
                     </div>
                     <div id="custom-color-picker" class="hidden mt-2 flex items-center gap-3 bg-slate-50 p-2 rounded-lg border border-slate-100">
-                        <input type="color" id="target-color-val" value="#ffffff" class="w-8 h-8 rounded cursor-pointer border-0 p-0">
-                        <span class="text-xs text-slate-500">Color to erase</span>
+                        <input type="color" id="target-color-val" value="#ffffff" class="w-10 h-10 rounded cursor-pointer border-0 p-0">
+                        <span class="text-xs text-slate-500 font-medium">Color to erase</span>
                     </div>
                 </div>
 
-                <div class="space-y-1.5">
+                <div class="space-y-2">
                     <div class="flex justify-between items-center">
                         <label class="text-sm font-semibold text-slate-700">Tolerance</label>
                         <span id="tolerance-val" class="text-xs font-mono bg-slate-100 text-slate-600 px-2 py-0.5 rounded">15%</span>
                     </div>
-                    <input type="range" id="tolerance-slider" min="0" max="100" value="15">
+                    <input type="range" id="tolerance-slider" min="0" max="100" value="15" class="py-2">
                 </div>
 
-                <div class="space-y-1.5">
+                <div class="space-y-2">
                     <div class="flex justify-between items-center">
                         <label class="text-sm font-semibold text-slate-700">Edge Smoothing</label>
                         <span id="feather-val" class="text-xs font-mono bg-slate-100 text-slate-600 px-2 py-0.5 rounded">2px</span>
                     </div>
-                    <input type="range" id="feather-slider" min="0" max="20" value="2">
+                    <input type="range" id="feather-slider" min="0" max="20" value="2" class="py-2">
                 </div>
             </div>
 
             <hr class="border-slate-100">
 
-            <!-- 2. Image Adjustments -->
+            <!-- Image Adjustments -->
             <div class="space-y-4">
                 <h3 class="text-xs font-bold uppercase tracking-widest text-slate-400 flex items-center gap-2">
                     <i data-lucide="sliders-horizontal" class="w-4 h-4"></i> Image Adjustments
                 </h3>
                 
-                <div class="space-y-1.5">
+                <div class="space-y-2">
                     <div class="flex justify-between items-center">
                         <label class="text-sm font-semibold text-slate-700 text-xs">Brightness</label>
                         <span id="bright-val" class="text-[10px] font-mono text-slate-500">0</span>
                     </div>
-                    <input type="range" id="bright-slider" min="-100" max="100" value="0">
+                    <input type="range" id="bright-slider" min="-100" max="100" value="0" class="py-1">
                 </div>
-                <div class="space-y-1.5">
+                <div class="space-y-2">
                     <div class="flex justify-between items-center">
                         <label class="text-sm font-semibold text-slate-700 text-xs">Contrast</label>
                         <span id="contrast-val" class="text-[10px] font-mono text-slate-500">0</span>
                     </div>
-                    <input type="range" id="contrast-slider" min="-100" max="100" value="0">
+                    <input type="range" id="contrast-slider" min="-100" max="100" value="0" class="py-1">
                 </div>
-                <div class="space-y-1.5">
+                <div class="space-y-2">
                     <div class="flex justify-between items-center">
                         <label class="text-sm font-semibold text-slate-700 text-xs">Saturation</label>
                         <span id="sat-val" class="text-[10px] font-mono text-slate-500">0</span>
                     </div>
-                    <input type="range" id="sat-slider" min="-100" max="100" value="0">
+                    <input type="range" id="sat-slider" min="-100" max="100" value="0" class="py-1">
                 </div>
                 
                 <div class="flex gap-2 pt-2">
-                    <button id="flip-h-btn" class="flex-1 flex items-center justify-center gap-1.5 text-xs py-2 rounded-md border bg-white border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">
+                    <button id="flip-h-btn" class="flex-1 flex items-center justify-center gap-1.5 text-xs py-2.5 rounded-md border bg-white border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors shadow-sm">
                         <i data-lucide="flip-horizontal" class="w-3.5 h-3.5"></i> Flip H
                     </button>
-                    <button id="flip-v-btn" class="flex-1 flex items-center justify-center gap-1.5 text-xs py-2 rounded-md border bg-white border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">
+                    <button id="flip-v-btn" class="flex-1 flex items-center justify-center gap-1.5 text-xs py-2.5 rounded-md border bg-white border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors shadow-sm">
                         <i data-lucide="flip-vertical" class="w-3.5 h-3.5"></i> Flip V
                     </button>
                 </div>
@@ -175,45 +285,45 @@
 
             <hr class="border-slate-100">
 
-            <!-- 3. Layout & Effects -->
+            <!-- Layout & Effects -->
             <div class="space-y-4">
                 <h3 class="text-xs font-bold uppercase tracking-widest text-slate-400 flex items-center gap-2">
                     <i data-lucide="layout" class="w-4 h-4"></i> Layout & FX
                 </h3>
 
-                <div class="space-y-2">
+                <div class="space-y-3">
                     <label class="text-sm font-semibold text-slate-700">Background Fill</label>
-                    <div class="flex gap-2">
-                        <button class="bg-btn bg-checkerboard w-8 h-8 rounded border-2 border-slate-300 ring-2 ring-indigo-500 ring-offset-2" data-bg="transparent" title="Transparent"></button>
-                        <button class="bg-btn bg-white w-8 h-8 rounded border-2 border-slate-300 hover:ring-2 ring-indigo-500 ring-offset-2 transition-all" data-bg="#ffffff" title="Solid White"></button>
-                        <button class="bg-btn bg-black w-8 h-8 rounded border-2 border-slate-300 hover:ring-2 ring-indigo-500 ring-offset-2 transition-all" data-bg="#000000" title="Solid Black"></button>
-                        <div class="relative w-8 h-8 rounded border-2 border-slate-300 overflow-hidden group hover:ring-2 ring-indigo-500 ring-offset-2 transition-all cursor-pointer">
-                            <div class="absolute inset-0 flex items-center justify-center text-xs pointer-events-none z-10 font-bold mix-blend-difference text-white">#</div>
-                            <input type="color" id="custom-bg-color" value="#e11d48" class="absolute -top-4 -left-4 w-16 h-16 cursor-pointer">
+                    <div class="flex gap-3">
+                        <button class="bg-btn bg-checkerboard w-10 h-10 rounded border-2 border-slate-300 ring-2 ring-indigo-500 ring-offset-2" data-bg="transparent" title="Transparent"></button>
+                        <button class="bg-btn bg-white w-10 h-10 rounded border-2 border-slate-300 hover:ring-2 ring-indigo-500 ring-offset-2 transition-all" data-bg="#ffffff" title="Solid White"></button>
+                        <button class="bg-btn bg-black w-10 h-10 rounded border-2 border-slate-300 hover:ring-2 ring-indigo-500 ring-offset-2 transition-all" data-bg="#000000" title="Solid Black"></button>
+                        <div class="relative w-10 h-10 rounded border-2 border-slate-300 overflow-hidden group hover:ring-2 ring-indigo-500 ring-offset-2 transition-all cursor-pointer">
+                            <div class="absolute inset-0 flex items-center justify-center text-sm pointer-events-none z-10 font-bold mix-blend-difference text-white">#</div>
+                            <input type="color" id="custom-bg-color" value="#e11d48" class="absolute -top-4 -left-4 w-20 h-20 cursor-pointer">
                         </div>
                     </div>
                 </div>
 
-                <div class="space-y-2 pt-2 border-t border-slate-50">
+                <div class="space-y-3 pt-3 border-t border-slate-50">
                     <label class="flex items-center gap-2 cursor-pointer font-semibold text-sm text-slate-700">
-                        <input type="checkbox" id="shadow-toggle" class="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4"> 
+                        <input type="checkbox" id="shadow-toggle" class="rounded text-indigo-600 focus:ring-indigo-500 w-5 h-5 md:w-4 md:h-4"> 
                         Apply Drop Shadow
                     </label>
-                    <input type="range" id="shadow-slider" min="1" max="50" value="15" class="w-full opacity-40 cursor-not-allowed" disabled>
+                    <input type="range" id="shadow-slider" min="1" max="50" value="15" class="w-full opacity-40 cursor-not-allowed py-2" disabled>
                 </div>
                 
-                <div class="space-y-2 pt-2 border-t border-slate-50">
+                <div class="space-y-2 pt-3 border-t border-slate-50">
                     <label class="flex items-center justify-between text-sm font-semibold text-slate-700">
                         Padding Size
                         <span id="padding-val" class="text-[10px] font-mono text-slate-500">0%</span>
                     </label>
-                    <input type="range" id="padding-slider" min="0" max="40" value="0" class="w-full">
+                    <input type="range" id="padding-slider" min="0" max="40" value="0" class="w-full py-2">
                 </div>
             </div>
 
             <hr class="border-slate-100">
 
-            <!-- 4. Export Settings -->
+            <!-- Export Settings -->
             <div class="space-y-4">
                 <h3 class="text-xs font-bold uppercase tracking-widest text-slate-400 flex items-center gap-2">
                     <i data-lucide="download-cloud" class="w-4 h-4"></i> Export Options
@@ -221,7 +331,7 @@
 
                 <div class="space-y-2">
                     <label class="text-sm font-semibold text-slate-700">Output Size</label>
-                    <select id="size-select" class="w-full text-sm rounded-lg border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 bg-white">
+                    <select id="size-select" class="w-full text-sm rounded-lg border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 bg-white py-2 px-3">
                         <option value="original">Original (No Scaling)</option>
                         <option value="1080">1080x1080 px (Social)</option>
                         <option value="800">800x800 px (eCommerce)</option>
@@ -229,111 +339,60 @@
                     </select>
                 </div>
 
-                <div class="space-y-2 pt-1">
-                    <label class="flex items-start gap-2 cursor-pointer text-sm text-slate-700 font-medium">
-                        <input type="checkbox" id="trim-toggle" class="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4 mt-0.5" checked> 
+                <div class="space-y-2 pt-2">
+                    <label class="flex items-start gap-3 cursor-pointer text-sm text-slate-700 font-medium">
+                        <input type="checkbox" id="trim-toggle" class="rounded text-indigo-600 focus:ring-indigo-500 w-5 h-5 md:w-4 md:h-4 mt-0.5" checked> 
                         <div>
                             Auto-Trim Transparent Space
-                            <p class="text-[10px] text-slate-400 font-normal leading-tight mt-1">Crops canvas bounds to fit subject.</p>
+                            <p class="text-[10px] md:text-xs text-slate-400 font-normal leading-tight mt-1">Crops canvas bounds to fit subject.</p>
                         </div>
                     </label>
                 </div>
 
-                <div class="grid grid-cols-2 gap-3">
-                    <div class="space-y-1">
+                <div class="grid grid-cols-2 gap-3 pt-2">
+                    <div class="space-y-1.5">
                         <label class="text-xs font-semibold text-slate-700">Format</label>
-                        <select id="format-select" class="w-full text-xs rounded border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        <select id="format-select" class="w-full text-xs rounded border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2">
                             <option value="png">PNG</option>
                             <option value="jpeg">JPEG</option>
                         </select>
                     </div>
-                    <div class="space-y-1">
+                    <div class="space-y-1.5">
                         <label class="text-xs font-semibold text-slate-700">Prefix Name</label>
-                        <input type="text" id="file-prefix" placeholder="Edit_" class="w-full text-xs rounded border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        <input type="text" id="file-prefix" placeholder="Edit_" class="w-full text-xs rounded border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2">
                     </div>
                 </div>
 
-                <div class="space-y-1 pt-2">
+                <div class="space-y-1.5 pt-2">
                     <label class="text-xs font-semibold text-slate-700">Text Watermark</label>
-                    <input type="text" id="watermark-input" placeholder="e.g. MyBrand ©" class="w-full text-sm rounded border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                    <input type="text" id="watermark-input" placeholder="e.g. MyBrand ©" class="w-full text-sm rounded border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2">
                 </div>
             </div>
             
-            <div class="pb-10"></div> <!-- spacing -->
+            <div class="pb-6 md:pb-10"></div>
         </div>
     </aside>
 
-    <!-- Main Content Area -->
-    <main class="flex-1 flex flex-col h-full overflow-hidden relative bg-slate-100">
-        
-        <!-- Top Toolbar -->
-        <header class="h-16 bg-white/80 backdrop-blur-md border-b border-slate-200 flex items-center justify-between px-6 z-10 flex-shrink-0">
-            <div class="flex items-center gap-4">
-                <div class="bg-indigo-100 text-indigo-700 w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm shadow-inner" id="image-count">0</div>
-                <div>
-                    <h2 class="font-bold text-slate-800 text-sm md:text-base leading-tight">Batch Processing</h2>
-                    <p class="text-[10px] text-slate-500 uppercase tracking-wider font-semibold"><span class="text-emerald-500">●</span> 100% Local Privacy</p>
-                </div>
-            </div>
-
-            <div class="flex items-center gap-2 md:gap-3">
-                <button id="clear-btn" class="hidden md:flex text-xs px-4 py-2 font-semibold text-slate-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-200">
-                    Clear All
-                </button>
-                <button id="download-zip-btn" class="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold text-sm px-5 py-2 rounded-lg flex items-center gap-2 transition-all shadow-md hover:shadow-lg">
-                    <i data-lucide="folder-down" class="w-4 h-4"></i>
-                    <span class="hidden md:inline">Download ZIP</span>
-                    <span class="md:hidden">Save</span>
-                </button>
-            </div>
-        </header>
-
-        <!-- Progress Bar (Fixed under header) -->
-        <div id="progress-container" class="w-full bg-slate-200 h-1 hidden z-10">
-            <div id="progress-bar" class="bg-indigo-500 h-1 transition-all duration-300 ease-out" style="width: 0%"></div>
-        </div>
-
-        <!-- Scrollable Workspace -->
-        <div class="flex-1 overflow-y-auto p-4 md:p-8 relative" id="workspace-scroll">
+    <!-- 6. WORKSPACE (Bottom on mobile, Main area on desktop) -->
+    <div id="workspace" class="layout-workspace hidden p-4 md:p-8 relative pb-24 md:pb-8">
+        <h2 class="md:hidden text-lg font-bold text-slate-800 border-b border-slate-200 pb-2 mb-4">Processed Images</h2>
+        <div id="image-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-6">
+            <!-- Images Injected Here -->
             
-            <!-- Empty State / Upload Area -->
-            <div id="upload-container" class="absolute inset-4 md:inset-8 border-2 border-dashed border-slate-300 rounded-3xl flex flex-col items-center justify-center bg-white cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/50 transition-all duration-300 group shadow-sm z-0">
-                <div class="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300 shadow-inner">
-                    <i data-lucide="image-plus" class="w-10 h-10 text-indigo-500"></i>
+            <!-- Add More Card -->
+            <label id="add-more-card" class="border-2 border-dashed border-slate-300 rounded-2xl flex flex-col items-center justify-center text-slate-400 hover:text-indigo-600 hover:border-indigo-400 hover:bg-indigo-50 transition-all cursor-pointer aspect-square bg-white/50 min-h-[140px] group shadow-sm">
+                <div class="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center mb-2 group-hover:scale-110 transition-transform border border-slate-100">
+                    <i data-lucide="plus" class="w-5 h-5 text-slate-400 group-hover:text-indigo-500"></i>
                 </div>
-                <h2 class="text-2xl md:text-3xl font-extrabold text-slate-800 mb-2 text-center tracking-tight">Drop Images Here</h2>
-                <p class="text-slate-500 text-center mb-6 max-w-sm text-sm">
-                    Drag and drop bulk images. Processed entirely offline in your browser.
-                </p>
-                <button class="bg-slate-900 hover:bg-slate-800 text-white font-medium px-6 py-3 rounded-xl transition-all shadow-lg text-sm flex items-center gap-2 pointer-events-none">
-                    Select Files
-                </button>
-                <input type="file" multiple accept="image/*" id="file-input" class="hidden">
-            </div>
-
-            <!-- Image Grid Workspace -->
-            <div id="workspace" class="hidden relative z-10 pb-20">
-                <div id="image-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-6">
-                    <!-- Images Injected Here -->
-                    
-                    <!-- Add More Card -->
-                    <label id="add-more-card" class="border-2 border-dashed border-slate-300 rounded-2xl flex flex-col items-center justify-center text-slate-400 hover:text-indigo-600 hover:border-indigo-400 hover:bg-indigo-50 transition-all cursor-pointer aspect-square bg-white/50 min-h-[140px] group shadow-sm">
-                        <div class="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center mb-2 group-hover:scale-110 transition-transform border border-slate-100">
-                            <i data-lucide="plus" class="w-5 h-5 text-slate-400 group-hover:text-indigo-500"></i>
-                        </div>
-                        <span class="text-xs font-semibold">Add Files</span>
-                        <input type="file" multiple accept="image/*" id="add-more-input" class="hidden">
-                    </label>
-                </div>
-            </div>
-            
+                <span class="text-xs font-semibold">Add Files</span>
+                <input type="file" multiple accept="image/*" id="add-more-input" class="hidden">
+            </label>
         </div>
-    </main>
+    </div>
 
     <!-- Comparison Modal -->
     <div id="compare-modal" class="hidden fixed inset-0 z-[100] bg-slate-900/90 backdrop-blur-md flex items-center justify-center p-4 opacity-0 transition-opacity duration-300">
         <div class="bg-white rounded-2xl w-full max-w-4xl overflow-hidden relative flex flex-col shadow-2xl transform scale-95 transition-all duration-300 border border-slate-100 h-[80vh] md:h-[85vh]" id="compare-modal-content">
-             
              <!-- Modal Header -->
              <div class="p-4 border-b border-slate-100 flex justify-between items-center bg-white z-10 flex-shrink-0">
                  <div>
@@ -368,7 +427,7 @@
 
     <!-- Toast Container -->
     <div id="toast-container" class="toast-container"></div>
-    <script src="background-remover.js">
-    </script>
+
+    <script src="background-remover.js"></script>
 </body>
 </html>
