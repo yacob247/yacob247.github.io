@@ -1,17 +1,15 @@
-       const searchForm = document.getElementById('search-form');
+        const searchForm = document.getElementById('search-form');
         const searchInput = document.getElementById('search-input');
         
-        // Views
         const loadingState = document.getElementById('loading-state');
+        const loadingText = document.getElementById('loading-text');
         const errorState = document.getElementById('error-state');
         const emptyState = document.getElementById('empty-state');
         const resultContent = document.getElementById('result-content');
         
-        // Elements
         const displayWord = document.getElementById('display-word');
         const meaningsContainer = document.getElementById('meanings-container');
         
-        // Audio Elements
         const ukBlock = document.getElementById('uk-pronunciation-block');
         const usBlock = document.getElementById('us-pronunciation-block');
         const generalBlock = document.getElementById('general-pronunciation-block');
@@ -19,25 +17,22 @@
         const usPhonetic = document.getElementById('us-phonetic');
         const generalPhonetic = document.getElementById('general-phonetic');
 
-        // State
-        let audioData = {
-            uk: null,
-            us: null,
-            general: null
-        };
+        let audioData = { uk: null, us: null, general: null };
         let currentWordText = "";
 
-        const API_URL = "https://api.dictionaryapi.dev/api/v2/entries/en/";
+        // API 1: Standard Dictionary
+        const PRIMARY_API_URL = "https://api.dictionaryapi.dev/api/v2/entries/en/";
+        // API 2: Wiktionary (Massive database for compounds, rare words)
+        const WIKTIONARY_API_URL = "https://en.wiktionary.org/api/rest_v1/page/definition/";
 
         window.addEventListener('DOMContentLoaded', () => {
             const urlParams = new URLSearchParams(window.location.search);
             const queryRaw = urlParams.get('q') || urlParams.get('word');
 
             if (queryRaw && queryRaw.trim() !== '') {
-                // Smart extraction: Handle "pyrimidine meaning" or "define apple"
                 const targetWord = extractTargetWord(queryRaw);
                 searchInput.value = targetWord;
-                fetchWordData(targetWord);
+                startSearchProcess(targetWord);
             } else {
                 searchInput.focus();
             }
@@ -55,8 +50,8 @@
                     window.history.pushState({}, '', url);
                 } catch (err) {}
                 
-                searchInput.value = targetWord; // update input with cleaned word
-                fetchWordData(targetWord);
+                searchInput.value = targetWord;
+                startSearchProcess(targetWord);
             }
         });
 
@@ -68,74 +63,71 @@
                 url.searchParams.delete('q');
                 window.history.pushState({}, '', url);
             } catch (err) {}
+            document.title = "Instant Dictionary & Pronunciation";
         }
 
-        // Smart Natural Language Processing (NLP) simulator
         function extractTargetWord(query) {
             let q = query.toLowerCase().trim();
-            // Words to strip out if the user types them in the search bar
             const fillerWords = ['meaning', 'definition', 'define', 'pronunciation', 'pronounce', 'how', 'to', 'what', 'is', 'the', 'of', 'in', 'english', 'a', 'an'];
-            
             let words = q.split(/\s+/);
-            // Filter out fillers
             let filteredWords = words.filter(w => !fillerWords.includes(w));
-            
-            // If filtering removes everything (e.g. they searched "define"), fallback to the original query
             if (filteredWords.length === 0) return words[0];
-            
-            // Return the first significant word (dictionary API usually only takes 1 word anyway)
             return filteredWords[0];
         }
 
-        async function fetchWordData(word) {
+        async function startSearchProcess(word) {
+            currentWordText = word;
+            loadingText.textContent = "Searching primary dictionary...";
             showView(loadingState);
             document.title = `Dictionary: ${word}...`;
             
             try {
-                const response = await fetch(`${API_URL}${encodeURIComponent(word)}`);
-                const data = await response.json();
-
-                if (!response.ok) {
-                    throw { 
-                        title: data.title || "Not Found", 
-                        message: data.message || "We couldn't find definitions for that word." 
-                    };
+                // TIER 1: Try the standard dictionary first
+                const response = await fetch(`${PRIMARY_API_URL}${encodeURIComponent(word)}`);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    renderPrimaryData(data[0]);
+                    return;
+                }
+                
+                // TIER 2: If standard fails, try Wiktionary (Huge database)
+                loadingText.textContent = "Searching extended Wiktionary database...";
+                const wikiResponse = await fetch(`${WIKTIONARY_API_URL}${encodeURIComponent(word)}`);
+                
+                if (wikiResponse.ok) {
+                    const wikiData = await wikiResponse.json();
+                    if (wikiData.en) {
+                        renderWiktionaryData(word, wikiData.en);
+                        return;
+                    }
                 }
 
-                renderWordData(data[0]);
-                document.title = `${data[0].word} - Pronunciation & Definition`;
-                
-                // Instantly pronounce the word automatically
-                setTimeout(() => autoPlayBestAudio(), 400);
+                // TIER 3: Absolute Fallback (Google/Oxford Bridge)
+                renderUltimateFallback(word);
 
             } catch (error) {
-                document.getElementById('error-title').textContent = error.title;
-                document.getElementById('error-message').textContent = error.message;
+                document.getElementById('error-title').textContent = "Connection Error";
+                document.getElementById('error-message').textContent = "Please check your internet connection and try again.";
                 showView(errorState);
-                document.title = `Not found: ${word}`;
+                document.title = `Error: ${word}`;
             }
         }
 
-        function renderWordData(data) {
-            currentWordText = data.word;
+        function renderPrimaryData(data) {
             displayWord.textContent = data.word;
+            document.title = `${data.word} - Pronunciation & Definition`;
             
-            // Reset Audio UI
-            ukBlock.classList.add('hidden');
-            usBlock.classList.add('hidden');
-            generalBlock.classList.add('hidden');
+            resetAudioUI();
             audioData = { uk: null, us: null, general: null, text: data.phonetic || "" };
             
             let bestGeneralAudio = null;
-
             if (data.phonetics && data.phonetics.length > 0) {
                 data.phonetics.forEach(ph => {
                     const text = ph.text || data.phonetic;
                     const audio = ph.audio;
-                    
                     if (audio) {
-                        bestGeneralAudio = audio; // Fallback
-                        
+                        bestGeneralAudio = audio;
                         if (audio.includes('-uk.mp3') || audio.includes('uk_pronunciation')) {
                             audioData.uk = audio;
                             ukPhonetic.textContent = text || "";
@@ -146,16 +138,13 @@
                             usBlock.classList.remove('hidden');
                         } else if (!audioData.general) {
                             audioData.general = audio;
-                            generalPhonetic.textContent = text || "";
                         }
                     }
                 });
             }
 
-            // Fallback for general block
             if (!audioData.uk && !audioData.us) {
                 generalBlock.classList.remove('hidden');
-                generalPhonetic.textContent = audioData.text;
                 audioData.general = bestGeneralAudio;
             }
 
@@ -164,15 +153,7 @@
             data.meanings.forEach(meaning => {
                 const section = document.createElement('div');
                 section.className = 'mb-8';
-                
-                // Cambridge style part-of-speech block (Blue rectangle)
-                section.innerHTML = `
-                    <div class="mb-4">
-                        <span class="inline-block bg-[#002147] text-white text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-sm shadow-sm">
-                            ${meaning.partOfSpeech}
-                        </span>
-                    </div>
-                `;
+                section.innerHTML = `<div class="mb-4"><span class="inline-block bg-[#002147] text-white text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-sm shadow-sm">${meaning.partOfSpeech}</span></div>`;
 
                 const defContainer = document.createElement('div');
                 defContainer.className = 'space-y-5 pl-2 sm:pl-4';
@@ -180,66 +161,106 @@
                 meaning.definitions.forEach((def, index) => {
                     const defBlock = document.createElement('div');
                     defBlock.className = 'flex gap-3';
-                    
-                    // Numbering
-                    const number = document.createElement('div');
-                    number.className = 'flex-shrink-0 w-6 h-6 bg-gray-200 text-gray-700 text-xs font-bold rounded-full flex items-center justify-center mt-0.5';
-                    number.textContent = index + 1;
+                    defBlock.innerHTML = `<div class="flex-shrink-0 w-6 h-6 bg-gray-200 text-gray-700 text-xs font-bold rounded-full flex items-center justify-center mt-0.5">${index + 1}</div>`;
                     
                     const content = document.createElement('div');
-                    
-                    // Definition text
-                    const defText = document.createElement('p');
-                    defText.className = 'text-gray-900 font-semibold mb-1 leading-snug';
-                    defText.textContent = def.definition;
-                    content.appendChild(defText);
-                    
-                    // Example (Cambridge style: indented, italic, dark gray border)
+                    content.innerHTML = `<p class="text-gray-900 font-semibold mb-1 leading-snug">${def.definition}</p>`;
                     if (def.example) {
-                        const example = document.createElement('p');
-                        example.className = 'text-gray-600 italic text-sm pl-3 border-l-2 border-gray-300 mt-2';
-                        example.textContent = def.example;
-                        content.appendChild(example);
+                        content.innerHTML += `<p class="text-gray-600 italic text-sm pl-3 border-l-2 border-gray-300 mt-2">${def.example}</p>`;
                     }
-
-                    defBlock.appendChild(number);
                     defBlock.appendChild(content);
                     defContainer.appendChild(defBlock);
                 });
-                
                 section.appendChild(defContainer);
-
-                // Synonyms (Clean comma separated list)
-                if (meaning.synonyms && meaning.synonyms.length > 0) {
-                    const synDiv = document.createElement('div');
-                    synDiv.className = 'mt-4 pl-9 text-sm text-gray-700';
-                    synDiv.innerHTML = `<span class="font-bold text-[#002147]">Synonyms:</span> `;
-                    
-                    meaning.synonyms.slice(0, 8).forEach((syn, i, arr) => {
-                        const span = document.createElement('span');
-                        span.className = 'text-blue-600 hover:underline cursor-pointer';
-                        span.textContent = syn;
-                        span.onclick = () => {
-                            searchInput.value = syn;
-                            searchForm.dispatchEvent(new Event('submit'));
-                            window.scrollTo(0,0);
-                        };
-                        synDiv.appendChild(span);
-                        if (i < arr.length - 1) {
-                            synDiv.appendChild(document.createTextNode(', '));
-                        }
-                    });
-                    section.appendChild(synDiv);
-                }
-
                 meaningsContainer.appendChild(section);
             });
 
             showView(resultContent);
+            setTimeout(() => autoPlayBestAudio(), 400);
+        }
+
+        function renderWiktionaryData(word, wikiData) {
+            displayWord.textContent = word;
+            document.title = `${word} - Extended Definition`;
+            
+            resetAudioUI();
+            generalBlock.classList.remove('hidden'); // Force general TTS button
+            
+            meaningsContainer.innerHTML = `
+                <div class="mb-6 p-3 bg-blue-50 border-l-4 border-blue-400 text-sm text-blue-800">
+                    <strong>Extended Database:</strong> This word was found in our massive secondary dictionary (Wiktionary).
+                </div>
+            `;
+            
+            wikiData.forEach(meaning => {
+                const section = document.createElement('div');
+                section.className = 'mb-8';
+                section.innerHTML = `<div class="mb-4"><span class="inline-block bg-[#002147] text-white text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-sm shadow-sm">${meaning.partOfSpeech}</span></div>`;
+
+                const defContainer = document.createElement('div');
+                defContainer.className = 'space-y-5 pl-2 sm:pl-4';
+                
+                meaning.definitions.forEach((def, index) => {
+                    const defBlock = document.createElement('div');
+                    defBlock.className = 'flex gap-3';
+                    defBlock.innerHTML = `<div class="flex-shrink-0 w-6 h-6 bg-gray-200 text-gray-700 text-xs font-bold rounded-full flex items-center justify-center mt-0.5">${index + 1}</div>`;
+                    
+                    const content = document.createElement('div');
+                    // Wiktionary returns HTML definitions, so we inject them safely styled
+                    content.innerHTML = `<p class="text-gray-900 font-semibold mb-1 leading-snug wiktionary-def">${def.definition}</p>`;
+                    
+                    if (def.parsedExample) {
+                        content.innerHTML += `<p class="text-gray-600 italic text-sm pl-3 border-l-2 border-gray-300 mt-2 wiktionary-def">${def.parsedExample}</p>`;
+                    }
+                    defBlock.appendChild(content);
+                    defContainer.appendChild(defBlock);
+                });
+                section.appendChild(defContainer);
+                meaningsContainer.appendChild(section);
+            });
+
+            showView(resultContent);
+            setTimeout(() => autoPlayBestAudio(), 400);
+        }
+
+        function renderUltimateFallback(word) {
+            displayWord.textContent = word;
+            document.title = `${word} - Web Search`;
+            
+            resetAudioUI();
+            generalBlock.classList.remove('hidden'); // Show TTS play button
+            
+            meaningsContainer.innerHTML = `
+                <div class="mb-8 p-6 bg-gray-50 border border-gray-200 rounded-lg text-center">
+                    <div class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-blue-100 text-blue-600 mb-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+                        </svg>
+                    </div>
+                    <h3 class="text-lg font-bold text-gray-900 mb-2">Deep Web Search Required</h3>
+                    <p class="text-gray-600 mb-6 max-w-md mx-auto text-sm">
+                        "${word}" is not listed in our standard or extended databases. However, we have generated its pronunciation using AI, and you can instantly view Google's Oxford dictionary card below.
+                    </p>
+                    <a href="https://www.google.com/search?q=define+${encodeURIComponent(word)}" target="_blank" class="inline-flex items-center gap-2 bg-[#002147] hover:bg-blue-800 text-white font-semibold py-2 px-6 rounded-full transition-colors shadow-sm">
+                        View Definition on Google
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                    </a>
+                </div>
+            `;
+            
+            showView(resultContent);
+            // Even if the word doesn't exist, it ALWAYS pronounces it!
+            setTimeout(() => autoPlayBestAudio(), 400);
+        }
+
+        function resetAudioUI() {
+            ukBlock.classList.add('hidden');
+            usBlock.classList.add('hidden');
+            generalBlock.classList.add('hidden');
+            audioData = { uk: null, us: null, general: null, text: "" };
         }
 
         function autoPlayBestAudio() {
-            // Priority: US -> UK -> General -> TTS Fallback
             if (audioData.us) playAudio('us');
             else if (audioData.uk) playAudio('uk');
             else if (audioData.general) playAudio('general');
@@ -251,7 +272,7 @@
             if (url) {
                 const audio = new Audio(url);
                 audio.play().catch(e => {
-                    console.warn("Audio element failed, using TTS fallback.");
+                    console.warn("Audio file blocked, using free native TTS.");
                     playTTSFallback(currentWordText);
                 });
             } else {
@@ -268,16 +289,13 @@
                 
                 const voices = window.speechSynthesis.getVoices();
                 if (voices.length > 0) {
-                    // Look for a native quality voice
                     const goodVoice = voices.find(v => v.name.includes('Google US') || v.name.includes('Samantha') || (v.lang === 'en-US' && v.localService));
                     if (goodVoice) utterance.voice = goodVoice;
                 }
-
                 window.speechSynthesis.speak(utterance);
             }
         }
 
-        // Preload voices
         if ('speechSynthesis' in window) {
             window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
         }
