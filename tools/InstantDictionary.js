@@ -17,8 +17,14 @@
         const usPhonetic = document.getElementById('us-phonetic');
         const generalPhonetic = document.getElementById('general-phonetic');
 
+        const translationBlock = document.getElementById('translation-block');
+        const translationWord = document.getElementById('translation-word');
+        const translationLangLabel = document.getElementById('translation-lang-label');
+        const langSelect = document.getElementById('lang-select');
+
         let audioData = { uk: null, us: null, general: null };
         let currentWordText = "";
+        let currentTranslatedText = "";
 
         // API 1: Standard Dictionary
         const PRIMARY_API_URL = "https://api.dictionaryapi.dev/api/v2/entries/en/";
@@ -73,6 +79,53 @@
             let filteredWords = words.filter(w => !fillerWords.includes(w));
             if (filteredWords.length === 0) return words[0];
             return filteredWords[0];
+        }
+
+        langSelect.addEventListener('change', () => {
+            if (currentWordText && !resultContent.classList.contains('hidden')) {
+                fetchTranslation(currentWordText);
+            } else if (langSelect.value === 'none') {
+                translationBlock.classList.add('hidden');
+                translationBlock.classList.remove('inline-flex');
+            }
+        });
+
+        async function fetchTranslation(word) {
+            const targetLang = langSelect.value;
+            if (targetLang === 'none') {
+                translationBlock.classList.add('hidden');
+                translationBlock.classList.remove('inline-flex');
+                return;
+            }
+
+            try {
+                // Free, open endpoint used by extensions for simple word translation
+                const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${targetLang}&dt=t&q=${encodeURIComponent(word)}`;
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (data && data[0] && data[0][0] && data[0][0][0]) {
+                    currentTranslatedText = data[0][0][0];
+                    translationWord.textContent = currentTranslatedText;
+                    translationLangLabel.textContent = langSelect.options[langSelect.selectedIndex].text;
+                    
+                    translationBlock.classList.remove('hidden');
+                    translationBlock.classList.add('inline-flex');
+                }
+            } catch (err) {
+                console.error("Translation failed", err);
+                translationBlock.classList.add('hidden');
+                translationBlock.classList.remove('inline-flex');
+            }
+        }
+
+        function playTranslatedAudio() {
+            if ('speechSynthesis' in window && currentTranslatedText) {
+                window.speechSynthesis.cancel();
+                const utterance = new SpeechSynthesisUtterance(currentTranslatedText);
+                utterance.lang = langSelect.value; // Play in the target language's accent
+                window.speechSynthesis.speak(utterance);
+            }
         }
 
         async function startSearchProcess(word) {
@@ -176,6 +229,7 @@
             });
 
             showView(resultContent);
+            fetchTranslation(word); // Instantly fetch translation if enabled
             setTimeout(() => autoPlayBestAudio(), 400);
         }
 
@@ -220,6 +274,7 @@
             });
 
             showView(resultContent);
+            fetchTranslation(word); // Instantly fetch translation if enabled
             setTimeout(() => autoPlayBestAudio(), 400);
         }
 
@@ -249,6 +304,8 @@
             `;
             
             showView(resultContent);
+            fetchTranslation(word); // Instantly fetch translation if enabled
+            
             // Even if the word doesn't exist, it ALWAYS pronounces it!
             setTimeout(() => autoPlayBestAudio(), 400);
         }
