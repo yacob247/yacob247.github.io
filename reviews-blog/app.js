@@ -1175,71 +1175,7 @@ const GAMES = [
   }
 ];
 
-const TOOLS = [
-  {
-    "id": "jwt-debugger",
-    "title": "Multiple Images Background Remover",
-    "tagline": "Remove all backgrounds locally with the range you desire, all for free and no sign up",
-    "grade": "",
-    "review": [
-      "100% free local multiple images background remover."
-    ],
-    "mobile": "https://envizion.work/multipleimagesbackgroundremover.html",
-    "category": "Utilities",
-    "features": [
-      "Can adjust the amount of background desired to remove as well as select the colour of the new background or even add images or even videos in the background"
-    ],
-    "launch": true
-  },
-  {
-    "id": "omniplay-studio---premium-local-media-companion",
-    "title": "OmniPlay Studio -  Local/Large Media Player Online",
-    "tagline": "A 100% private, browser-based offline media player for advanced video and audio playback.",
-    "grade": "A+",
-    "review": [
-      "OmniPlay Studio is a powerful, browser-based media companion designed for seamless offline audio and video playback. Operating 100% locally and privately, it eliminates data privacy concerns by allowing users to simply drag and drop files from their own storage without uploading anything to external servers. The application supports major media formats, including MP4, WebM, MP3, WAV, and OGG.",
-      "Engineered primarily with study, research, and analysis in mind, the platform provides advanced playback and timestamp capabilities. Users can fine-tune their learning flow using detailed speed sliders, precise A-B loops, and customizable jump intervals. A dedicated bookmarking and text-logging system makes it incredibly easy to pin critical moments during video lectures, podcasts, or music sessions.",
-      "Beyond simple media controls, the tool features a built-in Video Canvas Adjustment kit. This tool helps users improve low-quality or dim recordings instantly by modifying brightness, contrast, and saturation, or changing the aspect ratio fitting. With progress memory that automatically saves playback locations across sessions and customizable keyboard shortcuts, it serves as a highly efficient, client-side workstation for multimedia consumption."
-    ],
-    "mobile": "https://envizion.work/locallongmp3andmp4playeronline.html",
-    "category": "Utilities",
-    "features": [
-      "100% Private & Local: Processes all media securely inside your browser window without uploading files to any external server.",
-      "Multi-Format Compatibility: Easily loads MP4 and WebM video formats alongside MP3, WAV, and OGG audio types.",
-      "Granular Playback Speed Control: Accelerates media up to 4.0x or slows it down to catch subtle details.",
-      "A-B Loop Segments: Isolate specific parts of an audio or video file to repeat continuously for deep study.",
-      "Time-Pin Bookmarks & Notes: Pin timestamps directly to the media track and pair them with text notes for future review.",
-      "Progress Memory: Remembers your exact timestamps automatically, keeping your spot even if the browser tab closes.",
-      "Visual Canvas Adjustment: Adjust brightness, contrast, saturation, and rotation for poorly shot or dim recordings.",
-      "Keyboard Hotkeys: Controls playback seamlessly via intuitive shortcuts for speed adjustments, screen fittings, and tracking skipping."
-    ],
-    "launch": true
-  },
-  {
-    "id": "auraconvert---premium-local-mp4-to-mp3-suite",
-    "title": "AuraConvert - Premium Local MP4 to MP3 Suite",
-    "tagline": "Extract pristine, high-fidelity MP3 audio from your MP4 videos instantly and 100% locally.",
-    "grade": "A+",
-    "review": [
-      "AuraConvert is an advanced, web-based conversion engine built to extract pure audio tracks from MP4 video files. Operating strictly within a highly secure local sandbox, the tool ensures absolute user privacy by handling all processing inside the browser. Because zero data is ever uploaded to external servers, users face no risk of data leaks, zero subscription fees, and no bandwidth limitations.",
-      "The utility utilizes cutting-edge web infrastructure, combining the Web Audio API with dedicated Web Worker Threads to execute heavy encoding routines in parallel. By offloading tasks to background threads, it prevents the user interface from freezing during resource-heavy tasks. This local workflow yields exceptionally fast results, completing standard extractions in mere seconds.",
-      "AuraConvert also includes a professional Studio Settings panel designed for exact customization. Users can set specific target bitrates up to 320 kbps, toggle between stereo and mono output modes, and clip audio lengths using exact start and end points. Additionally, an Export Studio History log keeps an offline tally of past conversions within the active session for easier tracking."
-    ],
-    "mobile": "https://envizion.work/mp4tomp3.html",
-    "category": "Utilities",
-    "features": [
-      "100% Offline Processing: Ensures complete file privacy as no data leaves your local device.",
-      "Ultra-Fast Extractions: Delivers ready-to-save audio conversions within a few seconds via browser-side scripts.",
-      "Multi-Tier Bitrate Settings: Adjusts quality from 128 kbps for podcasts up to 320 kbps ultra-master quality.",
-      "Audio Clipping Tool: Crops long video soundtracks down by defining precise start and end points.",
-      "Channel Mode TogglesChannel Mode Toggles: Lets users switch easily between broad stereo and space-saving mono audio configurations.",
-      "Background Worker Threads: Employs parallel Web Workers so conversion tasks never lag your open tabs.",
-      "Session Export History: Logs your converted tracks automatically during the session to manage multiple outputs.",
-      "Instant Media Previews: Allows users to audition their newly extracted MP3 files directly before saving."
-    ],
-    "launch": true
-  }
-];
+const TOOLS = [];
 
 // --- DO NOT EDIT BELOW THIS LINE ---
 function loadAdminEntries() {
