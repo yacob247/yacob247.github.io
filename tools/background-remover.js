@@ -1,29 +1,22 @@
-    lucide.createIcons();
+     lucide.createIcons();
 
         // --- Application State ---
         const state = {
-            images: [], // { id, file, originalDataUrl, processedDataUrl, blob, name }
+            images: [],
             settings: {
-                // Removal
-                mode: 'auto', // 'auto' or 'custom'
-                targetColor: { r: 255, g: 255, b: 255 }, // Decoded from custom picker
+                mode: 'auto', 
+                targetColor: { r: 255, g: 255, b: 255 },
                 tolerance: 15,
                 feathering: 2,
-                
-                // Adjustments
                 brightness: 0,
                 contrast: 0,
                 saturation: 0,
                 flipH: false,
                 flipV: false,
-
-                // Layout & FX
                 bgColor: 'transparent',
                 shadow: false,
                 shadowVal: 15,
-                padding: 0, // Percentage padding
-
-                // Export
+                padding: 0,
                 size: 'original',
                 trim: true,
                 format: 'png',
@@ -39,20 +32,17 @@
             const container = document.getElementById('toast-container');
             const toast = document.createElement('div');
             toast.className = `toast ${type === 'error' ? 'bg-red-600' : 'bg-slate-800'}`;
-            
             const icon = type === 'success' ? 'check-circle' : type === 'error' ? 'alert-circle' : 'info';
             toast.innerHTML = `<i data-lucide="${icon}" class="w-4 h-4"></i> <span>${message}</span>`;
-            
             container.appendChild(toast);
             lucide.createIcons({ root: toast });
-
             setTimeout(() => {
                 toast.style.animation = 'slideOut 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards';
                 setTimeout(() => toast.remove(), 300);
             }, 3000);
         }
 
-        // --- Web Worker Setup (Handles Heavy Pixel Math) ---
+        // --- Web Worker Setup ---
         const workerCode = `
             self.onmessage = function(e) {
                 const { id, imageData, settings } = e.data;
@@ -61,10 +51,8 @@
                 const width = imageData.width;
                 const height = imageData.height;
 
-                // 1. Determine Background Target Color
                 let bgR, bgG, bgB;
                 if (mode === 'auto') {
-                    // Sample corners
                     const corners = [0, (width - 1) * 4, (height - 1) * width * 4, ((height - 1) * width + (width - 1)) * 4];
                     let rSum = 0, gSum = 0, bSum = 0;
                     corners.forEach(idx => { rSum += data[idx]; gSum += data[idx+1]; bSum += data[idx+2]; });
@@ -74,55 +62,40 @@
                 }
 
                 let minX = width, minY = height, maxX = 0, maxY = 0;
-                const maxDistance = 441.67; // Math.sqrt(255^2 * 3)
-
-                // Contrast Factor
+                const maxDistance = 441.67; 
                 const contrastFactor = (259 * (contrast + 255)) / (255 * (259 - contrast));
-                
-                // Saturation setup
-                const satFactor = saturation / 100; // -1 to 1
+                const satFactor = saturation / 100;
 
                 for (let y = 0; y < height; y++) {
                     for (let x = 0; x < width; x++) {
                         const i = (y * width + x) * 4;
-                        let r = data[i], g = data[i+1], b = data[i+2];
-                        let a = data[i+3];
+                        let r = data[i], g = data[i+1], b = data[i+2], a = data[i+3];
                         
                         if (a === 0) continue;
 
-                        // Calculate removal distance
                         const distance = Math.sqrt(Math.pow(r - bgR, 2) + Math.pow(g - bgG, 2) + Math.pow(b - bgB, 2));
                         const normalizedDist = (distance / maxDistance) * 100;
 
                         if (normalizedDist <= tolerance) {
-                            a = 0; // Remove
+                            a = 0; 
                         } else if (normalizedDist <= tolerance + feathering) {
-                            // Smooth Edge
                             const factor = (normalizedDist - tolerance) / feathering;
                             a = Math.floor(255 * factor);
                         }
 
-                        // Apply Adjustments to visible pixels
                         if (a > 0 && (brightness !== 0 || contrast !== 0 || saturation !== 0)) {
-                            // Brightness
                             r += brightness; g += brightness; b += brightness;
-                            
-                            // Contrast
                             if (contrast !== 0) {
                                 r = contrastFactor * (r - 128) + 128;
                                 g = contrastFactor * (g - 128) + 128;
                                 b = contrastFactor * (b - 128) + 128;
                             }
-
-                            // Saturation (via luma approximation)
                             if (saturation !== 0) {
                                 const luma = 0.299 * r + 0.587 * g + 0.114 * b;
                                 r = luma + (r - luma) * (1 + satFactor);
                                 g = luma + (g - luma) * (1 + satFactor);
                                 b = luma + (b - luma) * (1 + satFactor);
                             }
-
-                            // Clamp
                             data[i]   = Math.min(255, Math.max(0, r));
                             data[i+1] = Math.min(255, Math.max(0, g));
                             data[i+2] = Math.min(255, Math.max(0, b));
@@ -130,7 +103,6 @@
                         
                         data[i+3] = a;
 
-                        // Track bounds for auto-trimming
                         if (a > 10) {
                             if (x < minX) minX = x;
                             if (x > maxX) maxX = x;
@@ -140,7 +112,7 @@
                     }
                 }
 
-                if (minX > maxX) { minX = 0; maxX = width; minY = 0; maxY = height; } // Empty
+                if (minX > maxX) { minX = 0; maxX = width; minY = 0; maxY = height; }
 
                 self.postMessage({ 
                     id, imageData, bounds: { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 } 
@@ -169,15 +141,13 @@
         });
 
         ['dragenter', 'dragover'].forEach(eName => {
-            DOM.uploadContainer.addEventListener(eName, () => DOM.uploadContainer.classList.add('border-indigo-500', 'bg-indigo-50/50'));
+            DOM.uploadContainer.firstElementChild.classList.add('border-indigo-500', 'bg-indigo-50/50');
         });
-
         ['dragleave', 'drop'].forEach(eName => {
-            DOM.uploadContainer.addEventListener(eName, () => DOM.uploadContainer.classList.remove('border-indigo-500', 'bg-indigo-50/50'));
+            DOM.uploadContainer.firstElementChild.classList.remove('border-indigo-500', 'bg-indigo-50/50');
         });
 
         DOM.uploadContainer.addEventListener('drop', e => handleFiles(e.dataTransfer.files));
-        DOM.uploadContainer.addEventListener('click', () => DOM.fileInput.click());
         DOM.fileInput.addEventListener('change', e => handleFiles(e.target.files));
         DOM.addMoreInput.addEventListener('change', e => handleFiles(e.target.files));
 
@@ -199,6 +169,11 @@
             
             updateImageCount();
             processAllImages();
+            
+            // Auto scroll to tools on mobile after initial upload
+            if (window.innerWidth < 768) {
+                document.querySelector('.layout-sidebar').scrollIntoView({ behavior: 'smooth' });
+            }
         }
 
         function readFileAsDataURL(file) {
@@ -248,7 +223,7 @@
                     const canvas = document.createElement('canvas');
                     const ctx = canvas.getContext('2d', { willReadFrequently: true });
                     
-                    const MAX_DIM = 1800; // Optimization limit
+                    const MAX_DIM = 1800;
                     let pW = img.width, pH = img.height;
                     if(pW > MAX_DIM || pH > MAX_DIM) {
                         const r = Math.min(MAX_DIM / pW, MAX_DIM / pH);
@@ -290,7 +265,6 @@
                     targetW = sw; targetH = sh;
                 }
 
-                // Calculate Padding (adds margin around image)
                 let padPixelsX = 0, padPixelsY = 0;
                 if (state.settings.padding > 0) {
                     padPixelsX = targetW * (state.settings.padding / 100);
@@ -299,7 +273,6 @@
                     targetH += padPixelsY * 2;
                 }
 
-                // Calculate Final Container Size
                 if (state.settings.size !== 'original') {
                     const box = parseInt(state.settings.size);
                     canvas.width = box; canvas.height = box;
@@ -307,34 +280,28 @@
                     canvas.width = targetW; canvas.height = targetH;
                 }
 
-                // Draw BG
                 if (state.settings.bgColor !== 'transparent') {
                     ctx.fillStyle = state.settings.bgColor;
                     ctx.fillRect(0, 0, canvas.width, canvas.height);
                 }
 
                 ctx.save();
-
-                // Drop Shadow (looks best on solid BGs)
                 if (state.settings.shadow && state.settings.bgColor !== 'transparent') {
                     ctx.shadowColor = 'rgba(0,0,0,0.4)';
                     ctx.shadowBlur = parseInt(state.settings.shadowVal);
                     ctx.shadowOffsetY = ctx.shadowBlur / 2;
                 }
 
-                // Determine dest pos
                 let dx = padPixelsX, dy = padPixelsY, dw = sw, dh = sh;
 
                 if (state.settings.size !== 'original') {
                     const box = parseInt(state.settings.size);
-                    // Scaling to fit box minus padding
                     const availBox = box * (1 - (state.settings.padding * 2 / 100));
                     const scale = Math.min(availBox / sw, availBox / sh);
                     dw = sw * scale; dh = sh * scale;
                     dx = (box - dw) / 2; dy = (box - dh) / 2;
                 }
 
-                // Apply Transforms (Flip)
                 ctx.translate(canvas.width/2, canvas.height/2);
                 ctx.scale(state.settings.flipH ? -1 : 1, state.settings.flipV ? -1 : 1);
                 ctx.translate(-canvas.width/2, -canvas.height/2);
@@ -342,7 +309,6 @@
                 ctx.drawImage(tempCanvas, sx, sy, sw, sh, dx, dy, dw, dh);
                 ctx.restore();
 
-                // Draw Watermark
                 if (state.settings.watermark) {
                     ctx.font = `bold ${Math.max(14, canvas.width * 0.03)}px Arial`;
                     ctx.fillStyle = 'rgba(255,255,255,0.7)';
@@ -350,7 +316,7 @@
                     ctx.shadowColor = 'rgba(0,0,0,0.8)';
                     ctx.shadowBlur = 4;
                     ctx.fillText(state.settings.watermark, canvas.width - (canvas.width * 0.05), canvas.height - (canvas.height * 0.05));
-                    ctx.shadowBlur = 0; // reset
+                    ctx.shadowBlur = 0;
                 }
 
                 const mime = state.settings.format === 'jpeg' ? 'image/jpeg' : 'image/png';
@@ -435,11 +401,10 @@
         bindSlider('shadow-slider', 'shadowVal', 'px');
         bindSlider('padding-slider', 'padding', '%');
 
-        // Target Color Logic
         window.setRemovalMode = function(mode) {
             state.settings.mode = mode;
-            document.getElementById('mode-auto').className = mode === 'auto' ? "flex-1 text-xs py-1.5 rounded-md border font-medium transition-colors bg-indigo-50 border-indigo-200 text-indigo-700" : "flex-1 text-xs py-1.5 rounded-md border font-medium transition-colors bg-white border-slate-200 text-slate-600 hover:bg-slate-50";
-            document.getElementById('mode-custom').className = mode === 'custom' ? "flex-1 text-xs py-1.5 rounded-md border font-medium transition-colors bg-indigo-50 border-indigo-200 text-indigo-700" : "flex-1 text-xs py-1.5 rounded-md border font-medium transition-colors bg-white border-slate-200 text-slate-600 hover:bg-slate-50";
+            document.getElementById('mode-auto').className = mode === 'auto' ? "flex-1 text-xs py-2 rounded-md border font-medium transition-colors bg-indigo-50 border-indigo-200 text-indigo-700 shadow-sm" : "flex-1 text-xs py-2 rounded-md border font-medium transition-colors bg-white border-slate-200 text-slate-600 hover:bg-slate-50 shadow-sm";
+            document.getElementById('mode-custom').className = mode === 'custom' ? "flex-1 text-xs py-2 rounded-md border font-medium transition-colors bg-indigo-50 border-indigo-200 text-indigo-700 shadow-sm" : "flex-1 text-xs py-2 rounded-md border font-medium transition-colors bg-white border-slate-200 text-slate-600 hover:bg-slate-50 shadow-sm";
             document.getElementById('custom-color-picker').style.display = mode === 'custom' ? 'flex' : 'none';
             queueProcessing();
         }
@@ -454,7 +419,6 @@
             if(state.settings.mode === 'custom') queueProcessing();
         });
 
-        // Flip Toggles
         document.getElementById('flip-h-btn').addEventListener('click', e => {
             state.settings.flipH = !state.settings.flipH;
             e.currentTarget.classList.toggle('bg-indigo-50', state.settings.flipH);
@@ -470,7 +434,6 @@
             queueProcessing();
         });
 
-        // BG Color
         document.querySelectorAll('.bg-btn').forEach(btn => {
             btn.addEventListener('click', e => {
                 document.querySelectorAll('.bg-btn').forEach(b => b.classList.remove('ring-2', 'ring-indigo-500', 'ring-offset-2', 'border-indigo-500'));
@@ -488,7 +451,6 @@
             queueProcessing();
         });
 
-        // Shadow
         document.getElementById('shadow-toggle').addEventListener('change', e => {
             state.settings.shadow = e.target.checked;
             const slider = document.getElementById('shadow-slider');
@@ -498,7 +460,6 @@
             queueProcessing();
         });
 
-        // Misc Setup
         document.getElementById('size-select').addEventListener('change', e => { state.settings.size = e.target.value; queueProcessing(); });
         document.getElementById('trim-toggle').addEventListener('change', e => { state.settings.trim = e.target.checked; queueProcessing(); });
         document.getElementById('format-select').addEventListener('change', e => {
@@ -564,7 +525,7 @@
 
             const btn = document.getElementById('download-zip-btn');
             const originalHTML = btn.innerHTML;
-            btn.innerHTML = `<div class="loader w-4 h-4 border-2 border-white border-t-transparent"></div> Processing...`;
+            btn.innerHTML = `<div class="loader w-4 h-4 border-2 border-white border-t-transparent"></div>`;
             btn.disabled = true;
 
             const zip = new JSZip();
