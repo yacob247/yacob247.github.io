@@ -1,4 +1,4 @@
-        const searchForm = document.getElementById('search-form');
+     const searchForm = document.getElementById('search-form');
         const searchInput = document.getElementById('search-input');
         
         const loadingState = document.getElementById('loading-state');
@@ -40,7 +40,7 @@
                 searchInput.value = targetWord;
                 startSearchProcess(targetWord);
             } else {
-                searchInput.focus();
+                if(searchInput) searchInput.focus();
             }
         });
 
@@ -134,36 +134,52 @@
             showView(loadingState);
             document.title = `Dictionary: ${word}...`;
             
+            let primaryFound = false;
+            let wikiFound = false;
+
+            // TIER 1: Try the standard dictionary first
             try {
-                // TIER 1: Try the standard dictionary first
                 const response = await fetch(`${PRIMARY_API_URL}${encodeURIComponent(word)}`);
-                
                 if (response.ok) {
                     const data = await response.json();
                     renderPrimaryData(data[0]);
+                    primaryFound = true;
                     return;
                 }
-                
-                // TIER 2: If standard fails, try Wiktionary (Huge database)
+            } catch (err) {
+                console.warn("Primary API failure, falling back...", err);
+            }
+            
+            // TIER 2: If standard fails (or threw a CORS/network error), try Wiktionary
+            if (!primaryFound) {
                 loadingText.textContent = "Searching extended Wiktionary database...";
-                const wikiResponse = await fetch(`${WIKTIONARY_API_URL}${encodeURIComponent(word)}`);
-                
-                if (wikiResponse.ok) {
-                    const wikiData = await wikiResponse.json();
-                    if (wikiData.en) {
-                        renderWiktionaryData(word, wikiData.en);
-                        return;
+                try {
+                    const wikiResponse = await fetch(`${WIKTIONARY_API_URL}${encodeURIComponent(word)}`);
+                    if (wikiResponse.ok) {
+                        const wikiData = await wikiResponse.json();
+                        if (wikiData.en) {
+                            renderWiktionaryData(word, wikiData.en);
+                            wikiFound = true;
+                            return;
+                        }
                     }
+                } catch (err) {
+                    console.warn("Wiktionary API failure (often CORS on 404), falling back...", err);
                 }
+            }
 
-                // TIER 3: Absolute Fallback (Google/Oxford Bridge)
-                renderUltimateFallback(word);
-
-            } catch (error) {
-                document.getElementById('error-title').textContent = "Connection Error";
-                document.getElementById('error-message').textContent = "Please check your internet connection and try again.";
-                showView(errorState);
-                document.title = `Error: ${word}`;
+            // TIER 3: Absolute Fallback (Google Search UI Card)
+            // This will safely show up if both dictionary requests fail to find the word
+            if (!primaryFound && !wikiFound) {
+                try {
+                    renderUltimateFallback(word);
+                } catch (error) {
+                    // This acts as our safety guard in case renderUltimateFallback fails
+                    document.getElementById('error-title').textContent = "Connection Error";
+                    document.getElementById('error-message').textContent = "Please check your internet connection and try again.";
+                    showView(errorState);
+                    document.title = `Error: ${word}`;
+                }
             }
         }
 
@@ -229,7 +245,7 @@
             });
 
             showView(resultContent);
-            fetchTranslation(word); // Instantly fetch translation if enabled
+            fetchTranslation(data.word); // Instantly fetch translation if enabled
             setTimeout(() => autoPlayBestAudio(), 400);
         }
 
