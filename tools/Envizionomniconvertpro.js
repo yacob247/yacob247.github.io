@@ -1,4 +1,4 @@
-  // Set up PDF.js Global Worker
+    // Set up PDF.js Global Worker
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
 
         // 27 Tools Definition
@@ -845,27 +845,59 @@
             showToast("Copied content to clipboard", "success");
         }
 
-        // Word (docx) file exporter utilizing direct binary WordprocessingML/Mime formulation (works inside Google Docs/Office Word perfectly)
+        // Robust, high-compatibility DOCX generator creating valid zipped packages
         function downloadAsDocx(sourceId, filename) {
             const text = document.getElementById(sourceId).value;
             if (!text.trim()) {
                 showToast("Cannot export empty document", "error");
                 return;
             }
-            const sourceHTML = `
-                <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
-                <head><title>Exported Document</title><style>body { font-family: Arial, sans-serif; }</style></head>
-                <body><p>${text.replace(/\n/g, '<br>')}</p></body>
-                </html>
-            `;
-            const source = 'data:application/vnd.ms-word;charset=utf-8,' + encodeURIComponent(sourceHTML);
-            const fileDownload = document.createElement("a");
-            document.body.appendChild(fileDownload);
-            fileDownload.href = source;
-            fileDownload.download = filename || 'document.doc';
-            fileDownload.click();
-            document.body.removeChild(fileDownload);
-            showToast("Word document generated", "success");
+
+            try {
+                // Split text by lines and map to genuine docx Paragraph instances
+                const lines = text.split('\n');
+                const paragraphs = lines.map(line => {
+                    return new docx.Paragraph({
+                        children: [
+                            new docx.TextRun({
+                                text: line,
+                                font: "Arial",
+                                size: 24 // 12pt font size
+                            })
+                        ],
+                        spacing: {
+                            after: 120 // 6pt after each line
+                        }
+                    });
+                });
+
+                // Assemble document sections inside docx structures
+                const doc = new docx.Document({
+                    sections: [{
+                        properties: {},
+                        children: paragraphs
+                    }]
+                });
+
+                // Compress, pack, and export the file as a valid binary .docx blob
+                docx.Packer.toBlob(doc).then(blob => {
+                    const url = URL.createObjectURL(blob);
+                    const fileDownload = document.createElement("a");
+                    document.body.appendChild(fileDownload);
+                    fileDownload.href = url;
+                    fileDownload.download = filename || 'document.docx';
+                    fileDownload.click();
+                    document.body.removeChild(fileDownload);
+                    URL.revokeObjectURL(url);
+                    showToast("Genuine Word document (.docx) generated successfully", "success");
+                }).catch(err => {
+                    console.error("Packer failed to zip docx container: ", err);
+                    showToast("Error packing Word document", "error");
+                });
+            } catch (err) {
+                console.error("Docx generation exception: ", err);
+                showToast("Error creating .docx structure", "error");
+            }
         }
 
         function downloadTextareaContent(id, filename) {
