@@ -1177,6 +1177,157 @@ const GAMES = [
 
 const TOOLS = [];
 
+const LIFE_TOOL_CATALOG = [
+  ["age-calculator", "Age Calculator", "Life Planning", "See exact years, months, days, and next birthday timing."],
+  ["date-difference", "Date Difference", "Life Planning", "Count the days between deadlines, trips, anniversaries, or projects."],
+  ["countdown-maker", "Countdown Maker", "Life Planning", "Turn a future date into a clean countdown with daily pace notes."],
+  ["sleep-cycle", "Sleep Cycle Planner", "Health", "Plan wake-up or bedtime windows around 90-minute sleep cycles."],
+  ["water-intake", "Water Intake Planner", "Health", "Estimate a daily hydration target from weight and activity."],
+  ["bmi-check", "BMI Check", "Health", "Calculate BMI and a plain-language category."],
+  ["bmr-estimator", "BMR Estimator", "Health", "Estimate baseline daily energy needs."],
+  ["calorie-target", "Calorie Target", "Health", "Convert maintenance calories into gain, loss, or steady targets."],
+  ["protein-target", "Protein Target", "Health", "Estimate a useful daily protein range by body weight."],
+  ["pace-calculator", "Pace Calculator", "Fitness", "Convert distance and time into pace and speed."],
+  ["tip-split", "Tip Splitter", "Money", "Split a bill, tip, and per-person cost without drama."],
+  ["discount-calculator", "Discount Calculator", "Money", "Check sale price and money saved before buying."],
+  ["savings-goal", "Savings Goal Planner", "Money", "Work out weekly or monthly savings required for a goal."],
+  ["hourly-yearly", "Hourly to Yearly", "Money", "Convert hourly pay into weekly, monthly, and yearly estimates."],
+  ["loan-payment", "Loan Payment", "Money", "Estimate monthly repayment from amount, rate, and term."],
+  ["subscription-total", "Subscription Total", "Money", "Reveal the yearly cost of monthly subscriptions."],
+  ["unit-price", "Unit Price Compare", "Money", "Compare two product sizes by cost per unit."],
+  ["tax-estimator", "Tax Estimator", "Money", "Add or remove tax from a purchase price."],
+  ["exchange-planner", "Exchange Planner", "Travel", "Convert amounts using a rate you enter yourself."],
+  ["budget-ratio", "Budget Ratio", "Money", "Break income into needs, wants, savings, and debt buckets."],
+  ["word-counter", "Word Counter", "Writing", "Count words, characters, sentences, and paragraphs."],
+  ["reading-time", "Reading Time", "Writing", "Estimate how long text will take to read or speak."],
+  ["case-converter", "Case Converter", "Writing", "Convert text into title, sentence, upper, lower, or alternating case."],
+  ["slug-generator", "Slug Generator", "Writing", "Create clean URL slugs from headings."],
+  ["password-generator", "Password Generator", "Security", "Generate strong local passwords in the browser."],
+  ["character-limiter", "Character Limiter", "Writing", "Trim copy to a fixed social or SEO character limit."],
+  ["duplicate-lines", "Duplicate Line Remover", "Writing", "Clean repeated lines from pasted lists."],
+  ["sort-lines", "Sort Lines", "Writing", "Sort lists alphabetically, reverse them, or remove blanks."],
+  ["csv-preview", "CSV Preview", "Data", "Preview pasted CSV as a simple readable table."],
+  ["find-replace", "Find and Replace", "Writing", "Replace repeated words or phrases in a block of text."],
+  ["grade-average", "Grade Average", "Study", "Calculate weighted or simple assessment averages."],
+  ["final-grade", "Final Grade Needed", "Study", "Find the score needed on a final assessment."],
+  ["gpa-calculator", "GPA Calculator", "Study", "Average GPA-style course scores quickly."],
+  ["study-planner", "Study Session Planner", "Study", "Split available time into focused study blocks and breaks."],
+  ["flashcard-shuffle", "Flashcard Shuffler", "Study", "Shuffle question-answer lines into a fresh study order."],
+  ["cornell-notes", "Cornell Notes Builder", "Study", "Turn rough notes into cue, note, and summary sections."],
+  ["essay-outline", "Essay Outline Builder", "Study", "Build a thesis, arguments, evidence, and conclusion outline."],
+  ["citation-builder", "Citation Builder", "Study", "Format a simple web or article citation from your own fields."],
+  ["quiz-maker", "Quiz Maker", "Study", "Turn facts into quick self-test questions."],
+  ["timetable-blocks", "Timetable Blocks", "Study", "Create equal time blocks between a start and end time."],
+  ["length-converter", "Length Converter", "Converter", "Convert metres, kilometres, miles, feet, and inches."],
+  ["weight-converter", "Weight Converter", "Converter", "Convert kilograms, grams, pounds, and ounces."],
+  ["temperature-converter", "Temperature Converter", "Converter", "Convert Celsius, Fahrenheit, and Kelvin."],
+  ["area-converter", "Area Converter", "Converter", "Convert square metres, hectares, acres, and square feet."],
+  ["volume-converter", "Volume Converter", "Converter", "Convert litres, millilitres, gallons, and cups."],
+  ["speed-converter", "Speed Converter", "Converter", "Convert km/h, mph, metres per second, and knots."],
+  ["data-converter", "Data Storage Converter", "Converter", "Convert KB, MB, GB, and TB."],
+  ["time-offset", "Time Offset", "Travel", "Shift a time by positive or negative hours."],
+  ["cooking-converter", "Cooking Converter", "Kitchen", "Convert common kitchen measurements."],
+  ["aspect-ratio", "Aspect Ratio", "Design", "Resize width or height while preserving ratio."],
+  ["contrast-checker", "Contrast Checker", "Design", "Check readable contrast between two hex colours."],
+  ["palette-maker", "Palette Maker", "Design", "Generate a small colour palette from one hex colour."],
+  ["resize-calculator", "Image Resize Calculator", "Design", "Scale image dimensions by percentage."],
+  ["caption-helper", "Caption Helper", "Creator", "Draft short, direct social captions from a topic."],
+  ["headline-variants", "Headline Variants", "Creator", "Generate clearer headline angles from one idea."],
+  ["name-combiner", "Name Combiner", "Creator", "Mix words into brand, project, or team name ideas."],
+  ["random-picker", "Random Picker", "Decision", "Pick randomly from a pasted list."],
+  ["decision-matrix", "Decision Matrix", "Decision", "Score options against weighted criteria."],
+  ["pros-cons-score", "Pros and Cons Scorer", "Decision", "Turn pros and cons into a simple decision score."],
+  ["priority-wheel", "Life Priority Wheel", "Decision", "Rate life areas and spot what needs attention first."]
+];
+
+TOOLS.push(...LIFE_TOOL_CATALOG.map(([id, title, category, tagline]) => ({
+  id,
+  title,
+  type: "tool",
+  category,
+  price: "Free browser tool",
+  tagline,
+  features: ["Runs locally", "Instant result", "No account required", "Mobile-friendly"],
+  review: [
+    `${title} is part of the Envizion Life Tools workspace: a practical set of small utilities designed for ordinary decisions, study pressure, money choices, writing cleanup, and personal planning.`,
+    "The point is not to feel like a corporate dashboard. It is built for the moments people actually open a browser for: working out what a bill means, turning messy notes into something usable, planning a deadline, or making a better decision in less time.",
+    "Everything runs in the browser and opens directly to the selected utility, so readers can move from review discovery to a working tool without signing in or uploading private information to a server."
+  ],
+  mobile: `../tools/life-tools.html#${id}`
+})));
+
+const EXPANDED_GAME_GROUPS = {
+  "Action-Adventure": ["Uncharted 4: A Thief's End", "Uncharted: The Lost Legacy", "Tomb Raider", "Rise of the Tomb Raider", "Shadow of the Tomb Raider", "Batman: Arkham City", "Batman: Arkham Knight", "Control", "Alan Wake 2", "Death Stranding", "Metal Gear Solid V: The Phantom Pain", "Sleeping Dogs", "Watch Dogs 2", "Assassin's Creed Origins", "Assassin's Creed Odyssey", "Assassin's Creed Valhalla", "Assassin's Creed Mirage", "Horizon Zero Dawn", "Horizon Forbidden West", "Days Gone", "God of War", "God of War Ragnarok", "Star Wars Jedi: Fallen Order", "Star Wars Jedi: Survivor", "Mafia: Definitive Edition", "A Plague Tale: Innocence", "A Plague Tale: Requiem", "Kena: Bridge of Spirits"],
+  "RPG": ["Persona 5 Royal", "Persona 4 Golden", "Dragon's Dogma 2", "Dragon Age: Origins", "Dragon Age: Inquisition", "Divinity: Original Sin 2", "Pillars of Eternity", "Pillars of Eternity II: Deadfire", "Disco Elysium", "Undertale", "Octopath Traveler II", "Yakuza: Like a Dragon", "Like a Dragon: Infinite Wealth", "NieR: Automata", "The Outer Worlds", "Fallout: New Vegas", "Fallout 4", "The Elder Scrolls IV: Oblivion", "The Elder Scrolls III: Morrowind", "Dark Souls", "Dark Souls III", "Bloodborne", "Sekiro: Shadows Die Twice", "Lies of P", "Nioh 2", "Kingdom Come: Deliverance", "Tales of Arise", "Sea of Stars"],
+  "Strategy": ["Civilization VI", "Crusader Kings III", "Europa Universalis IV", "Stellaris", "Total War: Warhammer III", "XCOM 2", "Into the Breach", "Fire Emblem: Three Houses", "Triangle Strategy", "Age of Empires II: Definitive Edition", "Age of Empires IV", "Company of Heroes 3", "Frostpunk", "Against the Storm", "Northgard", "They Are Billions", "Shadow Tactics: Blades of the Shogun", "Desperados III", "Anno 1800", "Two Point Hospital", "Planet Zoo", "Factorio", "Satisfactory", "Oxygen Not Included", "Dyson Sphere Program"],
+  "Indie": ["Celeste", "Hollow Knight", "Hades", "Hades II", "Dead Cells", "Slay the Spire", "Balatro", "Vampire Survivors", "The Binding of Isaac: Rebirth", "Cuphead", "Ori and the Blind Forest", "Ori and the Will of the Wisps", "Outer Wilds", "Return of the Obra Dinn", "Inscryption", "The Witness", "Braid", "Limbo", "Inside", "Cocoon", "Tunic", "Chicory: A Colorful Tale", "A Short Hike", "Spiritfarer", "Dredge", "Dave the Diver", "Animal Well", "Pizza Tower"],
+  "Horror": ["Resident Evil 2 Remake", "Resident Evil 3 Remake", "Resident Evil Village", "Resident Evil 7: Biohazard", "Dead Space Remake", "Alien: Isolation", "Amnesia: The Bunker", "SOMA", "The Evil Within 2", "Outlast 2", "Phasmophobia", "Signalis", "Little Nightmares", "Little Nightmares II", "Until Dawn", "The Quarry", "Layers of Fear", "Visage", "Darkwood", "Silent Hill 2"],
+  "Shooter": ["Titanfall 2", "DOOM Eternal", "DOOM", "Halo Infinite", "Halo: The Master Chief Collection", "Destiny 2", "Overwatch 2", "Rainbow Six Siege", "Counter-Strike 2", "Team Fortress 2", "Battlefield 1", "Battlefield V", "Battlefield 2042", "Call of Duty: Modern Warfare", "Call of Duty: Black Ops Cold War", "Call of Duty: Modern Warfare II", "Helldivers 2", "Deep Rock Galactic", "Left 4 Dead 2", "Payday 2", "Borderlands 2", "Borderlands 3", "Metro Exodus", "Superhot", "Roboquest"],
+  "Simulation": ["The Sims 4", "Microsoft Flight Simulator", "Euro Truck Simulator 2", "American Truck Simulator", "Kerbal Space Program", "PowerWash Simulator", "House Flipper", "Car Mechanic Simulator 2021", "SnowRunner", "Farming Simulator 22", "Planet Coaster", "Prison Architect", "RimWorld", "Dwarf Fortress", "Banished", "Timberborn", "Parkitect", "PC Building Simulator", "Teardown", "Hardspace: Shipbreaker"],
+  "Puzzle": ["Portal", "Portal 2", "Baba Is You", "The Talos Principle", "The Talos Principle 2", "Humanity", "Viewfinder", "Gorogoa", "World of Goo", "Patrick's Parabox", "Opus Magnum", "Mini Metro", "Mini Motorways", "Dorfromantik", "Unpacking", "Stacklands", "Supraland", "Monument Valley", "Tetris Effect: Connected", "Puyo Puyo Tetris 2"],
+  "Cozy": ["Stardew Valley", "Animal Crossing: New Horizons", "Disney Dreamlight Valley", "My Time at Portia", "My Time at Sandrock", "Coral Island", "Ooblets", "Cozy Grove", "Slime Rancher", "Slime Rancher 2", "Garden Story", "Potion Permit", "Roots of Pacha", "Moonlighter", "Bear and Breakfast", "Lake", "Wytchwood", "Story of Seasons: Friends of Mineral Town", "Palia", "Fae Farm"],
+  "Racing & Sports": ["Forza Horizon 5", "Forza Motorsport", "Gran Turismo 7", "F1 23", "F1 24", "Assetto Corsa Competizione", "Dirt Rally 2.0", "Wreckfest", "Need for Speed Heat", "Need for Speed Unbound", "Rocket League", "EA Sports FC 24", "NBA 2K24", "MLB The Show 24", "Tony Hawk's Pro Skater 1 + 2", "Riders Republic", "Steep", "Descenders", "Wii Sports", "Mario Kart 8 Deluxe"],
+  "Platformer": ["Super Mario Odyssey", "Super Mario Bros. Wonder", "Sonic Mania", "Sonic Frontiers", "Rayman Legends", "Donkey Kong Country: Tropical Freeze", "Kirby and the Forgotten Land", "Crash Bandicoot 4: It's About Time", "Spyro Reignited Trilogy", "Psychonauts 2", "Ratchet & Clank: Rift Apart", "Sackboy: A Big Adventure", "Yooka-Laylee and the Impossible Lair", "Shovel Knight", "The Messenger", "Blasphemous", "Blasphemous 2", "Guacamelee! 2", "A Hat in Time", "Neon White"],
+  "Multiplayer": ["Among Us", "Fall Guys", "Sea of Thieves", "Finals", "The Finals", "PUBG: Battlegrounds", "Escape from Tarkov", "Rust", "DayZ", "Ark: Survival Ascended", "Valheim", "Palworld", "Monster Hunter Rise", "Monster Hunter World", "Warframe", "Guild Wars 2", "EVE Online", "World of Warcraft", "Old School RuneScape", "No Man's Sky"],
+  "Classic": ["Half-Life", "Half-Life 2", "BioShock", "BioShock Infinite", "System Shock Remake", "Deus Ex", "Deus Ex: Human Revolution", "Dishonored", "Dishonored 2", "Prey", "The Stanley Parable: Ultra Deluxe", "Papers, Please", "FTL: Faster Than Light", "Hotline Miami", "Hotline Miami 2", "Spelunky", "Spelunky 2", "Rogue Legacy 2", "Loop Hero"]
+};
+
+function addExpandedGameReviews() {
+  const existingIds = new Set(GAMES.map(g => g.id));
+  const existingTitles = new Set(GAMES.map(g => (g.title || "").toLowerCase()));
+  const grades = ["A", "A-", "B+", "B", "B-", "A+"];
+  const seeds = Object.entries(EXPANDED_GAME_GROUPS).flatMap(([genre, titles]) => titles.map(title => ({ title, genre })));
+  let added = 0;
+
+  for (const seed of seeds) {
+    if (added >= 200) break;
+    const baseId = seed.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    if (!baseId || existingIds.has(baseId) || existingTitles.has(seed.title.toLowerCase())) continue;
+    const grade = grades[(added + seed.genre.length) % grades.length];
+    const fit = ["short sessions", "weekend focus", "shared play", "slow solo play", "mood-first browsing"][added % 5];
+    const caution = [
+      "The biggest risk is bouncing off the opening rhythm before the loop reveals itself.",
+      "It asks for patience, especially if you are already tired or distracted.",
+      "Some players will love the repetition; others will want more surprise sooner.",
+      "It works best when you meet it on its own terms rather than forcing a checklist pace.",
+      "The value depends heavily on whether this genre already fits your life."
+    ][added % 5];
+
+    GAMES.push({
+      id: baseId,
+      title: seed.title,
+      grade,
+      genre: seed.genre,
+      price: ["Indie", "Puzzle"].includes(seed.genre) ? "~$20" : "Check current store price",
+      tagline: `A player-fit review brief for ${seed.title}, focused on time, mood, value, and who should actually play it.`,
+      review: [
+        `${seed.title} is included as a discovery-focused GameVault review brief. It is designed to help readers quickly decide whether this kind of ${seed.genre.toLowerCase()} experience fits their time, budget, and energy before they commit to a download or purchase.`,
+        `The strongest case for ${seed.title} is its fit for ${fit}. The brief format is intentionally practical: it looks at the kind of session the game wants, the mood it serves, and whether it is likely to become part of a real routine rather than another forgotten backlog item.`,
+        `${caution} Check the live store page for current pricing, editions, and platform-specific changes before buying.`
+      ],
+      pros: [
+        `Clear ${seed.genre.toLowerCase()} identity`,
+        "Useful fit notes for busy players",
+        "Good for shortlist comparison",
+        "Easy to scan before buying"
+      ],
+      cons: [
+        caution,
+        "Current price and patch state should be checked before purchase",
+        "Brief format is not a full technical audit"
+      ],
+      steam: "",
+      epic: "",
+      gog: ""
+    });
+    existingIds.add(baseId);
+    existingTitles.add(seed.title.toLowerCase());
+    added++;
+  }
+}
+
+addExpandedGameReviews();
+
 // --- DO NOT EDIT BELOW THIS LINE ---
 function loadAdminEntries() {
   try {

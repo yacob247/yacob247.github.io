@@ -918,3 +918,145 @@ const POSTS = [
     ]
   }
 ];
+
+(function addExpandedBlogPosts() {
+  if (typeof POSTS === "undefined") return;
+
+  const topics = [
+    "choosing games when you only have thirty minutes",
+    "building a backlog that does not feel like homework",
+    "spotting games that respect tired players",
+    "finding co-op games that keep friendships light",
+    "using difficulty settings without guilt",
+    "knowing when to stop playing a live-service game",
+    "turning a game night into an actual ritual",
+    "finding games for quiet recovery days",
+    "choosing competitive games without burning out",
+    "making room for story games in a busy week",
+    "reading a Steam page like a reviewer",
+    "telling hype apart from real fit",
+    "building a family-friendly game shelf",
+    "choosing games for younger siblings",
+    "finding games that help you think",
+    "choosing horror games by stress level",
+    "finding RPGs that do not swallow your life",
+    "choosing open worlds that are worth the map",
+    "using indie games to reset your taste",
+    "deciding whether a sale is actually worth it",
+    "choosing games for long-distance friends",
+    "finding comfort games without losing challenge",
+    "building a weekend game plan",
+    "choosing games after exams",
+    "finding games that reward patience",
+    "choosing multiplayer games for mixed skill groups",
+    "spotting monetization that changes the experience",
+    "making a game budget that still feels fun",
+    "choosing games for a shared living room",
+    "finding portable games for travel days",
+    "using demos and trials properly",
+    "choosing games when your attention is scattered",
+    "building a personal top-ten list that means something",
+    "finding games that create stories with friends",
+    "choosing relaxing games that are not empty",
+    "finding strategy games that teach without punishing",
+    "choosing shooters by communication style",
+    "spotting good onboarding in complex games",
+    "choosing games for creative people",
+    "finding games that make failure interesting",
+    "deciding when to replay an old favorite",
+    "choosing games for a new PC",
+    "finding games that work on weaker laptops",
+    "choosing subscription libraries wisely",
+    "spotting review scores that do not match your life",
+    "finding games for screen-free balance",
+    "choosing games for rainy weekends",
+    "finding short games with a long aftertaste",
+    "choosing games that fit your mood",
+    "building a healthier gaming routine"
+  ];
+
+  const formats = [
+    {
+      prefix: "The Life-Fit Test",
+      tag: "Life Fit",
+      tagColor: "#2563eb",
+      angle: "time, energy, and emotional bandwidth"
+    },
+    {
+      prefix: "Before You Install",
+      tag: "Buying Guide",
+      tagColor: "#16a34a",
+      angle: "value, commitment, and hidden friction"
+    },
+    {
+      prefix: "The Honest Player Guide",
+      tag: "Guide",
+      tagColor: "#9b51e0",
+      angle: "what the game asks from the person playing it"
+    },
+    {
+      prefix: "Better Game Nights",
+      tag: "Opinion",
+      tagColor: "#d97706",
+      angle: "how games fit around friends, school, work, and rest"
+    }
+  ];
+
+  const existing = new Set(POSTS.map(post => post.slug));
+  const start = new Date(2026, 4, 25);
+  let added = 0;
+
+  for (const topic of topics) {
+    for (const format of formats) {
+      const titleTopic = topic.replace(/^./, letter => letter.toUpperCase());
+      const title = `${format.prefix}: ${titleTopic}`;
+      const slug = `expanded-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
+      if (existing.has(slug)) continue;
+
+      const date = new Date(start);
+      date.setDate(start.getDate() - added);
+      const dateText = date.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+
+      POSTS.push({
+        slug,
+        title,
+        date: dateText,
+        tag: format.tag,
+        tagColor: format.tagColor,
+        excerpt: `A practical, human-first guide to ${topic}, with less hype and more attention to how games fit real routines.`,
+        body: [
+          {
+            type: "intro",
+            text: `Most game advice starts with the game. This guide starts with the player. If you are ${topic}, the useful question is not only whether a game is good. It is whether it fits your time, your energy, your money, and the people around you.`
+          },
+          {
+            type: "entry",
+            rank: 3,
+            title: "Check the life cost",
+            text: `Look at ${format.angle}. A game can be excellent and still be wrong for a week where you are tired, busy, or trying to avoid another endless commitment.`
+          },
+          {
+            type: "entry",
+            rank: 2,
+            title: "Match the session shape",
+            text: "Some games need a full evening before they feel alive. Others give you a meaningful ten-minute loop. The best choice is the one that fits the session you can actually give it."
+          },
+          {
+            type: "entry",
+            rank: 1,
+            title: "Protect the reason you play",
+            text: "If you play to connect, pick games that create conversation. If you play to recover, avoid games that demand constant vigilance. If you play to master something, choose friction that feels fair."
+          },
+          {
+            type: "outro",
+            text: "The right game is not always the highest-rated game. It is the one that leaves your real life better, not thinner."
+          }
+        ]
+      });
+
+      existing.add(slug);
+      added++;
+      if (added >= 200) return;
+    }
+  }
+})();
