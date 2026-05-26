@@ -92,7 +92,25 @@ function renderButtons(category, query) {
     const button = e.target.closest("[data-tool]");
     if (!button) return;
     setActive(button.dataset.tool);
+    // Smooth scroll to tool workspace on mobile/tablets
+    if (window.innerWidth <= 980) {
+      document.querySelector(".tool-panel").scrollIntoView({ behavior: 'smooth' });
+    }
   };
+}
+
+// Dynamically updates global CSS variables to match active tool's category
+function updateCategoryTheme(category) {
+  const formattedCat = category.toLowerCase().replace(/\s+/g, '-');
+  const root = document.documentElement;
+  const computedStyle = getComputedStyle(root);
+  const rgb = computedStyle.getPropertyValue(`--accent-rgb-${formattedCat}`).trim();
+  
+  if (rgb) {
+    root.style.setProperty('--accent', `rgb(${rgb})`);
+    root.style.setProperty('--accent-glow', `rgba(${rgb}, 0.04)`);
+    root.style.setProperty('--accent-light', `rgba(${rgb}, 0.12)`);
+  }
 }
 
 function setActive(id) {
@@ -104,6 +122,9 @@ function setActive(id) {
   $("tool-form").innerHTML = active.fields.map(fieldHtml).join("") + `<div class="field full"><button type="submit">Run tool</button></div>`;
   document.querySelectorAll("#tool-buttons button").forEach(b => b.classList.toggle("active", b.dataset.tool === active.id));
   $("result").textContent = "Enter values and run the tool.";
+  
+  // Transition background color theme
+  updateCategoryTheme(active.category);
 }
 
 function fieldHtml(field) {
@@ -257,6 +278,34 @@ document.addEventListener("DOMContentLoaded", () => {
     const data = new FormData(e.currentTarget);
     result(ACTIONS[active.id](data));
   });
-  $("copy-result").addEventListener("click", () => navigator.clipboard?.writeText($("result").innerText));
+  
+  // Tactical feedback on result copying
+  $("copy-result").addEventListener("click", () => {
+    const textToCopy = $("result").innerText;
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(textToCopy).then(() => {
+        const copyBtn = $("copy-result");
+        const originalText = copyBtn.innerHTML;
+        copyBtn.innerHTML = "✓ Copied!";
+        copyBtn.style.background = "#f0fdf4";
+        copyBtn.style.color = "#16a34a";
+        copyBtn.style.borderColor = "#bbf7d0";
+        setTimeout(() => {
+          copyBtn.innerHTML = originalText;
+          copyBtn.style.background = "";
+          copyBtn.style.color = "";
+          copyBtn.style.borderColor = "";
+        }, 1800);
+      });
+    } else {
+      // Fallback
+      const el = document.createElement('textarea');
+      el.value = textToCopy;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+    }
+  });
   if (window.adsbygoogle) document.querySelectorAll(".adsbygoogle").forEach(() => { try { (adsbygoogle = window.adsbygoogle || []).push({}); } catch (e) {} });
 });
