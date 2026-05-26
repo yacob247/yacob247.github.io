@@ -59,7 +59,7 @@ const TOOLS = [
   ["decision-matrix","Decision Matrix","Decision","Score weighted options.","textarea:Options as name,score,weight"],
   ["pros-cons-score","Pros and Cons Scorer","Decision","Score pros and cons.","textarea:Pros|textarea:Cons"],
   ["priority-wheel","Life Priority Wheel","Decision","Rate life areas.","textarea:Areas as name,score"]
-].map(([id,title,category,desc,fields]) => ({ id, title, category, desc, fields: fields.split("|").map(parseField) }));
+].map(([id,title,category,desc,fields]) => ({ id,title,category,desc,fields: fields.split("|").map(parseField) }));
 
 function parseField(def) {
   const [type, label, options] = def.split(":");
@@ -70,160 +70,81 @@ const $ = (id) => document.getElementById(id);
 const fmt = (n, d = 2) => Number.isFinite(n) ? Number(n).toLocaleString(undefined, { maximumFractionDigits: d }) : "0";
 const val = (data, label) => data.get(label) || "";
 const num = (data, label) => parseFloat(val(data, label)) || 0;
+let active = TOOLS[0];
 
-// ─── ROUTING ──────────────────────────────────────────────────────────────────
-
-function getToolParam() {
-  return new URLSearchParams(window.location.search).get("tool");
-}
-
-function navigateToTool(id) {
-  window.location.href = "life-tools.html?tool=" + id;
-}
-
-// ─── THEME ────────────────────────────────────────────────────────────────────
-
-function updateCategoryTheme(category) {
-  const formattedCat = category.toLowerCase().replace(/\s+/g, "-");
-  const root = document.documentElement;
-  const rgb = getComputedStyle(root).getPropertyValue(`--accent-rgb-${formattedCat}`).trim();
-  if (rgb) {
-    root.style.setProperty("--accent", `rgb(${rgb})`);
-    root.style.setProperty("--accent-glow", `rgba(${rgb}, 0.04)`);
-    root.style.setProperty("--accent-light", `rgba(${rgb}, 0.12)`);
-  }
-}
-
-// ─── LIST VIEW ────────────────────────────────────────────────────────────────
-
-function renderListView() {
-  $("view-list").style.display = "";
-  $("view-tool").style.display = "none";
-
-  // Preview categories summary
-  const cats = [...new Set(TOOLS.map(t => t.category))];
-  const pcEl = $("preview-cats");
-  if (pcEl) {
-    pcEl.innerHTML = cats.map(c => {
-      const count = TOOLS.filter(t => t.category === c).length;
-      return `<div class="preview-cat-chip">${c} <span>${count}</span></div>`;
-    }).join("");
-  }
-
-  const categories = ["All", ...cats];
-  $("category-tabs").innerHTML = categories.map((c, i) =>
-    `<button type="button" class="${i === 0 ? "active" : ""}" data-cat="${c}">${c}</button>`
-  ).join("");
-
+function renderNav() {
+  const categories = ["All", ...new Set(TOOLS.map(t => t.category))];
+  $("category-tabs").innerHTML = categories.map((c, i) => `<button type="button" class="${i === 0 ? "active" : ""}" data-cat="${c}">${c}</button>`).join("");
   $("category-tabs").addEventListener("click", e => {
     if (!e.target.dataset.cat) return;
     document.querySelectorAll("#category-tabs button").forEach(b => b.classList.toggle("active", b === e.target));
     renderButtons(e.target.dataset.cat, $("tool-search").value);
   });
-
-  $("tool-search").addEventListener("input", () =>
-    renderButtons(document.querySelector("#category-tabs .active").dataset.cat, $("tool-search").value)
-  );
-
+  $("tool-search").addEventListener("input", () => renderButtons(document.querySelector("#category-tabs .active").dataset.cat, $("tool-search").value));
   renderButtons("All", "");
 }
 
 function renderButtons(category, query) {
   const q = query.toLowerCase();
-  const list = TOOLS.filter(t =>
-    (category === "All" || t.category === category) &&
-    `${t.title} ${t.desc} ${t.category}`.toLowerCase().includes(q)
-  );
-
-  $("tool-buttons").innerHTML = list.map(t =>
-    `<button type="button" data-tool="${t.id}">
-      <span>${t.title}</span>
-      <small>${t.category}</small>
-    </button>`
-  ).join("");
-
+  const list = TOOLS.filter(t => (category === "All" || t.category === category) && `${t.title} ${t.desc} ${t.category}`.toLowerCase().includes(q));
+  $("tool-buttons").innerHTML = list.map(t => `<button type="button" class="${t.id === active.id ? "active" : ""}" data-tool="${t.id}"><span>${t.title}</span><small>${t.category}</small></button>`).join("");
   $("tool-buttons").onclick = e => {
     const button = e.target.closest("[data-tool]");
     if (!button) return;
-    navigateToTool(button.dataset.tool);
+    setActive(button.dataset.tool);
+    // Smooth scroll to tool workspace on mobile/tablets
+    if (window.innerWidth <= 980) {
+      document.querySelector(".tool-panel").scrollIntoView({ behavior: 'smooth' });
+    }
   };
 }
 
-// ─── DETAIL VIEW ──────────────────────────────────────────────────────────────
-
-function renderDetailView(id) {
-  const tool = TOOLS.find(t => t.id === id) || TOOLS[0];
-  const idx = TOOLS.indexOf(tool);
-
-  $("view-list").style.display = "none";
-  $("view-tool").style.display = "";
-
-  document.title = `${tool.title} — Envizion Life Tools`;
-
-  updateCategoryTheme(tool.category);
-
-  $("detail-category").textContent = tool.category;
-  $("detail-title").textContent = tool.title;
-  $("detail-desc").textContent = tool.desc;
-  $("detail-breadcrumb-cat").textContent = tool.category;
-  $("detail-breadcrumb-title").textContent = tool.title;
-
-  $("tool-form").innerHTML = tool.fields.map(fieldHtml).join("") +
-    `<div class="field full"><button type="submit">Run tool</button></div>`;
-
-  $("result").innerHTML = "Enter values and run the tool.";
-
-  // Prev / Next navigation
-  const prev = TOOLS[idx - 1];
-  const next = TOOLS[idx + 1];
-  $("btn-prev").textContent = prev ? `← ${prev.title}` : "← First tool";
-  $("btn-prev").disabled = !prev;
-  $("btn-next").textContent = next ? `${next.title} →` : "Last tool →";
-  $("btn-next").disabled = !next;
-
-  $("btn-prev").onclick = () => prev && navigateToTool(prev.id);
-  $("btn-next").onclick = () => next && navigateToTool(next.id);
-
-  $("tool-form").addEventListener("submit", e => {
-    e.preventDefault();
-    const data = new FormData(e.currentTarget);
-    $("result").innerHTML = ACTIONS[tool.id](data);
-  });
-
-  $("copy-result").addEventListener("click", () => {
-    const text = $("result").innerText;
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(text).then(() => {
-        const btn = $("copy-result");
-        const orig = btn.innerHTML;
-        btn.innerHTML = "✓ Copied!";
-        btn.style.cssText = "background:#f0fdf4;color:#16a34a;border-color:#bbf7d0";
-        setTimeout(() => { btn.innerHTML = orig; btn.style.cssText = ""; }, 1800);
-      });
-    }
-  });
+// Dynamically updates global CSS variables to match active tool's category
+function updateCategoryTheme(category) {
+  const formattedCat = category.toLowerCase().replace(/\s+/g, '-');
+  const root = document.documentElement;
+  const computedStyle = getComputedStyle(root);
+  const rgb = computedStyle.getPropertyValue(`--accent-rgb-${formattedCat}`).trim();
+  
+  if (rgb) {
+    root.style.setProperty('--accent', `rgb(${rgb})`);
+    root.style.setProperty('--accent-glow', `rgba(${rgb}, 0.04)`);
+    root.style.setProperty('--accent-light', `rgba(${rgb}, 0.12)`);
+  }
 }
 
-// ─── FIELD HTML ───────────────────────────────────────────────────────────────
+function setActive(id) {
+  active = TOOLS.find(t => t.id === id) || TOOLS[0];
+  location.hash = active.id;
+  $("active-title").textContent = active.title;
+  $("active-category").textContent = active.category;
+  $("active-desc").textContent = active.desc;
+  $("tool-form").innerHTML = active.fields.map(fieldHtml).join("") + `<div class="field full"><button type="submit">Run tool</button></div>`;
+  document.querySelectorAll("#tool-buttons button").forEach(b => b.classList.toggle("active", b.dataset.tool === active.id));
+  $("result").textContent = "Enter values and run the tool.";
+  
+  // Transition background color theme
+  updateCategoryTheme(active.category);
+}
 
 function fieldHtml(field) {
   const name = field.label;
   const common = `name="${name}" id="${name.replace(/\W+/g, "-")}"`;
-  if (field.type === "textarea")
-    return `<label class="field full"><span>${name}</span><textarea ${common}></textarea></label>`;
-  if (field.type === "select")
-    return `<label class="field"><span>${name}</span><select ${common}>${field.options.map(o => `<option>${o}</option>`).join("")}</select></label>`;
-  return `<label class="field"><span>${name}</span><input type="${field.type}" ${common} ${field.type === "number" ? 'step="any"' : ""}></label>`;
+  if (field.type === "textarea") return `<label class="field full"><span>${name}</span><textarea ${common}></textarea></label>`;
+  if (field.type === "select") return `<label class="field"><span>${name}</span><select ${common}>${field.options.map(o => `<option>${o}</option>`).join("")}</select></label>`;
+  return `<label class="field"><span>${name}</span><input type="${field.type}" ${common} ${field.type === "number" ? "step=\"any\"" : ""}></label>`;
 }
 
-// ─── ACTIONS ──────────────────────────────────────────────────────────────────
+function result(html) {
+  $("result").innerHTML = html;
+}
 
 const ACTIONS = {
   "age-calculator": d => { const b = new Date(val(d,"Birth date")); const now = new Date(); const days = Math.floor((now - b) / 86400000); return `<strong>${Math.floor(days/365.2425)} years old</strong>\n${days.toLocaleString()} days lived.`; },
   "date-difference": d => `${Math.abs(Math.round((new Date(val(d,"End date")) - new Date(val(d,"Start date"))) / 86400000)).toLocaleString()} days between dates.`,
   "countdown-maker": d => { const days = Math.ceil((new Date(val(d,"Target date")) - new Date()) / 86400000); return `<strong>${val(d,"Event name") || "Event"}</strong>\n${days} days remaining.`; },
   "sleep-cycle": d => { const wake = val(d,"Wake time") || "07:00"; const [h,m] = wake.split(":").map(Number); const cycles = num(d,"Cycles") || 5; const date = new Date(); date.setHours(h, m - cycles * 90, 0, 0); return `Suggested bedtime: <strong>${date.toTimeString().slice(0,5)}</strong>`; },
-  "water-intake": d => `${fmt(num(d,"Weight kg") * 35 + num(d,"Activity minutes") * 12, 0)} mL per day estimate.`,
+  "water-intake": d => `${fmt(num(d,"Weight kg") * 35 + num(d,"Activity minutes") * 12,0)} mL per day estimate.`,
   "bmi-check": d => { const bmi = num(d,"Weight kg") / ((num(d,"Height cm")/100) ** 2); return `BMI: <strong>${fmt(bmi)}</strong>\nCategory: ${bmi < 18.5 ? "Underweight" : bmi < 25 ? "Healthy range" : bmi < 30 ? "Overweight" : "Obesity range"}`; },
   "bmr-estimator": d => { const male = val(d,"Sex") === "Male"; const bmr = 10*num(d,"Weight kg") + 6.25*num(d,"Height cm") - 5*num(d,"Age") + (male ? 5 : -161); return `Estimated BMR: <strong>${fmt(bmr,0)} calories/day</strong>`; },
   "calorie-target": d => { const m = num(d,"Maintenance calories"); const g = val(d,"Goal"); return `Target: <strong>${fmt(g==="Lose"?m-500:g==="Gain"?m+300:m,0)} calories/day</strong>`; },
@@ -281,8 +202,6 @@ const ACTIONS = {
   "priority-wheel": d => val(d,"Areas as name,score").split(/\r?\n/).filter(Boolean).sort((a,b)=>(parseFloat(a.split(",")[1])||0)-(parseFloat(b.split(",")[1])||0)).join("\n")
 };
 
-// ─── HELPERS ──────────────────────────────────────────────────────────────────
-
 function convertCase(text, mode) {
   if (mode === "Upper") return text.toUpperCase();
   if (mode === "Lower") return text.toLowerCase();
@@ -312,11 +231,7 @@ function weightedLines(text) {
 
 function makeBlocks(total, block, rest) {
   let out = [], used = 0, i = 1;
-  while (used + block <= total) {
-    out.push(`Block ${i++}: ${block} min focus`);
-    used += block;
-    if (used + rest < total) { out.push(`Break: ${rest} min`); used += rest; }
-  }
+  while (used + block <= total) { out.push(`Block ${i++}: ${block} min focus`); used += block; if (used + rest < total) { out.push(`Break: ${rest} min`); used += rest; } }
   return out.join("\n");
 }
 
@@ -325,11 +240,7 @@ function timeBlocks(start, end, mins) {
   const d = new Date(), stop = new Date();
   d.setHours(sh,sm,0,0); stop.setHours(eh,em,0,0);
   const out = [];
-  while (d < stop) {
-    const s = d.toTimeString().slice(0,5);
-    d.setMinutes(d.getMinutes()+mins);
-    out.push(`${s} - ${d.toTimeString().slice(0,5)}`);
-  }
+  while (d < stop) { const s = d.toTimeString().slice(0,5); d.setMinutes(d.getMinutes()+mins); out.push(`${s} - ${d.toTimeString().slice(0,5)}`); }
   return out.join("\n");
 }
 
@@ -344,10 +255,7 @@ function temp(value, from, to) {
 }
 
 function contrast(a, b) {
-  const lum = hex => {
-    const c = hex.replace("#","").match(/.{2}/g).map(x=>parseInt(x,16)/255).map(v=>v<=.03928?v/12.92:((v+.055)/1.055)**2.4);
-    return .2126*c[0]+.7152*c[1]+.0722*c[2];
-  };
+  const lum = hex => { const c = hex.replace("#","").match(/.{2}/g).map(x=>parseInt(x,16)/255).map(v=>v<=.03928?v/12.92:((v+.055)/1.055)**2.4); return .2126*c[0]+.7152*c[1]+.0722*c[2]; };
   const ratio = (Math.max(lum(a),lum(b))+.05)/(Math.min(lum(a),lum(b))+.05);
   return `Contrast ratio: <strong>${fmt(ratio)}:1</strong>\n${ratio >= 4.5 ? "Passes normal text AA." : "Needs stronger contrast for normal text."}`;
 }
@@ -362,18 +270,42 @@ function shuffle(arr) {
   return arr.map(v => [Math.random(), v]).sort((a,b)=>a[0]-b[0]).map(x=>x[1]);
 }
 
-// ─── INIT ─────────────────────────────────────────────────────────────────────
-
 document.addEventListener("DOMContentLoaded", () => {
-  const toolId = getToolParam();
-  if (toolId) {
-    renderDetailView(toolId);
-  } else {
-    renderListView();
-  }
-  if (window.adsbygoogle) {
-    document.querySelectorAll(".adsbygoogle").forEach(() => {
-      try { (adsbygoogle = window.adsbygoogle || []).push({}); } catch(e) {}
-    });
-  }
+  renderNav();
+  setActive(location.hash.slice(1) || "age-calculator");
+  $("tool-form").addEventListener("submit", e => {
+    e.preventDefault();
+    const data = new FormData(e.currentTarget);
+    result(ACTIONS[active.id](data));
+  });
+  
+  // Tactical feedback on result copying
+  $("copy-result").addEventListener("click", () => {
+    const textToCopy = $("result").innerText;
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(textToCopy).then(() => {
+        const copyBtn = $("copy-result");
+        const originalText = copyBtn.innerHTML;
+        copyBtn.innerHTML = "✓ Copied!";
+        copyBtn.style.background = "#f0fdf4";
+        copyBtn.style.color = "#16a34a";
+        copyBtn.style.borderColor = "#bbf7d0";
+        setTimeout(() => {
+          copyBtn.innerHTML = originalText;
+          copyBtn.style.background = "";
+          copyBtn.style.color = "";
+          copyBtn.style.borderColor = "";
+        }, 1800);
+      });
+    } else {
+      // Fallback
+      const el = document.createElement('textarea');
+      el.value = textToCopy;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+    }
+  });
+  if (window.adsbygoogle) document.querySelectorAll(".adsbygoogle").forEach(() => { try { (adsbygoogle = window.adsbygoogle || []).push({}); } catch (e) {} });
 });
