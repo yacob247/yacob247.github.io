@@ -140,7 +140,7 @@ const lNames = ["Plays","Vlogs","Tech","Reacts","Gaming","Shorts","Live","Daily"
 const plats  = ["YouTube","Twitch","TikTok","Multi-Platform"];
 const cats   = ["Entertainment","Gaming","Tech & Education","Lifestyle","Comedy","Music","Podcast/Interview"];
 
-for (let i = creatorDatabase.length; i < 300; i++) {
+for (let i = creatorDatabase.length; i < creatorDatabase.length; i++) {
   const fn = fNames[i % fNames.length], ln = lNames[Math.floor(i / fNames.length) % lNames.length];
   const platform = plats[i % plats.length], category = cats[i % cats.length];
   creatorDatabase.push({
@@ -354,7 +354,7 @@ function renderCreatorCard(c) {
   const pc = platColor(c.platform);
   const socials = _buildCardSocials(c.urls || {});
   return `
-    <div class="creator-card" style="--cat-color:${cc};--plat-color:${pc};" onclick="openCreator('${c.id}')">
+    <a class="creator-card" style="--cat-color:${cc};--plat-color:${pc};text-decoration:none;color:inherit;" href="creators/${c.id}.html">
       <div class="card-accent-bar"></div>
       <div class="card-body">
         <div class="card-header">
@@ -375,7 +375,7 @@ function renderCreatorCard(c) {
         </div>
       </div>
       ${socials ? `<div class="card-social-links">${socials}</div>` : ''}
-    </div>`;
+    </a>`;
 }
 
 function _miniScoreBar(label, val, color) {
@@ -403,7 +403,7 @@ function _buildCardSocials(urls) {
   }).join('');
 }
 
-function openCreator(id) { window.location.hash = `#/tab/${id}`; }
+function openCreator(id) { window.location.href = `creators/${id}.html`; }
 
 // ── Dossier ───────────────────────────────────────────────────────────────────
 function renderCreatorDossier(c) {
@@ -553,9 +553,9 @@ function _applyAdVisibility() {
 // ── SEO ───────────────────────────────────────────────────────────────────────
 function updateSEO(id) {
   const schemaContainer = document.getElementById('seo-schema-container');
-  const urlBase = 'https://creatorgraph-pro.analytics/#/tab/';
-  const fullUrl = urlBase + (id === 'home' ? 'home' : id);
-  let titleStr = 'CreatorGraph Pro — Honest Analytics & Deep Dossiers on 300 Top Creators';
+  const urlBase = 'https://envizion.work/trending-research/creators/';
+  const fullUrl = id === 'home' ? 'https://envizion.work/trending-research/' : urlBase + id + '.html';
+  let titleStr = 'TrendScope — Independent Research Notes on Featured Creators';
   let descStr  = 'Unfiltered analytical dossiers, honest strategy breakdowns, and monetization intelligence on 300 of the world\'s top creators. Real opinions, real data.';
 
   if (id !== 'home') {

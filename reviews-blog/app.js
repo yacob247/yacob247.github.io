@@ -1326,7 +1326,8 @@ function addExpandedGameReviews() {
   }
 }
 
-addExpandedGameReviews();
+// Disabled for AdSense quality review: publish hand-written reviews first.
+// addExpandedGameReviews();
 
 // --- DO NOT EDIT BELOW THIS LINE ---
 function loadAdminEntries() {

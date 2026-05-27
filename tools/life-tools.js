@@ -132,6 +132,10 @@
     // History for Undo/Redo
     let historyUndo = [];
     let historyRedo = [];
+    const LEGACY_STORAGE_KEY = "envizion_excel_sheets";
+    const WORKBOOK_INDEX_KEY = "envizion_excel_workbooks";
+    const LAST_WORKBOOK_KEY = "envizion_excel_last_workbook";
+    let currentWorkbookId = null;
 
     // Helper functions for formatting
     const fmt = (n, d = 2) => Number.isFinite(n) ? Number(n).toLocaleString(undefined, { maximumFractionDigits: d }) : "0";
@@ -143,8 +147,10 @@
       // Initialize Lucide icons
       lucide.createIcons();
 
+      currentWorkbookId = getWorkbookIdFromUrl() || localStorage.getItem(LAST_WORKBOOK_KEY) || ensureDefaultWorkbook();
+
       // Check LocalStorage
-      const saved = localStorage.getItem("envizion_excel_sheets");
+      const saved = localStorage.getItem(getWorkbookStorageKey(currentWorkbookId)) || localStorage.getItem(LEGACY_STORAGE_KEY);
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
@@ -169,6 +175,7 @@
 
       // Save title changes
       document.getElementById("project-title").addEventListener("input", saveToLocalStorage);
+      syncWorkbookIndex();
 
       // Detect Theme
       if (localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
@@ -181,6 +188,84 @@
     // -------------------------------------------------------------------------
     // LOCAL STORAGE & HISTORY (UNDO/REDO)
     // -------------------------------------------------------------------------
+    function getWorkbookIdFromUrl() {
+      const params = new URLSearchParams(window.location.search);
+      const id = params.get("file");
+      return id && /^[a-zA-Z0-9_-]+$/.test(id) ? id : null;
+    }
+
+    function getWorkbookStorageKey(id) {
+      return `envizion_excel_workbook_${id}`;
+    }
+
+    function makeWorkbookId() {
+      return `wb_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    }
+
+    function readWorkbookIndex() {
+      try {
+        return JSON.parse(localStorage.getItem(WORKBOOK_INDEX_KEY) || "[]");
+      } catch (error) {
+        return [];
+      }
+    }
+
+    function writeWorkbookIndex(items) {
+      localStorage.setItem(WORKBOOK_INDEX_KEY, JSON.stringify(items));
+    }
+
+    function ensureDefaultWorkbook() {
+      const existing = readWorkbookIndex()[0];
+      if (existing?.id) return existing.id;
+
+      const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
+      const id = makeWorkbookId();
+      const now = new Date().toISOString();
+      const title = "Envizion Excel Workbench";
+      writeWorkbookIndex([{ id, title, createdAt: now, updatedAt: now }]);
+      localStorage.setItem(LAST_WORKBOOK_KEY, id);
+      if (legacy) {
+        localStorage.setItem(getWorkbookStorageKey(id), legacy);
+      } else {
+        localStorage.setItem(getWorkbookStorageKey(id), JSON.stringify({
+          sheets: { "Sheet 1": {} },
+          activeSheet: "Sheet 1",
+          title
+        }));
+      }
+      return id;
+    }
+
+    function syncWorkbookIndex() {
+      const title = document.getElementById("project-title")?.value || "Untitled workbook";
+      const now = new Date().toISOString();
+      const index = readWorkbookIndex();
+      const existing = index.find((item) => item.id === currentWorkbookId);
+      const nextItem = {
+        id: currentWorkbookId,
+        title,
+        createdAt: existing?.createdAt || now,
+        updatedAt: now
+      };
+      writeWorkbookIndex([nextItem, ...index.filter((item) => item.id !== currentWorkbookId)]);
+      localStorage.setItem(LAST_WORKBOOK_KEY, currentWorkbookId);
+    }
+
+    function createNewWorkbookFromApp() {
+      const title = prompt("Name this workbook", "Untitled workbook") || "Untitled workbook";
+      const id = makeWorkbookId();
+      const now = new Date().toISOString();
+      const data = {
+        sheets: { "Sheet 1": {} },
+        activeSheet: "Sheet 1",
+        title
+      };
+      localStorage.setItem(getWorkbookStorageKey(id), JSON.stringify(data));
+      writeWorkbookIndex([{ id, title, createdAt: now, updatedAt: now }, ...readWorkbookIndex()]);
+      localStorage.setItem(LAST_WORKBOOK_KEY, id);
+      window.location.href = `life-tools.html?file=${encodeURIComponent(id)}`;
+    }
+
     function saveStateForHistory() {
       historyUndo.push(JSON.stringify(sheets));
       historyRedo = []; // clear redo on new action
@@ -206,11 +291,13 @@
 
     function saveToLocalStorage() {
       const projTitle = document.getElementById("project-title").value;
-      localStorage.setItem("envizion_excel_sheets", JSON.stringify({
+      if (!currentWorkbookId) currentWorkbookId = ensureDefaultWorkbook();
+      localStorage.setItem(getWorkbookStorageKey(currentWorkbookId), JSON.stringify({
         sheets,
         activeSheet,
         title: projTitle
       }));
+      syncWorkbookIndex();
     }
 
     // -------------------------------------------------------------------------
@@ -895,6 +982,7 @@
       activeSheet = name;
       renderSheetTabs();
       renderGrid();
+      saveToLocalStorage();
     }
 
     function addSheet() {

@@ -919,6 +919,7 @@ const POSTS = [
   }
 ];
 
+/* Disabled for AdSense quality review: auto-expanded draft posts are kept out of published inventory.
 (function addExpandedBlogPosts() {
   if (typeof POSTS === "undefined") return;
 
@@ -1060,3 +1061,4 @@ const POSTS = [
     }
   }
 })();
+*/
