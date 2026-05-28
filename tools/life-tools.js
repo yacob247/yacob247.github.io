@@ -143,11 +143,22 @@
     // -------------------------------------------------------------------------
     // SYSTEM SETUP ONLOAD
     // -------------------------------------------------------------------------
-    window.onload = function() {
+    window.onload = async function() {
       // Initialize Lucide icons
       lucide.createIcons();
 
-      currentWorkbookId = getWorkbookIdFromUrl() || localStorage.getItem(LAST_WORKBOOK_KEY) || ensureDefaultWorkbook();
+      const sharedWorkbookId = getShareIdFromUrl();
+      if (sharedWorkbookId) {
+        currentWorkbookId = await importSharedWorkbook(sharedWorkbookId);
+        if (currentWorkbookId) {
+          const cleanUrl = new URL(window.location.href);
+          cleanUrl.searchParams.delete("share");
+          cleanUrl.searchParams.set("file", currentWorkbookId);
+          window.history.replaceState({}, "", cleanUrl.toString());
+        }
+      }
+
+      currentWorkbookId = currentWorkbookId || getWorkbookIdFromUrl() || localStorage.getItem(LAST_WORKBOOK_KEY) || ensureDefaultWorkbook();
 
       // Check LocalStorage
       const saved = localStorage.getItem(getWorkbookStorageKey(currentWorkbookId)) || localStorage.getItem(LEGACY_STORAGE_KEY);
@@ -194,6 +205,12 @@
       return id && /^[a-zA-Z0-9_-]+$/.test(id) ? id : null;
     }
 
+    function getShareIdFromUrl() {
+      const params = new URLSearchParams(window.location.search);
+      const id = params.get("share");
+      return id && /^[a-zA-Z0-9_-]+$/.test(id) ? id : null;
+    }
+
     function getWorkbookStorageKey(id) {
       return `envizion_excel_workbook_${id}`;
     }
@@ -212,6 +229,57 @@
 
     function writeWorkbookIndex(items) {
       localStorage.setItem(WORKBOOK_INDEX_KEY, JSON.stringify(items));
+    }
+
+    function getShareDb() {
+      if (!window.firebase || !window.ENVIZION_FIREBASE_CONFIG) return null;
+      if (!firebase.apps.length) firebase.initializeApp(window.ENVIZION_FIREBASE_CONFIG);
+      return firebase.firestore();
+    }
+
+    function getCurrentWorkbookData() {
+      const title = document.getElementById("project-title")?.value || "Untitled workbook";
+      return {
+        sheets,
+        activeSheet,
+        title
+      };
+    }
+
+    async function importSharedWorkbook(shareId) {
+      const db = getShareDb();
+      if (!db) {
+        alert("This shared workbook could not be opened because Firebase did not load.");
+        return null;
+      }
+      try {
+        const snap = await db.collection("lifeToolWorkbookShares").doc(shareId).get();
+        if (!snap.exists) {
+          alert("This shared workbook link was not found.");
+          return null;
+        }
+        const shared = snap.data();
+        const data = shared.data;
+        if (!data?.sheets) {
+          alert("This shared workbook is missing workbook data.");
+          return null;
+        }
+        const id = makeWorkbookId();
+        const now = new Date().toISOString();
+        const title = `${data.title || shared.title || "Shared workbook"} copy`;
+        const copyData = {
+          sheets: data.sheets,
+          activeSheet: data.activeSheet || "Sheet 1",
+          title
+        };
+        localStorage.setItem(getWorkbookStorageKey(id), JSON.stringify(copyData));
+        writeWorkbookIndex([{ id, title, createdAt: now, updatedAt: now }, ...readWorkbookIndex()]);
+        localStorage.setItem(LAST_WORKBOOK_KEY, id);
+        return id;
+      } catch (error) {
+        alert("Could not open this shared workbook. Check the link or try again later.");
+        return null;
+      }
     }
 
     function ensureDefaultWorkbook() {
@@ -266,6 +334,52 @@
       window.location.href = `life-tools.html?file=${encodeURIComponent(id)}`;
     }
 
+    function renameCurrentWorkbook() {
+      const titleInput = document.getElementById("project-title");
+      const currentTitle = titleInput?.value || "Untitled workbook";
+      const nextTitle = prompt("Rename this workbook", currentTitle);
+      if (!nextTitle || !nextTitle.trim()) return;
+      titleInput.value = nextTitle.trim();
+      saveToLocalStorage();
+    }
+
+    function copyCurrentWorkbook() {
+      saveToLocalStorage();
+      const data = getCurrentWorkbookData();
+      const id = makeWorkbookId();
+      const now = new Date().toISOString();
+      const title = `${data.title || "Untitled workbook"} copy`;
+      localStorage.setItem(getWorkbookStorageKey(id), JSON.stringify({ ...data, title }));
+      writeWorkbookIndex([{ id, title, createdAt: now, updatedAt: now }, ...readWorkbookIndex()]);
+      localStorage.setItem(LAST_WORKBOOK_KEY, id);
+      window.location.href = `life-tools.html?file=${encodeURIComponent(id)}`;
+    }
+
+    async function shareCurrentWorkbookByEmail() {
+      saveToLocalStorage();
+      const db = getShareDb();
+      if (!db) {
+        alert("Sharing is not available because Firebase did not load.");
+        return;
+      }
+      const data = getCurrentWorkbookData();
+      try {
+        const doc = await db.collection("lifeToolWorkbookShares").add({
+          title: data.title || "Untitled workbook",
+          data,
+          sourceId: currentWorkbookId,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        const shareUrl = new URL("life-tools.html", window.location.href);
+        shareUrl.searchParams.set("share", doc.id);
+        const subject = encodeURIComponent(`Envizion workbook: ${data.title || "Untitled workbook"}`);
+        const body = encodeURIComponent(`Open this link to make your own local copy of the workbook:\n\n${shareUrl.toString()}`);
+        window.location.href = `mailto:?subject=${subject}&body=${body}`;
+      } catch (error) {
+        alert("Could not create the share link. Check Firebase rules or try again later.");
+      }
+    }
+
     function saveStateForHistory() {
       historyUndo.push(JSON.stringify(sheets));
       historyRedo = []; // clear redo on new action
@@ -292,11 +406,7 @@
     function saveToLocalStorage() {
       const projTitle = document.getElementById("project-title").value;
       if (!currentWorkbookId) currentWorkbookId = ensureDefaultWorkbook();
-      localStorage.setItem(getWorkbookStorageKey(currentWorkbookId), JSON.stringify({
-        sheets,
-        activeSheet,
-        title: projTitle
-      }));
+      localStorage.setItem(getWorkbookStorageKey(currentWorkbookId), JSON.stringify(getCurrentWorkbookData()));
       syncWorkbookIndex();
     }
 

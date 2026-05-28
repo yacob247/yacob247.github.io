@@ -31,7 +31,7 @@
       <div class="shell">
         <p class="eyebrow"><span class="pulse"></span> Local files</p>
         <h1>Envizion Excel Workbench.</h1>
-        <p class="lead">A practical local workspace for planning, writing, creator, finance, study, data, business, and daily decision tasks. Create a workbook file, use the spreadsheet and add-ons, and let the browser autosave it locally on this device.</p>
+        <p class="lead">A practical local workspace for planning, writing, creator, finance, study, data, business, and daily decision tasks. Create separate workbook files, autosave them locally on this device, and share a copy link by email when someone else needs their own version.</p>
         <p class="lead">Outputs are quick estimates and structured notes, not professional legal, medical, or financial advice. Check anything important before relying on it.</p>
         <div class="tool-actions">
           <button class="button primary" type="button" id="new-workbook">New File</button>
@@ -44,7 +44,7 @@
       <div class="shell">
         <div class="section-head">
           <h2>Saved Local Files</h2>
-          <p>Files shown here are saved only in this browser. Clearing site data or using another device will not carry them over.</p>
+          <p>Files shown here are saved separately in this browser. Use Copy for another local version, Delete to remove a file, or Share to email a Firebase copy link.</p>
         </div>
         <div class="workbook-list" id="workbook-list"></div>
       </div>
@@ -95,6 +95,9 @@
   </footer>
 
   <script src="../site-home.js" defer></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+  <script src="firebase-config.js"></script>
   <script>
     const INDEX_KEY = "envizion_excel_workbooks";
     const LAST_KEY = "envizion_excel_last_workbook";
@@ -131,6 +134,83 @@
       renderWorkbooks();
     }
 
+    function getWorkbookData(id) {
+      try {
+        return JSON.parse(localStorage.getItem(`envizion_excel_workbook_${id}`) || "null");
+      } catch (error) {
+        return null;
+      }
+    }
+
+    function copyWorkbook(id) {
+      const data = getWorkbookData(id);
+      const original = readIndex().find((item) => item.id === id);
+      if (!data) return alert("This workbook data could not be found in this browser.");
+      const copyId = makeId();
+      const now = new Date().toISOString();
+      const title = `${data.title || original?.title || "Untitled workbook"} copy`;
+      const copyData = { ...data, title };
+      localStorage.setItem(`envizion_excel_workbook_${copyId}`, JSON.stringify(copyData));
+      writeIndex([{ id: copyId, title, createdAt: now, updatedAt: now }, ...readIndex()]);
+      localStorage.setItem(LAST_KEY, copyId);
+      renderWorkbooks();
+    }
+
+    function deleteWorkbook(id) {
+      const item = readIndex().find((entry) => entry.id === id);
+      if (!confirm(`Delete "${item?.title || "Untitled workbook"}" from this browser?`)) return;
+      localStorage.removeItem(`envizion_excel_workbook_${id}`);
+      const next = readIndex().filter((entry) => entry.id !== id);
+      writeIndex(next);
+      if (localStorage.getItem(LAST_KEY) === id) {
+        if (next[0]?.id) localStorage.setItem(LAST_KEY, next[0].id);
+        else localStorage.removeItem(LAST_KEY);
+      }
+      renderWorkbooks();
+    }
+
+    function renameWorkbook(id) {
+      const index = readIndex();
+      const item = index.find((entry) => entry.id === id);
+      const nextTitle = prompt("Rename this workbook", item?.title || "Untitled workbook");
+      if (!nextTitle || !nextTitle.trim()) return;
+      const title = nextTitle.trim();
+      const now = new Date().toISOString();
+      const data = getWorkbookData(id) || { sheets: { "Sheet 1": {} }, activeSheet: "Sheet 1" };
+      localStorage.setItem(`envizion_excel_workbook_${id}`, JSON.stringify({ ...data, title }));
+      writeIndex(index.map((entry) => entry.id === id ? { ...entry, title, updatedAt: now } : entry));
+      renderWorkbooks();
+    }
+
+    function getShareDb() {
+      if (!window.firebase || !window.ENVIZION_FIREBASE_CONFIG) return null;
+      if (!firebase.apps.length) firebase.initializeApp(window.ENVIZION_FIREBASE_CONFIG);
+      return firebase.firestore();
+    }
+
+    async function shareWorkbook(id) {
+      const data = getWorkbookData(id);
+      const item = readIndex().find((entry) => entry.id === id);
+      if (!data) return alert("This workbook data could not be found in this browser.");
+      const db = getShareDb();
+      if (!db) return alert("Sharing is not available because Firebase did not load.");
+      try {
+        const doc = await db.collection("lifeToolWorkbookShares").add({
+          title: data.title || item?.title || "Untitled workbook",
+          data,
+          sourceId: id,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        const shareUrl = new URL("life-tools.html", window.location.href);
+        shareUrl.searchParams.set("share", doc.id);
+        const subject = encodeURIComponent(`Envizion workbook: ${data.title || item?.title || "Untitled workbook"}`);
+        const body = encodeURIComponent(`Open this link to make your own local copy of the workbook:\n\n${shareUrl.toString()}`);
+        window.location.href = `mailto:?subject=${subject}&body=${body}`;
+      } catch (error) {
+        alert("Could not create the share link. Check Firebase rules or try again later.");
+      }
+    }
+
     function renderWorkbooks() {
       const list = document.getElementById("workbook-list");
       const workbooks = readIndex();
@@ -140,8 +220,12 @@
       }
       list.innerHTML = workbooks.map((item) => {
         const updated = item.updatedAt ? new Date(item.updatedAt).toLocaleString() : "Not saved yet";
-        return `<div class="workbook-row"><div><strong>${item.title || "Untitled workbook"}</strong><span>Last saved: ${updated}</span></div><a class="mini-button" href="life-tools.html?file=${encodeURIComponent(item.id)}" target="_blank" rel="noopener">Open</a></div>`;
+        return `<div class="workbook-row"><div><strong>${escapeHtml(item.title || "Untitled workbook")}</strong><span>Last saved: ${updated}</span></div><div class="workbook-actions"><a class="mini-button" href="life-tools.html?file=${encodeURIComponent(item.id)}" target="_blank" rel="noopener">Open</a><button class="mini-button muted" type="button" onclick="renameWorkbook('${item.id}')">Rename</button><button class="mini-button muted" type="button" onclick="copyWorkbook('${item.id}')">Copy</button><button class="mini-button muted" type="button" onclick="shareWorkbook('${item.id}')">Share</button><button class="mini-button danger" type="button" onclick="deleteWorkbook('${item.id}')">Delete</button></div></div>`;
       }).join("");
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char]));
     }
 
     document.getElementById("new-workbook").addEventListener("click", createWorkbook);

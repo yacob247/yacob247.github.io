@@ -496,14 +496,6 @@ function renderParagraphs(items) {
   return items.map((p) => `<p>${escapeHtml(p)}</p>`).join("\n");
 }
 
-function editorialMethod(topic) {
-  return `<section class="method">
-    <h2>Editorial Method</h2>
-    <p>This page is part of a cleaned Envizion publishing set. It is written for a reader who wants a practical decision, not a search-engine doorway. The page uses an original local SVG cover made inside this project, summarizes the strongest points directly, and keeps the limits visible. Where the topic depends on changing stores, patches, follower counts, or platform behavior, the page treats those details as estimates and points readers toward checking the current official profile or store before making a final decision.</p>
-    <p>The goal for this ${escapeHtml(topic)} page is to add enough context that a visitor can leave with a useful conclusion. It avoids imported stock images, copied articles, and placeholder entries. If a note is only a short draft or generated filler, it is kept out of the sitemap until it has a real editorial reason to exist.</p>
-  </section>`;
-}
-
 function buildArticlePages(posts) {
   const urls = [];
   posts.forEach((post, index) => {
@@ -528,7 +520,7 @@ function buildArticlePages(posts) {
     const body = `
       <div class="meta"><span>${escapeHtml(post.tag)}</span><span>${escapeHtml(post.date)}</span><span>${Math.max(words(bodyBlocks), 100)}+ words</span></div>
       ${bodyBlocks}
-      ${editorialMethod("article")}`;
+      `;
     const canonical = `${SITE}/reviews-blog/articles/${slug}.html`;
     const page = pageShell({
       title: `${post.title} | Envizion GameVault`,
@@ -578,7 +570,7 @@ function buildGamePages(games) {
       <h2>Reader Fit</h2>
       <p>This review is written around fit: who should play it, what kind of session it rewards, and what friction might make it wrong for another reader. A high grade does not mean every player should buy it immediately. It means the game has a clear identity, a strong reason to exist, and enough craft to justify attention from the right audience.</p>
       ${links ? `<h2>Official Store Links</h2><p>${links}</p>` : ""}
-      ${editorialMethod("game review")}`;
+      `;
     const canonical = `${SITE}/reviews-blog/games/${slug}.html`;
     write(`reviews-blog/games/${slug}.html`, pageShell({
       title: `${game.title} Review | Envizion GameVault`,
@@ -614,7 +606,7 @@ function buildCreatorPages(creators) {
       <h2>Profile Links</h2>
       <p>${socials}</p>
       <section class="note"><strong>Research note:</strong><p>Follower counts and creator businesses change quickly. This page is an editorial snapshot, not a live database. Before quoting a number, check the creator's current official profile or company page.</p></section>
-      ${editorialMethod("creator research")}`;
+      `;
     const canonical = `${SITE}/trending-research/creators/${slug}.html`;
     write(`trending-research/creators/${slug}.html`, pageShell({
       title: `${creator.name} Research Notes | Envizion TrendScope`,
