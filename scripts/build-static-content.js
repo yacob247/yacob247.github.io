@@ -122,11 +122,12 @@ function patchCanonical(rel, canonical, description) {
 }
 
 function patchIndexes() {
-  patchCanonical("index.html", `${SITE}/`, "Envizion hub for local browser tools, hand-written game reviews, practical blog guides, and creator research pages.");
-  patchCanonical("about.html", `${SITE}/about.html`, "Learn about Envizion, an independent web project that publishes browser tools, learning resources, reviews, and research pages.");
-  patchCanonical("contact.html", `${SITE}/contact.html`, "Contact Envizion about site feedback, tool issues, corrections, and privacy questions.");
-  patchCanonical("privacy.html", `${SITE}/privacy.html`, "Privacy policy for Envizion.work, including local browser tools, cookies, analytics, advertising, and third-party resources.");
-  patchCanonical("terms.html", `${SITE}/terms.html`, "Terms of use for Envizion.work tools, learning pages, reviews, and research content.");
+  patchCanonical("index.html", `${SITE}/`, "Yacob Digital is the parent company page for launched and upcoming websites and apps, starting with Envizion.");
+  patchCanonical("main.html", `${SITE}/main.html`, "Envizion hub for local browser tools, hand-written game reviews, practical blog guides, and creator research pages.");
+  patchCanonical("about.html", `${SITE}/about.html`, "About Yacob Digital, the company site for launched and upcoming websites and apps.");
+  patchCanonical("contact.html", `${SITE}/contact.html`, "Contact Yacob Digital about company websites, apps, support, corrections, and product enquiries.");
+  patchCanonical("privacy.html", `${SITE}/privacy.html`, "Privacy information for the Yacob Digital company website and linked products.");
+  patchCanonical("terms.html", `${SITE}/terms.html`, "Terms for the Yacob Digital company website and linked product pages.");
   patchCanonical("tools/index.html", `${SITE}/tools/`, "Open the Envizion tools guide for local browser utilities, spreadsheet workbooks, media tools, file converters, image tools, and writing helpers.");
   patchCanonical("reviews-blog/index.html", `${SITE}/reviews-blog/`, "GameVault publishes hand-written game reviews, player-fit assessments, practical buying notes, and gaming guides from Envizion.");
   patchCanonical("reviews-blog/blog.html", `${SITE}/reviews-blog/blog.html`, "Game reviews, rankings, buying guides, and gaming opinion from GameVault with static article pages for readers and crawlers.");
@@ -275,12 +276,12 @@ function buildTrendIndex(creators) {
 <body>
   <header class="topbar">
     <div class="shell">
-      <a class="brand" href="../index.html" aria-label="Envizion Hub home">
+      <a class="brand" href="../main.html" aria-label="Envizion Hub home">
         <span class="brand-mark">E</span>
         <span>Envizion TrendScope</span>
       </a>
       <nav class="nav" aria-label="Primary">
-        <a href="../index.html">Hub</a>
+        <a href="../main.html">Hub</a>
         <a href="../tools/index.html">Tools</a>
         <a href="../reviews-blog/index.html">Reviews</a>
         <a href="../about.html">About</a>
@@ -463,7 +464,7 @@ function pageShell({ title, description, canonical, image, section, body, schema
 <body>
   <header class="topbar">
     <div class="shell">
-      <a class="brand" href="../../index.html"><span class="brand-mark">E</span><span>Envizion</span></a>
+      <a class="brand" href="../../main.html"><span class="brand-mark">E</span><span>Envizion</span></a>
       <nav class="nav" aria-label="Primary">
         <a href="../../reviews-blog/index.html">Reviews</a>
         <a href="../../reviews-blog/blog.html">Blog</a>
@@ -534,7 +535,7 @@ function buildArticlePages(posts) {
       description: post.excerpt || excerpt(bodyBlocks),
       canonical,
       image,
-      section: `<nav class="crumbs"><a href="../../index.html">Home</a><span>/</span><a href="../blog.html">Blog</a><span>/</span><span>${escapeHtml(post.title)}</span></nav><div class="label">GameVault Article</div><h1>${escapeHtml(post.title)}</h1><p class="lead">${escapeHtml(post.excerpt || "")}</p>`,
+      section: `<nav class="crumbs"><a href="../../main.html">Home</a><span>/</span><a href="../blog.html">Blog</a><span>/</span><span>${escapeHtml(post.title)}</span></nav><div class="label">GameVault Article</div><h1>${escapeHtml(post.title)}</h1><p class="lead">${escapeHtml(post.excerpt || "")}</p>`,
       body,
       schema: articleSchema(canonical, post.title, post.excerpt, image, post.date)
     });
@@ -584,7 +585,7 @@ function buildGamePages(games) {
       description: game.tagline || excerpt((game.review || []).join(" ")),
       canonical,
       image,
-      section: `<nav class="crumbs"><a href="../../index.html">Home</a><span>/</span><a href="../index.html">Reviews</a><span>/</span><span>${escapeHtml(game.title)}</span></nav><div class="label">Game Review</div><h1>${escapeHtml(game.title)}</h1><p class="lead">${escapeHtml(game.tagline || "")}</p>`,
+      section: `<nav class="crumbs"><a href="../../main.html">Home</a><span>/</span><a href="../main.html">Reviews</a><span>/</span><span>${escapeHtml(game.title)}</span></nav><div class="label">Game Review</div><h1>${escapeHtml(game.title)}</h1><p class="lead">${escapeHtml(game.tagline || "")}</p>`,
       body,
       schema: articleSchema(canonical, `${game.title} Review`, game.tagline || "", image, TODAY)
     }));
@@ -620,7 +621,7 @@ function buildCreatorPages(creators) {
       description: excerpt(`${creator.name} research notes covering platform strategy, audience profile, monetization, and editorial take.`),
       canonical,
       image,
-      section: `<nav class="crumbs"><a href="../../index.html">Home</a><span>/</span><a href="../index.html">Research</a><span>/</span><span>${escapeHtml(creator.name)}</span></nav><div class="label">Creator Research</div><h1>${escapeHtml(creator.name)}</h1><p class="lead">Independent creator-economy notes on platform position, audience fit, monetization, and strategic risk.</p>`,
+      section: `<nav class="crumbs"><a href="../../main.html">Home</a><span>/</span><a href="../main.html">Research</a><span>/</span><span>${escapeHtml(creator.name)}</span></nav><div class="label">Creator Research</div><h1>${escapeHtml(creator.name)}</h1><p class="lead">Independent creator-economy notes on platform position, audience fit, monetization, and strategic risk.</p>`,
       body,
       schema: articleSchema(canonical, `${creator.name} Research Notes`, `${creator.name} creator research notes from Envizion TrendScope.`, image, TODAY)
     }));
@@ -643,7 +644,7 @@ function buildEditorialPolicy() {
   <link rel="stylesheet" href="site-home.css">
 </head>
 <body>
-  <header class="topbar"><div class="shell"><a class="brand" href="index.html"><span class="brand-mark">E</span><span>Envizion Hub</span></a><nav class="nav" aria-label="Primary"><a href="tools/index.html">Tools</a><a href="reviews-blog/index.html">Reviews</a><a href="trending-research/index.html">Research</a><a href="about.html">About</a><a href="contact.html">Contact</a></nav></div></header>
+  <header class="topbar"><div class="shell"><a class="brand" href="main.html"><span class="brand-mark">E</span><span>Envizion Hub</span></a><nav class="nav" aria-label="Primary"><a href="tools/index.html">Tools</a><a href="reviews-blog/index.html">Reviews</a><a href="trending-research/index.html">Research</a><a href="about.html">About</a><a href="contact.html">Contact</a></nav></div></header>
   <main class="content-page"><article class="shell content-wrap">
     <p class="eyebrow"><span class="pulse"></span> Editorial Policy</p>
     <h1>How Envizion publishes reviews, research, and visuals.</h1>
@@ -667,6 +668,11 @@ function buildEditorialPolicy() {
 function buildRobotsAndSitemap(extraUrls) {
   const base = [
     { loc: `${SITE}/`, priority: "1.00" },
+    { loc: `${SITE}/main.html`, priority: "0.70" },
+    { loc: `${SITE}/website-envizion.html`, priority: "0.80" },
+    { loc: `${SITE}/app-creator-suite.html`, priority: "0.50" },
+    { loc: `${SITE}/app-study-workspace.html`, priority: "0.50" },
+    { loc: `${SITE}/app-business-tools.html`, priority: "0.50" },
     { loc: `${SITE}/about.html`, priority: "0.65" },
     { loc: `${SITE}/contact.html`, priority: "0.65" },
     { loc: `${SITE}/privacy.html`, priority: "0.55" },
