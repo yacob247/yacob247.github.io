@@ -282,7 +282,7 @@
                         <input id="virtual-address-bar" type="text" class="bg-transparent border-none outline-none flex-1 text-slate-200" readonly placeholder="Waiting for connection...">
                     </div>
 
-                    <button onclick="toggleConsole()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 text-xs font-semibold rounded-lg transition flex items-center gap-1.5">
+                    <button onclick="toggleConsole()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-750 border border-slate-600 text-slate-200 text-xs font-semibold rounded-lg transition flex items-center gap-1.5">
                         <i data-lucide="terminal-square" class="w-4 h-4 text-indigo-400"></i>
                         <span>Logs</span>
                     </button>
@@ -1120,7 +1120,7 @@
             if (tab && tab.historyIndex < tab.historyQueue.length - 1) { tab.historyIndex++; tab.currentFilename = tab.historyQueue[tab.historyIndex]; activateTab(tab.tabId); }
         }
 
-        /* ==================== VFS HTML COMPILER ==================== */
+        /* ==================== VFS SANDBOX INTERCEPT & COMPILER ==================== */
         function resolveRelativePath(currentPath, relativePath) {
             if (/^(http|\/\/|data:|mailto:|tel:)/i.test(relativePath)) return relativePath;
             const currentDirParts = currentPath.split('/');
@@ -1132,6 +1132,52 @@
                 else currentDirParts.push(part);
             }
             return currentDirParts.join('/');
+        }
+
+        // Beautiful Shadow Script Wrapper to bypass Browser protected location redirection blocks
+        function wrapScriptWithSandbox(code, projectId, currentFilename) {
+            return `
+            (function() {
+                const _location = {
+                    get href() { return window.location.href; },
+                    set href(url) { window.parent.postMessage({type: 'ROUTER_NAVIGATE', projectId: '${projectId}', targetFilename: url}, '*'); },
+                    assign(url) { window.parent.postMessage({type: 'ROUTER_NAVIGATE', projectId: '${projectId}', targetFilename: url}, '*'); },
+                    replace(url) { window.parent.postMessage({type: 'ROUTER_NAVIGATE', projectId: '${projectId}', targetFilename: url}, '*'); },
+                    toString() { return window.location.toString(); }
+                };
+                const location = _location;
+                const window = new Proxy(window.parent, {
+                    get(target, prop) {
+                        if (prop === 'location') return _location;
+                        if (prop === 'open') {
+                            return function(url, winTarget) {
+                                if (url && !/^(http|\\/\\/)/i.test(url)) {
+                                    window.parent.postMessage({type: 'ROUTER_NAVIGATE', projectId: '${projectId}', targetFilename: url}, '*');
+                                    return null;
+                                }
+                                return window.parent.open(url, winTarget);
+                            };
+                        }
+                        // Bind parent methods to ref object
+                        const val = Reflect.get(window.parent, prop);
+                        if (typeof val === 'function') {
+                            return val.bind(window.parent);
+                        }
+                        return val;
+                    },
+                    set(target, prop, val) {
+                        if (prop === 'location') {
+                            _location.href = val;
+                            return true;
+                        }
+                        return Reflect.set(window.parent, prop, val);
+                    }
+                });
+
+                // Sandboxed execution of VFS Script
+                ${code}
+            })();
+            `;
         }
 
         function compileHTML(project, filename) {
@@ -1160,10 +1206,19 @@
                     if (res) { const s = doc.createElement('style'); s.textContent = res.content; link.replaceWith(s); }
                 });
 
-                doc.querySelectorAll('script[src]').forEach(script => {
-                    const src = script.getAttribute('src');
-                    const res = project.files[resolveRelativePath(filename, src)];
-                    if (res) { const s = doc.createElement('script'); s.textContent = res.content; script.replaceWith(s); }
+                // Compile script tags with sandbox routing wrapper
+                doc.querySelectorAll('script').forEach(script => {
+                    if (script.src) {
+                        const src = script.getAttribute('src');
+                        const res = project.files[resolveRelativePath(filename, src)];
+                        if (res) {
+                            const scriptNode = doc.createElement('script');
+                            scriptNode.textContent = wrapScriptWithSandbox(res.content, project.id, filename);
+                            script.replaceWith(scriptNode);
+                        }
+                    } else {
+                        script.textContent = wrapScriptWithSandbox(script.textContent, project.id, filename);
+                    }
                 });
 
                 doc.querySelectorAll('img[src]').forEach(img => {
@@ -1172,20 +1227,43 @@
                     if (res && res.fileObj) img.setAttribute('src', URL.createObjectURL(res.fileObj));
                 });
 
-                doc.querySelectorAll('a[href]').forEach(a => {
-                    const href = a.getAttribute('href');
-                    if (href && !/^(http|\/\/|#|javascript:)/i.test(href)) {
-                        const resolved = resolveRelativePath(filename, href);
-                        a.setAttribute('onclick', `window.parent.routeToPage('${project.id}', '${resolved}'); return false;`);
-                        a.setAttribute('href', '#');
-                    }
-                });
-
-                // Inject Console Interceptor
-                const loggerScript = doc.createElement('script');
-                loggerScript.textContent = `
+                // Global Event Listeners injected into head to intercept dynamically injected scripts/links
+                const globalInterceptors = doc.createElement('script');
+                globalInterceptors.textContent = `
                     (function(){
                         const p = window.parent;
+                        
+                        // Intercept links clicked (even dynamically injected)
+                        document.addEventListener('click', function(e) {
+                            const a = e.target.closest('a');
+                            if (a) {
+                                const href = a.getAttribute('href');
+                                if (href && !/^(http|\\/\\/|#|javascript:)/i.test(href)) {
+                                    e.preventDefault();
+                                    p.postMessage({
+                                        type: 'ROUTER_NAVIGATE', 
+                                        projectId: '${project.id}', 
+                                        targetFilename: href
+                                    }, '*');
+                                }
+                            }
+                        }, true);
+
+                        // Intercept form redirects (even dynamically injected)
+                        document.addEventListener('submit', function(e) {
+                            const form = e.target;
+                            const action = form.getAttribute('action');
+                            if (action && !/^(http|\\/\\/)/i.test(action)) {
+                                e.preventDefault();
+                                p.postMessage({
+                                    type: 'ROUTER_NAVIGATE', 
+                                    projectId: '${project.id}', 
+                                    targetFilename: action
+                                }, '*');
+                            }
+                        }, true);
+
+                        // Hook iframe console log dispatches
                         function send(lvl, msg) { p.postMessage({type:'SANDBOX_LOG', level:lvl, message:msg}, '*'); }
                         const _log = console.log, _err = console.error;
                         console.log = (...args) => { send('info', args.map(a => typeof a==='object'?JSON.stringify(a):String(a)).join(' ')); _log(...args); };
@@ -1193,7 +1271,7 @@
                         window.addEventListener('error', e => send('error', 'Uncaught: ' + e.message + ' at line ' + e.lineno));
                     })();
                 `;
-                doc.head.insertBefore(loggerScript, doc.head.firstChild);
+                doc.head.insertBefore(globalInterceptors, doc.head.firstChild);
 
                 return '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
             } catch (err) {
@@ -1229,12 +1307,24 @@
         /* ==================== DEV CONSOLE ==================== */
         function toggleConsole() { document.getElementById('developer-console').classList.toggle('hidden'); }
         function clearConsole() { document.getElementById('console-logs-output').innerHTML = ''; }
+        
         function handleSandboxMessages(event) {
-            if (!event.data || !currentActiveTabId) return;
-            const tab = activeTabs.find(t => t.tabId === currentActiveTabId);
-            if (!tab) return;
-            if (event.data.type === 'SANDBOX_LOG') addLogToConsole(`[Frame] ${event.data.message}`, event.data.level);
+            if (!event.data) return;
+            
+            if (event.data.type === 'ROUTER_NAVIGATE') {
+                const projId = event.data.projectId || activeProjectId;
+                routeToPage(projId, event.data.targetFilename);
+            }
+
+            if (event.data.type === 'SANDBOX_LOG' && currentActiveTabId) {
+                const tab = activeTabs.find(t => t.tabId === currentActiveTabId);
+                if (!tab) return;
+                const project = workspaces.find(p => p.id === tab.projectId);
+                const prefix = project ? project.name : 'Frame';
+                addLogToConsole(`[${prefix}] ${event.data.message}`, event.data.level);
+            }
         }
+
         function addLogToConsole(text, level) {
             const c = document.getElementById('console-logs-output');
             const d = document.createElement('div');
@@ -1345,6 +1435,7 @@
             setTimeout(() => { toast.classList.add('translate-x-12', 'opacity-0'); setTimeout(() => toast.remove(), 300); }, 3000);
         }
 
+        // Helpers
         function isTextFile(fn) { return ['html', 'htm', 'css', 'js', 'json', 'txt', 'svg', 'md'].includes(fn.split('.').pop().toLowerCase()); }
         function getMimeType(fn) {
             const map = { 'html':'text/html', 'css':'text/css', 'js':'application/javascript', 'png':'image/png', 'jpg':'image/jpeg', 'svg':'image/svg+xml' };
