@@ -59,9 +59,9 @@
   </footer>
 
   <script src="../site-home.js" defer></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
-  <script src="firebase-config.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js" defer></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" defer></script>
+  <script src="firebase-config.js" defer></script>
   <script>
     const INDEX_KEY = "envizion_excel_workbooks";
     const LAST_KEY = "envizion_excel_last_workbook";
@@ -130,8 +130,22 @@
     }
 
     // Instantly reflect changes made on the actual spreadsheet page inside the Home page Hub.
+  // Optimized: Throttle updates so they only render when active editing pauses,
+    // and skip updates entirely if the tab is running in the background.
+    let storageTimeout;
     window.addEventListener('storage', (event) => {
       if (event.key === INDEX_KEY) {
+        if (document.hidden) return; // Skip updating background tabs
+        clearTimeout(storageTimeout);
+        storageTimeout = setTimeout(() => {
+          renderWorkbooks();
+        }, 1000); // 1-second debounce delay
+      }
+    });
+
+    // Re-render immediately when user returns to this tab to ensure data is fresh
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
         renderWorkbooks();
       }
     });
