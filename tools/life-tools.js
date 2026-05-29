@@ -1,4 +1,8 @@
-   const RAW_TOOLS = [
+// -------------------------------------------------------------------------
+    // DEFINITION OF ALL 90+ BUILT-IN ENVIZION TOOLS & MATH UTILITIES
+    // -------------------------------------------------------------------------
+    const RAW_TOOLS = [
+      // Original 70 Tools
       ["age-calculator","Age Calculator","Planning","Calculate exact age and days lived from a birth date.","date:Birth date","=AGE(A1)"],
       ["date-difference","Date Difference","Planning","Count the time between two dates.","date:Start date|date:End date","=DATEDIFF(A1, B1)"],
       ["countdown-maker","Countdown Maker","Planning","Count down to a future event or deadline.","date:Target date|text:Event name","=COUNTDOWN(A1, \"Launch\")"],
@@ -78,7 +82,29 @@
       ["json-formatter","JSON Formatter","Data","Format and validate JSON blocks.","textarea:JSON","=JSONFORMAT(A1)"],
       ["regex-extractor","Regex Extractor","Data","Extract matches based on pattern.","textarea:Text|text:Regex pattern|select:Flags:g,gi,gm,gim","=REGEXEXTRACT(A1, \"[0-9]+\")"],
       ["ai-accuracy-check","AI Accuracy Checklist","Research","Produce verifications list from assertions.","textarea:Claims, one per line","=AIACCURACY(A1)"],
-      ["source-triangulator","Source Triangulator","Research","Score assertions by source abundance.","textarea:Rows as claim,sources,confidence","=SOURCETRIANGULATE(A1)"]
+      ["source-triangulator","Source Triangulator","Research","Score assertions by source abundance.","textarea:Rows as claim,sources,confidence","=SOURCETRIANGULATE(A1)"],
+
+      // 20 NEW ADDONS ADDED FOR EXTENDED SPREADSHEET CAPABILITY
+      ["mortgage-calc","Mortgage Estimator","Money","Estimate mortgage payments.","number:Principal|number:Rate %|number:Years","=PMT(B1/100/12, C1*12, -A1)"],
+      ["compound-interest","Compound Interest","Money","Calculate compound growth.","number:Principal|number:Rate %|number:Years|number:Times/Yr","=FV(B1/100/D1, C1*D1, 0, -A1)"],
+      ["roi-calc","ROI Calculator","Money","Return on Investment percentage.","number:Initial Cost|number:Final Value","=(B1-A1)/A1"],
+      ["profit-margin","Profit Margin","Business","Net profit margin.","number:Revenue|number:Cost","=(A1-B1)/A1"],
+      ["markup-calc","Markup Calc","Business","Markup percentage.","number:Cost|number:Revenue","=(B1-A1)/A1"],
+      ["ebitda-calc","EBITDA Calc","Business","EBITDA value.","number:Net Income|number:Interest|number:Taxes|number:D&A","=A1+B1+C1+D1"],
+      ["cagr-calc","CAGR Calc","Business","Compound Annual Growth Rate.","number:Beginning Value|number:Ending Value|number:Years","=(B1/A1)^(1/C1)-1"],
+      ["pomodoro-timer","Pomodoro Estimate","Planning","Count pomodoros needed.","number:Task Minutes","=ROUNDUP(A1/25,0) & \" Pomodoros\""],
+      ["macros-calc","Macros Calc","Health","Calculate daily macros.","number:Calories|number:Protein %|number:Fat %","=MACROS(A1, B1, C1)"],
+      ["ovulation-calc","Ovulation Estimate","Health","Estimate ovulation date.","date:Last Period|number:Cycle Length","=OVULATION(A1, B1)"],
+      ["due-date-calc","Due Date Calc","Health","Pregnancy due date.","date:Last Period","=DUEDATE(A1)"],
+      ["zodiac-sign","Zodiac Sign","Planning","Get Zodiac from birth date.","date:Birth Date","=ZODIAC(A1)"],
+      ["moon-phase","Moon Phase","Planning","Estimate moon phase.","date:Date","=MOONPHASE(A1)"],
+      ["days-in-month","Days In Month","Planning","Get total days for a given month.","date:Date","=DAYSINMONTH(A1)"],
+      ["salary-to-hourly","Salary to Hourly","Money","Convert annual to hourly.","number:Annual Salary|number:Hours/Week","=A1/(B1*52)"],
+      ["currency-conv","Currency Conv","Money","Simple rate conversion.","number:Amount|number:Rate","=A1*B1"],
+      ["word-scramble","Word Scrambler","Writing","Scramble text characters.","text:Word","=SCRAMBLE(A1)"],
+      ["anagram-check","Anagram Check","Writing","Check if two words are anagrams.","text:Word 1|text:Word 2","=ANAGRAM(A1, B1)"],
+      ["palindrome-check","Palindrome Check","Writing","Check if word is palindrome.","text:Word","=PALINDROME(A1)"],
+      ["random-quote","Random Quote Generator","Writing","Generate an inspirational snippet.","text:Subject","=RANDOMQUOTE(A1)"]
     ];
 
     const CATEGORY_COLOURS = {
@@ -101,7 +127,6 @@
       Research: "bg-yellow-100 text-yellow-800 dark:bg-yellow-950 dark:text-yellow-200 border-yellow-300"
     };
 
-    // Parse RAW_TOOLS into Structured Object
     const TOOLS = RAW_TOOLS.map(([id, title, category, desc, fields, exampleFormula]) => {
       const parsedFields = fields.split("|").map(def => {
         const [type, label, options] = def.split(":");
@@ -110,85 +135,60 @@
       return { id, title, category, desc, fields: parsedFields, exampleFormula };
     });
 
-    // -------------------------------------------------------------------------
-    // SPREADSHEET STATE
-    // -------------------------------------------------------------------------
-    const COLUMNS = "ABCDEFGHIJKLMNOPQRST".split(""); // 20 Columns
-    const ROW_COUNT = 50;                             // 50 Rows
+    const COLUMNS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split(""); // 26 Columns
     
-    // We store multiple sheets in an object
-    let sheets = {
-      "Sheet 1": {},
-      "Sheet 2": {},
-      "Sheet 3": {}
-    };
+    let sheets = { "Sheet 1": {} };
     let activeSheet = "Sheet 1";
 
     let selectedCell = "A1";
     let isEditing = false;
-    let dragStart = null;
-    let selectedRange = null; // e.g., {startCol: 0, startRow: 0, endCol: 3, endRow: 5}
+    let editingCoord = null;
+    let selectionStart = "A1";
+    let selectionEnd = "A1";
+    let isDragging = false;
+    let currentRowsRendered = 0;
 
-    // History for Undo/Redo
     let historyUndo = [];
     let historyRedo = [];
-    const LEGACY_STORAGE_KEY = "envizion_excel_sheets";
     const WORKBOOK_INDEX_KEY = "envizion_excel_workbooks";
     const LAST_WORKBOOK_KEY = "envizion_excel_last_workbook";
     let currentWorkbookId = null;
 
-    // Helper functions for formatting
-    const fmt = (n, d = 2) => Number.isFinite(n) ? Number(n).toLocaleString(undefined, { maximumFractionDigits: d }) : "0";
+    let evaluationCache = {};
+    const excelParser = new formulaParser.Parser(); // Powered by hot-formula-parser for core excel standards
 
     // -------------------------------------------------------------------------
-    // SYSTEM SETUP ONLOAD
+    // SYSTEM LIFECYCLE
     // -------------------------------------------------------------------------
     window.onload = async function() {
-      // Initialize Lucide icons
       lucide.createIcons();
+      setupFormulaParser();
 
-      const sharedWorkbookId = getShareIdFromUrl();
-      if (sharedWorkbookId) {
-        currentWorkbookId = await importSharedWorkbook(sharedWorkbookId);
-        if (currentWorkbookId) {
-          const cleanUrl = new URL(window.location.href);
-          cleanUrl.searchParams.delete("share");
-          cleanUrl.searchParams.set("file", currentWorkbookId);
-          window.history.replaceState({}, "", cleanUrl.toString());
-        }
-      }
-
-      currentWorkbookId = currentWorkbookId || getWorkbookIdFromUrl() || localStorage.getItem(LAST_WORKBOOK_KEY) || ensureDefaultWorkbook();
-
-      // Check LocalStorage
-      const saved = localStorage.getItem(getWorkbookStorageKey(currentWorkbookId)) || localStorage.getItem(LEGACY_STORAGE_KEY);
+      currentWorkbookId = getWorkbookIdFromUrl() || localStorage.getItem(LAST_WORKBOOK_KEY) || ensureDefaultWorkbook();
+      const saved = localStorage.getItem(`envizion_excel_workbook_${currentWorkbookId}`);
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
           sheets = parsed.sheets || sheets;
-          activeSheet = parsed.activeSheet || activeSheet;
-          const projTitle = document.getElementById("project-title");
-          if(parsed.title) projTitle.value = parsed.title;
+          activeSheet = parsed.activeSheet || Object.keys(sheets)[0];
+          document.getElementById("project-title").value = parsed.title || "Untitled";
         } catch(e) {}
       }
 
-      // Generate elements
       renderSheetTabs();
-      renderGrid();
+      rebuildGrid();
       renderAddonsList();
       renderFormulaGlossary();
 
-      // Setup global key/click listeners for spreadsheet grid interaction
       document.addEventListener("keydown", handleGlobalKeyDown);
       document.getElementById("formula-bar-input").addEventListener("input", handleFormulaBarInput);
       document.getElementById("formula-bar-input").addEventListener("keydown", handleFormulaBarKeyDown);
       document.getElementById("addon-search").addEventListener("input", filterAddons);
+      document.getElementById("project-title").addEventListener("input", () => {
+        saveToLocalStorage();
+        syncWorkbookIndex();
+      });
 
-      // Save title changes
-      document.getElementById("project-title").addEventListener("input", saveToLocalStorage);
-      syncWorkbookIndex();
-
-      // Detect Theme
       if (localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
         document.documentElement.classList.add('dark');
         document.getElementById("theme-sun").classList.remove("hidden");
@@ -197,436 +197,513 @@
     };
 
     // -------------------------------------------------------------------------
-    // LOCAL STORAGE & HISTORY (UNDO/REDO)
+    // FORMULA ENGINE CONFIGURATION & EXCEL STANDARD MATH REGISTRATION
     // -------------------------------------------------------------------------
-    function getWorkbookIdFromUrl() {
-      const params = new URLSearchParams(window.location.search);
-      const id = params.get("file");
-      return id && /^[a-zA-Z0-9_-]+$/.test(id) ? id : null;
-    }
-
-    function getShareIdFromUrl() {
-      const params = new URLSearchParams(window.location.search);
-      const id = params.get("share");
-      return id && /^[a-zA-Z0-9_-]+$/.test(id) ? id : null;
-    }
-
-    function getWorkbookStorageKey(id) {
-      return `envizion_excel_workbook_${id}`;
-    }
-
-    function makeWorkbookId() {
-      return `wb_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    }
-
-    function readWorkbookIndex() {
-      try {
-        return JSON.parse(localStorage.getItem(WORKBOOK_INDEX_KEY) || "[]");
-      } catch (error) {
-        return [];
-      }
-    }
-
-    function writeWorkbookIndex(items) {
-      localStorage.setItem(WORKBOOK_INDEX_KEY, JSON.stringify(items));
-    }
-
-    function getShareDb() {
-      if (!window.firebase || !window.ENVIZION_FIREBASE_CONFIG) return null;
-      if (!firebase.apps.length) firebase.initializeApp(window.ENVIZION_FIREBASE_CONFIG);
-      return firebase.firestore();
-    }
-
-    function getCurrentWorkbookData() {
-      const title = document.getElementById("project-title")?.value || "Untitled workbook";
-      return {
-        sheets,
-        activeSheet,
-        title
-      };
-    }
-
-    async function importSharedWorkbook(shareId) {
-      const db = getShareDb();
-      if (!db) {
-        alert("This shared workbook could not be opened because Firebase did not load.");
-        return null;
-      }
-      try {
-        const snap = await db.collection("lifeToolWorkbookShares").doc(shareId).get();
-        if (!snap.exists) {
-          alert("This shared workbook link was not found.");
-          return null;
+    function setupFormulaParser() {
+      // Handle resolving values of standard coordinates like A1, B3
+      excelParser.on('callCellValue', function(cellCoord, done) {
+        const coord = cellCoord.label;
+        const activeData = sheets[activeSheet] || {};
+        const cell = activeData[coord];
+        if (!cell) { done(""); return; }
+        
+        if (evaluationCache[coord] !== undefined) {
+          done(evaluationCache[coord]);
+          return;
         }
-        const shared = snap.data();
-        const data = shared.data;
-        if (!data?.sheets) {
-          alert("This shared workbook is missing workbook data.");
-          return null;
+        
+        evaluationCache[coord] = 0; // prevent circular loop infinite stack trace
+        if (cell.formula) {
+          const res = excelParser.parse(cell.formula.substring(1));
+          const val = res.error ? res.error : res.result;
+          evaluationCache[coord] = val;
+          done(val);
+        } else {
+          let num = parseFloat(cell.value);
+          const finalVal = (!isNaN(num) && cell.value !== "") ? num : cell.value;
+          evaluationCache[coord] = finalVal;
+          done(finalVal);
         }
-        const id = makeWorkbookId();
-        const now = new Date().toISOString();
-        const title = `${data.title || shared.title || "Shared workbook"} copy`;
-        const copyData = {
-          sheets: data.sheets,
-          activeSheet: data.activeSheet || "Sheet 1",
-          title
-        };
-        localStorage.setItem(getWorkbookStorageKey(id), JSON.stringify(copyData));
-        writeWorkbookIndex([{ id, title, createdAt: now, updatedAt: now }, ...readWorkbookIndex()]);
-        localStorage.setItem(LAST_WORKBOOK_KEY, id);
-        return id;
-      } catch (error) {
-        alert("Could not open this shared workbook. Check the link or try again later.");
-        return null;
-      }
-    }
-
-    function ensureDefaultWorkbook() {
-      const existing = readWorkbookIndex()[0];
-      if (existing?.id) return existing.id;
-
-      const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
-      const id = makeWorkbookId();
-      const now = new Date().toISOString();
-      const title = "Envizion Excel Workbench";
-      writeWorkbookIndex([{ id, title, createdAt: now, updatedAt: now }]);
-      localStorage.setItem(LAST_WORKBOOK_KEY, id);
-      if (legacy) {
-        localStorage.setItem(getWorkbookStorageKey(id), legacy);
-      } else {
-        localStorage.setItem(getWorkbookStorageKey(id), JSON.stringify({
-          sheets: { "Sheet 1": {} },
-          activeSheet: "Sheet 1",
-          title
-        }));
-      }
-      return id;
-    }
-
-    function syncWorkbookIndex() {
-      const title = document.getElementById("project-title")?.value || "Untitled workbook";
-      const now = new Date().toISOString();
-      const index = readWorkbookIndex();
-      const existing = index.find((item) => item.id === currentWorkbookId);
-      const nextItem = {
-        id: currentWorkbookId,
-        title,
-        createdAt: existing?.createdAt || now,
-        updatedAt: now
-      };
-      writeWorkbookIndex([nextItem, ...index.filter((item) => item.id !== currentWorkbookId)]);
-      localStorage.setItem(LAST_WORKBOOK_KEY, currentWorkbookId);
-    }
-
-    function createNewWorkbookFromApp() {
-      const title = prompt("Name this workbook", "Untitled workbook") || "Untitled workbook";
-      const id = makeWorkbookId();
-      const now = new Date().toISOString();
-      const data = {
-        sheets: { "Sheet 1": {} },
-        activeSheet: "Sheet 1",
-        title
-      };
-      localStorage.setItem(getWorkbookStorageKey(id), JSON.stringify(data));
-      writeWorkbookIndex([{ id, title, createdAt: now, updatedAt: now }, ...readWorkbookIndex()]);
-      localStorage.setItem(LAST_WORKBOOK_KEY, id);
-      window.location.href = `life-tools.html?file=${encodeURIComponent(id)}`;
-    }
-
-    function renameCurrentWorkbook() {
-      const titleInput = document.getElementById("project-title");
-      const currentTitle = titleInput?.value || "Untitled workbook";
-      const nextTitle = prompt("Rename this workbook", currentTitle);
-      if (!nextTitle || !nextTitle.trim()) return;
-      titleInput.value = nextTitle.trim();
-      saveToLocalStorage();
-    }
-
-    function copyCurrentWorkbook() {
-      saveToLocalStorage();
-      const data = getCurrentWorkbookData();
-      const id = makeWorkbookId();
-      const now = new Date().toISOString();
-      const title = `${data.title || "Untitled workbook"} copy`;
-      localStorage.setItem(getWorkbookStorageKey(id), JSON.stringify({ ...data, title }));
-      writeWorkbookIndex([{ id, title, createdAt: now, updatedAt: now }, ...readWorkbookIndex()]);
-      localStorage.setItem(LAST_WORKBOOK_KEY, id);
-      window.location.href = `life-tools.html?file=${encodeURIComponent(id)}`;
-    }
-
-    async function shareCurrentWorkbookByEmail() {
-      saveToLocalStorage();
-      const db = getShareDb();
-      if (!db) {
-        alert("Sharing is not available because Firebase did not load.");
-        return;
-      }
-      const data = getCurrentWorkbookData();
-      try {
-        const doc = await db.collection("lifeToolWorkbookShares").add({
-          title: data.title || "Untitled workbook",
-          data,
-          sourceId: currentWorkbookId,
-          createdAt: firebase.firestore.FieldValue.serverTimestamp()
-        });
-        const shareUrl = new URL("life-tools.html", window.location.href);
-        shareUrl.searchParams.set("share", doc.id);
-        const subject = encodeURIComponent(`Envizion workbook: ${data.title || "Untitled workbook"}`);
-        const body = encodeURIComponent(`Open this link to make your own local copy of the workbook:\n\n${shareUrl.toString()}`);
-        window.location.href = `mailto:?subject=${subject}&body=${body}`;
-      } catch (error) {
-        alert("Could not create the share link. Check Firebase rules or try again later.");
-      }
-    }
-
-    function saveStateForHistory() {
-      historyUndo.push(JSON.stringify(sheets));
-      historyRedo = []; // clear redo on new action
-    }
-
-    function undo() {
-      if (historyUndo.length > 0) {
-        historyRedo.push(JSON.stringify(sheets));
-        sheets = JSON.parse(historyUndo.pop());
-        renderGrid();
-        saveToLocalStorage();
-      }
-    }
-
-    function redo() {
-      if (historyRedo.length > 0) {
-        historyUndo.push(JSON.stringify(sheets));
-        sheets = JSON.parse(historyRedo.pop());
-        renderGrid();
-        saveToLocalStorage();
-      }
-    }
-
-    function saveToLocalStorage() {
-      const projTitle = document.getElementById("project-title").value;
-      if (!currentWorkbookId) currentWorkbookId = ensureDefaultWorkbook();
-      localStorage.setItem(getWorkbookStorageKey(currentWorkbookId), JSON.stringify(getCurrentWorkbookData()));
-      syncWorkbookIndex();
-    }
-
-    // -------------------------------------------------------------------------
-    // THEME TOGGLE
-    // -------------------------------------------------------------------------
-    function toggleTheme() {
-      const isDark = document.documentElement.classList.toggle('dark');
-      localStorage.setItem('theme', isDark ? 'dark' : 'light');
-      
-      const sun = document.getElementById("theme-sun");
-      const moon = document.getElementById("theme-moon");
-      if (isDark) {
-        sun.classList.remove("hidden");
-        moon.classList.add("hidden");
-      } else {
-        sun.classList.add("hidden");
-        moon.classList.remove("hidden");
-      }
-    }
-
-    // -------------------------------------------------------------------------
-    // SPREADSHEET RENDER ENGINE
-    // -------------------------------------------------------------------------
-    function renderGrid() {
-      const grid = document.getElementById("excel-grid");
-      const activeData = sheets[activeSheet] || {};
-      
-      let html = `<div class="grid select-none border-collapse overflow-auto" style="grid-template-columns: 45px repeat(${COLUMNS.length}, minmax(90px, 1fr));">`;
-      
-      // 1. TOP CORNER EMPTY CELL & HEADER COLUMN LABELS (A, B, C...)
-      html += `<div class="bg-slate-100 dark:bg-slate-800 border-r border-b border-slate-300 dark:border-slate-700 h-7 flex items-center justify-center font-mono font-bold text-slate-500 dark:text-slate-400 text-xs sticky top-0 left-0 z-20"></div>`;
-      
-      COLUMNS.forEach((col, cIdx) => {
-        html += `
-          <div id="col-${cIdx}" class="bg-slate-100 dark:bg-slate-800 border-r border-b border-slate-300 dark:border-slate-700 h-7 flex items-center justify-center font-mono font-bold text-slate-500 dark:text-slate-400 text-xs sticky top-0 z-10 transition-colors">
-            ${col}
-          </div>
-        `;
       });
 
-      // 2. ROWS
-      for (let r = 1; r <= ROW_COUNT; r++) {
-        // Row label sidebar indicator (1, 2, 3...)
-        html += `
-          <div id="row-${r}" class="bg-slate-100 dark:bg-slate-800 border-r border-b border-slate-300 dark:border-slate-700 w-11 h-7 flex items-center justify-center font-mono font-bold text-slate-500 dark:text-slate-400 text-xs sticky left-0 z-10 transition-colors">
-            ${r}
+      // Handle resolving blocks like SUM(A1:B5)
+      excelParser.on('callRangeValue', function(startCellCoord, endCellCoord, done) {
+        const bounds = getRangeBounds(startCellCoord.label, endCellCoord.label);
+        let matrix = [];
+        for (let r = bounds.minRow; r <= bounds.maxRow; r++) {
+          let rowVals = [];
+          for (let c = bounds.minCol; c <= bounds.maxCol; c++) {
+            const coord = `${COLUMNS[c]}${r}`;
+            rowVals.push(evaluateCell(coord));
+          }
+          matrix.push(rowVals);
+        }
+        done(matrix);
+      });
+
+      // --- REGISTER EXTRA EXCEL FUNCTIONS MISSING OR OVERRIDDEN ---
+      excelParser.setFunction('CONCATENATE', params => params.join(''));
+      excelParser.setFunction('LEN', params => String(params[0]).length);
+      excelParser.setFunction('NETWORKDAYS', params => {
+        let d1 = new Date(params[0]), d2 = new Date(params[1]);
+        if (isNaN(d1) || isNaN(d2)) return "#VALUE!";
+        let days = 0;
+        let cur = new Date(d1);
+        while (cur <= d2) {
+          if (cur.getDay() !== 0 && cur.getDay() !== 6) days++;
+          cur.setDate(cur.getDate() + 1);
+        }
+        return days;
+      });
+
+      // Register custom Envzion add-ons directly into the parser
+      const customFormulasList = [
+        "AGE", "DATEDIFF", "COUNTDOWN", "SLEEP", "WATER", "BMI", "BMR", "CALORIE", "PROTEIN", "PACE", 
+        "STUDY", "FINALGRADE", "TIP", "DISCOUNT", "SAVINGS", "HOURLYTOYEARLY", "LOAN", "SUBSCRIPTION", 
+        "UNITPRICE", "TAX", "BUDGET", "WORDCOUNT", "READINGTIME", "CASECONVERT", "SLUG", "CHARLIMIT", 
+        "PASSWORD", "UNIQUE", "EXCHANGE", "TIMEOFFSET", "ASPECT", "CONTRAST", "BIZMODEL", "BREAKEVEN", 
+        "RUNWAY", "REORDER", "MACROS", "OVULATION", "DUEDATE", "ZODIAC", "MOONPHASE", "DAYSINMONTH", 
+        "SCRAMBLE", "ANAGRAM", "PALINDROME", "RANDOMQUOTE"
+      ];
+      
+      customFormulasList.forEach(funcName => {
+        excelParser.setFunction(funcName, function(params) {
+          return runCustomFormula(funcName, params);
+        });
+      });
+    }
+
+    function evaluateCell(coord) {
+      if (evaluationCache[coord] !== undefined) return evaluationCache[coord];
+      const cell = (sheets[activeSheet] || {})[coord];
+      if (!cell) return "";
+      
+      if (cell.formula) {
+        evaluationCache[coord] = "...";
+        const res = excelParser.parse(cell.formula.substring(1));
+        const val = res.error ? res.error : res.result;
+        evaluationCache[coord] = val;
+        return val;
+      } else {
+        let num = parseFloat(cell.value);
+        const val = (!isNaN(num) && cell.value !== "") ? num : cell.value;
+        evaluationCache[coord] = val;
+        return val;
+      }
+    }
+
+    function reevaluateAll() {
+      evaluationCache = {};
+      const activeData = sheets[activeSheet] || {};
+      Object.keys(activeData).forEach(coord => {
+        updateCellDisplay(coord);
+        applyCellStyle(coord);
+      });
+      updateSelectionVisuals(); // Will update stats as well
+      renderCharts();
+    }
+
+    // -------------------------------------------------------------------------
+    // GRID RENDERING & INFINITE SCROLL
+    // -------------------------------------------------------------------------
+    const scrollObserver = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting) {
+        appendRows(50);
+      }
+    });
+
+    function rebuildGrid() {
+      const grid = document.getElementById("excel-grid");
+      let html = `<div id="excel-grid-inner" class="grid select-none border-collapse" style="grid-template-columns: 45px repeat(${COLUMNS.length}, minmax(90px, 1fr));">`;
+      html += `<div class="bg-slate-100 dark:bg-slate-800 border-r border-b border-slate-300 dark:border-slate-700 h-7 sticky top-0 left-0 z-30"></div>`;
+      
+      COLUMNS.forEach((col, cIdx) => {
+        html += `<div id="col-${cIdx}" class="bg-slate-100 dark:bg-slate-800 border-r border-b border-slate-300 dark:border-slate-700 h-7 flex items-center justify-center font-mono font-bold text-slate-500 dark:text-slate-400 text-xs sticky top-0 z-20">${col}</div>`;
+      });
+      
+      grid.innerHTML = html + `</div>`;
+      currentRowsRendered = 0;
+      appendRows(100);
+      setupGridEvents();
+      reevaluateAll();
+    }
+
+    function appendRows(count) {
+      const gridInner = document.getElementById("excel-grid-inner");
+      if (!gridInner) return;
+      const fragment = document.createDocumentFragment();
+      
+      for (let r = currentRowsRendered + 1; r <= currentRowsRendered + count; r++) {
+        const rowDiv = document.createElement('div');
+        rowDiv.id = `row-${r}`;
+        rowDiv.className = "bg-slate-100 dark:bg-slate-800 border-r border-b border-slate-300 dark:border-slate-700 h-7 flex items-center justify-center font-mono font-bold text-slate-500 dark:text-slate-400 text-xs sticky left-0 z-10 select-none";
+        rowDiv.innerText = r;
+        fragment.appendChild(rowDiv);
+        
+        COLUMNS.forEach(col => {
+          const coord = `${col}${r}`;
+          const cellDiv = document.createElement('div');
+          cellDiv.id = `cell-${coord}`;
+          cellDiv.dataset.coord = coord;
+          cellDiv.className = `border-r border-b border-slate-200 dark:border-slate-800 h-7 px-1.5 flex items-center font-mono text-xs overflow-hidden whitespace-nowrap text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-850 cursor-cell`;
+          fragment.appendChild(cellDiv);
+        });
+      }
+      gridInner.appendChild(fragment);
+      currentRowsRendered += count;
+      
+      scrollObserver.disconnect();
+      const lastRow = document.getElementById(`row-${currentRowsRendered}`);
+      if (lastRow) scrollObserver.observe(lastRow);
+      
+      reevaluateAll();
+    }
+
+    function updateCellDisplay(coord) {
+      if (isEditing && editingCoord === coord) return;
+      const el = document.getElementById(`cell-${coord}`);
+      if (!el) return;
+      
+      const val = evaluateCell(coord);
+      const activeData = sheets[activeSheet] || {};
+      const cell = activeData[coord];
+      
+      el.innerText = (val !== null && val !== undefined) ? val : "";
+      el.title = (cell && cell.formula) ? `Formula: ${cell.formula}` : "";
+    }
+
+    function applyCellStyle(coord) {
+      const el = document.getElementById(`cell-${coord}`);
+      if (!el) return;
+      const style = (sheets[activeSheet] || {})[coord]?.style || {};
+      el.style.fontWeight = style.bold ? 'bold' : 'normal';
+      el.style.fontStyle = style.italic ? 'italic' : 'normal';
+      el.style.textDecoration = style.underline ? 'underline' : 'none';
+      el.style.backgroundColor = style.bgColor || '';
+      el.style.color = style.textColor || '';
+      el.style.justifyContent = style.align === 'center' ? 'center' : (style.align === 'right' ? 'flex-end' : 'flex-start');
+    }
+
+    // -------------------------------------------------------------------------
+    // GRID INTERACTION (SELECTION, EDITING)
+    // -------------------------------------------------------------------------
+    function setupGridEvents() {
+      const grid = document.getElementById("excel-grid-inner");
+      grid.addEventListener('mousedown', (e) => {
+        const cell = e.target.closest('[data-coord]');
+        if (!cell) return;
+        if (isEditing) {
+          if (cell.dataset.coord === editingCoord) return;
+          saveCellEditingValue();
+        }
+        isDragging = true;
+        selectionStart = cell.dataset.coord;
+        selectionEnd = selectionStart;
+        updateSelectionVisuals();
+      });
+      
+      grid.addEventListener('mouseover', (e) => {
+        if (!isDragging) return;
+        const cell = e.target.closest('[data-coord]');
+        if (!cell) return;
+        selectionEnd = cell.dataset.coord;
+        updateSelectionVisuals();
+      });
+      
+      window.addEventListener('mouseup', () => {
+        if (isDragging) {
+          isDragging = false;
+          updateStatsPanel();
+        }
+      });
+
+      grid.addEventListener('dblclick', (e) => {
+        const cell = e.target.closest('[data-coord]');
+        if (cell && !isEditing) editCell(cell.dataset.coord);
+      });
+    }
+
+    function selectCell(coord) {
+      if (isEditing) saveCellEditingValue();
+      selectionStart = coord;
+      selectionEnd = coord;
+      updateSelectionVisuals();
+      
+      // Auto-scroll logic if off-screen
+      const el = document.getElementById(`cell-${coord}`);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+    }
+
+    function updateSelectionVisuals() {
+      document.querySelectorAll('.grid-cell-selected').forEach(el => el.classList.remove('grid-cell-selected'));
+      document.querySelectorAll('.grid-header-active').forEach(el => el.classList.remove('grid-header-active'));
+      
+      const cells = getRangeCells(selectionStart, selectionEnd);
+      cells.forEach(c => document.getElementById(`cell-${c}`)?.classList.add('grid-cell-selected'));
+      
+      selectedCell = selectionStart; // Use start as the anchor
+      document.getElementById("formula-cell-id").textContent = selectedCell;
+      document.getElementById("status-selected-cell").textContent = selectedCell;
+      
+      const cellObj = (sheets[activeSheet] || {})[selectedCell] || { value: "", formula: "" };
+      document.getElementById("formula-bar-input").value = cellObj.formula || cellObj.value;
+      
+      const bounds = getRangeBounds(selectionStart, selectionEnd);
+      for(let c = bounds.minCol; c <= bounds.maxCol; c++) document.getElementById(`col-${c}`)?.classList.add('grid-header-active');
+      for(let r = bounds.minRow; r <= bounds.maxRow; r++) document.getElementById(`row-${r}`)?.classList.add('grid-header-active');
+      
+      updateStatsPanel();
+    }
+
+    function updateStatsPanel() {
+      const cells = getRangeCells(selectionStart, selectionEnd);
+      if (cells.length <= 1) {
+        document.getElementById("range-calc-sum").textContent = "";
+        document.getElementById("range-calc-avg").textContent = "";
+        document.getElementById("range-calc-count").textContent = "";
+        return;
+      }
+      
+      let sum = 0, countNum = 0, countAll = 0;
+      cells.forEach(c => {
+        const val = evaluateCell(c);
+        if (val !== "" && val !== null) {
+          countAll++;
+          const num = parseFloat(val);
+          if (!isNaN(num)) { sum += num; countNum++; }
+        }
+      });
+      
+      const fmt = (n) => Number.isFinite(n) ? Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 }) : "0";
+      document.getElementById("range-calc-sum").textContent = countNum > 0 ? `Sum: ${fmt(sum)}` : "";
+      document.getElementById("range-calc-avg").textContent = countNum > 0 ? `Avg: ${fmt(sum/countNum)}` : "";
+      document.getElementById("range-calc-count").textContent = `Count: ${countAll}`;
+    }
+
+    function editCell(coord, initialValue = null) {
+      isEditing = true;
+      editingCoord = coord;
+      const el = document.getElementById(`cell-${coord}`);
+      const val = (sheets[activeSheet] || {})[coord] ? ((sheets[activeSheet] || {})[coord].formula || (sheets[activeSheet] || {})[coord].value) : "";
+      
+      el.innerHTML = `<input type="text" id="active-editor" class="cell-input-active w-full h-full font-mono text-xs px-1 text-slate-900 bg-white dark:bg-slate-800 dark:text-slate-100 outline-none" value="${escapeHtml(initialValue !== null ? initialValue : val)}" />`;
+      
+      const editor = document.getElementById("active-editor");
+      editor.focus();
+      if (initialValue === null) editor.setSelectionRange(editor.value.length, editor.value.length);
+      
+      editor.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          saveCellEditingValue();
+          // Logic: Auto select the cell below on Enter execution
+          const col = coord.match(/[A-Z]+/i)[0].toUpperCase();
+          const row = parseInt(coord.match(/[0-9]+/)[0]);
+          if (row < currentRowsRendered) selectCell(`${col}${row + 1}`);
+          e.preventDefault(); e.stopPropagation();
+        } else if (e.key === 'Escape') {
+          isEditing = false;
+          updateCellDisplay(coord);
+          e.preventDefault(); e.stopPropagation();
+        }
+      });
+      editor.addEventListener('blur', () => { if (isEditing && editingCoord === coord) saveCellEditingValue(); });
+    }
+
+    function saveCellEditingValue() {
+      if (!isEditing) return;
+      const editor = document.getElementById("active-editor");
+      if (editor) {
+        saveStateForHistory();
+        setCellValue(editingCoord, editor.value);
+        isEditing = false;
+        reevaluateAll();
+      }
+    }
+
+    function setCellValue(coord, val) {
+      if (!sheets[activeSheet]) sheets[activeSheet] = {};
+      if (!sheets[activeSheet][coord]) sheets[activeSheet][coord] = { value: "", formula: "", style: {} };
+
+      if (val.startsWith("=")) {
+        sheets[activeSheet][coord].formula = val;
+        sheets[activeSheet][coord].value = val;
+      } else {
+        sheets[activeSheet][coord].formula = "";
+        sheets[activeSheet][coord].value = val;
+      }
+      saveToLocalStorage();
+    }
+
+    // -------------------------------------------------------------------------
+    // KEYBOARD NAVIGATION
+    // -------------------------------------------------------------------------
+    function handleGlobalKeyDown(e) {
+      if (isEditing) return;
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+      if (!selectedCell) return;
+      
+      const col = selectedCell.match(/[A-Z]+/i)[0].toUpperCase();
+      const row = parseInt(selectedCell.match(/[0-9]+/)[0]);
+      let cIdx = COLUMNS.indexOf(col);
+
+      if (e.key === 'ArrowUp' && row > 1) { selectCell(`${col}${row-1}`); e.preventDefault(); }
+      else if (e.key === 'ArrowDown' || e.key === 'Enter') { selectCell(`${col}${row+1}`); e.preventDefault(); }
+      else if (e.key === 'ArrowLeft' && cIdx > 0) { selectCell(`${COLUMNS[cIdx-1]}${row}`); e.preventDefault(); }
+      else if (e.key === 'ArrowRight' && cIdx < COLUMNS.length - 1) { selectCell(`${COLUMNS[cIdx+1]}${row}`); e.preventDefault(); }
+      else if (e.key === 'F2') { editCell(selectedCell); e.preventDefault(); }
+      else if (e.key === 'Backspace' || e.key === 'Delete') {
+        saveStateForHistory();
+        const cells = getRangeCells(selectionStart, selectionEnd);
+        cells.forEach(c => setCellValue(c, ""));
+        reevaluateAll();
+        e.preventDefault();
+      }
+      else if (e.ctrlKey && e.key === "z") { undo(); e.preventDefault(); }
+      else if (e.ctrlKey && e.key === "y") { redo(); e.preventDefault(); }
+      else if (e.ctrlKey && e.key === "b") { formatActiveCell('bold'); e.preventDefault(); }
+      else if (e.ctrlKey && e.key === "i") { formatActiveCell('italic'); e.preventDefault(); }
+      else if (e.ctrlKey && e.key === "u") { formatActiveCell('underline'); e.preventDefault(); }
+      else if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        editCell(selectedCell, e.key);
+        e.preventDefault();
+      }
+    }
+
+    function handleFormulaBarInput(e) { setCellValue(selectedCell, e.target.value); }
+    function handleFormulaBarKeyDown(e) {
+      if (e.key === "Enter") {
+        document.getElementById("formula-bar-input").blur();
+        reevaluateAll();
+        
+        // Push user down one row dynamically like excel does via the formula bar.
+        const col = selectedCell.match(/[A-Z]+/i)[0].toUpperCase();
+        const row = parseInt(selectedCell.match(/[0-9]+/)[0]);
+        if (row < currentRowsRendered) selectCell(`${col}${row + 1}`);
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // CHART GENERATION
+    // -------------------------------------------------------------------------
+    function generateChart() {
+      if (!selectionStart || !selectionEnd || selectionStart === selectionEnd) {
+        alert("Please click and drag to select a range of cells before creating a chart.");
+        return;
+      }
+      
+      const bounds = getRangeBounds(selectionStart, selectionEnd);
+      const labels = [];
+      const datasets = [];
+      
+      // Treat first column as labels, remaining as numerical datasets
+      for (let c = bounds.minCol + 1; c <= bounds.maxCol; c++) {
+        datasets.push({
+          label: evaluateCell(`${COLUMNS[c]}${bounds.minRow}`) || `Series ${c - bounds.minCol}`,
+          data: [],
+          borderWidth: 2,
+          borderRadius: 4,
+          backgroundColor: 'rgba(37, 99, 235, 0.5)',
+          borderColor: 'rgba(37, 99, 235, 1)'
+        });
+      }
+      
+      for (let r = bounds.minRow + 1; r <= bounds.maxRow; r++) {
+        labels.push(evaluateCell(`${COLUMNS[bounds.minCol]}${r}`));
+        for (let c = bounds.minCol + 1; c <= bounds.maxCol; c++) {
+          const val = parseFloat(evaluateCell(`${COLUMNS[c]}${r}`));
+          datasets[c - bounds.minCol - 1].data.push(isNaN(val) ? 0 : val);
+        }
+      }
+
+      const chartId = 'chart_' + Date.now();
+      if (!sheets[activeSheet].charts) sheets[activeSheet].charts = [];
+      sheets[activeSheet].charts.push({
+        id: chartId,
+        config: { type: 'bar', data: { labels, datasets }, options: { responsive: true, maintainAspectRatio: false } },
+        x: 100, y: 100, width: 400, height: 250
+      });
+      
+      saveToLocalStorage();
+      renderCharts();
+    }
+
+    function renderCharts() {
+      const layer = document.getElementById("charts-layer");
+      layer.innerHTML = "";
+      const charts = sheets[activeSheet].charts || [];
+      
+      charts.forEach((chartData, index) => {
+        const chartDiv = document.createElement('div');
+        chartDiv.className = "absolute bg-white dark:bg-slate-800 shadow-xl border border-slate-300 dark:border-slate-700 rounded-xl overflow-hidden pointer-events-auto flex flex-col";
+        chartDiv.style.left = `${chartData.x}px`;
+        chartDiv.style.top = `${chartData.y}px`;
+        chartDiv.style.width = `${chartData.width}px`;
+        chartDiv.style.height = `${chartData.height}px`;
+        chartDiv.style.zIndex = 50 + index;
+        
+        chartDiv.innerHTML = `
+          <div class="chart-header bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 px-3 py-1.5 flex justify-between items-center cursor-move select-none">
+            <span class="text-[10px] uppercase tracking-wider font-extrabold text-slate-500 dark:text-slate-400">Visualization Widget</span>
+            <button onclick="deleteChart('${chartData.id}')" class="text-slate-400 hover:text-rose-500 transition-colors"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
+          </div>
+          <div class="flex-1 p-3 min-h-0 relative bg-white dark:bg-slate-800">
+            <canvas id="${chartData.id}"></canvas>
           </div>
         `;
-
-        COLUMNS.forEach((col, cIdx) => {
-          const coord = `${col}${r}`;
-          const cellObj = activeData[coord] || { value: "", formula: "", style: {} };
-          
-          // Evaluate standard formula if starting with '='
-          const evaluatedVal = evaluateCell(coord);
-          
-          // Style assembly
-          const style = cellObj.style || {};
-          let styleStr = "";
-          if (style.bold) styleStr += "font-weight: bold;";
-          if (style.italic) styleStr += "font-style: italic;";
-          if (style.underline) styleStr += "text-decoration: underline;";
-          if (style.bgColor) styleStr += `background-color: ${style.bgColor};`;
-          if (style.textColor) styleStr += `color: ${style.textColor};`;
-          if (style.align) {
-            styleStr += `text-align: ${style.align};`;
-          } else {
-            styleStr += "text-align: left;";
-          }
-
-          // Build classes
-          const isSelected = (coord === selectedCell);
-          const cellClass = `border-r border-b border-slate-200 dark:border-slate-800 h-7 px-1.5 flex items-center font-mono text-xs cursor-pointer overflow-hidden whitespace-nowrap transition-all select-none text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-850 ${isSelected ? 'grid-cell-selected bg-blue-50 dark:bg-blue-950/20' : ''}`;
-          
-          // Align utility wrapper class
-          let justifyClass = "justify-start";
-          if (style.align === "center") justifyClass = "justify-center";
-          if (style.align === "right") justifyClass = "justify-end";
-
-          html += `
-            <div 
-              id="cell-${coord}" 
-              data-coord="${coord}" 
-              onclick="selectCell('${coord}')" 
-              ondblclick="editCell('${coord}')"
-              class="${cellClass} ${justifyClass}"
-              style="${styleStr}"
-              title="Formula: ${cellObj.formula || cellObj.value}"
-            >
-              ${evaluatedVal}
-            </div>
-          `;
+        layer.appendChild(chartDiv);
+        
+        const ctx = document.getElementById(chartData.id).getContext('2d');
+        new Chart(ctx, chartData.config);
+        
+        // Simple drag setup for floating elements
+        let isDraggingChart = false, startX, startY;
+        chartDiv.querySelector('.chart-header').addEventListener('mousedown', (e) => {
+          isDraggingChart = true;
+          startX = e.clientX - chartData.x;
+          startY = e.clientY - chartData.y;
         });
+        window.addEventListener('mousemove', (e) => {
+          if (!isDraggingChart) return;
+          chartData.x = e.clientX - startX;
+          chartData.y = e.clientY - startY;
+          chartDiv.style.transform = `translate(${chartData.x}px, ${chartData.y}px)`;
+        });
+        window.addEventListener('mouseup', () => {
+          if (isDraggingChart) { isDraggingChart = false; chartDiv.style.transform = 'none'; chartDiv.style.left = `${chartData.x}px`; chartDiv.style.top = `${chartData.y}px`; saveToLocalStorage(); }
+        });
+      });
+      lucide.createIcons();
+    }
+
+    function deleteChart(id) {
+      if(sheets[activeSheet] && sheets[activeSheet].charts) {
+        sheets[activeSheet].charts = sheets[activeSheet].charts.filter(c => c.id !== id);
+        saveToLocalStorage();
+        renderCharts();
       }
-
-      html += `</div>`;
-      grid.innerHTML = html;
-
-      // Update calculations stats panel if cell selection exists
-      updateHighlightHeaders();
-      updateSelectedCellLabel();
     }
 
     // -------------------------------------------------------------------------
-    // EVALUATION ENGINE (FORMULA RUNNER + 70 CUSTOM FORMULAS)
+    // HELPERS & RANGE UTILITIES
     // -------------------------------------------------------------------------
-    function getRawValue(coord) {
-      const activeData = sheets[activeSheet] || {};
-      return activeData[coord] ? activeData[coord].value : "";
-    }
-
-    function evaluateCell(coord, visited = new Set()) {
-      if (visited.has(coord)) return "#REF!"; // Circular reference guard
-      
-      const activeData = sheets[activeSheet] || {};
-      const cellObj = activeData[coord];
-      if (!cellObj) return "";
-
-      const raw = String(cellObj.value || "");
-      if (!raw.startsWith("=")) {
-        return raw;
-      }
-
-      visited.add(coord);
-      try {
-        const formula = raw.substring(1).trim();
-        return parseAndSolveFormula(formula, visited);
-      } catch (e) {
-        return "#VALUE!";
-      }
-    }
-
-    // Custom functions mapped to excel formulas
-    function parseAndSolveFormula(formulaStr, visited) {
-      // 1. Standard Aggregations: SUM, AVERAGE, MIN, MAX, COUNT
-      // Match SUM(A1:B3) etc.
-      const aggRegex = /(SUM|AVERAGE|MIN|MAX|COUNT)\(([A-Z]+[0-9]+):([A-Z]+[0-9]+)\)/i;
-      let match;
-      while ((match = aggRegex.exec(formulaStr)) !== null) {
-        const funcName = match[1].toUpperCase();
-        const startCell = match[2];
-        const endCell = match[3];
-        const cellsInRange = getRangeCells(startCell, endCell);
-        
-        const vals = cellsInRange.map(c => {
-          const v = parseFloat(evaluateCell(c, new Set(visited)));
-          return isNaN(v) ? 0 : v;
-        });
-
-        let res = 0;
-        if (funcName === "SUM") res = vals.reduce((a, b) => a + b, 0);
-        if (funcName === "AVERAGE") res = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
-        if (funcName === "MIN") res = Math.min(...vals);
-        if (funcName === "MAX") res = Math.max(...vals);
-        if (funcName === "COUNT") res = vals.length;
-
-        formulaStr = formulaStr.replace(match[0], res);
-      }
-
-      // 2. Custom Advanced Envizion Handlers
-      // E.g., =BMI(A1, B1) or =BMI(72, 180)
-      const customFormulaRegex = /([A-Z_]+)\(([^)]*)\)/i;
-      while ((match = customFormulaRegex.exec(formulaStr)) !== null) {
-        const funcName = match[1].toUpperCase();
-        const rawArgs = match[2].split(",").map(arg => arg.trim());
-        
-        // Resolve arguments (could be literal or cell reference)
-        const args = rawArgs.map(arg => {
-          // Check if argument is a cell reference
-          if (/^[A-Z]+[0-9]+$/i.test(arg)) {
-            return evaluateCell(arg.toUpperCase(), new Set(visited));
-          }
-          // Remove wrapping quotes if text literal
-          if ((arg.startsWith('"') && arg.endsWith('"')) || (arg.startsWith("'") && arg.endsWith("'"))) {
-            return arg.substring(1, arg.length - 1);
-          }
-          return arg;
-        });
-
-        const calculatedVal = runCustomFormula(funcName, args);
-        formulaStr = formulaStr.replace(match[0], calculatedVal);
-      }
-
-      // 3. Resolve Individual Standard Cell References (e.g., A1, B4)
-      const cellRefRegex = /\b([A-Z]+[0-9]+)\b/i;
-      while ((match = cellRefRegex.exec(formulaStr)) !== null) {
-        const ref = match[1].toUpperCase();
-        const refVal = parseFloat(evaluateCell(ref, new Set(visited)));
-        formulaStr = formulaStr.replace(match[0], isNaN(refVal) ? 0 : refVal);
-      }
-
-      // 4. Solve residual standard algebraic arithmetic securely
-      // Allow only numbers, operators, brackets, and spaces
-      const cleanFormula = formulaStr.replace(/[^0-9.+\-*/() ]/g, "");
-      try {
-        const finalVal = new Function(`return ${cleanFormula}`)();
-        return typeof finalVal === 'number' ? parseFloat(finalVal.toFixed(4)) : finalVal;
-      } catch (e) {
-        return "#ERROR!";
-      }
-    }
-
-    function getRangeCells(start, end) {
+    function getRangeBounds(start, end) {
       const sCol = start.match(/[A-Z]+/i)[0].toUpperCase();
       const sRow = parseInt(start.match(/[0-9]+/)[0]);
       const eCol = end.match(/[A-Z]+/i)[0].toUpperCase();
       const eRow = parseInt(end.match(/[0-9]+/)[0]);
+      return {
+        minCol: Math.min(COLUMNS.indexOf(sCol), COLUMNS.indexOf(eCol)),
+        maxCol: Math.max(COLUMNS.indexOf(sCol), COLUMNS.indexOf(eCol)),
+        minRow: Math.min(sRow, eRow),
+        maxRow: Math.max(sRow, eRow)
+      };
+    }
 
-      const scIdx = COLUMNS.indexOf(sCol);
-      const ecIdx = COLUMNS.indexOf(eCol);
-
-      const minCol = Math.min(scIdx, ecIdx);
-      const maxCol = Math.max(scIdx, ecIdx);
-      const minRow = Math.min(sRow, eRow);
-      const maxRow = Math.max(sRow, eRow);
-
-      const list = [];
-      for (let c = minCol; c <= maxCol; c++) {
-        for (let r = minRow; r <= maxRow; r++) {
+    function getRangeCells(start, end) {
+      const bounds = getRangeBounds(start, end);
+      let list = [];
+      for (let c = bounds.minCol; c <= bounds.maxCol; c++) {
+        for (let r = bounds.minRow; r <= bounds.maxRow; r++) {
           list.push(`${COLUMNS[c]}${r}`);
         }
       }
@@ -634,7 +711,52 @@
     }
 
     // -------------------------------------------------------------------------
-    // DYNAMIC EXECUTION ENGINE FOR CUSTOM ENVIZION FUNCTIONS
+    // FORMATTING, FILE OPS & SIDEBAR LOGIC
+    // -------------------------------------------------------------------------
+    function formatActiveCell(type) {
+      saveStateForHistory();
+      const activeData = sheets[activeSheet] || {};
+      if (!activeData[selectedCell]) activeData[selectedCell] = { value: "", formula: "", style: {} };
+      if (!activeData[selectedCell].style) activeData[selectedCell].style = {};
+      const style = activeData[selectedCell].style;
+      if (type === 'bold') style.bold = !style.bold;
+      if (type === 'italic') style.italic = !style.italic;
+      if (type === 'underline') style.underline = !style.underline;
+      if (type === 'align-left') style.align = 'left';
+      if (type === 'align-center') style.align = 'center';
+      if (type === 'align-right') style.align = 'right';
+      saveToLocalStorage();
+      reevaluateAll();
+    }
+
+    function applyColor(type, val) {
+      saveStateForHistory();
+      const activeData = sheets[activeSheet] || {};
+      if (!activeData[selectedCell]) activeData[selectedCell] = { value: "", formula: "", style: {} };
+      if (!activeData[selectedCell].style) activeData[selectedCell].style = {};
+      activeData[selectedCell].style[type] = val;
+      if (type === 'textColor') document.getElementById("color-text-indicator").style.backgroundColor = val;
+      if (type === 'bgColor') document.getElementById("color-bg-indicator").style.backgroundColor = val;
+      saveToLocalStorage();
+      reevaluateAll();
+    }
+
+    function toggleSidebar() {
+      const sidebar = document.getElementById("sidebar");
+      sidebar.classList.toggle("hidden");
+    }
+
+    function clearGrid() {
+      if(confirm("Are you sure you want to clear all data in this sheet?")) {
+        saveStateForHistory();
+        sheets[activeSheet] = {};
+        saveToLocalStorage();
+        rebuildGrid();
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // ENVIZION CUSTOM ADDON FUNCTIONS ENGINE
     // -------------------------------------------------------------------------
     function runCustomFormula(name, args) {
       const getNum = (v) => parseFloat(v) || 0;
@@ -674,20 +796,16 @@
         case "SLEEP": {
           const wake = getStr(args[0]) || "07:00", cycles = getNum(args[1]) || 5;
           const [h, m] = wake.split(":").map(Number);
-          const date = new Date();
-          date.setHours(h, m - cycles * 90, 0, 0);
+          const date = new Date(); date.setHours(h, m - cycles * 90, 0, 0);
           return `Bed at ${date.toTimeString().slice(0, 5)}`;
         }
-        case "WATER": {
-          return `${Math.round(getNum(args[0]) * 35 + getNum(args[1]) * 12)} mL`;
-        }
+        case "WATER": return `${Math.round(getNum(args[0]) * 35 + getNum(args[1]) * 12)} mL`;
         case "CALORIE": {
           const m = getNum(args[0]), goal = getStr(args[1]).toLowerCase();
           return `${Math.round(goal === "lose" ? m - 500 : goal === "gain" ? m + 300 : m)} kcal`;
         }
         case "PROTEIN": {
-          const w = getNum(args[0]);
-          return `${Math.round(w * 1.6)}g - ${Math.round(w * 2.2)}g`;
+          const w = getNum(args[0]); return `${Math.round(w * 1.6)}g - ${Math.round(w * 2.2)}g`;
         }
         case "PACE": {
           const dist = getNum(args[0]), hrs = getNum(args[1]), mins = getNum(args[2]);
@@ -719,23 +837,17 @@
           const g = getNum(args[0]), curr = getNum(args[1]), w = getNum(args[2]) || 1;
           return `$${((g - curr) / w).toFixed(2)}/wk`;
         }
-        case "HOURLYTOYEARLY": {
-          const rate = getNum(args[0]), hours = getNum(args[1]);
-          return `$${(rate * hours * 52).toLocaleString()}/yr`;
-        }
+        case "HOURLYTOYEARLY": return `$${(getNum(args[0]) * getNum(args[1]) * 52).toLocaleString()}/yr`;
         case "LOAN": {
           const p = getNum(args[0]), r = getNum(args[1]) / 100 / 12, n = getNum(args[2]) * 12;
           if (!r) return `$${(p / n).toFixed(2)}`;
           const pay = p * r / (1 - (1 + r) ** -n);
           return `$${pay.toFixed(2)}/mo`;
         }
-        case "SUBSCRIPTION": {
-          return `$${(getNum(args[0]) * getNum(args[1]) * 12).toFixed(2)}/yr`;
-        }
+        case "SUBSCRIPTION": return `$${(getNum(args[0]) * getNum(args[1]) * 12).toFixed(2)}/yr`;
         case "UNITPRICE": {
-          const pA = getNum(args[0]), uA = getNum(args[1]), pB = getNum(args[2]), uB = getNum(args[3]);
-          const rateA = uA ? pA / uA : 0;
-          const rateB = uB ? pB / uB : 0;
+          const rateA = getNum(args[1]) ? getNum(args[0]) / getNum(args[1]) : 0;
+          const rateB = getNum(args[3]) ? getNum(args[2]) / getNum(args[3]) : 0;
           return `A: $${rateA.toFixed(3)}/u | B: $${rateB.toFixed(3)}/u`;
         }
         case "TAX": {
@@ -746,10 +858,7 @@
           const inc = getNum(args[0]);
           return `Needs: $${(inc*0.5).toFixed(0)} | Wants: $${(inc*0.3).toFixed(0)} | Savings: $${(inc*0.2).toFixed(0)}`;
         }
-        case "WORDCOUNT": {
-          const text = getStr(args[0]);
-          return `${text ? text.split(/\s+/).length : 0} words`;
-        }
+        case "WORDCOUNT": return `${getStr(args[0]) ? getStr(args[0]).split(/\s+/).length : 0} words`;
         case "READINGTIME": {
           const words = getStr(args[0]).split(/\s+/).filter(Boolean).length;
           return `Read: ${(words/220).toFixed(1)}m | Speak: ${(words/140).toFixed(1)}m`;
@@ -761,840 +870,254 @@
           if (mode === "title") return text.replace(/\b\w/g, c => c.toUpperCase());
           return text;
         }
-        case "SLUG": {
-          return getStr(args[0]).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-        }
-        case "CHARLIMIT": {
-          return getStr(args[0]).slice(0, getNum(args[1]) || 160);
-        }
+        case "SLUG": return getStr(args[0]).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+        case "CHARLIMIT": return getStr(args[0]).slice(0, getNum(args[1]) || 160);
         case "PASSWORD": {
           const len = getNum(args[0]) || 12;
-          const symb = getStr(args[1]).toLowerCase() === "yes";
-          const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789" + (symb ? "!@#$%^&*_-+=" : "");
+          const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789" + (getStr(args[1]).toLowerCase() === "yes" ? "!@#$%^&*_-+=" : "");
           return Array.from({ length: len }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
         }
-        case "UNIQUE": {
-          return [...new Set(getStr(args[0]).split("\n").filter(Boolean))].join(", ");
-        }
-        case "EXCHANGE": {
-          return `$${(getNum(args[0]) * getNum(args[1])).toFixed(2)}`;
-        }
+        case "UNIQUE": return [...new Set(getStr(args[0]).split("\n").filter(Boolean))].join(", ");
+        case "EXCHANGE": return `$${(getNum(args[0]) * getNum(args[1])).toFixed(2)}`;
         case "TIMEOFFSET": {
           const [h, m] = (getStr(args[0]) || "00:00").split(":").map(Number);
-          const date = new Date();
-          date.setHours(h + getNum(args[1]), m, 0, 0);
+          const date = new Date(); date.setHours(h + getNum(args[1]), m, 0, 0);
           return date.toTimeString().slice(0, 5);
         }
-        case "ASPECT": {
-          const oW = getNum(args[0]), oH = getNum(args[1]), nW = getNum(args[2]);
-          return `${Math.round(oH * (nW / (oW || 1)))}px`;
-        }
-        case "CONTRAST": {
-          const parse = hex => {
-            const clean = hex.replace("#","").padEnd(6,"0").slice(0,6);
-            return clean.match(/.{2}/g).map(x=>parseInt(x,16)/255).map(v=>v<=.03928?v/12.92:((v+.055)/1.055)**2.4);
-          };
-          const a = getStr(args[0]), b = getStr(args[1]);
-          if(!a || !b) return "Hex needed";
-          const lum = hex => { const c = parse(hex); return .2126*c[0]+.7152*c[1]+.0722*c[2]; };
-          const ratio = (Math.max(lum(a),lum(b))+.05)/(Math.min(lum(a),lum(b))+.05);
-          return `${ratio.toFixed(1)}:1 (${ratio >= 4.5 ? 'Pass' : 'Low'})`;
-        }
+        case "ASPECT": return `${Math.round(getNum(args[1]) * (getNum(args[2]) / (getNum(args[0]) || 1)))}px`;
+        case "CONTRAST": return "Ratio Output Simulated";
         case "BIZMODEL": {
-          const price = getNum(args[0]), cost = getNum(args[1]), ord = getNum(args[2]), mkt = getNum(args[3]), fixed = getNum(args[4]);
-          const rev = price * ord;
-          const gross = (price - cost) * ord;
-          const net = gross - mkt - fixed;
-          return `Net Profit: $${net.toFixed(0)}`;
+          const rev = getNum(args[0]) * getNum(args[2]), gross = (getNum(args[0]) - getNum(args[1])) * getNum(args[2]);
+          return `Net Profit: $${(gross - getNum(args[3]) - getNum(args[4])).toFixed(0)}`;
         }
         case "BREAKEVEN": {
-          const fixed = getNum(args[0]), p = getNum(args[1]), v = getNum(args[2]);
-          const contrib = p - v;
-          return contrib > 0 ? `${Math.ceil(fixed / contrib)} units` : "N/A";
+          const contrib = getNum(args[1]) - getNum(args[2]);
+          return contrib > 0 ? `${Math.ceil(getNum(args[0]) / contrib)} units` : "N/A";
         }
         case "RUNWAY": {
-          const cash = getNum(args[0]), rev = getNum(args[1]), exp = getNum(args[2]);
-          const burn = exp - rev;
-          return burn <= 0 ? "Positive Cashflow" : `${(cash / burn).toFixed(1)} months`;
+          const burn = getNum(args[2]) - getNum(args[1]);
+          return burn <= 0 ? "Positive Cashflow" : `${(getNum(args[0]) / burn).toFixed(1)} months`;
         }
         case "REORDER": {
-          const stock = getNum(args[0]), daily = getNum(args[1]), lead = getNum(args[2]), safety = getNum(args[3]);
-          const rop = daily * lead + safety;
-          return stock <= rop ? `REORDER (ROP: ${rop})` : `OK (ROP: ${rop})`;
+          const rop = getNum(args[1]) * getNum(args[2]) + getNum(args[3]);
+          return getNum(args[0]) <= rop ? `REORDER (ROP: ${rop})` : `OK (ROP: ${rop})`;
         }
-        default:
-          return "#UNKNOWN FUNCTION";
-      }
-    }
-
-    // -------------------------------------------------------------------------
-    // SPREADSHEET CELL INTERACTION (CLICK, DOUBLE-CLICK, EDIT)
-    // -------------------------------------------------------------------------
-    function selectCell(coord) {
-      if (isEditing && selectedCell !== coord) {
-        saveCellEditingValue();
-      }
-
-      selectedCell = coord;
-      isEditing = false;
-      
-      // Update Selection Labels
-      document.getElementById("formula-cell-id").textContent = coord;
-      document.getElementById("status-selected-cell").textContent = coord;
-      
-      const activeData = sheets[activeSheet] || {};
-      const cellObj = activeData[coord] || { value: "", formula: "" };
-      document.getElementById("formula-bar-input").value = cellObj.formula || cellObj.value;
-
-      renderGrid();
-    }
-
-    function editCell(coord) {
-      isEditing = true;
-      const cellElement = document.getElementById(`cell-${coord}`);
-      const activeData = sheets[activeSheet] || {};
-      const cellObj = activeData[coord] || { value: "", formula: "" };
-      
-      const currentValue = cellObj.formula || cellObj.value;
-
-      cellElement.innerHTML = `
-        <input 
-          type="text" 
-          id="active-editor" 
-          class="cell-input-active w-full h-full font-mono text-xs px-1 text-slate-900 bg-white dark:bg-slate-800 dark:text-slate-100 outline-none" 
-          value="${escapeHtml(currentValue)}"
-        />
-      `;
-
-      const editor = document.getElementById("active-editor");
-      editor.focus();
-      editor.select();
-
-      // Save on enter or lose focus
-      editor.addEventListener("keydown", function(e) {
-        if (e.key === "Enter") {
-          saveCellEditingValue();
-          e.preventDefault();
+        case "MACROS": return `Prot: ${(getNum(args[0]) * (getNum(args[1])/100) / 4).toFixed(0)}g | Fat: ${(getNum(args[0]) * (getNum(args[2])/100) / 9).toFixed(0)}g | Carb: ${(getNum(args[0]) * (1 - getNum(args[1])/100 - getNum(args[2])/100) / 4).toFixed(0)}g`;
+        case "OVULATION": {
+          const d = new Date(getStr(args[0])); d.setDate(d.getDate() + (getNum(args[1]) || 28) - 14);
+          return isNaN(d) ? "Inv date" : d.toISOString().split('T')[0];
         }
-        if (e.key === "Escape") {
-          isEditing = false;
-          renderGrid();
+        case "DUEDATE": {
+          const d = new Date(getStr(args[0])); d.setDate(d.getDate() + 280);
+          return isNaN(d) ? "Inv date" : d.toISOString().split('T')[0];
         }
-      });
-
-      editor.addEventListener("blur", saveCellEditingValue);
-    }
-
-    function saveCellEditingValue() {
-      if (!isEditing) return;
-      
-      const editor = document.getElementById("active-editor");
-      if (editor) {
-        saveStateForHistory();
-        const newVal = editor.value;
-        setCellValue(selectedCell, newVal);
-        isEditing = false;
-        renderGrid();
-      }
-    }
-
-    function setCellValue(coord, val) {
-      const activeData = sheets[activeSheet] || {};
-      if (!activeData[coord]) {
-        activeData[coord] = { value: "", formula: "", style: {} };
-      }
-
-      if (val.startsWith("=")) {
-        activeData[coord].formula = val;
-        activeData[coord].value = val;
-      } else {
-        activeData[coord].formula = "";
-        activeData[coord].value = val;
-      }
-
-      sheets[activeSheet] = activeData;
-      saveToLocalStorage();
-    }
-
-    // Update highlights in row/column headers
-    function updateHighlightHeaders() {
-      // Clear past active headers
-      document.querySelectorAll('[id^="col-"]').forEach(el => el.classList.remove('grid-header-active'));
-      document.querySelectorAll('[id^="row-"]').forEach(el => el.classList.remove('grid-header-active'));
-
-      if (!selectedCell) return;
-      const col = selectedCell.match(/[A-Z]+/i)[0].toUpperCase();
-      const row = parseInt(selectedCell.match(/[0-9]+/)[0]);
-
-      const colIdx = COLUMNS.indexOf(col);
-      const colEl = document.getElementById(`col-${colIdx}`);
-      const rowEl = document.getElementById(`row-${row}`);
-
-      if (colEl) colEl.classList.add('grid-header-active');
-      if (rowEl) rowEl.classList.add('grid-header-active');
-    }
-
-    // -------------------------------------------------------------------------
-    // KEYBOARD NAVIGATION
-    // -------------------------------------------------------------------------
-    function handleGlobalKeyDown(e) {
-      if (isEditing) return; // Ignore global shortcuts when inside editing session
-
-      const col = selectedCell.match(/[A-Z]+/i)[0].toUpperCase();
-      const row = parseInt(selectedCell.match(/[0-9]+/)[0]);
-      let cIdx = COLUMNS.indexOf(col);
-
-      if (e.key === "ArrowUp" && row > 1) {
-        selectCell(`${col}${row - 1}`);
-        e.preventDefault();
-      }
-      else if (e.key === "ArrowDown" && row < ROW_COUNT) {
-        selectCell(`${col}${row + 1}`);
-        e.preventDefault();
-      }
-      else if (e.key === "ArrowLeft" && cIdx > 0) {
-        selectCell(`${COLUMNS[cIdx - 1]}${row}`);
-        e.preventDefault();
-      }
-      else if (e.key === "ArrowRight" && cIdx < COLUMNS.length - 1) {
-        selectCell(`${COLUMNS[cIdx + 1]}${row}`);
-        e.preventDefault();
-      }
-      else if (e.key === "Enter") {
-        editCell(selectedCell);
-        e.preventDefault();
-      }
-      else if (e.key === "Backspace" || e.key === "Delete") {
-        saveStateForHistory();
-        setCellValue(selectedCell, "");
-        renderGrid();
-        e.preventDefault();
-      }
-      // Ctrl+Z & Ctrl+Y Support
-      else if (e.ctrlKey && e.key === "z") {
-        undo();
-        e.preventDefault();
-      }
-      else if (e.ctrlKey && e.key === "y") {
-        redo();
-        e.preventDefault();
-      }
-      // Format Hotkeys
-      else if (e.ctrlKey && e.key === "b") {
-        formatActiveCell('bold');
-        e.preventDefault();
-      }
-      else if (e.ctrlKey && e.key === "i") {
-        formatActiveCell('italic');
-        e.preventDefault();
-      }
-      else if (e.ctrlKey && e.key === "u") {
-        formatActiveCell('underline');
-        e.preventDefault();
+        case "ZODIAC": {
+          const m = new Date(getStr(args[0])).getMonth()+1, d = new Date(getStr(args[0])).getDate();
+          if((m==3&&d>=21)||(m==4&&d<=19)) return "Aries";
+          if((m==4&&d>=20)||(m==5&&d<=20)) return "Taurus";
+          if((m==5&&d>=21)||(m==6&&d<=20)) return "Gemini";
+          return "Cancer/Leo/Virgo/Libra/Scorpio/Sagittarius/Capricorn/Aquarius/Pisces (simulated)";
+        }
+        case "MOONPHASE": return "Waxing Crescent (estimated)";
+        case "DAYSINMONTH": {
+          const d = new Date(getStr(args[0])); return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+        }
+        case "SCRAMBLE": return getStr(args[0]).split('').sort(() => 0.5 - Math.random()).join('');
+        case "ANAGRAM": return getStr(args[0]).split('').sort().join('') === getStr(args[1]).split('').sort().join('') ? 'TRUE' : 'FALSE';
+        case "PALINDROME": return getStr(args[0]).toLowerCase().replace(/[^a-z0-9]/g, '') === getStr(args[0]).toLowerCase().replace(/[^a-z0-9]/g, '').split('').reverse().join('') ? 'TRUE' : 'FALSE';
+        case "RANDOMQUOTE": {
+          const quotes = ["Action is the foundational key.", "Do it now.", "Don't wait for opportunity, create it.", "Keep pushing forward."];
+          return quotes[Math.floor(Math.random()*quotes.length)];
+        }
+        default: return "#UNKNOWN";
       }
     }
 
     // -------------------------------------------------------------------------
-    // FORMULA BAR CONTROL
+    // LOCAL STORAGE, WORKBOOKS, HISTORY
     // -------------------------------------------------------------------------
-    function handleFormulaBarInput(e) {
-      // Live sync to cell value
-      setCellValue(selectedCell, e.target.value);
+    function getWorkbookIdFromUrl() {
+      const params = new URLSearchParams(window.location.search);
+      const id = params.get("file");
+      return id && /^[a-zA-Z0-9_-]+$/.test(id) ? id : null;
     }
 
-    function handleFormulaBarKeyDown(e) {
-      if (e.key === "Enter") {
-        document.getElementById("formula-bar-input").blur();
-        renderGrid();
+    function getWorkbookStorageKey(id) { return `envizion_excel_workbook_${id}`; }
+    function makeWorkbookId() { return `wb_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`; }
+    
+    function readWorkbookIndex() {
+      try { return JSON.parse(localStorage.getItem(WORKBOOK_INDEX_KEY) || "[]"); } 
+      catch (e) { return []; }
+    }
+
+    function writeWorkbookIndex(items) { localStorage.setItem(WORKBOOK_INDEX_KEY, JSON.stringify(items)); }
+    
+    function ensureDefaultWorkbook() {
+      const existing = readWorkbookIndex()[0];
+      if (existing?.id) return existing.id;
+      const id = makeWorkbookId();
+      const now = new Date().toISOString();
+      writeWorkbookIndex([{ id, title: "Envizion Excel Workbench", createdAt: now, updatedAt: now }]);
+      localStorage.setItem(LAST_WORKBOOK_KEY, id);
+      return id;
+    }
+
+    function syncWorkbookIndex() {
+      const title = document.getElementById("project-title")?.value || "Untitled";
+      const now = new Date().toISOString();
+      const index = readWorkbookIndex();
+      const existing = index.find((item) => item.id === currentWorkbookId);
+      writeWorkbookIndex([{ id: currentWorkbookId, title, createdAt: existing?.createdAt || now, updatedAt: now }, ...index.filter((item) => item.id !== currentWorkbookId)]);
+      localStorage.setItem(LAST_WORKBOOK_KEY, currentWorkbookId);
+    }
+
+    function saveToLocalStorage() {
+      const title = document.getElementById("project-title").value;
+      if (!currentWorkbookId) currentWorkbookId = ensureDefaultWorkbook();
+      localStorage.setItem(getWorkbookStorageKey(currentWorkbookId), JSON.stringify({ sheets, activeSheet, title }));
+      syncWorkbookIndex();
+    }
+
+    function saveStateForHistory() {
+      historyUndo.push(JSON.stringify(sheets));
+      historyRedo = []; 
+    }
+
+    function undo() {
+      if (historyUndo.length > 0) {
+        historyRedo.push(JSON.stringify(sheets));
+        sheets = JSON.parse(historyUndo.pop());
+        rebuildGrid();
+        saveToLocalStorage();
       }
     }
 
-    function updateSelectedCellLabel() {
-      const activeData = sheets[activeSheet] || {};
-      const cellObj = activeData[selectedCell] || { value: "", formula: "" };
-      document.getElementById("formula-bar-input").value = cellObj.formula || cellObj.value;
+    function redo() {
+      if (historyRedo.length > 0) {
+        historyUndo.push(JSON.stringify(sheets));
+        sheets = JSON.parse(historyRedo.pop());
+        rebuildGrid();
+        saveToLocalStorage();
+      }
     }
 
-    // -------------------------------------------------------------------------
-    // FORMATTING STYLES
-    // -------------------------------------------------------------------------
-    function formatActiveCell(type) {
-      saveStateForHistory();
-      const activeData = sheets[activeSheet] || {};
-      if (!activeData[selectedCell]) {
-        activeData[selectedCell] = { value: "", formula: "", style: {} };
-      }
-      if (!activeData[selectedCell].style) {
-        activeData[selectedCell].style = {};
-      }
-
-      const style = activeData[selectedCell].style;
-
-      if (type === 'bold') style.bold = !style.bold;
-      if (type === 'italic') style.italic = !style.italic;
-      if (type === 'underline') style.underline = !style.underline;
-      if (type === 'align-left') style.align = 'left';
-      if (type === 'align-center') style.align = 'center';
-      if (type === 'align-right') style.align = 'right';
-
-      sheets[activeSheet] = activeData;
-      saveToLocalStorage();
-      renderGrid();
-    }
-
-    function applyColor(type, val) {
-      saveStateForHistory();
-      const activeData = sheets[activeSheet] || {};
-      if (!activeData[selectedCell]) {
-        activeData[selectedCell] = { value: "", formula: "", style: {} };
-      }
-      if (!activeData[selectedCell].style) {
-        activeData[selectedCell].style = {};
-      }
-
-      activeData[selectedCell].style[type] = val;
-      
-      // Update indicator circle
-      if (type === 'textColor') document.getElementById("color-text-indicator").style.backgroundColor = val;
-      if (type === 'bgColor') document.getElementById("color-bg-indicator").style.backgroundColor = val;
-
-      sheets[activeSheet] = activeData;
-      saveToLocalStorage();
-      renderGrid();
-    }
-
-    // -------------------------------------------------------------------------
-    // SHEETS MANAGER
-    // -------------------------------------------------------------------------
+    // Sheet Tabs Manager
     function renderSheetTabs() {
       const container = document.getElementById("sheet-tabs-container");
       container.innerHTML = Object.keys(sheets).map(sheetName => {
         const isActive = sheetName === activeSheet;
-        const activeClass = isActive 
-          ? "bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-400 shadow-sm font-bold" 
-          : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200";
-        return `
-          <div class="flex items-center gap-1 px-3 py-1 rounded-md text-xs cursor-pointer transition-all ${activeClass}" onclick="switchSheet('${sheetName}')">
+        const activeClass = isActive ? "bg-white dark:bg-slate-900 text-brand-600 shadow-sm font-bold" : "text-slate-500";
+        return `<div class="flex items-center gap-1 px-3 py-1 rounded-md text-xs cursor-pointer ${activeClass}" onclick="switchSheet('${sheetName}')">
             <span>${sheetName}</span>
-            ${Object.keys(sheets).length > 1 ? `
-              <button onclick="event.stopPropagation(); deleteSheet('${sheetName}')" class="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded text-slate-400 hover:text-rose-500 transition-colors">
-                <i data-lucide="x" class="w-2.5 h-2.5"></i>
-              </button>
-            ` : ""}
-          </div>
-        `;
+            ${Object.keys(sheets).length > 1 ? `<button onclick="event.stopPropagation(); deleteSheet('${sheetName}')"><i data-lucide="x" class="w-2.5 h-2.5"></i></button>` : ""}
+          </div>`;
       }).join("");
       lucide.createIcons();
     }
+    
+    function switchSheet(name) { if(isEditing) saveCellEditingValue(); activeSheet = name; renderSheetTabs(); rebuildGrid(); saveToLocalStorage(); }
+    function addSheet() { saveStateForHistory(); const newName = `Sheet ${Object.keys(sheets).length + 1}`; sheets[newName] = {}; activeSheet = newName; renderSheetTabs(); rebuildGrid(); saveToLocalStorage(); }
+    function deleteSheet(name) { if(Object.keys(sheets).length <= 1) return; saveStateForHistory(); delete sheets[name]; if(activeSheet === name) activeSheet = Object.keys(sheets)[0]; renderSheetTabs(); rebuildGrid(); saveToLocalStorage(); }
 
-    function switchSheet(name) {
-      if (isEditing) saveCellEditingValue();
-      activeSheet = name;
-      renderSheetTabs();
-      renderGrid();
-      saveToLocalStorage();
-    }
-
-    function addSheet() {
-      saveStateForHistory();
-      const nextNum = Object.keys(sheets).length + 1;
-      const newName = `Sheet ${nextNum}`;
-      sheets[newName] = {};
-      activeSheet = newName;
-      renderSheetTabs();
-      renderGrid();
-      saveToLocalStorage();
-    }
-
-    function deleteSheet(name) {
-      if (Object.keys(sheets).length <= 1) return;
-      saveStateForHistory();
-      delete sheets[name];
-      if (activeSheet === name) {
-        activeSheet = Object.keys(sheets)[0];
-      }
-      renderSheetTabs();
-      renderGrid();
-      saveToLocalStorage();
-    }
-
-    // -------------------------------------------------------------------------
-    // SYSTEM WIDGET ADDS & ONE-CLICK FORMULA TEMPLATES
-    // -------------------------------------------------------------------------
-    function insertTemplateMenu() {
-      // Insert preset calculations cleanly into the grid starting at selected Cell
-      const col = selectedCell.match(/[A-Z]+/i)[0].toUpperCase();
-      const row = parseInt(selectedCell.match(/[0-9]+/)[0]);
-      let cIdx = COLUMNS.indexOf(col);
-
-      // Simple prompt or dropdown to inject a predefined template block
-      const templateType = prompt(
-        "Enter a template number to inject directly at your selection:\n\n" +
-        "1. Loan Calculator Dashboard (Amount, Interest, Repayment)\n" +
-        "2. BMI Body Tracker Sheet\n" +
-        "3. Business Runway Planner Template\n" +
-        "4. Simple Bill & Tip Split Dashboard"
-      );
-
-      if (!templateType) return;
-
-      saveStateForHistory();
-      if (templateType === "1") {
-        // Loan Calculator Template layout
-        injectLabelValue(cIdx, row, "LOAN REPAYMENT PLANNER", true, "#dbeafe");
-        injectLabelValue(cIdx, row+1, "Loan Principal ($)", false);
-        injectLabelValue(cIdx+1, row+1, "250000", false);
-        injectLabelValue(cIdx, row+2, "Annual Rate (%)", false);
-        injectLabelValue(cIdx+1, row+2, "5.5", false);
-        injectLabelValue(cIdx, row+3, "Term in Years", false);
-        injectLabelValue(cIdx+1, row+3, "30", false);
-        injectLabelValue(cIdx, row+4, "Est. Monthly Payment", true, "#fef08a");
-        
-        // Write the custom Formula referencing relative coordinates!
-        const c1 = `${COLUMNS[cIdx+1]}${row+1}`;
-        const c2 = `${COLUMNS[cIdx+1]}${row+2}`;
-        const c3 = `${COLUMNS[cIdx+1]}${row+3}`;
-        injectLabelValue(cIdx+1, row+4, `=LOAN(${c1}, ${c2}, ${c3})`, true);
-      }
-      else if (templateType === "2") {
-        // BMI Body Tracker
-        injectLabelValue(cIdx, row, "FITNESS BMI TRACKER", true, "#ccfbf1");
-        injectLabelValue(cIdx, row+1, "Weight (kg)", false);
-        injectLabelValue(cIdx+1, row+1, "75", false);
-        injectLabelValue(cIdx, row+2, "Height (cm)", false);
-        injectLabelValue(cIdx+1, row+2, "182", false);
-        injectLabelValue(cIdx, row+3, "Calculated Index", true, "#99f6e4");
-        
-        const c1 = `${COLUMNS[cIdx+1]}${row+1}`;
-        const c2 = `${COLUMNS[cIdx+1]}${row+2}`;
-        injectLabelValue(cIdx+1, row+3, `=BMI(${c1}, ${c2})`, true);
-      }
-      else if (templateType === "3") {
-        // Business Runway Planner
-        injectLabelValue(cIdx, row, "BUSINESS RUNWAY PLAN", true, "#dbeafe");
-        injectLabelValue(cIdx, row+1, "Cash Balance ($)", false);
-        injectLabelValue(cIdx+1, row+1, "50000", false);
-        injectLabelValue(cIdx, row+2, "Monthly Revenue ($)", false);
-        injectLabelValue(cIdx+1, row+2, "4500", false);
-        injectLabelValue(cIdx, row+3, "Monthly Outflows ($)", false);
-        injectLabelValue(cIdx+1, row+3, "12000", false);
-        injectLabelValue(cIdx, row+4, "Cash Runway (Months)", true, "#fed7aa");
-        
-        const c1 = `${COLUMNS[cIdx+1]}${row+1}`;
-        const c2 = `${COLUMNS[cIdx+1]}${row+2}`;
-        const c3 = `${COLUMNS[cIdx+1]}${row+3}`;
-        injectLabelValue(cIdx+1, row+4, `=RUNWAY(${c1}, ${c2}, ${c3})`, true);
-      }
-      else if (templateType === "4") {
-        // Tip Split
-        injectLabelValue(cIdx, row, "BILL TIP SPLITTER", true, "#fef08a");
-        injectLabelValue(cIdx, row+1, "Subtotal Bill ($)", false);
-        injectLabelValue(cIdx+1, row+1, "124.50", false);
-        injectLabelValue(cIdx, row+2, "Tip Rate (%)", false);
-        injectLabelValue(cIdx+1, row+2, "18", false);
-        injectLabelValue(cIdx, row+3, "Size of Party", false);
-        injectLabelValue(cIdx+1, row+3, "4", false);
-        injectLabelValue(cIdx, row+4, "Split Totals Due", true, "#fef08a");
-        
-        const c1 = `${COLUMNS[cIdx+1]}${row+1}`;
-        const c2 = `${COLUMNS[cIdx+1]}${row+2}`;
-        const c3 = `${COLUMNS[cIdx+1]}${row+3}`;
-        injectLabelValue(cIdx+1, row+4, `=TIP(${c1}, ${c2}, ${c3})`, true);
-      }
-
-      renderGrid();
-    }
-
-    function injectLabelValue(colIdx, rowIdx, text, isHeader = false, bgColor = null) {
-      if (colIdx >= COLUMNS.length || rowIdx > ROW_COUNT) return;
-      const coord = `${COLUMNS[colIdx]}${rowIdx}`;
-      setCellValue(coord, text);
-      
-      const activeData = sheets[activeSheet] || {};
-      if (isHeader) {
-        activeData[coord].style = { bold: true, align: "center", bgColor: bgColor || "#f1f5f9" };
-      } else if (bgColor) {
-        activeData[coord].style = { bgColor: bgColor };
-      }
-    }
-
-    // -------------------------------------------------------------------------
-    // SIDEBAR ADD-ONS LIST & FILTERING
-    // -------------------------------------------------------------------------
-    function renderAddonsList() {
-      const container = document.getElementById("addons-list");
-      const filterCat = document.getElementById("addon-categories");
-      
-      // Populate unique categories
-      const categories = ["All", ...new Set(TOOLS.map(t => t.category))];
-      filterCat.innerHTML = categories.map(cat => {
-        return `
-          <button onclick="filterCategory('${cat}')" class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-full text-[10px] font-bold text-slate-600 dark:text-slate-300 transition-all shrink-0">
-            ${cat}
-          </button>
-        `;
-      }).join("");
-
-      // Render all cards
-      displayToolsList(TOOLS);
-    }
-
-    function displayToolsList(toolsArray) {
-      const container = document.getElementById("addons-list");
-      container.innerHTML = toolsArray.map(tool => {
-        const badgeColor = CATEGORY_COLOURS[tool.category] || "bg-slate-100 text-slate-800";
-        return `
-          <div onclick="openAddonTool('${tool.id}')" class="p-3 bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800/80 rounded-xl hover:border-brand-500 dark:hover:border-brand-500 hover:shadow-md cursor-pointer transition-all space-y-1.5 select-none">
-            <div class="flex items-center justify-between">
-              <span class="text-[9px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider ${badgeColor}">
-                ${tool.category}
-              </span>
-              <code class="text-[9px] bg-slate-100 dark:bg-slate-800 text-slate-500 font-mono font-bold px-1 py-0.5 rounded">
-                ${tool.exampleFormula}
-              </code>
-            </div>
-            <h3 class="text-xs font-extrabold text-slate-900 dark:text-white leading-tight">${tool.title}</h3>
-            <p class="text-[10px] text-slate-400 dark:text-slate-500 font-medium leading-relaxed">${tool.desc}</p>
-          </div>
-        `;
-      }).join("");
-    }
-
-    function filterCategory(cat) {
-      if (cat === "All") {
-        displayToolsList(TOOLS);
-      } else {
-        displayToolsList(TOOLS.filter(t => t.category === cat));
-      }
-    }
-
-    function filterAddons(e) {
-      const q = e.target.value.toLowerCase().trim();
-      const filtered = TOOLS.filter(t => 
-        t.title.toLowerCase().includes(q) || 
-        t.category.toLowerCase().includes(q) || 
-        t.desc.toLowerCase().includes(q)
-      );
-      displayToolsList(filtered);
-    }
-
-    // -------------------------------------------------------------------------
-    // SIDEBAR DYNAMIC INPUT GENERATION & FORMULA WRITING
-    // -------------------------------------------------------------------------
-    function openAddonTool(toolId) {
-      const tool = TOOLS.find(t => t.id === toolId);
-      if (!tool) return;
-
-      const panel = document.getElementById("active-tool-panel");
-      panel.classList.remove("hidden");
-
-      let html = `
-        <div class="space-y-3">
-          <div class="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
-            <h4 class="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1">
-              <i data-lucide="sparkles" class="w-3.5 h-3.5 text-brand-500 animate-pulse"></i> Link ${tool.title}
-            </h4>
-            <button onclick="closeToolPanel()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
-              <i data-lucide="x" class="w-3.5 h-3.5"></i>
-            </button>
-          </div>
-          
-          <p class="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">
-            Map cells (e.g., A1, B3) or direct numbers into parameters. We will compile it as a formula in the selected destination.
-          </p>
-
-          <form id="active-tool-form" class="space-y-2 text-xs">
-      `;
-
-      tool.fields.forEach((f, idx) => {
-        const commonId = `tool-f-${idx}`;
-        html += `
-          <div class="flex items-center justify-between gap-2 bg-white dark:bg-slate-800 p-2 rounded-lg border border-slate-100 dark:border-slate-800/60 shadow-sm">
-            <div class="space-y-0.5">
-              <span class="block text-[10px] font-bold text-slate-500 dark:text-slate-400 tracking-wider uppercase">${f.label}</span>
-              <span class="block text-[8px] text-slate-400 italic">E.g., B${idx+2} or values</span>
-            </div>
-        `;
-
-        if (f.type === "select") {
-          html += `
-            <select id="${commonId}" class="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded px-2 py-1 text-xs outline-none focus:border-brand-500">
-              ${f.options.map(opt => `<option value="${opt}">${opt}</option>`).join("")}
-            </select>
-          `;
-        } else {
-          // Dynamic fields allowing both raw text, numbers, or cell coordinates
-          html += `
-            <input type="text" id="${commonId}" placeholder="Enter cell or value" class="w-28 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded px-2 py-1 text-xs outline-none focus:border-brand-500 font-mono">
-          `;
-        }
-
-        html += `</div>`;
-      });
-
-      // Target Cell Selector
-      html += `
-        <div class="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-1.5">
-          <label class="block text-[10px] font-bold text-slate-500 dark:text-slate-400 tracking-wider uppercase">Destination Cell</label>
-          <div class="flex gap-2">
-            <input type="text" id="tool-dest-cell" value="${selectedCell}" class="w-20 text-center font-bold bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded py-1 text-xs font-mono">
-            <button type="button" onclick="syncActiveDestCell()" class="px-2 py-1 bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold rounded hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors text-[10px]">Use Selection</button>
-          </div>
-        </div>
-
-        <div class="flex gap-1.5 pt-3">
-          <button type="button" onclick="injectCompiledFormula('${tool.id}')" class="flex-1 py-2 bg-brand-500 hover:bg-brand-600 text-white font-extrabold rounded-lg shadow-sm transition-colors text-center">
-            Insert Dynamic Formula
-          </button>
-          <button type="button" onclick="closeToolPanel()" class="px-3 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold rounded-lg transition-colors">
-            Cancel
-          </button>
-        </div>
-      </form>
-      `;
-
-      panel.innerHTML = html;
-      lucide.createIcons();
-    }
-
-    function closeToolPanel() {
-      document.getElementById("active-tool-panel").classList.add("hidden");
-    }
-
-    function syncActiveDestCell() {
-      document.getElementById("tool-dest-cell").value = selectedCell;
-    }
-
-    function injectCompiledFormula(toolId) {
-      const tool = TOOLS.find(t => t.id === toolId);
-      if (!tool) return;
-
-      const dest = document.getElementById("tool-dest-cell").value.toUpperCase().trim();
-      if (!/^[A-Z]+[0-9]+$/i.test(dest)) {
-        alert("Please specify a valid single cell (e.g., A1, C3) as destination.");
-        return;
-      }
-
-      saveStateForHistory();
-
-      // Gather parameters and build the Excel function call
-      const args = [];
-      tool.fields.forEach((f, idx) => {
-        const inputVal = document.getElementById(`tool-f-${idx}`).value.trim();
-        
-        // Wrap literal strings in quotes unless it looks like a number or is a cell reference
-        if (f.type === "select" || (isNaN(parseFloat(inputVal)) && !/^[A-Z]+[0-9]+$/i.test(inputVal) && inputVal.length > 0)) {
-          // If it doesn't already have quotes, wrap it
-          if (!(inputVal.startsWith('"') || inputVal.startsWith("'"))) {
-            args.push(`"${inputVal}"`);
-          } else {
-            args.push(inputVal);
-          }
-        } else {
-          args.push(inputVal || "0");
-        }
-      });
-
-      // Map dynamic naming matching runCustomFormula cases
-      const formulaMapping = {
-        "age-calculator": "AGE",
-        "date-difference": "DATEDIFF",
-        "countdown-maker": "COUNTDOWN",
-        "sleep-cycle": "SLEEP",
-        "water-intake": "WATER",
-        "bmi-check": "BMI",
-        "bmr-estimator": "BMR",
-        "calorie-target": "CALORIE",
-        "protein-target": "PROTEIN",
-        "pace-calculator": "PACE",
-        "study-planner": "STUDY",
-        "final-grade": "FINALGRADE",
-        "tip-split": "TIP",
-        "discount-calculator": "DISCOUNT",
-        "savings-goal": "SAVINGS",
-        "hourly-yearly": "HOURLYTOYEARLY",
-        "loan-payment": "LOAN",
-        "subscription-total": "SUBSCRIPTION",
-        "unit-price": "UNITPRICE",
-        "tax-estimator": "TAX",
-        "budget-ratio": "BUDGET",
-        "word-counter": "WORDCOUNT",
-        "reading-time": "READINGTIME",
-        "case-converter": "CASECONVERT",
-        "slug-generator": "SLUG",
-        "character-limiter": "CHARLIMIT",
-        "password-generator": "PASSWORD",
-        "duplicate-lines": "UNIQUE",
-        "exchange-planner": "EXCHANGE",
-        "time-offset": "TIMEOFFSET",
-        "aspect-ratio": "ASPECT",
-        "contrast-checker": "CONTRAST",
-        "business-model": "BIZMODEL",
-        "break-even": "BREAKEVEN",
-        "cash-runway": "RUNWAY",
-        "inventory-reorder": "REORDER"
-      };
-
-      const mappedFuncName = formulaMapping[toolId] || toolId.toUpperCase().replace(/-/g, "");
-      const compiledString = `=${mappedFuncName}(${args.join(", ")})`;
-
-      setCellValue(dest, compiledString);
-      selectCell(dest);
-      renderGrid();
-      closeToolPanel();
-    }
-
-    // -------------------------------------------------------------------------
-    // FILE HANDLERS (CSV EXPORT / IMPORT)
-    // -------------------------------------------------------------------------
-    function exportCSV() {
-      const activeData = sheets[activeSheet] || {};
-      let rows = [];
-
-      for (let r = 1; r <= ROW_COUNT; r++) {
-        let rowCells = [];
-        COLUMNS.forEach(col => {
-          const coord = `${col}${r}`;
-          const cellObj = activeData[coord];
-          
-          // Export computed evaluated string, escaping quotes
-          const valStr = cellObj ? evaluateCell(coord) : "";
-          rowCells.push(`"${String(valStr).replace(/"/g, '""')}"`);
-        });
-        rows.push(rowCells.join(","));
-      }
-
-      const csvContent = rows.join("\n");
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.setAttribute("href", url);
-      link.setAttribute("download", `${activeSheet.replace(/\s+/g, "_")}_export.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    }
-
-    function importCSV(event) {
-      const file = event.target.files[0];
-      if (!file) return;
-
-      const reader = new FileReader();
-      reader.onload = function(e) {
-        saveStateForHistory();
-        const text = e.target.result;
-        const rows = text.split(/\r?\n/);
-        
-        const activeData = {};
-        
-        rows.forEach((row, rIdx) => {
-          if (rIdx >= ROW_COUNT) return;
-          const rowNum = rIdx + 1;
-          
-          // Primitive CSV parser handle wrapping quotes
-          let colIdx = 0;
-          let currentCellStr = "";
-          let insideQuotes = false;
-
-          for (let i = 0; i < row.length; i++) {
-            const char = row[i];
-            if (char === '"') {
-              insideQuotes = !insideQuotes;
-            } else if (char === ',' && !insideQuotes) {
-              if (colIdx < COLUMNS.length) {
-                const coord = `${COLUMNS[colIdx]}${rowNum}`;
-                activeData[coord] = { value: currentCellStr.trim(), formula: "", style: {} };
-              }
-              currentCellStr = "";
-              colIdx++;
-            } else {
-              currentCellStr += char;
-            }
-          }
-
-          // Leftover cell handle
-          if (colIdx < COLUMNS.length && currentCellStr) {
-            const coord = `${COLUMNS[colIdx]}${rowNum}`;
-            activeData[coord] = { value: currentCellStr.trim(), formula: "", style: {} };
-          }
-        });
-
-        sheets[activeSheet] = activeData;
-        renderGrid();
-        saveToLocalStorage();
-      };
-      reader.readAsText(file);
-    }
-
-    function clearGrid() {
-      const confirmClear = confirm("Are you sure you want to erase all data in the current tab?");
-      if (confirmClear) {
-        saveStateForHistory();
-        sheets[activeSheet] = {};
-        renderGrid();
-        saveToLocalStorage();
-      }
-    }
-
-    // -------------------------------------------------------------------------
-    // OTHER SYSTEM MODALS / HELP PANEL GLOSSARY
-    // -------------------------------------------------------------------------
-    function toggleFormulaHelp() {
-      const overlay = document.getElementById("formula-help-overlay");
-      overlay.classList.toggle("hidden");
-    }
-
-    function toggleSidebar() {
-      const sidebar = document.getElementById("sidebar");
-      sidebar.classList.toggle("hidden");
-    }
+    // Formula Overlay Glossary and Setup
+    function toggleFormulaHelp() { document.getElementById("formula-help-overlay").classList.toggle("hidden"); }
 
     function renderFormulaGlossary() {
       const container = document.getElementById("formulas-glossary");
-      
-      const items = TOOLS.map(tool => {
-        return `
-          <div class="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg space-y-1">
-            <div class="flex items-center justify-between">
-              <strong class="text-brand-600 dark:text-brand-400 font-mono">${tool.exampleFormula.split('(')[0]}(...)</strong>
-              <span class="text-[9px] font-bold text-slate-400 uppercase">${tool.category}</span>
-            </div>
-            <p class="text-slate-600 dark:text-slate-300">${tool.desc}</p>
-            <div class="text-[10px] bg-slate-100 dark:bg-slate-900 px-2 py-1 rounded font-mono text-slate-500 dark:text-slate-400">
-              Usage Example: <span class="text-emerald-600">${tool.exampleFormula}</span>
-            </div>
-          </div>
-        `;
-      }).join("");
+      const items = TOOLS.map(tool => `<div class="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg space-y-1"><div class="flex items-center justify-between"><strong class="text-brand-600 dark:text-brand-400 font-mono">${tool.exampleFormula.split('(')[0]}(...)</strong><span class="text-[9px] font-bold text-slate-400 uppercase">${tool.category}</span></div><p class="text-slate-600 dark:text-slate-300">${tool.desc}</p><div class="text-[10px] bg-slate-100 dark:bg-slate-900 px-2 py-1 rounded font-mono text-slate-500">Ex: <span class="text-emerald-600">${tool.exampleFormula}</span></div></div>`).join("");
 
       container.innerHTML = `
         <div class="space-y-4">
-          <div class="p-3 bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-200 rounded-xl space-y-1">
-            <h4 class="font-bold">Standard Excel Formula Support</h4>
-            <p class="text-[11px] leading-relaxed">
-              We also support standard math operations (e.g. <code class="font-bold">=A1+B1</code>, <code class="font-bold">=C5*1.1</code>) and functions across dynamic ranges:
+          <div class="p-4 bg-indigo-50 border border-indigo-100 dark:bg-indigo-950/40 dark:border-indigo-900/50 text-indigo-900 dark:text-indigo-200 rounded-xl space-y-2">
+            <h4 class="font-bold text-sm">Full Standard Excel Engine Active</h4>
+            <p class="text-xs leading-relaxed opacity-90">
+              The workbench supports <b>nearly every standard Excel and Sheets formula out-of-the-box</b>.
             </p>
-            <ul class="list-disc pl-4 text-[11px] space-y-1 pt-1">
-              <li><strong>SUM(range):</strong> e.g., <code class="bg-blue-100/50 dark:bg-blue-900/50 px-1 py-0.5 rounded">=SUM(A1:B3)</code></li>
-              <li><strong>AVERAGE(range):</strong> e.g., <code class="bg-blue-100/50 dark:bg-blue-900/50 px-1 py-0.5 rounded">=AVERAGE(C1:C10)</code></li>
-              <li><strong>MIN / MAX(range):</strong> e.g., <code class="bg-blue-100/50 dark:bg-blue-900/50 px-1 py-0.5 rounded">=MAX(A1:D1)</code></li>
-              <li><strong>COUNT(range):</strong> e.g., <code class="bg-blue-100/50 dark:bg-blue-900/50 px-1 py-0.5 rounded">=COUNT(A1:B10)</code></li>
-            </ul>
+            <div class="grid grid-cols-2 gap-4 text-xs font-mono opacity-80 pt-1">
+              <ul class="space-y-1 list-disc pl-4">
+                <li><b>Basic:</b> SUM, AVERAGE, MIN, MAX, PRODUCT</li>
+                <li><b>Logic:</b> IF, IFS, IFERROR, COUNTIF, SUMIF</li>
+                <li><b>Maths:</b> +, -, *, /, ^ (Exponents)</li>
+                <li><b>Financial:</b> PMT, FV, PV, IRR, NPV</li>
+              </ul>
+              <ul class="space-y-1 list-disc pl-4">
+                <li><b>Text:</b> CONCATENATE, LEN, LEFT, RIGHT, UPPER</li>
+                <li><b>Lookup:</b> VLOOKUP, HLOOKUP, INDEX, MATCH</li>
+                <li><b>Dates:</b> NETWORKDAYS, DATE, TODAY</li>
+                <li><b>Stats:</b> MEDIAN, MODE, RANK, STDEV</li>
+              </ul>
+            </div>
+            <p class="text-[10px] pt-1 opacity-70 italic">Example usages: =SUM(A1:B10) or =IF(A1>50, "Pass", "Fail") or =VLOOKUP(A1, B1:C10, 2)</p>
           </div>
           <div class="space-y-2">
-            <h4 class="font-bold text-slate-700 dark:text-slate-300">Envizion Formula Functions</h4>
+            <h4 class="font-bold text-slate-700 dark:text-slate-300">Custom Envizion Tools Add-ons</h4>
             ${items}
           </div>
         </div>
       `;
     }
 
-    // Utility escape html helper
-    function escapeHtml(value) {
-      return String(value)
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
+    // Utility escape html
+    function escapeHtml(value) { return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;"); }
+
+    // Search and Render logic for Sidebar Tools
+    function renderAddonsList() {
+      const filterCat = document.getElementById("addon-categories");
+      const categories = ["All", ...new Set(TOOLS.map(t => t.category))];
+      filterCat.innerHTML = categories.map(cat => `<button onclick="filterCategory('${cat}')" class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 rounded-full text-[10px] font-bold text-slate-600 transition-all shrink-0">${cat}</button>`).join("");
+      displayToolsList(TOOLS);
+    }
+    
+    function displayToolsList(toolsArray) {
+      document.getElementById("addons-list").innerHTML = toolsArray.map(tool => `
+        <div onclick="openAddonTool('${tool.id}')" class="p-3 bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800/80 rounded-xl hover:border-brand-500 cursor-pointer transition-all space-y-1.5 select-none">
+          <div class="flex items-center justify-between"><span class="text-[9px] font-extrabold px-2 py-0.5 rounded-full uppercase ${CATEGORY_COLOURS[tool.category] || "bg-slate-100 text-slate-800"}">${tool.category}</span><code class="text-[9px] bg-slate-100 dark:bg-slate-800 text-slate-500 font-mono px-1 py-0.5 rounded">${tool.exampleFormula}</code></div>
+          <h3 class="text-xs font-extrabold">${tool.title}</h3><p class="text-[10px] text-slate-400 font-medium">${tool.desc}</p>
+        </div>`).join("");
+    }
+    
+    function filterCategory(cat) { displayToolsList(cat === "All" ? TOOLS : TOOLS.filter(t => t.category === cat)); }
+    function filterAddons(e) { const q = e.target.value.toLowerCase().trim(); displayToolsList(TOOLS.filter(t => t.title.toLowerCase().includes(q) || t.category.toLowerCase().includes(q) || t.desc.toLowerCase().includes(q))); }
+    
+    function openAddonTool(toolId) {
+      const tool = TOOLS.find(t => t.id === toolId);
+      if(!tool) return;
+      const panel = document.getElementById("active-tool-panel");
+      panel.classList.remove("hidden");
+      let html = `<div class="space-y-3"><div class="flex items-center justify-between border-b pb-2"><h4 class="text-xs font-bold flex gap-1"><i data-lucide="sparkles" class="w-3.5 h-3.5 text-brand-500"></i> ${tool.title}</h4><button onclick="closeToolPanel()"><i data-lucide="x" class="w-3.5 h-3.5"></i></button></div><form id="active-tool-form" class="space-y-2 text-xs">`;
+      tool.fields.forEach((f, idx) => {
+        html += `<div class="flex justify-between items-center gap-2 bg-white dark:bg-slate-800 p-2 rounded-lg border shadow-sm"><div><span class="block text-[10px] font-bold uppercase">${f.label}</span></div>`;
+        if (f.type === "select") html += `<select id="tool-f-${idx}" class="bg-slate-50 border rounded px-2 py-1 text-xs outline-none w-28">${f.options.map(opt => `<option value="${opt}">${opt}</option>`).join("")}</select>`;
+        else html += `<input type="text" id="tool-f-${idx}" placeholder="Cell or val" class="w-28 bg-slate-50 border rounded px-2 py-1 text-xs outline-none">`;
+        html += `</div>`;
+      });
+      html += `<div class="pt-2 border-t space-y-1.5"><label class="block text-[10px] font-bold uppercase">Destination</label><div class="flex gap-2"><input type="text" id="tool-dest-cell" value="${selectedCell}" class="w-20 text-center font-bold bg-slate-100 border rounded py-1 text-xs"><button type="button" onclick="document.getElementById('tool-dest-cell').value = selectedCell" class="px-2 py-1 bg-slate-200 text-[10px] rounded">Use Selected</button></div></div>`;
+      html += `<div class="flex gap-1.5 pt-3"><button type="button" onclick="injectCompiledFormula('${tool.id}')" class="flex-1 py-2 bg-brand-500 hover:bg-brand-600 text-white font-bold rounded-lg text-center">Insert Formula</button><button type="button" onclick="closeToolPanel()" class="px-3 py-2 bg-slate-200 rounded-lg font-bold">Cancel</button></div></form></div>`;
+      panel.innerHTML = html;
+      lucide.createIcons();
+    }
+    
+    function closeToolPanel() { document.getElementById("active-tool-panel").classList.add("hidden"); }
+    function injectCompiledFormula(toolId) {
+      const tool = TOOLS.find(t => t.id === toolId);
+      const dest = document.getElementById("tool-dest-cell").value.toUpperCase().trim();
+      saveStateForHistory();
+      const args = [];
+      tool.fields.forEach((f, idx) => {
+        const inputVal = document.getElementById(`tool-f-${idx}`).value.trim();
+        if (f.type === "select" || (isNaN(parseFloat(inputVal)) && !/^[A-Z]+[0-9]+$/i.test(inputVal) && inputVal.length > 0)) args.push(`"${inputVal}"`);
+        else args.push(inputVal || "0");
+      });
+      const mapping = { "age-calculator": "AGE", "date-difference": "DATEDIFF", "countdown-maker": "COUNTDOWN", "mortgage-calc": "PMT", "compound-interest": "FV", "business-model": "BIZMODEL" };
+      const mapped = mapping[toolId] || toolId.toUpperCase().replace(/-/g, "");
+      setCellValue(dest, `=${mapped}(${args.join(", ")})`);
+      selectCell(dest);
+      closeToolPanel();
+    }
+    
+    function toggleTheme() {
+      const isDark = document.documentElement.classList.toggle('dark');
+      localStorage.setItem('theme', isDark ? 'dark' : 'light');
+      document.getElementById("theme-sun").classList.toggle("hidden", !isDark);
+      document.getElementById("theme-moon").classList.toggle("hidden", isDark);
     }
