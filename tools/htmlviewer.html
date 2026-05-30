@@ -176,7 +176,7 @@
                     <div class="menu-dropdown absolute top-full left-0 bg-[#252526] border border-[#454545] shadow-xl py-1 min-w-[220px] rounded-sm z-50">
                         <div class="menu-list-item" onclick="execEditorAction('editor.action.quickCommand')"><span>Show Command Palette...</span><span class="menu-shortcut">F1</span></div>
                         <div class="h-px bg-[#454545] my-1"></div>
-                        <div class="menu-list-item" onclick="alert('HyperLive Pro\\nVersion: 1.5\\nEngine: Monaco Editor\\nStatus: Local Execution')"><span>About HyperLive Pro</span></div>
+                        <div class="menu-list-item" onclick="alert('About HyperLive Pro\nVersion: 1.5\nEngine: Monaco Editor\nStatus: Local Execution')"><span>About HyperLive Pro</span></div>
                     </div>
                 </div>
 
@@ -275,9 +275,9 @@
                 <button class="hover:bg-gray-200 p-1.5 rounded text-gray-500 ml-1 transition" title="Toggle Console" onclick="toggleConsole()"><i data-lucide="terminal" class="w-4 h-4"></i></button>
             </div>
 
-            <!-- Frame Container -->
+            <!-- Frame Container (Equipped with allow-popups and breakout options for OAuth flows) -->
             <div class="flex-1 relative bg-white">
-                <iframe id="live-frame" class="w-full h-full border-none" sandbox="allow-scripts allow-same-origin allow-forms allow-modals"></iframe>
+                <iframe id="live-frame" class="w-full h-full border-none" sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox"></iframe>
             </div>
 
             <!-- Dev Console Panel -->
@@ -520,7 +520,7 @@
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
             </head>
             <body style="margin:0; padding:0; height:100%; overflow:hidden; display:flex; flex-direction:column;">
-                <iframe id="inner-frame" style="flex:1; width:100%; border:none; background:#ffffff;" sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups"></iframe>
+                <iframe id="inner-frame" style="flex:1; width:100%; border:none; background:#ffffff;" sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox"></iframe>
                 <script>
                     window.addEventListener('message', (e) => {
                         // Receiving HOT_RELOAD from IDE -> update inner iframe
@@ -1043,6 +1043,11 @@
                             if (prop === 'href') return window.location.origin + virtualPathname + virtualQuery + virtualHash;
                             if (prop === 'assign' || prop === 'replace') {
                                 return function(url) {
+                                    // Google / Firebase / OAuth redirection breakout check
+                                    if (/^(http|https):\\/\\//.test(url) && !url.startsWith(window.location.origin) && (url.includes('google.com') || url.includes('firebase') || url.includes('auth'))) {
+                                        window.open(url, '_blank');
+                                        return;
+                                    }
                                     if (parentWin) {
                                         parentWin.postMessage({ type: 'NAVIGATE', path: url, current: ${JSON.stringify(targetHtmlPath)}, isExternal }, '*');
                                     }
@@ -1060,6 +1065,11 @@
                         },
                         set(target, prop, value) {
                             if (prop === 'href') {
+                                // Google / Firebase / OAuth redirection breakout check on direct write
+                                if (/^(http|https):\\/\\//.test(value) && !value.startsWith(window.location.origin) && (value.includes('google.com') || value.includes('firebase') || value.includes('auth'))) {
+                                    window.open(value, '_blank');
+                                    return true;
+                                }
                                 if (parentWin) {
                                     parentWin.postMessage({ type: 'NAVIGATE', path: value, current: ${JSON.stringify(targetHtmlPath)}, isExternal }, '*');
                                 }
@@ -1075,10 +1085,17 @@
                         const a = e.target.closest('a');
                         if (a) {
                             const href = a.getAttribute('href');
-                            if (href && !href.startsWith('http') && !href.startsWith('#') && !href.startsWith('javascript:')) {
-                                e.preventDefault();
-                                if (parentWin) {
-                                    parentWin.postMessage({ type: 'NAVIGATE', path: href, current: ${JSON.stringify(targetHtmlPath)}, isExternal }, '*');
+                            if (href) {
+                                // Google / Firebase / OAuth redirection breakout check on click hrefs
+                                if (/^(http|https):\\/\\//.test(href) && !href.startsWith(window.location.origin) && (href.includes('google.com') || href.includes('firebase') || href.includes('auth'))) {
+                                    a.setAttribute('target', '_blank');
+                                    return;
+                                }
+                                if (!href.startsWith('http') && !href.startsWith('#') && !href.startsWith('javascript:')) {
+                                    e.preventDefault();
+                                    if (parentWin) {
+                                        parentWin.postMessage({ type: 'NAVIGATE', path: href, current: ${JSON.stringify(targetHtmlPath)}, isExternal }, '*');
+                                    }
                                 }
                             }
                         }
