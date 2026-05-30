@@ -176,7 +176,7 @@
                     <div class="menu-dropdown absolute top-full left-0 bg-[#252526] border border-[#454545] shadow-xl py-1 min-w-[220px] rounded-sm z-50">
                         <div class="menu-list-item" onclick="execEditorAction('editor.action.quickCommand')"><span>Show Command Palette...</span><span class="menu-shortcut">F1</span></div>
                         <div class="h-px bg-[#454545] my-1"></div>
-                        <div class="menu-list-item" onclick="alert('HyperLive Pro\nVersion: 1.4 (Interactive Router Proxy)\nEngine: Monaco Editor\nStatus: Local Execution')"><span>About HyperLive Pro</span></div>
+                        <div class="menu-list-item" onclick="alert('HyperLive Pro\nVersion: 1.5 (Module Compatible Router)\nEngine: Monaco Editor\nStatus: Local Execution')"><span>About HyperLive Pro</span></div>
                     </div>
                 </div>
 
@@ -396,11 +396,6 @@
             isMinimap = !isMinimap;
             editor.updateOptions({ minimap: { enabled: isMinimap } });
             logConsole(`Minimap turned ${isMinimap ? 'on' : 'off'}`);
-        }
-
-        function toggleFullScreen() {
-            if (!document.fullscreenElement) document.documentElement.requestFullscreen();
-            else if (document.exitFullscreen) document.exitFullscreen();
         }
 
         // --------------------------------------------------------
@@ -1159,12 +1154,38 @@
                 }
 
                 if (content) {
-                    // Wrap the compiled content to bind all native location triggers directly to the simulated sandbox Proxy
-                    script.textContent = `
-                        (function(location) {
-                            ${content.replace(/\bwindow\.location\b/g, 'location').replace(/\bdocument\.location\b/g, 'location')}
-                        })(window.virtualLocation);
-                    `;
+                    // Detect if the script is a Module to avoid Function wrapping SyntaxErrors (crucial for Firebase modules!)
+                    const isModule = script.getAttribute('type') === 'module' || content.includes('import ') || content.includes('import{') || content.includes('export ');
+                    
+                    if (isModule) {
+                        const lines = content.split('\n');
+                        let lastImportIdx = -1;
+                        for (let i = 0; i < lines.length; i++) {
+                            const trimmed = lines[i].trim();
+                            if (trimmed.startsWith('import ') || trimmed.startsWith('import{') || trimmed.startsWith('import\t') || trimmed.startsWith('import*') || trimmed.startsWith('import *')) {
+                                lastImportIdx = i;
+                            }
+                        }
+                        
+                        let processedContent = content
+                            .replace(/\bwindow\.location\b/g, 'location')
+                            .replace(/\bdocument\.location\b/g, 'location');
+                            
+                        const processedLines = processedContent.split('\n');
+                        const shadowLine = `const location = window.virtualLocation;`;
+                        
+                        // Safely inject location shadow declaration right after Firebase ES Module imports
+                        processedLines.splice(lastImportIdx + 1, 0, shadowLine);
+                        script.textContent = processedLines.join('\n');
+                        script.setAttribute('type', 'module');
+                    } else {
+                        // Regular scripts can be safely compiled using IIFEs
+                        script.textContent = `
+                            (function(location) {
+                                ${content.replace(/\bwindow\.location\b/g, 'location').replace(/\bdocument\.location\b/g, 'location')}
+                            })(window.virtualLocation);
+                        `;
+                    }
                 }
             });
 
