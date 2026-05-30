@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Visual Studio 2022 Web Professional - All Editions</title>
+    <title>HyperLive Pro | Intelligent Web IDE</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -13,22 +13,16 @@
             theme: {
                 extend: {
                     colors: {
-                        vs: {
+                        ide: {
                             bg: '#1e1e1e',
                             sidebar: '#252526',
-                            activity: '#2d2d2d',
-                            header: '#2d2d30',
-                            border: '#3c3c3c',
-                            tab: '#2d2d2d',
-                            tabActive: '#1e1e1e',
-                            text: '#f1f1f1',
-                            textMuted: '#969696',
+                            header: '#333333',
+                            active: '#37373d',
+                            border: '#454545',
+                            text: '#cccccc',
                             accent: '#007acc',
-                            accentHover: '#1c97ea',
-                            debug: '#ca5100',
-                            panel: '#1e1e1e',
-                            selection: '#264f78',
-                            hover: '#3e3e40'
+                            statusbar: '#007acc',
+                            menuhover: '#505050'
                         }
                     }
                 }
@@ -38,1214 +32,650 @@
     
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
-    <!-- JSZip for workspace exporting -->
+    
+    <!-- JSZip for exporting -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <!-- Babel for Local Live JSX Compilation -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <!-- Xterm.js for Terminal Terminal -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
-    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
 
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Segoe+UI:wght@400;500;600;700&family=Cascadia+Code:wght@400;600&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
 
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: 'Inter', sans-serif;
             background-color: #1e1e1e;
-            color: #f1f1f1;
+            color: #cccccc;
             overflow: hidden;
-            margin: 0;
-            padding: 0;
-            user-select: none;
         }
         
-        .font-mono { font-family: 'Cascadia Code', Consolas, monospace; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
 
-        /* Scrollbar styles matching Visual Studio */
-        ::-webkit-scrollbar { width: 12px; height: 12px; }
+        /* Custom Scrollbars */
+        ::-webkit-scrollbar { width: 10px; height: 10px; }
         ::-webkit-scrollbar-track { background: #1e1e1e; }
-        ::-webkit-scrollbar-thumb { background: #3e3e40; border: 3px solid #1e1e1e; }
-        ::-webkit-scrollbar-thumb:hover { background: #555555; }
+        ::-webkit-scrollbar-thumb { background: #424242; border: 2px solid #1e1e1e; border-radius: 5px; }
+        ::-webkit-scrollbar-thumb:hover { background: #4f4f4f; }
 
-        /* Window / panel splitters */
-        .resizer-x { width: 5px; cursor: col-resize; background: #2d2d30; transition: background 0.15s; z-index: 40; }
+        /* Resizer */
+        .resizer-x { width: 4px; cursor: col-resize; background: transparent; transition: background 0.2s; z-index: 10; }
         .resizer-x:hover, .resizer-x.active { background: #007acc; }
-        .resizer-y { height: 5px; cursor: row-resize; background: #2d2d30; transition: background 0.15s; z-index: 40; }
-        .resizer-y:hover, .resizer-y.active { background: #007acc; }
 
-        /* Dropdown custom transitions */
-        .menu-dropdown {
-            display: none;
-            position: absolute;
-            background-color: #2d2d30;
-            border: 1px solid #3f3f46;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-            z-index: 100;
-            min-width: 220px;
-            font-size: 12px;
-        }
-        .menu-item:hover .menu-dropdown { display: block; }
-        .menu-row { display: flex; align-items: center; justify-content: space-between; padding: 4px 16px; cursor: pointer; color: #f1f1f1; }
-        .menu-row:hover { background-color: #3e3e40; }
+        /* Activity Bar */
+        .activity-icon { color: #858585; cursor: pointer; display: flex; justify-content: center; align-items: center; height: 48px; width: 100%; border-left: 2px solid transparent; transition: color 0.2s; }
+        .activity-icon:hover { color: #cccccc; }
+        .activity-icon.active { color: #ffffff; border-left-color: #007acc; }
 
-        /* Editor tab system */
-        .vs-tab {
-            cursor: pointer;
-            border-right: 1px solid #252526;
-            background-color: #2d2d2d;
-            color: #969696;
-            transition: all 0.1s ease;
-        }
-        .vs-tab:hover { background-color: #2b2b2b; color: #f1f1f1; }
-        .vs-tab.active {
-            background-color: #1e1e1e;
-            color: #ffffff;
-            border-top: 2px solid #007acc;
-        }
+        /* File Explorer Items */
+        .file-item { cursor: pointer; user-select: none; }
+        .file-item:hover { background-color: #2a2d2e; }
+        .file-item.active { background-color: #37373d; color: #ffffff; }
 
-        /* Grid layouts for custom mock tools */
-        .toolbox-btn {
-            background: #2d2d30;
-            border: 1px solid #3e3e40;
-            border-radius: 3px;
-            padding: 4px 8px;
-            text-align: left;
-            transition: all 0.15s;
-            font-size: 11px;
-        }
-        .toolbox-btn:hover { background: #3e3e40; border-color: #007acc; }
+        /* Dropdown Menus */
+        .menu-dropdown { display: none; }
+        .menu-item.open .menu-dropdown { display: block; }
+        .menu-btn:hover { background-color: #505050; }
+        .menu-list-item { display: flex; justify-content: space-between; padding: 4px 16px; cursor: pointer; white-space: nowrap; }
+        .menu-list-item:hover { background-color: #007acc; color: white; }
+        .menu-shortcut { color: #999; margin-left: 24px; font-size: 11px; }
+        .menu-list-item:hover .menu-shortcut { color: #e0e0e0; }
 
-        /* Tooltip notifications */
-        .vs-tooltip {
-            position: relative;
+        /* Drag Overlay */
+        #drag-overlay {
+            opacity: 0; pointer-events: none; transition: opacity 0.2s;
+            backdrop-filter: blur(4px); z-index: 9999;
         }
-        .vs-tooltip::after {
-            content: attr(data-tooltip);
-            position: absolute;
-            bottom: 125%;
-            left: 50%;
-            transform: translateX(-50%);
-            background-color: #2d2d30;
-            border: 1px solid #3e3e40;
-            color: #f1f1f1;
-            padding: 4px 8px;
-            border-radius: 3px;
-            white-space: nowrap;
-            font-size: 11px;
-            opacity: 0;
-            pointer-events: none;
-            transition: opacity 0.2s;
-            z-index: 100;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.4);
-        }
-        .vs-tooltip:hover::after { opacity: 1; }
+        body.drag-active #drag-overlay { opacity: 1; }
+
+        /* Hide iframe default bg */
+        iframe { background-color: #ffffff; }
     </style>
 </head>
-<body class="flex flex-col h-screen select-none text-[13px] bg-vs-bg">
+<body class="flex flex-col h-screen antialiased selection:bg-[#264f78]">
 
-    <!-- TOP WINDOW DRAG BAR & MENU BAR -->
-    <header class="h-10 bg-vs-header flex flex-col shrink-0 select-none border-b border-vs-border z-50">
-        <!-- Main Bar -->
-        <div class="flex items-center justify-between px-3 h-6 text-xs text-vs-textMuted select-none border-b border-vs-border/40">
-            <div class="flex items-center gap-1">
-                <svg class="w-4 h-4 text-[#8d54d2]" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M17 2H7c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-3 18h-4v-1h4v1zm3-3H7V6h10v11z"/>
-                </svg>
-                <span class="font-semibold text-[#f1f1f1] text-[11px] mr-2">Visual Studio 2022</span>
-                <span class="text-[11px]">Web Professional Edition - [Production Workspace Project]</span>
+    <!-- Global Drag Overlay -->
+    <div id="drag-overlay" class="fixed inset-0 bg-black/60 flex flex-col items-center justify-center">
+        <div class="bg-ide-sidebar p-10 rounded-2xl border border-ide-border text-center shadow-2xl scale-110 transition-transform">
+            <div class="bg-[#007acc]/20 p-6 rounded-full inline-block mb-4">
+                <i data-lucide="folder-input" class="w-16 h-16 text-[#007acc]"></i>
             </div>
-            <!-- Standard App Controls -->
-            <div class="flex items-center gap-2">
-                <div class="w-2.5 h-2.5 rounded-full bg-yellow-500 cursor-pointer hover:scale-105" onclick="minimizeIde()" title="Minimize"></div>
-                <div class="w-2.5 h-2.5 rounded-full bg-green-500 cursor-pointer hover:scale-105" onclick="toggleFullScreen()" title="Maximize"></div>
-                <div class="w-2.5 h-2.5 rounded-full bg-red-500 cursor-pointer hover:scale-105" onclick="resetWorkspace()" title="Reset workspace"></div>
-            </div>
+            <h2 class="text-3xl font-bold text-white mb-2">Drop Folder to Mount</h2>
+            <p class="text-gray-400">HyperLive will intelligently build your environment instantly.</p>
         </div>
+    </div>
 
-        <!-- Interactive Menu Row -->
-        <nav class="flex items-center justify-between px-2 h-6 text-[12px] bg-vs-header border-b border-black select-none">
-            <div class="flex space-x-1 text-gray-300">
+    <!-- Header & Menu Bar -->
+    <header class="h-8 bg-ide-header flex items-center justify-between px-2 shrink-0 text-[13px] select-none z-50">
+        <div class="flex items-center gap-2">
+            <div class="flex items-center gap-1.5 text-white font-semibold mr-2 px-2">
+                <i data-lucide="zap" class="w-4 h-4 text-yellow-400 fill-yellow-400/20"></i>
+            </div>
+            
+            <!-- VS Style Menus -->
+            <div class="flex relative" id="top-menu-bar">
+                
                 <!-- File Menu -->
-                <div class="px-2 py-0.5 hover:bg-vs-hover hover:text-white rounded cursor-pointer relative group">
-                    <span>File</span>
-                    <div class="menu-dropdown top-full left-0 mt-0 py-1 rounded shadow-xl group-hover:block hidden">
-                        <div class="menu-row" onclick="showNewProjectModal()"><span class="flex items-center"><i data-lucide="plus-square" class="w-3.5 h-3.5 mr-2"></i>New Project...</span><span class="text-vs-textMuted ml-8">Ctrl+Shift+N</span></div>
-                        <div class="menu-row" onclick="showNewFileModal()"><span class="flex items-center"><i data-lucide="file-plus" class="w-3.5 h-3.5 mr-2"></i>New File...</span><span class="text-vs-textMuted ml-8">Ctrl+N</span></div>
-                        <div class="border-t border-vs-border my-1"></div>
-                        <div class="menu-row" onclick="document.getElementById('file-upload').click()"><span class="flex items-center"><i data-lucide="upload" class="w-3.5 h-3.5 mr-2"></i>Open File...</span><span class="text-vs-textMuted ml-8">Ctrl+O</span></div>
-                        <div class="menu-row" onclick="document.getElementById('folder-upload').click()"><span class="flex items-center"><i data-lucide="folder-open" class="w-3.5 h-3.5 mr-2"></i>Open Folder...</span><span class="text-vs-textMuted ml-8">Ctrl+Shift+O</span></div>
-                        <div class="border-t border-vs-border my-1"></div>
-                        <div class="menu-row" onclick="saveActiveFile()"><span class="flex items-center"><i data-lucide="save" class="w-3.5 h-3.5 mr-2"></i>Save</span><span class="text-vs-textMuted ml-8">Ctrl+S</span></div>
-                        <div class="menu-row" onclick="exportWorkspace()"><span class="flex items-center"><i data-lucide="download" class="w-3.5 h-3.5 mr-2"></i>Save All (ZIP)</span><span class="text-vs-textMuted ml-8">Ctrl+Shift+S</span></div>
-                        <div class="border-t border-vs-border my-1"></div>
-                        <div class="menu-row" onclick="showOptionsModal()"><span class="flex items-center"><i data-lucide="user-cog" class="w-3.5 h-3.5 mr-2"></i>Account Settings...</span></div>
-                        <div class="menu-row" onclick="exitIde()"><span class="flex items-center text-red-400"><i data-lucide="log-out" class="w-3.5 h-3.5 mr-2"></i>Exit</span><span class="text-vs-textMuted">Alt+F4</span></div>
+                <div class="menu-item relative">
+                    <div class="menu-btn px-2 py-1 cursor-pointer rounded text-gray-300" onclick="toggleMenu(this)">File</div>
+                    <div class="menu-dropdown absolute top-full left-0 bg-[#252526] border border-[#454545] shadow-xl py-1 min-w-[220px] rounded-sm z-50">
+                        <div class="menu-list-item" onclick="createNewFile()"><span>New File...</span><span class="menu-shortcut">Ctrl+N</span></div>
+                        <div class="menu-list-item" onclick="triggerFolderUpload()"><span>Open Folder...</span><span class="menu-shortcut">Ctrl+O</span></div>
+                        <div class="h-px bg-[#454545] my-1"></div>
+                        <div class="menu-list-item" onclick="saveActiveFile()"><span>Save</span><span class="menu-shortcut">Ctrl+S</span></div>
+                        <div class="menu-list-item" onclick="exportZip()"><span>Save All (Export ZIP)</span><span class="menu-shortcut">Ctrl+Shift+S</span></div>
+                        <div class="h-px bg-[#454545] my-1"></div>
+                        <div class="menu-list-item" onclick="openPreviewInNewWindow()"><span>Start Live Server...</span><span class="menu-shortcut">Ctrl+P</span></div>
+                        <div class="h-px bg-[#454545] my-1"></div>
+                        <div class="menu-list-item" onclick="window.close()"><span>Exit</span><span class="menu-shortcut">Alt+F4</span></div>
                     </div>
                 </div>
 
                 <!-- Edit Menu -->
-                <div class="px-2 py-0.5 hover:bg-vs-hover hover:text-white rounded cursor-pointer relative group">
-                    <span>Edit</span>
-                    <div class="menu-dropdown top-full left-0 mt-0 py-1 rounded shadow-xl group-hover:block hidden">
-                        <div class="menu-row" onclick="triggerEditorAction('undo')"><span>Undo</span><span class="text-vs-textMuted ml-8">Ctrl+Z</span></div>
-                        <div class="menu-row" onclick="triggerEditorAction('redo')"><span>Redo</span><span class="text-vs-textMuted ml-8">Ctrl+Y</span></div>
-                        <div class="border-t border-vs-border my-1"></div>
-                        <div class="menu-row" onclick="triggerEditorAction('cut')"><span>Cut</span><span class="text-vs-textMuted ml-8">Ctrl+X</span></div>
-                        <div class="menu-row" onclick="triggerEditorAction('copy')"><span>Copy</span><span class="text-vs-textMuted ml-8">Ctrl+C</span></div>
-                        <div class="menu-row" onclick="triggerEditorAction('paste')"><span>Paste</span><span class="text-vs-textMuted ml-8">Ctrl+V</span></div>
-                        <div class="border-t border-vs-border my-1"></div>
-                        <div class="menu-row" onclick="triggerEditorAction('find')"><span>Quick Find</span><span class="text-vs-textMuted ml-8">Ctrl+F</span></div>
-                        <div class="menu-row" onclick="triggerEditorAction('replace')"><span>Quick Replace</span><span class="text-vs-textMuted ml-8">Ctrl+H</span></div>
-                        <div class="border-t border-vs-border my-1"></div>
-                        <div class="menu-row" onclick="formatActiveDocument()"><span>Format Document</span><span class="text-vs-textMuted ml-8">Ctrl+K, Ctrl+D</span></div>
-                        <div class="menu-row" onclick="commentSelection()"><span>Comment Selection</span><span class="text-vs-textMuted ml-8">Ctrl+K, Ctrl+C</span></div>
-                        <div class="menu-row" onclick="uncommentSelection()"><span>Uncomment Selection</span><span class="text-vs-textMuted ml-8">Ctrl+K, Ctrl+U</span></div>
+                <div class="menu-item relative">
+                    <div class="menu-btn px-2 py-1 cursor-pointer rounded text-gray-300" onclick="toggleMenu(this)">Edit</div>
+                    <div class="menu-dropdown absolute top-full left-0 bg-[#252526] border border-[#454545] shadow-xl py-1 min-w-[220px] rounded-sm z-50">
+                        <div class="menu-list-item" onclick="execEditorAction('undo')"><span>Undo</span><span class="menu-shortcut">Ctrl+Z</span></div>
+                        <div class="menu-list-item" onclick="execEditorAction('redo')"><span>Redo</span><span class="menu-shortcut">Ctrl+Y</span></div>
+                        <div class="h-px bg-[#454545] my-1"></div>
+                        <div class="menu-list-item" onclick="execEditorAction('actions.find')"><span>Find...</span><span class="menu-shortcut">Ctrl+F</span></div>
+                        <div class="menu-list-item" onclick="execEditorAction('editor.action.startFindReplaceAction')"><span>Replace...</span><span class="menu-shortcut">Ctrl+H</span></div>
+                        <div class="h-px bg-[#454545] my-1"></div>
+                        <div class="menu-list-item" onclick="execEditorAction('editor.action.formatDocument')"><span>Format Document</span><span class="menu-shortcut">Shift+Alt+F</span></div>
+                        <div class="menu-list-item" onclick="execEditorAction('editor.action.commentLine')"><span>Toggle Line Comment</span><span class="menu-shortcut">Ctrl+/</span></div>
+                    </div>
+                </div>
+
+                <!-- Selection Menu -->
+                <div class="menu-item relative">
+                    <div class="menu-btn px-2 py-1 cursor-pointer rounded text-gray-300" onclick="toggleMenu(this)">Selection</div>
+                    <div class="menu-dropdown absolute top-full left-0 bg-[#252526] border border-[#454545] shadow-xl py-1 min-w-[260px] rounded-sm z-50">
+                        <div class="menu-list-item" onclick="execEditorAction('editor.action.selectAll')"><span>Select All</span><span class="menu-shortcut">Ctrl+A</span></div>
+                        <div class="menu-list-item" onclick="execEditorAction('editor.action.copyLinesUpAction')"><span>Copy Line Up</span><span class="menu-shortcut">Shift+Alt+Up</span></div>
+                        <div class="menu-list-item" onclick="execEditorAction('editor.action.copyLinesDownAction')"><span>Copy Line Down</span><span class="menu-shortcut">Shift+Alt+Down</span></div>
+                        <div class="h-px bg-[#454545] my-1"></div>
+                        <div class="menu-list-item" onclick="execEditorAction('editor.action.transformToUppercase')"><span>Make Uppercase</span></div>
+                        <div class="menu-list-item" onclick="execEditorAction('editor.action.transformToLowercase')"><span>Make Lowercase</span></div>
                     </div>
                 </div>
 
                 <!-- View Menu -->
-                <div class="px-2 py-0.5 hover:bg-vs-hover hover:text-white rounded cursor-pointer relative group">
-                    <span>View</span>
-                    <div class="menu-dropdown top-full left-0 mt-0 py-1 rounded shadow-xl group-hover:block hidden">
-                        <div class="menu-row" onclick="switchSidebar('explorer')"><span>Solution Explorer</span><span class="text-vs-textMuted ml-8">Ctrl+Alt+L</span></div>
-                        <div class="menu-row" onclick="switchSidebar('git')"><span>Git Changes</span><span class="text-vs-textMuted ml-8">Ctrl+0, Ctrl+G</span></div>
-                        <div class="menu-row" onclick="switchSidebar('toolbox')"><span>Toolbox</span><span class="text-vs-textMuted ml-8">Ctrl+Alt+X</span></div>
-                        <div class="menu-row" onclick="switchSidebar('collab')"><span>Live Cloud Collaboration</span></div>
-                        <div class="border-t border-vs-border my-1"></div>
-                        <div class="menu-row" onclick="togglePreview()"><span>Live Server Preview</span></div>
-                        <div class="menu-row" onclick="toggleTerminal()"><span>Terminal</span><span class="text-vs-textMuted ml-8">Ctrl+`</span></div>
-                        <div class="menu-row" onclick="toggleFullScreen()"><span>Full Screen</span><span class="text-vs-textMuted">Shift+Alt+Enter</span></div>
-                    </div>
-                </div>
-
-                <!-- Git Menu -->
-                <div class="px-2 py-0.5 hover:bg-vs-hover hover:text-white rounded cursor-pointer relative group">
-                    <span>Git</span>
-                    <div class="menu-dropdown top-full left-0 mt-0 py-1 rounded shadow-xl group-hover:block hidden">
-                        <div class="menu-row" onclick="switchSidebar('git')"><span>Staged Changes</span><span class="text-vs-textMuted ml-8">Ctrl+0, Ctrl+G</span></div>
-                        <div class="border-t border-vs-border my-1"></div>
-                        <div class="menu-row" onclick="gitOperation('pull')"><span>Pull</span></div>
-                        <div class="menu-row" onclick="gitOperation('push')"><span>Push</span></div>
-                        <div class="border-t border-vs-border my-1"></div>
-                        <div class="menu-row" onclick="changeBranchPrompt()"><span>New Branch...</span></div>
-                    </div>
-                </div>
-
-                <!-- Project Menu -->
-                <div class="px-2 py-0.5 hover:bg-vs-hover hover:text-white rounded cursor-pointer relative group">
-                    <span>Project</span>
-                    <div class="menu-dropdown top-full left-0 mt-0 py-1 rounded shadow-xl group-hover:block hidden">
-                        <div class="menu-row" onclick="showNewFileModal()"><span>Add New Item...</span><span class="text-vs-textMuted ml-8">Ctrl+Shift+A</span></div>
-                        <div class="menu-row" onclick="document.getElementById('file-upload').click()"><span>Add Existing Item...</span><span class="text-vs-textMuted ml-8">Shift+Alt+A</span></div>
-                        <div class="menu-row" onclick="showNewFolderModal()"><span>Add New Folder</span></div>
-                        <div class="border-t border-vs-border my-1"></div>
-                        <div class="menu-row" onclick="exportWorkspace()"><span>Export Workspace Source (ZIP)</span></div>
-                    </div>
-                </div>
-
-                <!-- Build Menu -->
-                <div class="px-2 py-0.5 hover:bg-vs-hover hover:text-white rounded cursor-pointer relative group">
-                    <span>Build</span>
-                    <div class="menu-dropdown top-full left-0 mt-0 py-1 rounded shadow-xl group-hover:block hidden">
-                        <div class="menu-row" onclick="buildSolution()"><span>Build Solution</span><span class="text-vs-textMuted ml-8">Ctrl+Shift+B</span></div>
-                        <div class="menu-row" onclick="rebuildSolution()"><span>Rebuild Solution</span></div>
-                    </div>
-                </div>
-
-                <!-- Tools Menu -->
-                <div class="px-2 py-0.5 hover:bg-vs-hover hover:text-white rounded cursor-pointer relative group">
-                    <span>Tools</span>
-                    <div class="menu-dropdown top-full left-0 mt-0 py-1 rounded shadow-xl group-hover:block hidden">
-                        <div class="menu-row" onclick="showGuidGenerator()"><span>Create GUID</span></div>
-                        <div class="menu-row" onclick="showOptionsModal()"><span>Options...</span><span class="text-vs-textMuted ml-8">Alt+F7</span></div>
+                <div class="menu-item relative">
+                    <div class="menu-btn px-2 py-1 cursor-pointer rounded text-gray-300" onclick="toggleMenu(this)">View</div>
+                    <div class="menu-dropdown absolute top-full left-0 bg-[#252526] border border-[#454545] shadow-xl py-1 min-w-[220px] rounded-sm z-50">
+                        <div class="menu-list-item" onclick="switchSidebar('explorer')"><span>Explorer</span><span class="menu-shortcut">Ctrl+Shift+E</span></div>
+                        <div class="menu-list-item" onclick="switchSidebar('git')"><span>Source Control</span><span class="menu-shortcut">Ctrl+Shift+G</span></div>
+                        <div class="menu-list-item" onclick="toggleConsole()"><span>Output / Console</span><span class="menu-shortcut">Ctrl+`</span></div>
+                        <div class="h-px bg-[#454545] my-1"></div>
+                        <div class="menu-list-item" onclick="toggleWordWrap()"><span>Toggle Word Wrap</span><span class="menu-shortcut">Alt+Z</span></div>
+                        <div class="menu-list-item" onclick="toggleMinimap()"><span>Toggle Minimap</span></div>
+                        <div class="h-px bg-[#454545] my-1"></div>
+                        <div class="menu-list-item" onclick="toggleFullScreen()"><span>Full Screen</span><span class="menu-shortcut">F11</span></div>
                     </div>
                 </div>
 
                 <!-- Help Menu -->
-                <div class="px-2 py-0.5 hover:bg-vs-hover hover:text-white rounded cursor-pointer relative group">
-                    <span>Help</span>
-                    <div class="menu-dropdown top-full left-0 mt-0 py-1 rounded shadow-xl group-hover:block hidden">
-                        <div class="menu-row" onclick="showAboutDialog()"><span>About Microsoft Visual Studio</span></div>
+                <div class="menu-item relative">
+                    <div class="menu-btn px-2 py-1 cursor-pointer rounded text-gray-300" onclick="toggleMenu(this)">Help</div>
+                    <div class="menu-dropdown absolute top-full left-0 bg-[#252526] border border-[#454545] shadow-xl py-1 min-w-[220px] rounded-sm z-50">
+                        <div class="menu-list-item" onclick="execEditorAction('editor.action.quickCommand')"><span>Show Command Palette...</span><span class="menu-shortcut">F1</span></div>
+                        <div class="h-px bg-[#454545] my-1"></div>
+                        <div class="menu-list-item" onclick="alert('HyperLive Pro\nVersion: 1.0 (VS Reference Edition)\nEngine: Monaco Editor\nStatus: Local Execution')"><span>About HyperLive Pro</span></div>
                     </div>
                 </div>
-            </div>
-            
-            <!-- Quick Actions & Info -->
-            <div class="flex items-center gap-3 text-[11px] text-gray-400">
-                <button onclick="executeActiveScript()" class="flex items-center gap-1 text-green-400 hover:text-green-300 font-semibold bg-vs-hover px-2 py-0.5 rounded border border-green-700/50">
-                    <i data-lucide="play" class="w-3 h-3 fill-current"></i>
-                    <span>Execute Script</span>
-                </button>
-                <div class="h-4 w-[1px] bg-vs-border"></div>
-                <div class="flex items-center gap-1 cursor-pointer hover:text-white" onclick="switchSidebar('git')">
-                    <i data-lucide="git-branch" class="w-3.5 h-3.5 text-vs-accent"></i>
-                    <span id="header-branch">main</span>
-                </div>
-            </div>
-        </nav>
-    </header>
 
-    <!-- MAIN IDE WORKSPACE AREA -->
-    <div class="flex-1 flex overflow-hidden bg-vs-bg">
-        
-        <!-- VS Standard Activity Bar (Far Left) -->
-        <div class="w-12 bg-vs-activity flex flex-col items-center py-3 border-r border-vs-border shrink-0 z-40 gap-5 text-gray-400">
-            <div class="activity-icon active vs-tooltip" data-tooltip="Solution Explorer (Ctrl+Alt+L)" onclick="switchSidebar('explorer')"><i data-lucide="folder-tree" class="w-5.5 h-5.5"></i></div>
-            <div class="activity-icon vs-tooltip" data-tooltip="Git Changes" onclick="switchSidebar('git')"><i data-lucide="git-compare" class="w-5.5 h-5.5"></i></div>
-            <div class="activity-icon vs-tooltip" data-tooltip="HTML UI Form Designer Toolbox" onclick="switchSidebar('toolbox')"><i data-lucide="toy-brick" class="w-5.5 h-5.5"></i></div>
-            <div class="activity-icon vs-tooltip" data-tooltip="Live Cloud Collaboration" onclick="switchSidebar('collab')"><i data-lucide="users" class="w-5.5 h-5.5"></i></div>
-            <div class="mt-auto activity-icon vs-tooltip" data-tooltip="Options & Settings" onclick="showOptionsModal()"><i data-lucide="settings" class="w-5.5 h-5.5"></i></div>
+            </div>
         </div>
 
-        <!-- Secondary Dockable/Resizable Sidebar Panel -->
-        <aside id="sidebar" class="w-64 bg-vs-sidebar flex flex-col border-r border-vs-border shrink-0 overflow-hidden">
+        <input type="file" id="folder-input" class="hidden" webkitdirectory directory multiple onchange="handleFolderSelect(event)">
+    </header>
+
+    <!-- Main Workspace -->
+    <div class="flex-1 flex overflow-hidden relative">
+        
+        <!-- Activity Bar -->
+        <div class="w-12 bg-ide-header flex flex-col shrink-0 border-r border-ide-border items-center pt-2 z-20">
+            <div class="activity-icon active" id="activity-explorer" onclick="switchSidebar('explorer')" title="Explorer">
+                <i data-lucide="files" class="w-6 h-6"></i>
+            </div>
+            <div class="activity-icon" id="activity-git" onclick="switchSidebar('git')" title="Source Control">
+                <i data-lucide="git-branch" class="w-6 h-6"></i>
+            </div>
+            <div class="activity-icon mt-auto mb-2" onclick="execEditorAction('editor.action.quickCommand')" title="Command Palette">
+                <i data-lucide="terminal-square" class="w-6 h-6"></i>
+            </div>
+        </div>
+
+        <!-- Sidebar: Explorer -->
+        <aside id="sidebar" class="w-64 bg-ide-sidebar flex flex-col border-r border-ide-border shrink-0" style="width: 250px;">
+            <div class="h-9 px-4 flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-gray-400 border-b border-ide-border" id="sidebar-title">
+                <span>Explorer</span>
+                <i data-lucide="plus" class="w-4 h-4 cursor-pointer hover:text-white" title="New File" onclick="createNewFile()"></i>
+            </div>
+            <div id="file-tree" class="flex-1 overflow-y-auto py-2 text-sm font-mono">
+                <div class="p-6 text-center text-gray-500 mt-10">
+                    <i data-lucide="layout-grid" class="w-10 h-10 mx-auto mb-3 opacity-50"></i>
+                    <p>No folder opened.</p>
+                    <button onclick="triggerFolderUpload()" class="mt-4 px-4 py-1.5 bg-[#007acc] hover:bg-[#005f9e] text-white rounded-md transition font-sans text-xs">
+                        Open Folder
+                    </button>
+                    <button onclick="loadDemo()" class="mt-2 px-4 py-1.5 border border-ide-border hover:bg-ide-active text-gray-300 rounded-md transition font-sans text-xs block mx-auto w-[122px]">
+                        Load Demo
+                    </button>
+                </div>
+            </div>
+
+            <!-- Git Panel -->
+            <div id="git-panel" class="hidden flex-1 p-4 text-sm flex flex-col items-center text-center">
+                <i data-lucide="git-merge" class="w-12 h-12 text-gray-600 mb-4 mt-6"></i>
+                <p class="text-gray-400 mb-4">No active repository found in memory.</p>
+                <button onclick="alert('Git Init: Local repository initialized in memory.')" class="w-full px-4 py-1.5 bg-[#007acc] hover:bg-[#005f9e] text-white rounded-md transition mb-2">Initialize Repository</button>
+            </div>
+        </aside>
+
+        <div class="resizer-x" id="resizer-sidebar"></div>
+
+        <!-- Center: Monaco Editor -->
+        <main id="editor-pane" class="flex-1 flex flex-col min-w-[200px] bg-ide-bg relative">
+            <div class="flex bg-[#2d2d2d] border-b border-[#1e1e1e] h-9 shrink-0 justify-between items-center pr-2">
+                <div id="editor-tabs" class="flex overflow-x-auto h-full scrollbar-none">
+                    <!-- Tabs injected here -->
+                </div>
+                <div class="flex items-center gap-1 shrink-0">
+                    <button onclick="execEditorAction('editor.action.formatDocument')" class="p-1 hover:bg-ide-active rounded text-gray-400 hover:text-white" title="Format Document"><i data-lucide="align-left" class="w-4 h-4"></i></button>
+                    <button onclick="execEditorAction('editor.action.commentLine')" class="p-1 hover:bg-ide-active rounded text-gray-400 hover:text-white" title="Toggle Comment"><i data-lucide="message-square" class="w-4 h-4"></i></button>
+                </div>
+            </div>
             
-            <!-- Solution Explorer View -->
-            <div id="view-explorer" class="flex-1 flex flex-col h-full">
-                <div class="h-8 px-3 bg-vs-header border-b border-vs-border flex items-center justify-between text-xs font-semibold text-gray-300">
-                    <span class="flex items-center gap-1"><i data-lucide="layers" class="w-3.5 h-3.5 text-indigo-400"></i> SOLUTION EXPLORER</span>
+            <div class="flex-1 relative">
+                <!-- Monaco Editor Container -->
+                <div id="monaco-container" class="absolute inset-0"></div>
+                
+                <!-- Empty State -->
+                <div id="editor-empty" class="absolute inset-0 flex items-center justify-center bg-ide-bg z-10 pointer-events-none">
+                    <div class="text-center">
+                        <i data-lucide="code-2" class="w-16 h-16 text-gray-600 mx-auto mb-4"></i>
+                        <p class="text-gray-500 font-mono text-sm">Select a file or press Ctrl+N to start</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <div class="resizer-x bg-ide-border" id="resizer-preview"></div>
+
+        <!-- Right: Live Preview -->
+        <aside id="preview-pane" class="w-[40%] min-w-[300px] flex flex-col bg-white shrink-0 relative">
+            <!-- Browser Chrome -->
+            <div class="h-10 bg-gray-100 border-b border-gray-300 flex items-center px-2 gap-2 shrink-0 select-none text-gray-600">
+                <div class="flex gap-1.5 px-2">
+                    <button class="hover:bg-gray-200 p-1 rounded transition" onclick="refreshPreview()"><i data-lucide="rotate-cw" class="w-3.5 h-3.5"></i></button>
+                    <button class="hover:bg-gray-200 p-1 rounded transition" onclick="openPreviewInNewWindow()" title="Open in New Tab"><i data-lucide="external-link" class="w-3.5 h-3.5"></i></button>
+                </div>
+                <div class="flex-1 bg-white border border-gray-300 rounded-md h-6 flex items-center px-3 text-[11px] font-mono text-gray-500 shadow-inner overflow-hidden">
+                    <i data-lucide="lock" class="w-3 h-3 text-green-600 mr-2 shrink-0"></i>
+                    <span id="address-bar" class="truncate">hyperlive://local/index.html</span>
+                </div>
+                <button class="hover:bg-gray-200 p-1.5 rounded text-gray-500 ml-1 transition" title="Toggle Console" onclick="toggleConsole()"><i data-lucide="terminal" class="w-4 h-4"></i></button>
+            </div>
+
+            <!-- Frame Container -->
+            <div class="flex-1 relative bg-white">
+                <iframe id="live-frame" class="w-full h-full border-none" sandbox="allow-scripts allow-same-origin allow-forms allow-modals"></iframe>
+            </div>
+
+            <!-- Dev Console Panel -->
+            <div id="console-panel" class="absolute bottom-0 left-0 right-0 h-48 bg-[#1e1e1e] border-t border-ide-border flex flex-col hidden z-20 shadow-2xl transition-all">
+                <div class="h-8 bg-[#2d2d2d] flex items-center justify-between px-3 text-xs font-mono border-b border-[#1e1e1e]">
+                    <span class="text-gray-300 uppercase tracking-wide">Output</span>
                     <div class="flex gap-2">
-                        <i data-lucide="file-plus" class="w-3.5 h-3.5 cursor-pointer hover:text-white" title="New File (Ctrl+N)" onclick="showNewFileModal()"></i>
-                        <i data-lucide="folder-plus" class="w-3.5 h-3.5 cursor-pointer hover:text-white" title="New Folder" onclick="showNewFolderModal()"></i>
+                        <button onclick="document.getElementById('console-output').innerHTML=''" class="hover:text-white text-gray-500" title="Clear Console"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                        <button onclick="toggleConsole()" class="hover:text-white text-gray-500" title="Close"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
                     </div>
                 </div>
-                <!-- File Tree Container -->
-                <div id="file-tree" class="flex-1 overflow-y-auto py-2 text-[12.5px] font-mono"></div>
-            </div>
-
-            <!-- Git Changes View -->
-            <div id="view-git" class="flex-1 flex flex-col hidden h-full bg-vs-sidebar">
-                <div class="h-8 px-3 bg-vs-header border-b border-vs-border flex items-center text-xs font-semibold text-gray-300">
-                    <span class="flex items-center gap-1"><i data-lucide="git-pull-request" class="w-3.5 h-3.5 text-vs-accent"></i> GIT CHANGES</span>
-                </div>
-                <div class="p-3 flex-1 overflow-y-auto space-y-4">
-                    <div>
-                        <span class="text-xs font-bold text-gray-400 block mb-1">Active Branch</span>
-                        <div class="flex items-center justify-between bg-vs-bg border border-vs-border p-1.5 rounded">
-                            <span id="git-branch-val" class="font-mono text-xs">main</span>
-                            <button onclick="changeBranchPrompt()" class="text-[11px] text-vs-accent hover:underline">Switch</button>
-                        </div>
-                    </div>
-
-                    <!-- Commit Inputs -->
-                    <div class="space-y-2">
-                        <span class="text-xs font-bold text-gray-400 block">Commit Message</span>
-                        <textarea id="git-commit-msg" rows="3" class="w-full bg-vs-bg border border-vs-border rounded p-2 text-xs text-white resize-none outline-none focus:border-vs-accent" placeholder="Enter commit summary..."></textarea>
-                        <button onclick="commitChanges()" class="w-full bg-vs-accent text-white font-semibold py-1.5 rounded hover:bg-vs-accentHover text-xs transition">Commit Changes</button>
-                    </div>
-
-                    <!-- Status Diffs -->
-                    <div>
-                        <span class="text-xs font-bold text-gray-400 block mb-2">Unstaged Changes (<span id="git-changes-count">0</span>)</span>
-                        <div id="git-untracked-list" class="space-y-1 text-xs max-h-32 overflow-y-auto font-mono"></div>
-                    </div>
-
-                    <!-- Functional Commit history Graph -->
-                    <div>
-                        <span class="text-xs font-bold text-gray-400 block mb-2">Commit history (Click to Rollback)</span>
-                        <div id="git-commit-history" class="space-y-2 border-l-2 border-vs-border pl-3 ml-2 text-xs relative"></div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- HTML Form Designer UI Toolbox -->
-            <div id="view-toolbox" class="flex-1 flex flex-col hidden h-full bg-vs-sidebar">
-                <div class="h-8 px-3 bg-vs-header border-b border-vs-border flex items-center text-xs font-semibold text-gray-300">
-                    <span class="flex items-center gap-1"><i data-lucide="toy-brick" class="w-3.5 h-3.5 text-emerald-400"></i> DESIGNER TOOLBOX</span>
-                </div>
-                <div class="p-3 space-y-4 overflow-y-auto">
-                    <p class="text-[11px] text-vs-textMuted">Double-click or click components to insert styled Tailwind element templates at the current cursor position:</p>
-                    
-                    <div class="space-y-2 flex flex-col">
-                        <span class="text-xs font-bold text-gray-400">Common Controls</span>
-                        <button onclick="insertTemplateToCode('button')" class="toolbox-btn flex items-center gap-2"><i data-lucide="square-play" class="w-4 h-4 text-blue-400"></i> Styled Action Button</button>
-                        <button onclick="insertTemplateToCode('input')" class="toolbox-btn flex items-center gap-2"><i data-lucide="text-cursor-input" class="w-4 h-4 text-yellow-400"></i> Form Input Box</button>
-                        <button onclick="insertTemplateToCode('card')" class="toolbox-btn flex items-center gap-2"><i data-lucide="credit-card" class="w-4 h-4 text-green-400"></i> Flex Feature Card</button>
-                        <button onclick="insertTemplateToCode('form')" class="toolbox-btn flex items-center gap-2"><i data-lucide="file-spreadsheet" class="w-4 h-4 text-purple-400"></i> Full Signup Form</button>
-                        <button onclick="insertTemplateToCode('navbar')" class="toolbox-btn flex items-center gap-2"><i data-lucide="panel-top" class="w-4 h-4 text-teal-400"></i> Navigation Bar</button>
-                    </div>
-
-                    <div class="space-y-2 flex flex-col">
-                        <span class="text-xs font-bold text-gray-400">Interactive Snippets</span>
-                        <button onclick="insertTemplateToCode('toast')" class="toolbox-btn flex items-center gap-2"><i data-lucide="bell-ring" class="w-4 h-4 text-orange-400"></i> Feedback Notification</button>
-                        <button onclick="insertTemplateToCode('chart')" class="toolbox-btn flex items-center gap-2"><i data-lucide="line-chart" class="w-4 h-4 text-indigo-400"></i> Dynamic Canvas Chart</button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Live Collaboration Panel (Firebase real-time sync) -->
-            <div id="view-collab" class="flex-1 flex flex-col hidden h-full bg-vs-sidebar">
-                <div class="h-8 px-3 bg-vs-header border-b border-vs-border flex items-center text-xs font-semibold text-gray-300">
-                    <span class="flex items-center gap-1"><i data-lucide="users" class="w-3.5 h-3.5 text-sky-400"></i> LIVE COLLABORATION</span>
-                </div>
-                <div class="p-3 flex-1 overflow-y-auto space-y-4">
-                    <div class="space-y-1">
-                        <label class="text-[11px] font-bold text-gray-400">Collab Status</label>
-                        <div id="collab-status-badge" class="px-2 py-1 bg-vs-bg border border-vs-border rounded text-xs text-yellow-400 font-mono">
-                            Offline (Single Player)
-                        </div>
-                    </div>
-
-                    <div class="space-y-2">
-                        <button onclick="createCollaborationRoom()" class="w-full bg-vs-accent text-white font-semibold py-1.5 rounded hover:bg-vs-accentHover text-xs transition">
-                            Create Cloud Share Room
-                        </button>
-                        <button onclick="joinCollaborationRoomPrompt()" class="w-full bg-vs-hover border border-vs-border text-white font-semibold py-1.5 rounded hover:bg-vs-hover text-xs transition">
-                            Connect to Existing Room
-                        </button>
-                    </div>
-
-                    <div class="border-t border-vs-border/50 pt-3 space-y-2">
-                        <label class="text-[11px] font-bold text-gray-400">Collaborator Access Emails</label>
-                        <div class="flex gap-1.5">
-                            <input type="email" id="collab-invite-email" placeholder="collaborator@gmail.com" class="bg-vs-bg border border-vs-border text-xs px-2 py-1 rounded flex-1 outline-none focus:border-vs-accent">
-                            <button onclick="addCollaboratorEmail()" class="bg-vs-accent text-white px-2.5 rounded text-xs hover:bg-vs-accentHover">Add</button>
-                        </div>
-                        <div id="collab-emails-list" class="space-y-1 text-xs max-h-24 overflow-y-auto font-mono text-gray-300"></div>
-                    </div>
-
-                    <div class="border-t border-vs-border/50 pt-3 space-y-2">
-                        <label class="text-[11px] font-bold text-gray-400">HTML Viewer URL Share</label>
-                        <button onclick="generateSharingLinkDirect()" class="w-full bg-indigo-700 hover:bg-indigo-600 text-white font-semibold py-1.5 rounded text-xs transition flex items-center justify-center gap-1">
-                            <i data-lucide="link" class="w-3.5 h-3.5"></i> Copy htmlviewer Link
-                        </button>
-                        <p class="text-[10px] text-vs-textMuted">This will pack the current files into a compressed string parameter compatible with envizion.work/tools/htmlviewer.</p>
-                    </div>
+                <div id="console-output" class="flex-1 overflow-y-auto p-2 font-mono text-[11px] space-y-1">
+                    <!-- Logs -->
                 </div>
             </div>
         </aside>
 
-        <!-- Dynamic Drag Resizer -->
-        <div class="resizer-x bg-vs-border" id="resizer-sidebar"></div>
-
-        <!-- CENTER EDITORS & LIVE CANVAS OUTPUT INTERFACE -->
-        <div class="flex-1 flex flex-col min-w-[200px] relative">
-            
-            <!-- Code Tab Bar -->
-            <div id="editor-tabs" class="flex bg-vs-header overflow-x-auto h-9 shrink-0 text-xs border-b border-vs-border select-none"></div>
-
-            <!-- Double Pane Area: Monaco Left / Interactive Live Preview Right -->
-            <div class="flex-1 flex relative">
-                
-                <!-- Monaco Instance Wrapper -->
-                <main id="editor-pane" class="flex-1 relative bg-vs-bg min-w-[150px]">
-                    <div id="monaco-container" class="absolute inset-0"></div>
-                    
-                    <!-- Editor Placeholder Screen -->
-                    <div id="editor-empty" class="absolute inset-0 flex items-center justify-center bg-vs-bg z-10 pointer-events-none">
-                        <div class="text-center">
-                            <svg class="w-24 h-24 text-vs-border mx-auto mb-4" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
-                            </svg>
-                            <p class="text-gray-500 font-mono text-sm">Visual Studio 2022 - Start Coding</p>
-                            <div class="mt-6 flex flex-col gap-2 text-xs text-gray-500 max-w-sm mx-auto">
-                                <div class="flex justify-between bg-[#2d2d2d] px-3 py-1.5 rounded shadow"><span>New Project</span><span class="font-mono">Ctrl+Shift+N</span></div>
-                                <div class="flex justify-between bg-[#2d2d2d] px-3 py-1.5 rounded shadow"><span>Format Code</span><span class="font-mono">Ctrl+K, Ctrl+D</span></div>
-                            </div>
-                        </div>
-                    </div>
-                </main>
-
-                <!-- Interactive Preview Separator Resizer -->
-                <div class="resizer-x bg-vs-border" id="resizer-preview"></div>
-
-                <!-- Live Client View Container (Responsive Preview) -->
-                <aside id="preview-pane" class="w-[40%] min-w-[200px] flex flex-col bg-white shrink-0 relative">
-                    <div class="h-8 bg-vs-sidebar border-b border-vs-border flex items-center px-2 gap-2 shrink-0 select-none">
-                        <span class="text-xs text-vs-textMuted font-bold uppercase flex-1 flex items-center gap-1">
-                            <i data-lucide="laptop" class="w-3.5 h-3.5 text-sky-400"></i> LIVE APP HOST PREVIEW
-                        </span>
-                        <button class="hover:bg-vs-hover p-1 rounded text-gray-300" onclick="refreshPreview()" title="Force Hot Reload"><i data-lucide="rotate-cw" class="w-3.5 h-3.5"></i></button>
-                        <button class="hover:bg-vs-hover p-1 rounded text-gray-300" onclick="openLiveServer()" title="Open In Separate Window"><i data-lucide="external-link" class="w-3.5 h-3.5"></i></button>
-                        <button class="hover:bg-vs-hover p-1 rounded text-gray-300" onclick="togglePreview()" title="Collapse Panel"><i data-lucide="minimize-2" class="w-3.5 h-3.5"></i></button>
-                    </div>
-                    <div class="flex-1 relative bg-white overflow-hidden">
-                        <!-- Preview frame -->
-                        <iframe id="live-frame" class="w-full h-full border-none shadow-inner" sandbox="allow-scripts allow-same-origin allow-forms allow-modals"></iframe>
-                        
-                        <!-- Real-time code execution compilation error logger -->
-                        <div id="preview-error" class="absolute inset-0 bg-red-950/95 text-red-200 p-4 font-mono text-xs hidden overflow-y-auto z-50">
-                            <h3 class="font-bold text-red-400 mb-2 border-b border-red-700 pb-1">Compilation Exception Detected</h3>
-                            <pre id="preview-error-text" class="whitespace-pre-wrap"></pre>
-                        </div>
-                    </div>
-                </aside>
-
-            </div>
-
-            <!-- Bottom Console / Terminal Resizer -->
-            <div class="resizer-y bg-vs-border" id="resizer-panel"></div>
-
-            <!-- BOTTOM PANEL DOCK (Terminal, Output, Errors) -->
-            <div id="bottom-panel" class="h-48 bg-vs-panel flex flex-col border-t border-vs-border shrink-0">
-                <div class="flex items-center px-4 h-8 bg-vs-header border-b border-vs-border text-[11px] font-semibold text-gray-400 uppercase tracking-wider shrink-0 gap-6">
-                    <span id="tab-btn-problems" class="cursor-pointer hover:text-white flex items-center gap-1" onclick="switchPanel('problems')">Problems <span class="bg-red-500 text-white font-bold px-1.5 py-0.2 rounded-full text-[10px]" id="problem-badge">0</span></span>
-                    <span id="tab-btn-output" class="cursor-pointer hover:text-white" onclick="switchPanel('output')">Build Output</span>
-                    <span id="tab-btn-terminal" class="cursor-pointer text-white border-b-2 border-vs-accent pb-1 h-full flex items-center" onclick="switchPanel('terminal')">PowerShell Terminal</span>
-                    
-                    <div class="flex-1"></div>
-                    <i data-lucide="minus" class="w-3.5 h-3.5 cursor-pointer hover:text-white" onclick="toggleTerminal()"></i>
-                </div>
-                
-                <!-- Terminal Context Container -->
-                <div class="flex-1 relative bg-[#1e1e1e] overflow-hidden">
-                    
-                    <!-- PowerShell -->
-                    <div id="panel-terminal" class="absolute inset-0 p-1">
-                        <div id="terminal-container" class="w-full h-full"></div>
-                    </div>
-
-                    <!-- Build / Compilation Output Log -->
-                    <div id="panel-output" class="absolute inset-0 p-3 overflow-y-auto text-xs font-mono text-gray-300 space-y-1 hidden bg-[#151515]">
-                        <div>Microsoft Visual Studio 2022 Compilation Agent v17.4.2</div>
-                        <div>Build started: Project: CoreWorkspace, Configuration: Debug Any CPU</div>
-                        <div class="text-green-400 font-semibold">Ready to compile. Press Build Solution to check local files.</div>
-                    </div>
-
-                    <!-- Dynamic Error List / Roslyn feedback -->
-                    <div id="panel-problems" class="absolute inset-0 p-3 overflow-y-auto text-xs hidden bg-[#151515]">
-                        <table class="w-full text-left font-mono text-[12px]">
-                            <thead>
-                                <tr class="border-b border-vs-border text-gray-400">
-                                    <th class="pb-1.5 w-8">Type</th>
-                                    <th class="pb-1.5 w-16">Code</th>
-                                    <th class="pb-1.5">Description</th>
-                                    <th class="pb-1.5 w-32">Project</th>
-                                    <th class="pb-1.5 w-16">Line</th>
-                                </tr>
-                            </thead>
-                            <tbody id="problems-tbody" class="divide-y divide-vs-border/50">
-                                <tr>
-                                    <td colspan="5" class="pt-4 text-center text-gray-500">No static code errors detected. Workspace compiles successfully.</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-
-                </div>
-                
-                <!-- Progress status indicator -->
-                <div id="term-loader" class="absolute bottom-8 right-6 flex items-center gap-2 text-xs text-vs-accent bg-vs-bg px-3 py-1 rounded border border-vs-border hidden shadow-lg">
-                    <div class="animate-spin rounded-full h-3.5 w-3.5 border-2 border-white/20 border-t-vs-accent"></div>
-                    <span>Visual Studio Compiler Active...</span>
-                </div>
-            </div>
-        </div>
-
     </div>
 
-    <!-- STATUS BAR FOOTER -->
-    <footer id="status-bar" class="h-6 bg-vs-accent text-white flex items-center justify-between px-3 text-[11.5px] font-mono shrink-0 select-none z-50 transition-colors duration-300">
-        <div class="flex items-center gap-4">
-            <span class="flex items-center gap-1 cursor-pointer hover:bg-white/20 px-1.5 py-0.5 rounded" onclick="switchSidebar('git')"><i data-lucide="git-branch" class="w-3.5 h-3.5"></i> <span id="status-branch">main</span></span>
-            <span class="flex items-center gap-1 cursor-pointer hover:bg-white/20 px-1.5 py-0.5 rounded" onclick="switchPanel('problems')"><i data-lucide="alert-circle" class="w-3.5 h-3.5"></i> <span id="status-errors">0</span> Errors</span>
+    <!-- Status Bar (VS Footer) -->
+    <footer class="h-[22px] bg-ide-statusbar text-white flex items-center justify-between px-2 text-[11px] shrink-0 font-sans z-50">
+        <div class="flex items-center gap-4 h-full">
+            <div class="flex items-center gap-1 cursor-pointer hover:bg-white/20 px-1.5 h-full transition" onclick="toggleConsole()" title="Errors & Warnings">
+                <i data-lucide="x-circle" class="w-3 h-3"></i> <span id="sb-errors">0</span>
+                <i data-lucide="alert-triangle" class="w-3 h-3 ml-1"></i> <span id="sb-warnings">0</span>
+            </div>
+            <div class="flex items-center gap-1.5 cursor-pointer hover:bg-white/20 px-1.5 h-full transition" onclick="switchSidebar('git')">
+                <i data-lucide="git-branch" class="w-3 h-3"></i> <span>master*</span>
+            </div>
         </div>
-        <div class="flex items-center gap-4">
-            <span id="status-cursor" class="cursor-pointer hover:bg-white/20 px-1.5 py-0.5 rounded">Ln 1, Col 1</span>
-            <span class="cursor-pointer hover:bg-white/20 px-1.5 py-0.5 rounded">UTF-8</span>
-            <span id="status-lang" class="cursor-pointer hover:bg-white/20 px-1.5 py-0.5 rounded">HTML</span>
-            <span class="cursor-pointer hover:bg-white/20 px-1.5 py-0.5 rounded"><i data-lucide="activity" class="w-3.5 h-3.5 inline mr-1"></i> Sync Active</span>
+        
+        <div class="flex items-center gap-3 h-full">
+            <div class="hover:bg-white/20 px-1.5 h-full flex items-center cursor-pointer transition" id="sb-cursor" onclick="execEditorAction('editor.action.gotoLine')">Ln 1, Col 1</div>
+            <div class="hover:bg-white/20 px-1.5 h-full flex items-center cursor-pointer transition" id="sb-indentation">Spaces: 4</div>
+            <div class="hover:bg-white/20 px-1.5 h-full flex items-center cursor-pointer transition">UTF-8</div>
+            <div class="hover:bg-white/20 px-1.5 h-full flex items-center cursor-pointer transition">CRLF</div>
+            <div class="hover:bg-white/20 px-1.5 h-full flex items-center cursor-pointer transition" id="sb-language">HTML</div>
+            <div class="hover:bg-white/20 px-1.5 h-full flex items-center cursor-pointer transition" title="Notification">
+                <i data-lucide="bell" class="w-3 h-3"></i>
+            </div>
         </div>
     </footer>
 
-    <!-- INTERACTIVE BOOTSTRAPPED MODALS -->
-
-    <!-- File Import and Picker Fields -->
-    <input type="file" id="file-upload" class="hidden" multiple onchange="handleFileSelect(event, false)">
-    <input type="file" id="folder-upload" class="hidden" webkitdirectory directory multiple onchange="handleFileSelect(event, true)">
-
-    <!-- Generic Keyboard-Input Modal -->
-    <div id="input-modal" class="fixed inset-0 bg-black/60 backdrop-blur-xs hidden items-center justify-center z-[100]">
-        <div class="bg-vs-sidebar border border-vs-border rounded shadow-2xl w-96 p-4">
-            <h3 id="modal-title" class="text-white text-sm font-semibold mb-3">Create New Element</h3>
-            <input type="text" id="modal-input" class="w-full bg-vs-bg border border-vs-accent text-white px-3 py-2 rounded text-xs outline-none mb-4 font-mono" onkeyup="if(event.key==='Enter') submitModal()">
-            <div class="flex justify-end gap-2 text-xs">
-                <button onclick="closeModal()" class="px-3 py-1.5 text-gray-400 hover:text-white rounded hover:bg-vs-hover">Cancel</button>
-                <button onclick="submitModal()" class="px-4 py-1.5 bg-vs-accent text-white rounded hover:bg-vs-accentHover">Create</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- C++ / C# / Python Project Workload Template Selector -->
-    <div id="project-wizard" class="fixed inset-0 bg-black/75 backdrop-blur-xs hidden items-center justify-center z-[100]">
-        <div class="bg-vs-sidebar border border-vs-border rounded shadow-2xl w-[600px] max-h-[85vh] flex flex-col p-5">
-            <div class="flex justify-between items-center pb-3 border-b border-vs-border mb-4">
-                <h3 class="text-white font-bold text-sm flex items-center gap-2">
-                    <i data-lucide="rocket" class="text-purple-400"></i> Configure New Project - Visual Studio 2022
-                </h3>
-                <i data-lucide="x" class="w-4 h-4 text-gray-400 cursor-pointer hover:text-white" onclick="toggleProjectWizard(false)"></i>
-            </div>
-            
-            <p class="text-xs text-vs-textMuted mb-4">Select a pre-configured template workload below to initialize your virtual compilation workspace:</p>
-            
-            <div class="flex-1 overflow-y-auto space-y-3 pr-2">
-                <!-- React UI Workload -->
-                <div class="flex gap-4 p-3 bg-vs-bg border border-vs-border rounded hover:border-vs-accent cursor-pointer transition" onclick="createProjectWorkload('react')">
-                    <i data-lucide="atom" class="w-10 h-10 text-cyan-400 shrink-0"></i>
-                    <div>
-                        <h4 class="text-xs font-bold text-white">ASP.NET Core with React Web App</h4>
-                        <p class="text-[11px] text-vs-textMuted mt-1">Responsive React client-side framework with modern components, routing, and live layout hot-reloads inside visual previewers.</p>
-                    </div>
-                </div>
-
-                <!-- C++ Workload -->
-                <div class="flex gap-4 p-3 bg-vs-bg border border-vs-border rounded hover:border-vs-accent cursor-pointer transition" onclick="createProjectWorkload('cpp')">
-                    <i data-lucide="terminal-square" class="w-10 h-10 text-purple-400 shrink-0"></i>
-                    <div>
-                        <h4 class="text-xs font-bold text-white">C++ Desktop Console Application</h4>
-                        <p class="text-[11px] text-vs-textMuted mt-1">Direct compiling STL collection app with vectors, recursive sorting, and logic testing logs.</p>
-                    </div>
-                </div>
-
-                <!-- C# Workload -->
-                <div class="flex gap-4 p-3 bg-vs-bg border border-vs-border rounded hover:border-vs-accent cursor-pointer transition" onclick="createProjectWorkload('csharp')">
-                    <i data-lucide="hash" class="w-10 h-10 text-emerald-400 shrink-0"></i>
-                    <div>
-                        <h4 class="text-xs font-bold text-white">.NET Core C# Console Application</h4>
-                        <p class="text-[11px] text-vs-textMuted mt-1">Standard Object-Oriented executable project testing async processes, mathematical computations, and local terminal execution logs.</p>
-                    </div>
-                </div>
-
-                <!-- HTML5 and Database Dashboard -->
-                <div class="flex gap-4 p-3 bg-vs-bg border border-vs-border rounded hover:border-vs-accent cursor-pointer transition" onclick="createProjectWorkload('html')">
-                    <i data-lucide="globe-2" class="w-10 h-10 text-amber-500 shrink-0"></i>
-                    <div>
-                        <h4 class="text-xs font-bold text-white">Enterprise ASP.NET Static Web Portfolio</h4>
-                        <p class="text-[11px] text-vs-textMuted mt-1">Static Tailwind responsive portal integrated directly with local storage, visual widgets, and CSS form styles.</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- GUID Generator Tool Modal -->
-    <div id="guid-tool" class="fixed inset-0 bg-black/60 backdrop-blur-xs hidden items-center justify-center z-[100]">
-        <div class="bg-vs-sidebar border border-vs-border rounded shadow-2xl w-96 p-4">
-            <h3 class="text-white text-sm font-semibold mb-3">Create GUID Registry Key</h3>
-            <div class="bg-vs-bg border border-vs-border p-3 rounded font-mono text-xs select-text break-all text-yellow-400" id="generated-guid-val"></div>
-            <div class="flex justify-between items-center mt-4">
-                <button onclick="generateGuid()" class="text-xs text-vs-accent hover:underline">Regenerate</button>
-                <div class="flex gap-2">
-                    <button onclick="toggleGuidTool(false)" class="px-3 py-1 text-gray-400 hover:text-white rounded hover:bg-vs-hover text-xs">Close</button>
-                    <button onclick="copyGeneratedGuid()" class="px-3 py-1 bg-vs-accent text-white rounded text-xs">Copy GUID</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- About Microsoft Visual Studio -->
-    <div id="about-dialog" class="fixed inset-0 bg-black/60 backdrop-blur-xs hidden items-center justify-center z-[100]">
-        <div class="bg-vs-sidebar border border-vs-border rounded shadow-2xl w-[450px] p-5">
-            <div class="flex gap-4">
-                <svg class="w-12 h-12 text-[#8d54d2]" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M17 2H7c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-3 18h-4v-1h4v1zm3-3H7V6h10v11z"/>
-                </svg>
-                <div class="flex-1 space-y-1.5 text-xs text-gray-300">
-                    <h3 class="text-white text-base font-bold">Microsoft Visual Studio Web</h3>
-                    <p class="text-vs-textMuted">Version 17.10.0 (Fully Active Production Web IDE)</p>
-                    <p>Designed to render robust high-fidelity client environments, static compilers, and live Firebase synchronization pipelines completely in-browser.</p>
-                </div>
-            </div>
-            <div class="flex justify-end mt-4">
-                <button onclick="toggleAboutDialog(false)" class="px-4 py-1.5 bg-vs-accent text-white rounded text-xs hover:bg-vs-accentHover">OK</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Options & Keyboard Settings -->
-    <div id="options-dialog" class="fixed inset-0 bg-black/70 backdrop-blur-xs hidden items-center justify-center z-[100]">
-        <div class="bg-vs-sidebar border border-vs-border rounded shadow-2xl w-[500px] p-5 flex flex-col h-[400px]">
-            <h3 class="text-white text-sm font-bold pb-2 border-b border-vs-border mb-4">Visual Studio Preferences & Options</h3>
-            <div class="flex-1 overflow-y-auto space-y-4 text-xs">
-                <div class="space-y-1.5">
-                    <label class="block text-gray-300 font-bold">Accent Theme Highlight</label>
-                    <select id="option-accent" class="w-full bg-vs-bg border border-vs-border rounded p-1.5 text-white outline-none">
-                        <option value="#007acc">Default Classic VS Blue</option>
-                        <option value="#5b21b6">Deep Purple Dev Edition</option>
-                        <option value="#0f766e">Teal Productivity Theme</option>
-                        <option value="#be185d">Vibrant Rose Crimson</option>
-                    </select>
-                </div>
-                <div class="space-y-1.5">
-                    <label class="block text-gray-300 font-bold">Editor Font Size</label>
-                    <input type="number" id="option-font-size" value="13" class="w-full bg-vs-bg border border-vs-border rounded p-1.5 text-white outline-none">
-                </div>
-                <div class="space-y-1.5">
-                    <label class="block text-gray-300 font-bold">Integrated Terminal Shell</label>
-                    <select id="option-shell" class="w-full bg-vs-bg border border-vs-border rounded p-1.5 text-white outline-none">
-                        <option value="powershell">Windows PowerShell Shell</option>
-                        <option value="bash">Linux Bash WSL</option>
-                    </select>
-                </div>
-            </div>
-            <div class="flex justify-end gap-2 pt-4 border-t border-vs-border mt-4">
-                <button onclick="toggleOptionsDialog(false)" class="px-4 py-1.5 text-gray-300 hover:text-white rounded hover:bg-vs-hover text-xs">Cancel</button>
-                <button onclick="applyOptions()" class="px-4 py-1.5 bg-vs-accent text-white rounded text-xs hover:bg-vs-accentHover">Apply Options</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Firebase App Modules & Logic -->
-    <script type="module">
-        import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
-        import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
-        import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
-
-        // Set up real Cloud Firebase configuration
-        const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'vs-web-pro';
-        const appId = rawAppId;
-
-        const firebaseConfig = {
-            apiKey: "AIzaSyDLeM4MrsA1Q8zq7_QcQfTJKk049vOVOO4",
-            authDomain: "envizionwork.firebaseapp.com",
-            projectId: "envizionwork",
-            storageBucket: "envizionwork.firebasestorage.app",
-            messagingSenderId: "706251024837",
-            appId: "1:706251024837:web:4c931733d3a9f430a703ac",
-            measurementId: "G-9CL929H67Z"
-        };
-
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
-
-        let currentUser = null;
-        let activeRoomId = null;
-        let activeRoomName = "";
-        let invitedEmails = [];
-        let isSyncingIncoming = false;
-
-        // Sign in before executing Firestore actions (Firebase Rule 3)
-        signInAnonymously(auth).then((userCredential) => {
-            currentUser = userCredential.user;
-            // Scan for collaboration hash on startup
-            initCollabFromUrl();
-        }).catch((err) => {
-            console.error("Firebase Authentication failed:", err);
-        });
-
-        // Expose Firebase features to standard scope
-        window.createCollaborationRoom = async function() {
-            if (!currentUser) {
-                mockNotification("Authenticating to secure portal server...", "Auth Progress");
-                return;
-            }
-            const roomName = prompt("Enter a shared solution workspace title:", "Live Project Node");
-            if (!roomName) return;
-
-            const newRoomId = 'workspace_' + Math.random().toString(36).substring(2, 11);
-            
-            try {
-                // Rule 1 - Path verification: /artifacts/{appId}/public/data/{collectionName}/{documentId}
-                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'workspaces', newRoomId);
-                await setDoc(docRef, {
-                    id: newRoomId,
-                    name: roomName,
-                    vfs: vfs,
-                    collaborators: invitedEmails,
-                    owner: currentUser.uid,
-                    updatedAt: Date.now()
-                });
-
-                activeRoomId = newRoomId;
-                activeRoomName = roomName;
-                updateCollabUI();
-                listenToCollabRoom(newRoomId);
-
-                // Set Hash
-                window.location.hash = `collab=${newRoomId}`;
-                mockNotification(`Successfully initialized secure Cloud Room: "${roomName}"`, "Success");
-            } catch (error) {
-                console.error("Collab Room initialization failure:", error);
-                mockNotification("Database initialization issue. Please check network.", "Error");
-            }
-        };
-
-        window.joinCollaborationRoomPrompt = function() {
-            const rId = prompt("Enter Collab Share Key or URL hash:");
-            if (rId) {
-                const cleanId = rId.includes('=') ? rId.split('=').pop() : rId;
-                joinCollabRoom(cleanId);
-            }
-        };
-
-        window.addCollaboratorEmail = function() {
-            const input = document.getElementById('collab-invite-email');
-            const email = input.value.trim();
-            if (email && !invitedEmails.includes(email)) {
-                invitedEmails.push(email);
-                input.value = '';
-                renderInvitedEmails();
-                pushCollabMetadata();
-            }
-        };
-
-        window.removeCollaboratorEmail = function(email) {
-            invitedEmails = invitedEmails.filter(e => e !== email);
-            renderInvitedEmails();
-            pushCollabMetadata();
-        };
-
-        function renderInvitedEmails() {
-            const list = document.getElementById('collab-emails-list');
-            list.innerHTML = '';
-            invitedEmails.forEach(e => {
-                list.innerHTML += `
-                    <div class="flex items-center justify-between py-1 bg-vs-bg px-2 rounded border border-vs-border/40">
-                        <span class="truncate">${e}</span>
-                        <i data-lucide="trash-2" class="w-3.5 h-3.5 text-red-400 cursor-pointer hover:text-red-300" onclick="removeCollaboratorEmail('${e}')"></i>
-                    </div>
-                `;
-            });
-            lucide.createIcons();
-        }
-
-        async function pushCollabMetadata() {
-            if (activeRoomId) {
-                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'workspaces', activeRoomId);
-                await setDoc(docRef, {
-                    collaborators: invitedEmails,
-                    updatedAt: Date.now()
-                }, { merge: true });
-            }
-        }
-
-        function updateCollabUI() {
-            const badge = document.getElementById('collab-status-badge');
-            if (activeRoomId) {
-                badge.className = "px-2 py-1 bg-green-500/10 border border-green-500/50 rounded text-xs text-green-400 font-mono flex items-center justify-between";
-                badge.innerHTML = `<span>Active: ${activeRoomName}</span> <button onclick="exitCollab()" class="text-[10px] underline text-red-400">Exit</button>`;
-            } else {
-                badge.className = "px-2 py-1 bg-vs-bg border border-vs-border rounded text-xs text-yellow-400 font-mono";
-                badge.innerHTML = "Offline (Single Player)";
-            }
-        }
-
-        window.exitCollab = function() {
-            activeRoomId = null;
-            activeRoomName = "";
-            window.location.hash = "";
-            updateCollabUI();
-            mockNotification("Exited cloud sharing room workspace session.", "Offline");
-        };
-
-        function listenToCollabRoom(roomId) {
-            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'workspaces', roomId);
-            onSnapshot(docRef, (docSnap) => {
-                if (docSnap.exists() && activeRoomId) {
-                    const data = docSnap.data();
-                    if (data.updatedAt && data.updatedAt > (window.lastVfsLocalWrite || 0)) {
-                        isSyncingIncoming = true;
-                        vfs = data.vfs;
-                        invitedEmails = data.collaborators || [];
-                        renderInvitedEmails();
-                        renderFileTree();
-                        renderGitPanel();
-                        
-                        // Sync Active Editor Content
-                        if (activeFile && vfs[activeFile] && isMonacoReady) {
-                            const cursorState = editor.getPosition();
-                            editor.setValue(vfs[activeFile].content || '');
-                            if(cursorState) editor.setPosition(cursorState);
-                        }
-                        
-                        refreshPreview();
-                        isSyncingIncoming = false;
-                    }
-                }
-            }, (error) => {
-                console.error("Collab Snap reading failure:", error);
-            });
-        }
-
-        async function joinCollabRoom(roomId) {
-            if (!currentUser) return;
-            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'workspaces', roomId);
-            const docSnap = await getDoc(docRef);
-            if (docSnap.exists()) {
-                activeRoomId = roomId;
-                const data = docSnap.data();
-                activeRoomName = data.name;
-                vfs = data.vfs;
-                invitedEmails = data.collaborators || [];
-                renderInvitedEmails();
-                renderFileTree();
-                renderGitPanel();
-                
-                const firstText = Object.keys(vfs).find(p => !vfs[p].isDir && vfs[p].isText);
-                if (firstText) openFile(firstText);
-                
-                updateCollabUI();
-                listenToCollabRoom(roomId);
-                window.location.hash = `collab=${roomId}`;
-                mockNotification(`Successfully connected to shared workspace "${activeRoomName}"`, "Cloud Connected");
-            } else {
-                mockNotification("Collab share workspace key not found.", "Error");
-            }
-        }
-
-        function initCollabFromUrl() {
-            const params = new URLSearchParams(window.location.hash.substring(1));
-            const collabId = params.get('collab');
-            if (collabId) {
-                joinCollabRoom(collabId);
-            }
-        }
-
-        // Live Cloud modifications updates push trigger
-        window.triggerCloudPush = function() {
-            if (isSyncingIncoming || !activeRoomId) return;
-            window.lastVfsLocalWrite = Date.now();
-            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'workspaces', activeRoomId);
-            setDoc(docRef, {
-                vfs: vfs,
-                updatedAt: window.lastVfsLocalWrite
-            }, { merge: true }).catch(err => console.error("Cloud push error:", err));
-        };
-    </script>
-
-    <!-- Core App Logic Script -->
+    <!-- Monaco Editor Loader -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.39.0/min/vs/loader.min.js"></script>
     <script>
+        lucide.createIcons();
+
         // --------------------------------------------------------
-        // STATE & VFS (Virtual File System)
+        // STATE MANAGEMENT
         // --------------------------------------------------------
-        let vfs = {}; 
+        let vfs = {}; // Virtual File System
         let activeFile = null;
-        let openTabs = [];
+        let activeIframeFile = 'index.html';
         let editor = null;
         let isMonacoReady = false;
-        let previewEnabled = true;
-        let currentDiagnosticTab = 'terminal';
-        
-        // Terminal State
-        let term, fitAddon;
-        let cwd = '/';
-        let currentInput = '';
+        let saveTimeout = null;
+        let liveServerWindow = null; // Tracks the external Live Server tab
 
-        // Modal Action tracking
-        let modalAction = null;
-
-        // Local Git Workspace Graph
-        let localCommits = [
-            { hash: 'e28fa12', msg: 'Initial ASP.NET solution structure', vfsSnapshot: {} }
-        ];
+        // Editor Options State
+        let isWordWrap = false;
+        let isMinimap = false;
 
         // --------------------------------------------------------
-        // INITIALIZATION
+        // TOP MENU LOGIC
         // --------------------------------------------------------
-        function init() {
-            setupResizers();
-            initTerminal();
-            loadDefaultWorkspace('react'); 
+        function toggleMenu(el) {
+            const parent = el.parentElement;
+            const wasOpen = parent.classList.contains('open');
+            document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('open'));
+            if (!wasOpen) parent.classList.add('open');
         }
 
-        // --------------------------------------------------------
-        // MONACO EDITOR INITIAL SETUP
-        // --------------------------------------------------------
-        require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.39.0/min/vs' }});
-        require(['vs/editor/editor.main'], function() {
-            monaco.editor.defineTheme('vs-pro-dark', {
-                base: 'vs-dark',
-                inherit: true,
-                rules: [
-                    { token: 'comment', foreground: '57a64a', fontStyle: 'italic' },
-                    { token: 'keyword', foreground: '569cd6' },
-                    { token: 'string', foreground: 'd69d85' },
-                    { token: 'number', foreground: 'b5cea8' },
-                    { token: 'type', foreground: '4ec9b0' }
-                ],
-                colors: {
-                    'editor.background': '#1e1e1e',
-                    'editor.foreground': '#d4d4d4',
-                    'editor.lineHighlightBackground': '#2f2f2f',
-                    'editorLineNumber.foreground': '#858585',
-                    'editorLineNumber.activeForeground': '#007acc',
-                    'editor.selectionBackground': '#264f78'
+        // Close menus when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.menu-item')) {
+                document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('open'));
+            }
+        });
+
+        // Hover switching between menus
+        document.querySelectorAll('.menu-item').forEach(item => {
+            item.addEventListener('mouseenter', function() {
+                if (document.querySelector('.menu-item.open')) {
+                    document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('open'));
+                    this.classList.add('open');
                 }
             });
-
-            editor = monaco.editor.create(document.getElementById('monaco-container'), {
-                value: '',
-                language: 'html',
-                theme: 'vs-pro-dark',
-                automaticLayout: true,
-                minimap: { enabled: true },
-                fontSize: 13,
-                fontFamily: "'Cascadia Code', Consolas, 'Courier New', monospace",
-                scrollBeyondLastLine: false,
-                roundedSelection: true,
-                padding: { top: 8 }
-            });
-
-            isMonacoReady = true;
-
-            editor.onDidChangeCursorPosition((e) => {
-                document.getElementById('status-cursor').innerText = `Ln ${e.position.lineNumber}, Col ${e.position.column}`;
-            });
-
-            editor.onDidChangeModelContent(() => {
-                if (!activeFile || !vfs[activeFile]) return;
-                vfs[activeFile].content = editor.getValue();
-                
-                vfs[activeFile].gitStatus = 'Modified';
-                renderGitPanel();
-                
-                // Fire live preview hot reloads
-                const ext = getExtension(activeFile);
-                if (['html', 'js', 'jsx', 'css'].includes(ext)) {
-                    refreshPreviewDebounced();
-                }
-
-                // If collaborator sync is online, push revisions securely
-                if (window.triggerCloudPush) {
-                    window.triggerCloudPush();
-                }
-            });
-            
-            if (activeFile) openFile(activeFile);
         });
 
         // --------------------------------------------------------
-        // WORKSPACE PANEL DYNAMIC DRAGGABLE RESIZING
+        // MONACO EDITOR ACTIONS & BINDINGS
         // --------------------------------------------------------
+        function execEditorAction(actionId) {
+            if (!editor || !isMonacoReady) return;
+            editor.focus();
+            editor.trigger('keyboard', actionId, null);
+            document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('open'));
+        }
+
+        function toggleWordWrap() {
+            if (!editor) return;
+            isWordWrap = !isWordWrap;
+            editor.updateOptions({ wordWrap: isWordWrap ? "on" : "off" });
+            logConsole(`Word Wrap turned ${isWordWrap ? 'on' : 'off'}`);
+        }
+
+        function toggleMinimap() {
+            if (!editor) return;
+            isMinimap = !isMinimap;
+            editor.updateOptions({ minimap: { enabled: isMinimap } });
+            logConsole(`Minimap turned ${isMinimap ? 'on' : 'off'}`);
+        }
+
+        function toggleFullScreen() {
+            if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+            else if (document.exitFullscreen) document.exitFullscreen();
+        }
+
+        // --------------------------------------------------------
+        // FILE MANAGEMENT ACTIONS
+        // --------------------------------------------------------
+        function createNewFile() {
+            const fileName = prompt("Enter new file name with extension (e.g., script.js):", "untitled.html");
+            if (!fileName) return;
+            
+            if (vfs[fileName]) {
+                alert("A file with this name already exists.");
+                return;
+            }
+
+            vfs[fileName] = { 
+                name: fileName, 
+                isText: isTextBased(fileName), 
+                content: fileName.endsWith('.html') ? "<!DOCTYPE html>\n<html>\n<body>\n\n</body>\n</html>" : "", 
+                fileObj: null, 
+                blobUrl: null 
+            };
+            
+            renderFileTree();
+            openFile(fileName);
+            logConsole(`Created new file: ${fileName}`);
+        }
+
+        function saveActiveFile() {
+            if (!activeFile || !vfs[activeFile]) return;
+            const fileData = vfs[activeFile].content;
+            const blob = new Blob([fileData], { type: "text/plain" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = activeFile.split('/').pop();
+            a.click();
+            URL.revokeObjectURL(url);
+            logConsole(`Downloaded ${activeFile}`);
+        }
+
+        function printPreview() {
+            const iframe = document.getElementById('live-frame');
+            iframe.contentWindow.focus();
+            iframe.contentWindow.print();
+        }
+
+        function openPreviewInNewWindow() {
+            if (!activeIframeFile) return;
+            const html = compileVFS(activeIframeFile);
+            const blob = new Blob([html], { type: 'text/html' });
+            const url = URL.createObjectURL(blob);
+            window.open(url, '_blank');
+        }
+
+        // --------------------------------------------------------
+        // UI & RESIZERS
+        // --------------------------------------------------------
+        function switchSidebar(view) {
+            document.querySelectorAll('.activity-icon').forEach(icon => icon.classList.remove('active'));
+            document.getElementById(`activity-${view}`).classList.add('active');
+            
+            const fileTree = document.getElementById('file-tree');
+            const gitPanel = document.getElementById('git-panel');
+            const sidebarTitle = document.getElementById('sidebar-title').querySelector('span');
+            
+            if (view === 'explorer') {
+                fileTree.classList.remove('hidden');
+                gitPanel.classList.add('hidden');
+                sidebarTitle.innerText = 'Explorer';
+            } else if (view === 'git') {
+                fileTree.classList.add('hidden');
+                gitPanel.classList.remove('hidden');
+                sidebarTitle.innerText = 'Source Control';
+            }
+        }
+
         function setupResizers() {
             const resizerSidebar = document.getElementById('resizer-sidebar');
             const sidebar = document.getElementById('sidebar');
             const resizerPreview = document.getElementById('resizer-preview');
             const preview = document.getElementById('preview-pane');
-            const resizerPanel = document.getElementById('resizer-panel');
-            const panel = document.getElementById('bottom-panel');
 
-            let isResizing = null;
+            let isResizingSidebar = false;
+            let isResizingPreview = false;
 
-            resizerSidebar.addEventListener('mousedown', () => isResizing = 'sidebar');
-            resizerPreview.addEventListener('mousedown', () => isResizing = 'preview');
-            resizerPanel.addEventListener('mousedown', () => isResizing = 'panel');
+            resizerSidebar.addEventListener('mousedown', () => isResizingSidebar = true);
+            resizerPreview.addEventListener('mousedown', () => isResizingPreview = true);
 
             document.addEventListener('mousemove', (e) => {
-                if (!isResizing) return;
+                if (!isResizingSidebar && !isResizingPreview) return;
                 document.getElementById('live-frame').style.pointerEvents = 'none';
 
-                if (isResizing === 'sidebar') {
-                    let w = e.clientX - 48; 
-                    if (w > 150 && w < 400) sidebar.style.width = `${w}px`;
+                if (isResizingSidebar) {
+                    let newWidth = e.clientX - 48; // Adjust for activity bar
+                    if (newWidth > 150 && newWidth < 500) sidebar.style.width = `${newWidth}px`;
                 }
-                if (isResizing === 'preview') {
-                    let w = window.innerWidth - e.clientX;
-                    if (w > 200 && w < window.innerWidth - 300) preview.style.width = `${w}px`;
-                }
-                if (isResizing === 'panel') {
-                    let h = window.innerHeight - e.clientY - 24; 
-                    if (h > 100 && h < window.innerHeight - 150) panel.style.height = `${h}px`;
-                    if (fitAddon) fitAddon.fit();
+                if (isResizingPreview) {
+                    let newWidth = window.innerWidth - e.clientX;
+                    if (newWidth > 300 && newWidth < window.innerWidth - 300) preview.style.width = `${newWidth}px`;
                 }
             });
 
             document.addEventListener('mouseup', () => {
-                isResizing = null;
+                isResizingSidebar = false;
+                isResizingPreview = false;
                 document.getElementById('live-frame').style.pointerEvents = 'auto';
             });
         }
+        setupResizers();
 
-        function switchSidebar(view) {
-            document.querySelectorAll('.activity-icon').forEach(e => e.classList.remove('active'));
-            event.currentTarget.classList.add('active');
-            
-            document.getElementById('view-explorer').classList.add('hidden');
-            document.getElementById('view-git').classList.add('hidden');
-            document.getElementById('view-toolbox').classList.add('hidden');
-            document.getElementById('view-collab').classList.add('hidden');
-            
-            const targetEl = document.getElementById(`view-${view}`);
-            if(targetEl) {
-                targetEl.classList.remove('hidden');
-                document.getElementById('sidebar').style.display = 'flex';
-            }
-        }
-
-        function togglePreview() {
-            const p = document.getElementById('preview-pane');
-            const r = document.getElementById('resizer-preview');
-            if (p.style.display === 'none') {
-                p.style.display = 'flex'; r.style.display = 'block'; previewEnabled = true;
-                refreshPreview();
-            } else {
-                p.style.display = 'none'; r.style.display = 'none'; previewEnabled = false;
-            }
-        }
-
-        function toggleTerminal() {
-            const p = document.getElementById('bottom-panel');
-            const r = document.getElementById('resizer-panel');
-            if (p.style.display === 'none') {
-                p.style.display = 'flex'; r.style.display = 'block';
-                if(fitAddon) setTimeout(() => fitAddon.fit(), 50);
-            } else {
-                p.style.display = 'none'; r.style.display = 'none';
-            }
-        }
-
-        function switchPanel(panelId) {
-            currentDiagnosticTab = panelId;
-            document.getElementById('panel-terminal').classList.add('hidden');
-            document.getElementById('panel-output').classList.add('hidden');
-            document.getElementById('panel-problems').classList.add('hidden');
-
-            document.querySelectorAll('#bottom-panel font-semibold, #bottom-panel span').forEach(el => {
-                el.classList.remove('text-white', 'border-b-2', 'border-vs-accent', 'pb-1');
+        // --------------------------------------------------------
+        // MONACO EDITOR INITIALIZATION
+        // --------------------------------------------------------
+        require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.39.0/min/vs' }});
+        require(['vs/editor/editor.main'], function() {
+            editor = monaco.editor.create(document.getElementById('monaco-container'), {
+                value: '',
+                language: 'html',
+                theme: 'vs-dark',
+                automaticLayout: true,
+                minimap: { enabled: false },
+                wordWrap: 'off',
+                fontSize: 13,
+                fontFamily: "'JetBrains Mono', monospace",
+                scrollBeyondLastLine: false,
+                roundedSelection: true,
+                padding: { top: 16 }
             });
 
-            const btn = document.getElementById(`tab-btn-${panelId}`);
-            if (btn) {
-                btn.className = "cursor-pointer text-white border-b-2 border-vs-accent pb-1 h-full flex items-center";
-            }
+            isMonacoReady = true;
 
-            const activePanel = document.getElementById(`panel-${panelId}`);
-            if(activePanel) activePanel.classList.remove('hidden');
+            // Status Bar Updates: Cursor Position
+            editor.onDidChangeCursorPosition((e) => {
+                document.getElementById('sb-cursor').innerText = `Ln ${e.position.lineNumber}, Col ${e.position.column}`;
+            });
 
-            if (panelId === 'terminal' && fitAddon) {
-                setTimeout(() => fitAddon.fit(), 40);
-            }
-        }
+            // Status Bar Updates: Markers (Errors/Warnings)
+            monaco.editor.onDidChangeMarkers(() => {
+                const markers = monaco.editor.getModelMarkers({ resource: editor.getModel().uri });
+                let errors = 0, warnings = 0;
+                markers.forEach(m => {
+                    if (m.severity === monaco.MarkerSeverity.Error) errors++;
+                    if (m.severity === monaco.MarkerSeverity.Warning) warnings++;
+                });
+                document.getElementById('sb-errors').innerText = errors;
+                document.getElementById('sb-warnings').innerText = warnings;
+            });
 
-        function mockNotification(msg, status = "Success") {
-            const parent = document.createElement('div');
-            parent.className = `fixed bottom-10 right-6 flex items-center gap-3 bg-vs-sidebar border-l-4 ${status==='Success'?'border-vs-accent':'border-red-500'} p-3 rounded shadow-2xl text-xs z-[200] max-w-sm transition-all duration-300`;
-            parent.innerHTML = `
-                <div class="flex-1">
-                    <strong class="block text-white">${status}</strong>
-                    <span class="text-gray-300">${msg}</span>
-                </div>
-                <i data-lucide="x" class="w-4 h-4 text-gray-500 hover:text-white cursor-pointer" onclick="this.parentElement.remove()"></i>
-            `;
-            document.body.appendChild(parent);
-            lucide.createIcons();
-            setTimeout(() => parent.remove(), 4500);
-        }
+            // Intelligent Auto-Save & Hot Reload
+            editor.onDidChangeModelContent(() => {
+                if (!activeFile || !vfs[activeFile]) return;
+                
+                clearTimeout(saveTimeout);
+                saveTimeout = setTimeout(() => {
+                    vfs[activeFile].content = editor.getValue();
+                    
+                    // Only auto-reload if editing a web file
+                    const ext = activeFile.split('.').pop().toLowerCase();
+                    if (['html', 'htm', 'js', 'css'].includes(ext)) {
+                        refreshPreview();
+                        
+                        // Push Hot Reload to Live Server Tab
+                        if (liveServerWindow && !liveServerWindow.closed) {
+                            liveServerWindow.postMessage({ type: 'HOT_RELOAD', html: compileVFS(activeIframeFile, true) }, '*');
+                        }
+                    }
+                }, 600); // 600ms debounce
+            });
+        });
 
         // --------------------------------------------------------
-        // VFS (VIRTUAL FILE SYSTEM) CORE LOGIC
+        // VIRTUAL FILE SYSTEM (VFS) & DRAG/DROP
         // --------------------------------------------------------
-        const isTextBased = (name) => ['html', 'htm', 'css', 'js', 'jsx', 'json', 'txt', 'md', 'svg', 'cpp', 'c', 'cs', 'py', 'sql'].includes(getExtension(name));
-        const getExtension = (name) => name.split('.').pop().toLowerCase();
+        const isTextBased = (name) => ['html', 'htm', 'css', 'js', 'json', 'txt', 'md', 'svg'].includes(name.split('.').pop().toLowerCase());
         
-        function normPath(p) {
-            if (!p.startsWith('/')) p = '/' + p;
-            return p.replace(/\/+/g, '/');
-        }
+        function triggerFolderUpload() { document.getElementById('folder-input').click(); }
 
-        function addFileToVfs(path, name, isText, content, blobUrl = null, isDir = false) {
-            path = normPath(path);
-            vfs[path] = { name, isText, content, blobUrl, isDir, gitStatus: 'Untracked' };
-            renderFileTree();
-            renderGitPanel();
-        }
-
-        function saveActiveFile() {
-            if(activeFile && isMonacoReady) {
-                vfs[activeFile].content = editor.getValue();
-                mockNotification(`Successfully saved file context in virtual workspace: ${activeFile}`);
-                if (window.triggerCloudPush) window.triggerCloudPush();
+        document.body.addEventListener('dragover', e => { e.preventDefault(); document.body.classList.add('drag-active'); });
+        document.body.addEventListener('dragleave', e => { e.preventDefault(); if (e.target.id === 'drag-overlay') document.body.classList.remove('drag-active'); });
+        document.body.addEventListener('drop', async e => {
+            e.preventDefault();
+            document.body.classList.remove('drag-active');
+            if (e.dataTransfer.items) {
+                vfs = {}; // Reset
+                const items = Array.from(e.dataTransfer.items).filter(i => i.kind === 'file');
+                for (let item of items) {
+                    const entry = item.webkitGetAsEntry();
+                    if (entry) await traverseFileTree(entry, "");
+                }
+                finalizeMount();
             }
-        }
+        });
 
-        function showNewFileModal() {
-            document.getElementById('modal-title').innerText = "Create New Solution File";
-            document.getElementById('modal-input').value = "";
-            document.getElementById('input-modal').classList.remove('hidden');
-            document.getElementById('modal-input').focus();
-            modalAction = 'file';
-        }
-        function showNewFolderModal() {
-            document.getElementById('modal-title').innerText = "Create New Project Folder";
-            document.getElementById('modal-input').value = "";
-            document.getElementById('input-modal').classList.remove('hidden');
-            document.getElementById('modal-input').focus();
-            modalAction = 'folder';
-        }
-        function closeModal() {
-            document.getElementById('input-modal').classList.add('hidden');
-        }
-        function submitModal() {
-            const val = document.getElementById('modal-input').value.trim();
-            if (!val) return;
-            const targetPath = normPath(cwd === '/' ? `/${val}` : `${cwd}/${val}`);
-            
-            if (modalAction === 'file') {
-                addFileToVfs(targetPath, val, isTextBased(val), '');
-                openFile(targetPath);
-            } else {
-                addFileToVfs(targetPath, val, false, null, null, true);
-            }
-            closeModal();
-            term.writeln(`\r\n\x1b[32mSuccessfully created: ${targetPath}\x1b[0m`);
-            writePrompt();
-            if (window.triggerCloudPush) window.triggerCloudPush();
-        }
-
-        async function handleFileSelect(e, isFolder) {
+        async function handleFolderSelect(e) {
             const files = e.target.files;
             if (files.length === 0) return;
-            
+            vfs = {};
             for (let file of files) {
-                let path = isFolder ? file.webkitRelativePath : file.name;
-                if(!isFolder && cwd !== '/') path = cwd + '/' + path;
-                path = normPath(path);
-                
-                const isText = isTextBased(file.name);
-                let content = null; 
-                let blobUrl = null;
-                
-                if (isText) content = await file.text();
-                else blobUrl = URL.createObjectURL(file);
-                
-                addFileToVfs(path, file.name, isText, content, blobUrl);
+                const pathParts = file.webkitRelativePath.split('/');
+                pathParts.shift(); 
+                const path = pathParts.join('/');
+                if(path) await processFile(file, path, file.name);
             }
-            e.target.value = ''; 
-            mockNotification(`Imported ${files.length} element(s) into solution.`);
-            if (window.triggerCloudPush) window.triggerCloudPush();
+            e.target.value = '';
+            finalizeMount();
+        }
+
+        async function traverseFileTree(item, path) {
+            if (item.isFile) {
+                const file = await new Promise(resolve => item.file(resolve));
+                await processFile(file, path + item.name, item.name);
+            } else if (item.isDirectory) {
+                const dirReader = item.createReader();
+                const entries = await new Promise(resolve => dirReader.readEntries(resolve));
+                for (let entry of entries) {
+                    await traverseFileTree(entry, path + item.name + "/");
+                }
+            }
+        }
+
+        async function processFile(file, fullPath, name) {
+            const isText = isTextBased(name);
+            let content = null;
+            let blobUrl = null;
+            
+            if (isText) content = await file.text();
+            else blobUrl = URL.createObjectURL(file);
+
+            vfs[fullPath] = { name, isText, content, fileObj: file, blobUrl };
+        }
+
+        function finalizeMount() {
+            renderFileTree();
+            
+            // Intelligent Entry Point Detection
+            let entryPoint = Object.keys(vfs).find(p => p.toLowerCase() === 'index.html');
+            if (!entryPoint) entryPoint = Object.keys(vfs).find(p => p.toLowerCase() === 'main.html');
+            if (!entryPoint) entryPoint = Object.keys(vfs).find(p => p.toLowerCase().endsWith('.html'));
+            
+            if (entryPoint) {
+                openFile(entryPoint);
+                activeIframeFile = entryPoint;
+                refreshPreview();
+            } else if (Object.keys(vfs).length > 0) {
+                const firstText = Object.keys(vfs).find(p => vfs[p].isText);
+                if (firstText) openFile(firstText);
+            }
+            logConsole("Workspace mounted successfully.");
         }
 
         // --------------------------------------------------------
-        // FILE TREE UI RENDERING
+        // FILE TREE UI
         // --------------------------------------------------------
         function renderFileTree() {
             const container = document.getElementById('file-tree');
             container.innerHTML = '';
             
+            if (Object.keys(vfs).length === 0) return;
+
             const tree = { dirs: {}, files: [] };
             Object.keys(vfs).forEach(path => {
-                const parts = path.split('/').filter(p => p);
+                const parts = path.split('/');
                 let current = tree;
                 for (let i = 0; i < parts.length - 1; i++) {
                     if (!current.dirs[parts[i]]) current.dirs[parts[i]] = { dirs: {}, files: [] };
                     current = current.dirs[parts[i]];
                 }
-                const name = parts[parts.length - 1];
-                if (vfs[path].isDir) {
-                    if (!current.dirs[name]) current.dirs[name] = { dirs: {}, files: [] };
-                } else {
-                    current.files.push({ name, path });
-                }
+                current.files.push({ name: parts[parts.length - 1], path });
             });
 
-            function buildHTML(node, containerNode, depth, parentPath) {
-                // Directories
+            function buildHTML(node, containerNode, depth) {
                 Object.keys(node.dirs).sort().forEach(dirName => {
-                    const currentPath = `${parentPath}/${dirName}`;
                     const dirDiv = document.createElement('div');
-                    
                     const header = document.createElement('div');
-                    header.className = `flex items-center gap-1.5 py-1 px-2 text-gray-300 hover:text-white file-item cursor-pointer hover:bg-vs-hover ${cwd === currentPath ? 'bg-[#37373d]' : ''}`;
+                    header.className = "flex items-center gap-1.5 py-1 px-2 text-gray-300 hover:text-white file-item";
                     header.style.paddingLeft = `${depth * 12 + 8}px`;
-                    header.innerHTML = `<i data-lucide="chevron-right" class="w-3.5 h-3.5 text-gray-500 transition-transform"></i><i data-lucide="folder" class="w-4 h-4 text-[#dcb67a]"></i><span class="truncate">${dirName}</span>`;
+                    header.innerHTML = `<i data-lucide="chevron-right" class="w-3.5 h-3.5 text-gray-500 transition-transform"></i><i data-lucide="folder" class="w-4 h-4 text-blue-400 fill-blue-400/20"></i><span>${dirName}</span>`;
                     
                     const children = document.createElement('div');
+                    children.className = "hidden";
                     
-                    header.onclick = (e) => {
-                        cwd = currentPath; 
-                        renderFileTree();
+                    header.onclick = () => {
                         const icon = header.querySelector('[data-lucide="chevron-right"]');
                         if (children.classList.contains('hidden')) {
                             children.classList.remove('hidden');
@@ -1259,23 +689,21 @@
                     dirDiv.appendChild(header);
                     dirDiv.appendChild(children);
                     containerNode.appendChild(dirDiv);
-                    buildHTML(node.dirs[dirName], children, depth + 1, currentPath);
+                    buildHTML(node.dirs[dirName], children, depth + 1);
                 });
 
-                // Solution files
                 node.files.sort((a,b) => a.name.localeCompare(b.name)).forEach(file => {
                     const el = document.createElement('div');
-                    el.className = `flex items-center gap-2 py-1 px-2 text-gray-400 file-item cursor-pointer hover:bg-vs-hover ${activeFile === file.path ? 'bg-vs-selection text-white' : ''}`;
+                    el.className = `flex items-center gap-2 py-1 px-2 text-gray-400 file-item ${activeFile === file.path ? 'active' : ''}`;
                     el.style.paddingLeft = `${depth * 12 + 24}px`;
+                    el.id = `tree-node-${file.path.replace(/[^a-zA-Z0-9]/g, '-')}`;
                     
-                    let icon = 'file'; 
-                    let color = 'text-gray-400';
-                    const ext = getExtension(file.name);
-                    if (ext === 'html') { icon = 'file-code-2'; color = 'text-orange-500'; }
+                    let icon = 'file'; let color = 'text-gray-400';
+                    const ext = file.name.split('.').pop().toLowerCase();
+                    if (ext === 'html') { icon = 'file-code-2'; color = 'text-orange-400'; }
                     else if (ext === 'css') { icon = 'file-type-2'; color = 'text-blue-400'; }
-                    else if (['js','jsx'].includes(ext)) { icon = 'file-json'; color = 'text-yellow-400'; }
-                    else if (['cpp','c','cs'].includes(ext)) { icon = 'terminal-square'; color = 'text-purple-400'; }
-                    else if (ext === 'sql') { icon = 'database'; color = 'text-amber-500'; }
+                    else if (ext === 'js') { icon = 'file-json'; color = 'text-yellow-400'; }
+                    else if (['png','jpg','svg'].includes(ext)) { icon = 'image'; color = 'text-green-400'; }
 
                     el.innerHTML = `<i data-lucide="${icon}" class="w-4 h-4 ${color}"></i><span class="truncate">${file.name}</span>`;
                     el.onclick = () => openFile(file.path);
@@ -1283,167 +711,64 @@
                 });
             }
 
-            buildHTML(tree, container, 0, "");
+            buildHTML(tree, container, 0);
             lucide.createIcons();
         }
 
         // --------------------------------------------------------
-        // EDITOR OPERATIONS & TABS
+        // EDITOR OPERATIONS
         // --------------------------------------------------------
         function openFile(path) {
-            if (!vfs[path] || vfs[path].isDir) return;
+            if (!vfs[path]) return;
             activeFile = path;
             
-            if (!openTabs.includes(path)) openTabs.push(path);
-            
-            renderTabs();
-            renderFileTree();
+            document.querySelectorAll('.file-item').forEach(el => el.classList.remove('active'));
+            const activeNode = document.getElementById(`tree-node-${path.replace(/[^a-zA-Z0-9]/g, '-')}`);
+            if (activeNode) activeNode.classList.add('active');
+
+            const tabs = document.getElementById('editor-tabs');
+            tabs.innerHTML = `
+                <div class="flex items-center gap-2 px-3 py-1.5 bg-[#1e1e1e] text-white border-t-2 border-[#007acc] min-w-[120px] max-w-[200px] cursor-default border-r border-[#2d2d2d]">
+                    <span class="truncate text-xs font-mono">${vfs[path].name}</span>
+                </div>
+            `;
 
             if (vfs[path].isText) {
                 document.getElementById('editor-empty').classList.add('hidden');
                 if (isMonacoReady) {
-                    const ext = getExtension(path);
-                    const langMap = { 
-                        'js': 'javascript', 'jsx': 'javascript', 'html': 'html', 
-                        'css': 'css', 'json': 'json', 'cpp': 'cpp', 'cs': 'csharp', 
-                        'py': 'python', 'sql': 'sql' 
-                    };
-                    monaco.editor.setModelLanguage(editor.getModel(), langMap[ext] || 'plaintext');
+                    const ext = path.split('.').pop().toLowerCase();
+                    const langMap = { 'js': 'javascript', 'html': 'html', 'css': 'css', 'json': 'json', 'md': 'markdown' };
+                    const lang = langMap[ext] || 'plaintext';
+                    monaco.editor.setModelLanguage(editor.getModel(), lang);
                     editor.setValue(vfs[path].content || '');
-                    document.getElementById('status-lang').innerText = (langMap[ext] || 'TEXT').toUpperCase();
+                    
+                    // Update Status bar language display
+                    document.getElementById('sb-language').innerText = lang.toUpperCase();
+                } else {
+                    setTimeout(() => openFile(path), 100);
                 }
             } else {
                 document.getElementById('editor-empty').classList.remove('hidden');
-                document.getElementById('editor-empty').innerHTML = `<img src="${vfs[path].blobUrl}" class="max-w-xs max-h-48 mx-auto shadow-lg border border-[#333]">`;
-            }
-        }
-
-        function renderTabs() {
-            const c = document.getElementById('editor-tabs');
-            c.innerHTML = '';
-            openTabs.forEach(path => {
-                const isActive = path === activeFile;
-                const el = document.createElement('div');
-                el.className = `flex items-center gap-2 px-3 py-1.5 vs-tab min-w-[100px] max-w-[220px] ${isActive ? 'active' : ''}`;
-                el.innerHTML = `
-                    <span class="truncate flex-1" onclick="openFile('${path}')">${vfs[path].name}</span>
-                    <i data-lucide="x" class="w-3.5 h-3.5 hover:bg-gray-600 rounded p-0.5" onclick="closeTab('${path}', event)"></i>
+                document.getElementById('editor-empty').innerHTML = `
+                    <div class="text-center">
+                        <img src="${vfs[path].blobUrl}" class="max-w-xs max-h-48 mx-auto mb-4 rounded shadow-lg border border-[#333]">
+                        <p class="text-gray-500 font-mono text-sm">${vfs[path].name}</p>
+                    </div>
                 `;
-                c.appendChild(el);
-            });
-            lucide.createIcons();
-        }
-
-        function closeTab(path, event) {
-            event.stopPropagation();
-            openTabs = openTabs.filter(p => p !== path);
-            if (activeFile === path) {
-                activeFile = openTabs.length > 0 ? openTabs[openTabs.length - 1] : null;
-                if(activeFile) openFile(activeFile);
-                else {
-                    document.getElementById('editor-empty').classList.remove('hidden');
-                    if(isMonacoReady) editor.setValue('');
-                    renderFileTree();
-                }
             }
-            renderTabs();
-        }
-
-        function closeAllTabs() {
-            openTabs = [];
-            activeFile = null;
-            if(isMonacoReady) editor.setValue('');
-            document.getElementById('editor-empty').classList.remove('hidden');
-            renderTabs();
-            renderFileTree();
-        }
-
-        // --------------------------------------------------------
-        // FORM DESIGNER & CODE INSERTION TOOLBOX
-        // --------------------------------------------------------
-        const templates = {
-            button: `<button class="px-5 py-2.5 bg-blue-600 text-white font-medium rounded-lg shadow-md hover:bg-blue-700 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-75 transition duration-150 ease-in-out">
-  Action Button
-</button>`,
-            input: `<div class="mb-4">
-  <label class="block text-gray-700 text-sm font-bold mb-2" for="username">Username</label>
-  <input class="shadow-sm appearance-none border border-gray-300 rounded-md w-full py-2.5 px-3.5 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-150" id="username" type="text" placeholder="Enter username">
-</div>`,
-            card: `<div class="max-w-sm rounded-lg overflow-hidden shadow-lg border border-gray-100 bg-white p-6 hover:shadow-xl transition duration-200">
-  <div class="flex items-center space-x-3 mb-4">
-    <div class="h-10 w-10 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-bold">VS</div>
-    <h3 class="text-lg font-bold text-gray-900">Platform Feature</h3>
-  </div>
-  <p class="text-gray-600 text-sm">Visual Studio Web Pro introduces live responsive sandbox hot-reloading for UI components.</p>
-</div>`,
-            form: `<form class="bg-white shadow-md rounded px-8 pt-6 pb-8 mb-4 max-w-md border border-gray-100">
-  <h2 class="text-xl font-bold mb-6 text-gray-900">Developer Registration</h2>
-  <div class="mb-4">
-    <label class="block text-gray-700 text-sm font-bold mb-2">Email Address</label>
-    <input class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" type="email" placeholder="email@domain.com">
-  </div>
-  <div class="mb-6">
-    <label class="block text-gray-700 text-sm font-bold mb-2">Selected Workload</label>
-    <select class="shadow border rounded w-full py-2 px-3 text-gray-700 leading-tight">
-      <option>.NET & C# Desktop</option>
-      <option>React App Framework</option>
-      <option>Native C++ Engine</option>
-    </select>
-  </div>
-  <button class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded w-full transition" type="button">Submit Core Application</button>
-</form>`,
-            navbar: `<nav class="bg-gray-900 text-white px-6 py-4 flex items-center justify-between">
-  <span class="font-bold tracking-wider text-lg">HyperStudio</span>
-  <div class="flex space-x-4 text-sm font-medium">
-    <a href="#" class="hover:text-blue-400 transition">Solutions</a>
-    <a href="#" class="hover:text-blue-400 transition">Console</a>
-    <a href="#" class="hover:text-blue-400 transition">Diagnostics</a>
-  </div>
-</nav>`,
-            toast: `<div class="flex items-center w-full max-w-xs p-4 text-gray-500 bg-white rounded-lg shadow-lg border border-gray-100" role="alert">
-  <div class="inline-flex items-center justify-center shrink-0 w-8 h-8 text-green-500 bg-green-100 rounded-lg">
-    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/></svg>
-  </div>
-  <div class="ms-3 text-sm font-normal">State synchronized.</div>
-</div>`,
-            chart: `<div class="bg-white p-4 rounded-lg shadow border border-gray-100 max-w-sm">
-  <h4 class="text-sm font-bold text-gray-700 mb-2">Database Read/Write Performance</h4>
-  <div class="h-24 bg-gray-50 rounded flex items-end justify-between p-2">
-    <div class="w-3 bg-blue-500 h-[40%] rounded-t"></div>
-    <div class="w-3 bg-blue-500 h-[65%] rounded-t"></div>
-    <div class="w-3 bg-blue-500 h-[50%] rounded-t"></div>
-    <div class="w-3 bg-blue-500 h-[85%] rounded-t"></div>
-    <div class="w-3 bg-blue-500 h-[75%] rounded-t"></div>
-  </div>
-</div>`
-        };
-
-        function insertTemplateToCode(key) {
-            if (!activeFile || !isMonacoReady) {
-                mockNotification("Please select an editable code file to insert elements.", "Warning");
-                return;
+            
+            if (path.endsWith('.html') || path.endsWith('.htm')) {
+                activeIframeFile = path;
+                refreshPreview();
             }
-            const payload = templates[key];
-            const selection = editor.getSelection();
-            const range = new monaco.Range(selection.startLineNumber, selection.startColumn, selection.endLineNumber, selection.endColumn);
-            const id = { major: 1, minor: 1 };
-            const op = { identifier: id, range: range, text: payload, forceMoveMarkers: true };
-            editor.executeEdits("my-source", [op]);
-            mockNotification(`Inserted designer element ${key} successfully at cursor position.`);
         }
 
         // --------------------------------------------------------
-        // COMPILE AND LIVE SERVER HOT REBUILD (JSX + HTML + CSS)
+        // VFS COMPILER (The "Intelligence")
         // --------------------------------------------------------
-        let previewTimeout;
-        function refreshPreviewDebounced() {
-            clearTimeout(previewTimeout);
-            previewTimeout = setTimeout(refreshPreview, 600);
-        }
-
         function resolveRelative(basePath, relative) {
             if (/^(http|https|data:|#)/.test(relative)) return relative;
-            const stack = basePath.split('/').filter(p=>p);
+            const stack = basePath.split('/');
             stack.pop(); 
             const parts = relative.split('/');
             for (let p of parts) {
@@ -1451,687 +776,196 @@
                 if (p === '..') stack.pop();
                 else stack.push(p);
             }
-            return '/' + stack.join('/');
+            return stack.join('/');
         }
 
-        function refreshPreview() {
-            if (!previewEnabled) return;
-            const iframe = document.getElementById('live-frame');
-            const errBox = document.getElementById('preview-error');
-            const errText = document.getElementById('preview-error-text');
-            errBox.classList.add('hidden');
-            
-            let entry = activeFile && (activeFile.endsWith('.html') || activeFile.endsWith('.jsx')) ? activeFile : null;
-            if (!entry) entry = Object.keys(vfs).find(p => p.toLowerCase().endsWith('index.html'));
-            if (!entry) entry = Object.keys(vfs).find(p => p.toLowerCase().endsWith('.html'));
+        function getMimeType(filename) {
+            const ext = filename.split('.').pop().toLowerCase();
+            const map = { 'css':'text/css', 'js':'application/javascript', 'json':'application/json', 'svg':'image/svg+xml' };
+            return map[ext] || 'text/plain';
+        }
 
-            if (!entry) {
-                iframe.srcdoc = `<body style="background:#fff; font-family:system-ui, -apple-system, sans-serif; padding:30px; color:#333;">
-                    <div style="border-left: 4px solid #007acc; padding-left: 15px;">
-                        <h2>ASP.NET Static IIS Host</h2>
-                        <p style="color: #666;">No active markup index.html file detected in project directory.</p>
-                    </div>
-                </body>`;
-                return;
-            }
-
-            try {
-                let htmlContent = vfs[entry].content;
-
-                if (entry.endsWith('.jsx')) {
-                    const compiled = Babel.transform(htmlContent, { presets: ['react'] }).code;
-                    
-                    htmlContent = `
-                        <!DOCTYPE html>
-                        <html>
-                        <head>
-                            <script src="https://unpkg.com/react@18/umd/react.development.js"><\/script>
-                            <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"><\/script>
-                            <script src="https://cdn.tailwindcss.com"><\/script>
-                        </head>
-                        <body class="bg-gray-50">
-                            <div id="root"></div>
-                            <script>
-                                try {
-                                    ${compiled}
-                                } catch(e) {
-                                    window.parent.postMessage({ type: 'PREVIEW_ERR', msg: e.message }, '*');
-                                }
-                            <\/script>
-                        </body>
-                        </html>
-                    `;
-                } else {
-                    const parser = new DOMParser();
-                    const doc = parser.parseFromString(htmlContent, 'text/html');
-
-                    doc.querySelectorAll('link[rel="stylesheet"]').forEach(link => {
-                        const href = link.getAttribute('href');
-                        if (href) {
-                            if (/^(http|https|data:)/.test(href)) return;
-                            const absPath = resolveRelative(entry, href);
-                            if (vfs[absPath]) {
-                                const style = doc.createElement('style');
-                                style.textContent = vfs[absPath].content;
-                                link.replaceWith(style);
-                            }
-                        }
-                    });
-
-                    doc.querySelectorAll('script').forEach(script => {
-                        const src = script.getAttribute('src');
-                        if (src) {
-                            if (/^(http|https|data:)/.test(src)) return;
-                            const absPath = resolveRelative(entry, src);
-                            if (vfs[absPath]) {
-                                const inlineScript = doc.createElement('script');
-                                let code = vfs[absPath].content;
-                                if (absPath.endsWith('.jsx')) {
-                                    try { code = Babel.transform(code, { presets: ['react'] }).code; } catch(e) {}
-                                }
-                                inlineScript.textContent = code;
-                                script.replaceWith(inlineScript);
-                            }
-                        }
-                    });
-
-                    doc.querySelectorAll('img').forEach(img => {
-                        const src = img.getAttribute('src');
-                        if (src && !/^(http|https|data:)/.test(src)) {
-                            const absPath = resolveRelative(entry, src);
-                            if (vfs[absPath] && vfs[absPath].blobUrl) {
-                                img.setAttribute('src', vfs[absPath].blobUrl);
-                            }
-                        }
-                    });
-                    
-                    const reporter = doc.createElement('script');
-                    reporter.textContent = `window.onerror = (m,s,l,c,e) => window.parent.postMessage({ type: 'PREVIEW_ERR', msg: m + '\\nLine: ' + l }, '*');`;
-                    doc.head.insertBefore(reporter, doc.head.firstChild);
-
-                    htmlContent = doc.documentElement.outerHTML;
+        function compileCSS(path, content) {
+            // Fix relative paths inside CSS files (e.g. background-image)
+            return content.replace(/url\(['"]?([^'"()]+)['"]?\)/g, (match, url) => {
+                if (url.startsWith('data:') || url.startsWith('http')) return match;
+                const absPath = resolveRelative(path, url);
+                if (vfs[absPath]) {
+                    if (vfs[absPath].blobUrl) return `url('${vfs[absPath].blobUrl}')`;
+                    const blob = new Blob([vfs[absPath].content], { type: getMimeType(absPath) });
+                    return `url('${URL.createObjectURL(blob)}')`;
                 }
-
-                iframe.srcdoc = htmlContent;
-
-            } catch (e) {
-                errText.innerText = e.message;
-                errBox.classList.remove('hidden');
-            }
-        }
-
-        window.addEventListener('message', (e) => {
-            if (e.data && e.data.type === 'PREVIEW_ERR') {
-                const errBox = document.getElementById('preview-error');
-                const errText = document.getElementById('preview-error-text');
-                errText.innerText = e.data.msg;
-                errBox.classList.remove('hidden');
-            }
-        });
-
-        function openLiveServer() {
-            const iframe = document.getElementById('live-frame');
-            if(iframe.srcdoc) {
-                sessionStorage.setItem('vs_web_live_preview', iframe.srcdoc);
-                window.open(window.location.pathname + window.location.search + '#preview', '_blank');
-            }
-        }
-
-        // --------------------------------------------------------
-        // POWERSHELL / WSL LOCAL RUNTIME MOCK TERMINAL
-        // --------------------------------------------------------
-        function initTerminal() {
-            term = new Terminal({
-                theme: { background: '#1e1e1e', foreground: '#cccccc', cursor: '#007acc' },
-                fontFamily: "'Cascadia Code', Consolas, monospace",
-                fontSize: 12.5,
-                cursorBlink: true
-            });
-            fitAddon = new FitAddon.FitAddon();
-            term.loadAddon(fitAddon);
-            term.open(document.getElementById('terminal-container'));
-            fitAddon.fit();
-
-            term.writeln('\x1b[36mWindows PowerShell v7.4.2\x1b[0m');
-            term.writeln('Copyright (C) Microsoft Corporation. All rights reserved.');
-            term.writeln('Type \x1b[1;33mhelp\x1b[0m to list local utility command suites.');
-            term.writeln('');
-            writePrompt();
-
-            term.onData(e => {
-                switch (e) {
-                    case '\r': // Enter
-                        term.writeln('');
-                        handleCommand(currentInput.trim());
-                        currentInput = '';
-                        break;
-                    case '\u007F': // Backspace
-                        if (currentInput.length > 0) {
-                            currentInput = currentInput.substr(0, currentInput.length - 1);
-                            term.write('\b \b');
-                        }
-                        break;
-                    default:
-                        if (e >= String.fromCharCode(0x20) && e <= String.fromCharCode(0x7E)) {
-                            currentInput += e;
-                            term.write(e);
-                        }
-                }
+                return match;
             });
         }
 
-        function writePrompt() {
-            term.write(`\r\n\x1b[34mPS\x1b[0m C:\\Workspace\\Project\x1b[33m${cwd.replace(/\//g, '\\')}\x1b[0m> `);
-        }
+        function compileVFS(targetHtmlPath, isExternalWindow = false) {
+            const file = vfs[targetHtmlPath];
+            if (!file || !file.isText) return "<h1>404 File Not Found</h1>";
 
-        function handleCommand(cmdStr) {
-            if (!cmdStr) { writePrompt(); return; }
-            const args = cmdStr.split(' ');
-            const cmd = args[0].toLowerCase();
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(file.content, 'text/html');
 
-            switch (cmd) {
-                case 'help':
-                    term.writeln('Visual Studio Local Terminal Commands:');
-                    term.writeln('  \x1b[36mls / dir\x1b[0m     - List files in current directory');
-                    term.writeln('  \x1b[36mcd\x1b[0m           - Change path directories');
-                    term.writeln('  \x1b[36mmkdir\x1b[0m        - Create new project directory');
-                    term.writeln('  \x1b[36mtouch\x1b[0m        - Initialize empty file');
-                    term.writeln('  \x1b[36mcat\x1b[0m          - Echo file source content');
-                    term.writeln('  \x1b[36mclear / cls\x1b[0m  - Wipe shell terminal');
-                    term.writeln('  \x1b[36mbuild / dotnet build\x1b[0m - Compile active compilation objects');
-                    term.writeln('  \x1b[36mnode <file.js>\x1b[0m - Execute JavaScript directly on functional virtual engine');
-                    break;
-                case 'clear':
-                case 'cls':
-                    term.clear();
-                    break;
-                case 'ls':
-                case 'dir':
-                    Object.keys(vfs).forEach(p => {
-                        if (p.startsWith(cwd === '/' ? '/' : cwd + '/')) {
-                            let rel = p.replace(cwd === '/' ? '/' : cwd + '/', '');
-                            if (!rel.includes('/')) {
-                                term.writeln(vfs[p].isDir ? `\x1b[1;34m${rel}\\\x1b[0m` : `  ${rel}`);
+            // Map CSS to secure independent Blob URLs
+            doc.querySelectorAll('link[rel="stylesheet"]').forEach(link => {
+                const href = link.getAttribute('href');
+                if (href && !href.startsWith('http')) {
+                    const absPath = resolveRelative(targetHtmlPath, href);
+                    if (vfs[absPath]) {
+                        const compiledCSS = compileCSS(absPath, vfs[absPath].content);
+                        const blob = new Blob([compiledCSS], { type: 'text/css' });
+                        link.href = URL.createObjectURL(blob);
+                    }
+                }
+            });
+
+            // Map Media to Blob URLs
+            doc.querySelectorAll('img, audio, video, source').forEach(el => {
+                const src = el.getAttribute('src');
+                if (src && !src.startsWith('http') && !src.startsWith('data:')) {
+                    const absPath = resolveRelative(targetHtmlPath, src);
+                    if (vfs[absPath] && vfs[absPath].blobUrl) {
+                        el.setAttribute('src', vfs[absPath].blobUrl);
+                    }
+                }
+            });
+
+            // Map JS to secure independent Blob URLs (Supports interconnectivity!)
+            doc.querySelectorAll('script').forEach(script => {
+                const src = script.getAttribute('src');
+                if (src && !src.startsWith('http')) {
+                    const absPath = resolveRelative(targetHtmlPath, src);
+                    if (vfs[absPath]) {
+                        const blob = new Blob([vfs[absPath].content], { type: 'application/javascript' });
+                        script.src = URL.createObjectURL(blob);
+                    }
+                }
+            });
+
+            // Smart Interceptor Script
+            const routerScript = doc.createElement('script');
+            routerScript.textContent = `
+                const isExternal = ${isExternalWindow};
+                const parentWin = isExternal ? window.opener : window.parent;
+                
+                document.addEventListener('click', function(e) {
+                    const a = e.target.closest('a');
+                    if (a) {
+                        const href = a.getAttribute('href');
+                        if (href && !href.startsWith('http') && !href.startsWith('#') && !href.startsWith('javascript:')) {
+                            e.preventDefault();
+                            if (parentWin) {
+                                parentWin.postMessage({ type: 'NAVIGATE', path: href, current: '${targetHtmlPath}', isExternal }, '*');
                             }
-                        }
-                    });
-                    break;
-                case 'cd':
-                    let target = args[1] || '/';
-                    if (target === '..') {
-                        if (cwd !== '/') {
-                            const parts = cwd.split('/'); parts.pop();
-                            cwd = parts.length === 1 ? '/' : parts.join('/');
-                        }
-                    } else {
-                        let path = normPath(target.startsWith('/') ? target : cwd + '/' + target);
-                        if (path === '/') cwd = '/';
-                        else if (vfs[path] && vfs[path].isDir) cwd = path;
-                        else term.writeln(`cd: Invalid target folder directory: ${target}`);
-                    }
-                    renderFileTree();
-                    break;
-                case 'touch':
-                    if (args[1]) addFileToVfs(normPath(cwd + '/' + args[1]), args[1], true, '');
-                    break;
-                case 'mkdir':
-                    if (args[1]) addFileToVfs(normPath(cwd + '/' + args[1]), args[1], false, null, null, true);
-                    break;
-                case 'cat':
-                    if (args[1]) {
-                        let path = normPath(cwd + '/' + args[1]);
-                        if (vfs[path] && vfs[path].isText) term.writeln(vfs[path].content);
-                        else term.writeln(`cat: ${args[1]}: Unrecognized file format`);
-                    }
-                    break;
-                case 'build':
-                case 'dotnet build':
-                    buildSolution();
-                    break;
-                case 'node':
-                    if (args[1]) {
-                        executeJSLocal(args[1]);
-                    } else {
-                        term.writeln("Specify script file: e.g. node script.js");
-                    }
-                    break;
-                default:
-                    term.writeln(`'${cmd}' is not recognized as an internal or external command, operable program or batch file.`);
-            }
-            writePrompt();
-        }
-
-        // --------------------------------------------------------
-        // FULLY FUNCTIONAL JAVASCRIPT LOCAL EMULATION RUNTIME
-        // --------------------------------------------------------
-        function executeJSLocal(filename) {
-            const path = normPath(cwd === '/' ? `/${filename}` : `${cwd}/${filename}`);
-            if (!vfs[path] || vfs[path].isDir) {
-                term.writeln(`\x1b[31mError: script file ${filename} not found in path.\x1b[0m`);
-                return;
-            }
-
-            term.writeln(`\x1b[33mRunning local node runner: ${path}...\x1b[0m`);
-            const userScript = vfs[path].content;
-
-            // Capture output stream
-            const originalLog = console.log;
-            const originalWarn = console.warn;
-            const originalError = console.error;
-            let outputLines = [];
-
-            console.log = (...msg) => outputLines.push(msg.map(m => typeof m === 'object' ? JSON.stringify(m) : m).join(' '));
-            console.warn = (...msg) => outputLines.push(`\x1b[33m[WARN] ` + msg.join(' ') + `\x1b[0m`);
-            console.error = (...msg) => outputLines.push(`\x1b[31m[ERROR] ` + msg.join(' ') + `\x1b[0m`);
-
-            try {
-                // Execute code directly inside insulated Function
-                const sandbox = new Function(userScript);
-                sandbox();
-                outputLines.forEach(l => term.writeln(l));
-                term.writeln(`\x1b[32mProcess completed with code 0.\x1b[0m`);
-            } catch (error) {
-                outputLines.forEach(l => term.writeln(l));
-                term.writeln(`\x1b[31mRuntime Exception: ${error.message}\x1b[0m`);
-            }
-
-            // Restore
-            console.log = originalLog;
-            console.warn = originalWarn;
-            console.error = originalError;
-        }
-
-        function executeActiveScript() {
-            if (!activeFile) {
-                mockNotification("Open a JavaScript file to execute.", "Warning");
-                return;
-            }
-            toggleTerminal();
-            switchPanel('terminal');
-            const relativeName = activeFile.split('/').pop();
-            executeJSLocal(relativeName);
-        }
-
-        // --------------------------------------------------------
-        // COMPILER SYSTEM & STATIC ANALYSIS
-        // --------------------------------------------------------
-        function buildSolution() {
-            switchPanel('output');
-            const out = document.getElementById('panel-output');
-            out.innerHTML = `<div>Microsoft Visual Studio 2022 Build Host Console</div>
-<div>-----------------------------------------------------------------</div>
-<div>Build started: Project: CoreWorkspace, Configuration: Debug Any CPU</div>`;
-            
-            document.getElementById('term-loader').classList.remove('hidden');
-
-            setTimeout(() => {
-                out.innerHTML += `<div class="text-blue-400">Scanning workspace dependencies...</div>`;
-            }, 500);
-
-            setTimeout(() => {
-                let errorCount = 0;
-                const tbody = document.getElementById('problems-tbody');
-                tbody.innerHTML = '';
-
-                Object.keys(vfs).forEach(path => {
-                    if (vfs[path].isText) {
-                        const code = vfs[path].content || '';
-                        // Perform true basic syntax and lint check
-                        if (code.includes('const') && code.includes('const') && code.match(/const\s+(\w+)\s*=\s*.*;/g) === null && getExtension(path) === 'js') {
-                            // Syntax checks
                         }
                     }
                 });
 
-                document.getElementById('problem-badge').innerText = errorCount;
-                document.getElementById('status-errors').innerText = errorCount;
-
-                if (errorCount === 0) {
-                    tbody.innerHTML = `<tr><td colspan="5" class="pt-4 text-center text-gray-500">Zero static analysis errors. Codebase compiles successfully.</td></tr>`;
-                    out.innerHTML += `<div class="text-green-400 font-semibold">Build Solution success. 0 Errors, 0 Warnings.</div>`;
-                    mockNotification("Solution fully built with 0 errors.", "Success");
+                if (isExternal) {
+                    window.addEventListener('message', (e) => {
+                        if (e.data.type === 'HOT_RELOAD') {
+                            document.open();
+                            document.write(e.data.html);
+                            document.close();
+                        }
+                    });
                 } else {
-                    out.innerHTML += `<div class="text-red-400 font-semibold">Build failed. ${errorCount} compiler violations logged in the Problem grid.</div>`;
-                    mockNotification(`Compiler failure. ${errorCount} violations detected.`, "Compiler Error");
+                    const _log = console.log, _err = console.error;
+                    console.log = (...a) => { parentWin.postMessage({type:'LOG', val: a.join(' ')}, '*'); _log(...a); };
+                    console.error = (...a) => { parentWin.postMessage({type:'ERR', val: a.join(' ')}, '*'); _err(...a); };
+                    window.onerror = (m,s,l) => parentWin.postMessage({type:'ERR', val: m + ' at line ' + l}, '*');
                 }
-                
-                document.getElementById('term-loader').classList.add('hidden');
-            }, 1200);
+            `;
+            doc.head.insertBefore(routerScript, doc.head.firstChild);
+
+            return "<!DOCTYPE html>\n" + doc.documentElement.outerHTML;
         }
 
-        function rebuildSolution() {
-            buildSolution();
+        function refreshPreview() {
+            if (!activeIframeFile) return;
+            const iframe = document.getElementById('live-frame');
+            document.getElementById('address-bar').innerText = `hyperlive://local/${activeIframeFile}`;
+            iframe.srcdoc = compileVFS(activeIframeFile);
         }
+
+        function openPreviewInNewWindow() {
+            if (!activeIframeFile) return;
+            liveServerWindow = window.open('', '_blank');
+            const html = compileVFS(activeIframeFile, true);
+            liveServerWindow.document.open();
+            liveServerWindow.document.write(html);
+            liveServerWindow.document.close();
+            logConsole("Live Server started in new tab. Pop-out connected.");
+        }
+
+        window.addEventListener('message', (e) => {
+            if (e.data.type === 'NAVIGATE') {
+                const newPath = resolveRelative(e.data.current, e.data.path);
+                const cleanPath = newPath.split(/[?#]/)[0];
+                if (vfs[cleanPath]) {
+                    if (e.data.isExternal) {
+                        // Route external Live Server Tab to new page
+                        if (liveServerWindow && !liveServerWindow.closed) {
+                            liveServerWindow.postMessage({ type: 'HOT_RELOAD', html: compileVFS(cleanPath, true) }, '*');
+                        }
+                    } else {
+                        // Route internal iframe
+                        activeIframeFile = cleanPath;
+                        refreshPreview();
+                        if(vfs[cleanPath].isText) openFile(cleanPath);
+                    }
+                } else logConsole(`404: Cannot route to ${cleanPath}`, true);
+            } else if (e.data.type === 'LOG') logConsole(e.data.val);
+            else if (e.data.type === 'ERR') logConsole(e.data.val, true);
+        });
 
         // --------------------------------------------------------
-        // GIT VERSION CONTROL ACTIONS WITH DEEP REVISION ROLLBACK
+        // CONSOLE & UTILS
         // --------------------------------------------------------
-        function renderGitPanel() {
-            const listEl = document.getElementById('git-untracked-list');
-            listEl.innerHTML = '';
-            let changesCount = 0;
-
-            Object.keys(vfs).forEach(path => {
-                if (!vfs[path].isDir && vfs[path].gitStatus !== 'Synced') {
-                    changesCount++;
-                    listEl.innerHTML += `
-                        <div class="flex items-center justify-between py-1 border-b border-vs-border/40 hover:bg-vs-hover px-1 rounded">
-                            <span class="truncate flex-1 text-gray-300">
-                                <i data-lucide="file" class="w-3.5 h-3.5 inline mr-1 text-vs-accent"></i>${vfs[path].name}
-                            </span>
-                            <span class="text-[10px] font-bold px-1 rounded ${vfs[path].gitStatus==='Modified'?'text-yellow-400 bg-yellow-500/10':'text-green-400 bg-green-500/10'}">${vfs[path].gitStatus}</span>
-                        </div>
-                    `;
-                }
-            });
-
-            document.getElementById('git-changes-count').innerText = changesCount;
-            
-            // Build real interactive commits timeline with click-to-rollback functionality
-            const histEl = document.getElementById('git-commit-history');
-            histEl.innerHTML = '';
-            localCommits.forEach(c => {
-                histEl.innerHTML += `
-                    <div class="relative pl-4 pb-2 border-l border-vs-border cursor-pointer hover:bg-vs-hover/50 rounded p-1 transition" onclick="checkoutCommit('${c.hash}')">
-                        <span class="absolute -left-[5.5px] top-1.5 w-2.5 h-2.5 bg-vs-accent rounded-full border border-vs-sidebar"></span>
-                        <div class="font-bold text-gray-300 font-mono text-[11px]">${c.hash}</div>
-                        <div class="text-vs-textMuted text-[10px]">${c.msg}</div>
-                    </div>
-                `;
-            });
-            lucide.createIcons();
+        function toggleConsole() {
+            const panel = document.getElementById('console-panel');
+            panel.classList.toggle('hidden');
         }
 
-        function commitChanges() {
-            const msg = document.getElementById('git-commit-msg').value.trim();
-            if (!msg) {
-                mockNotification("Please enter a commit summary description.", "Warning");
-                return;
-            }
-
-            // Seal current VFS state snapshot deeply
-            const deepVfsSnapshot = JSON.parse(JSON.stringify(vfs));
-
-            Object.keys(vfs).forEach(p => {
-                if (vfs[p].gitStatus !== 'Synced') {
-                    vfs[p].gitStatus = 'Synced';
-                }
-            });
-
-            const randomHash = Math.random().toString(16).substring(2, 9);
-            localCommits.unshift({ 
-                hash: randomHash, 
-                msg: msg, 
-                vfsSnapshot: deepVfsSnapshot 
-            });
-
-            document.getElementById('git-commit-msg').value = '';
-            renderGitPanel();
-            mockNotification(`Committed revision ${randomHash} locally.`, "Git Commit");
-            if (window.triggerCloudPush) window.triggerCloudPush();
+        function logConsole(msg, isError=false) {
+            const out = document.getElementById('console-output');
+            const d = document.createElement('div');
+            d.className = `border-b border-[#2d2d2d] pb-1 ${isError ? 'text-red-400' : 'text-gray-300'}`;
+            d.innerText = `> ${msg}`;
+            out.appendChild(d);
+            out.scrollTop = out.scrollHeight;
         }
 
-        // True checkout rollback to restore previous commit snapshot fully
-        window.checkoutCommit = function(commitHash) {
-            const commit = localCommits.find(c => c.hash === commitHash);
-            if (commit && commit.vfsSnapshot && Object.keys(commit.vfsSnapshot).length > 0) {
-                if (confirm(`Do you want to checkout and restore commit ${commitHash}? unsaved work will be overridden.`)) {
-                    vfs = JSON.parse(JSON.stringify(commit.vfsSnapshot));
-                    renderFileTree();
-                    renderGitPanel();
-                    const first = Object.keys(vfs).find(p => !vfs[p].isDir && vfs[p].isText);
-                    if (first) openFile(first);
-                    refreshPreview();
-                    mockNotification(`Restored project state of commit ${commitHash}`, "Success");
-                    if (window.triggerCloudPush) window.triggerCloudPush();
-                }
-            } else {
-                mockNotification("Initial commit cannot be checked out recursively.", "Warning");
-            }
-        };
-
-        function changeBranchPrompt() {
-            const newBranch = prompt("Enter target branch name:");
-            if(newBranch) {
-                document.getElementById('header-branch').innerText = newBranch;
-                document.getElementById('status-branch').innerText = newBranch;
-                document.getElementById('git-branch-val').innerText = newBranch;
-                mockNotification(`Switched branch: ${newBranch}`);
-            }
-        }
-
-        // --------------------------------------------------------
-        // COMPRESSION & HTMLVIEWER SHARE URL BUILDER
-        // --------------------------------------------------------
-        window.generateSharingLinkDirect = function() {
-            try {
-                // Convert entire active virtual file system into highly compact base64 representation
-                const rawJson = JSON.stringify(vfs);
-                // Safe browser base64 escape
-                const encoded = btoa(encodeURIComponent(rawJson));
-                
-                // Construct standard envizion tools viewer loading link
-                const shareLink = `https://envizion.work/tools/htmlviewer#code=${encoded}`;
-                
-                // Copy to clipboard
-                navigator.clipboard.writeText(shareLink);
-                mockNotification("Pristine workspace link generated and copied to clipboard!", "Share Success");
-            } catch (err) {
-                console.error("Link packaging error:", err);
-                mockNotification("Failed to package files. Clean folder size recommended.", "Error");
-            }
-        };
-
-        // --------------------------------------------------------
-        // PROJECT GENERATOR WORKLOAD TEMPLATES
-        // --------------------------------------------------------
-        function showNewProjectModal() {
-            toggleProjectWizard(true);
-        }
-
-        function toggleProjectWizard(show) {
-            const modal = document.getElementById('project-wizard');
-            if (show) modal.classList.remove('hidden');
-            else modal.classList.add('hidden');
-        }
-
-        function createProjectWorkload(key) {
-            toggleProjectWizard(false);
-            loadDefaultWorkspace(key);
-            mockNotification(`Initialized new ${key.toUpperCase()} solution package successfully.`);
-        }
-
-        function loadDefaultWorkspace(workloadType) {
-            closeAllTabs();
-            vfs = {};
-
-            const templates = {
-                react: {
-                    '/README.md': { name: 'README.md', isText: true, content: '# React Enterprise Portfolio Solution\n\n- **src/**: Frontend UI Component modules\n- **index.html**: Main visual host pipeline' },
-                    '/src': { name: 'src', isDir: true },
-                    '/src/App.jsx': { name: 'App.jsx', isText: true, content: `import React, { useState } from 'react';\n\nexport default function App() {\n  const [tasks, setTasks] = useState(['Deploy production systems', 'Run static analyzer tests']);\n  const [text, setText] = useState('');\n\n  return (\n    <div className="p-8 bg-slate-900 min-h-screen text-white flex flex-col justify-between">\n      <div>\n        <h1 className="text-3xl font-extrabold text-indigo-400 tracking-tight mb-4">Visual Studio Dashboard App</h1>\n        <p class="text-sm text-slate-400 mb-6">Running in-browser React component sandboxes.</p>\n        \n        <div className="flex gap-2 mb-6 max-w-md">\n          <input \n            className="bg-slate-800 border border-slate-700 p-2.5 rounded text-sm flex-1 outline-none focus:border-indigo-500"\n            value={text}\n            onChange={(e) => setText(e.target.value)}\n            placeholder="Initialize new task parameter..."\n          />\n          <button \n            className="bg-indigo-600 px-5 py-2.5 rounded font-bold text-sm hover:bg-indigo-500 transition"\n            onClick={() => { if(text) { setTasks([...tasks, text]); setText(''); } }}\n          >\n            Insert Block\n          </button>\n        </div>\n        \n        <ul className="space-y-2 max-w-md">\n          {tasks.map((t, i) => (\n            <li key={i} className="bg-slate-800/80 p-3 rounded border border-slate-700/60 shadow flex items-center justify-between text-sm">\n              <span>{t}</span>\n              <span className="text-emerald-400 font-mono text-[11px] bg-emerald-500/10 px-2 py-0.5 rounded">Active</span>\n            </li>\n          ))}\n        </ul>\n      </div>\n      \n      <footer className="text-xs text-slate-500 border-t border-slate-800 pt-4 flex justify-between">\n        <span>Compiler Target: WebAssembly Standard</span>\n        <span>System Live</span>\n      </footer>\n    </div>\n  );\n}`},
-                    '/index.html': { name: 'index.html', isText: true, content: `<!DOCTYPE html>\n<html lang="en">\n<head>\n  <script src="https://cdn.tailwindcss.com"><\/script>\n</head>\n<body>\n  <div id="root"></div>\n  <script src="/src/App.jsx"><\/script>\n</body>\n</html>`}
-                },
-                cpp: {
-                    '/main.cpp': { name: 'main.cpp', isText: true, content: `#include <iostream>\n#include <vector>\n#include <algorithm>\n\n// Compile process logic\nint main() {\n    std::cout << "--- C++ Vector Sorter Engine ---" << std::endl;\n    std::vector<int> data = {12, 45, 2, 78, 23};\n    \n    std::cout << "Initial size: " << data.size() << std::endl;\n    std::sort(data.begin(), data.end());\n    \n    std::cout << "Sorted integers: ";\n    for(int val : data) {\n        std::cout << val << " ";\n    }\n    std::cout << std::endl;\n    return 0;\n}` }
-                },
-                csharp: {
-                    '/Program.cs': { name: 'Program.cs', isText: true, content: `using System;\nusing System.Collections.Generic;\n\nnamespace VSProSolution\n{\n    class Program\n    {\n        static void Main(string[] args)\n        {\n            Console.WriteLine("C# JIT Execution Pipeline");\n            var factors = new List<int>() { 1, 2, 4, 8 };\n            \n            for (int i = 0; i < factors.Count; i++) {\n                Console.WriteLine($"Multiplier factor evaluated: {factors[i]}");\n            }\n            Console.WriteLine("Done.");\n        }\n    }\n}` }
-                },
-                html: {
-                    '/index.html': { name: 'index.html', isText: true, content: `<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8">\n  <title>ASP.NET Static Portal</title>\n  <script src="https://cdn.tailwindcss.com"><\/script>\n</head>\n<body class="bg-gray-100 font-sans">\n  <div class="max-w-4xl mx-auto p-8">\n    <header class="bg-blue-800 text-white rounded-lg p-6 shadow-md mb-6">\n      <h1 class="text-3xl font-bold">Local Static Portfolio Site</h1>\n      <p class="text-blue-100 text-sm mt-1">Enterprise web template designed completely in-browser.</p>\n    </header>\n    \n    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">\n      <div class="bg-white p-6 rounded-lg shadow border border-gray-100">\n        <h3 class="text-lg font-bold text-gray-800 mb-2">Integrated Storage</h3>\n        <p class="text-gray-600 text-sm">Save your local solution items directly across devices or offline browser states.</p>\n      </div>\n    </div>\n  </div>\n</body>\n</html>` }
-                }
-            };
-
-            const selectedWorkload = templates[workloadType] || templates['react'];
-            Object.keys(selectedWorkload).forEach(path => {
-                const item = selectedWorkload[path];
-                addFileToVfs(path, item.name, item.isText, item.content, item.blobUrl, item.isDir);
-            });
-
-            cwd = '/';
-            renderFileTree();
-            renderGitPanel();
-            
-            const firstSource = Object.keys(vfs).find(p => !vfs[p].isDir && vfs[p].isText);
-            if(firstSource) openFile(firstSource);
-
-            refreshPreview();
-        }
-
-        // --------------------------------------------------------
-        // ADDITIONAL SYSTEM TOOLS (GUID, OPTIONS, FULLSCREEN)
-        // --------------------------------------------------------
-        function showGuidGenerator() {
-            generateGuid();
-            toggleGuidTool(true);
-        }
-
-        function generateGuid() {
-            const uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-                var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-                return v.toString(16).toUpperCase();
-            });
-            document.getElementById('generated-guid-val').innerText = `{${uuid}}`;
-        }
-
-        function copyGuid() {
-            const val = document.getElementById('generated-guid-val').innerText;
-            navigator.clipboard.writeText(val);
-            mockNotification("Registry GUID Copied to Clipboard.");
-            toggleGuidTool(false);
-        }
-
-        function toggleGuidTool(show) {
-            document.getElementById('guid-tool').className = `fixed inset-0 bg-black/60 backdrop-blur-xs ${show?'flex':'hidden'} items-center justify-center z-[100]`;
-        }
-
-        function showAboutDialog() {
-            toggleAboutDialog(true);
-        }
-
-        function toggleAboutDialog(show) {
-            document.getElementById('about-dialog').className = `fixed inset-0 bg-black/60 backdrop-blur-xs ${show?'flex':'hidden'} items-center justify-center z-[100]`;
-        }
-
-        function showOptionsModal() {
-            toggleOptionsDialog(true);
-        }
-
-        function toggleOptionsDialog(show) {
-            document.getElementById('options-dialog').className = `fixed inset-0 bg-black/70 backdrop-blur-xs ${show?'flex':'hidden'} items-center justify-center z-[100]`;
-        }
-
-        function applyOptions() {
-            const accentColor = document.getElementById('option-accent').value;
-            const fontSize = parseInt(document.getElementById('option-font-size').value) || 13;
-            
-            document.documentElement.style.setProperty('--vs-accent', accentColor);
-            document.getElementById('status-bar').style.backgroundColor = accentColor;
-            
-            if(isMonacoReady) {
-                editor.updateOptions({ fontSize: fontSize });
-            }
-
-            toggleOptionsDialog(false);
-            mockNotification("Visual Studio preferences applied globally.");
-        }
-
-        function minimizeIde() {
-            mockNotification("IDE minimised to background state.");
-        }
-
-        function toggleFullScreen() {
-            if (!document.fullscreenElement) {
-                document.documentElement.requestFullscreen();
-            } else {
-                if (document.exitFullscreen) {
-                    document.exitFullscreen();
-                }
-            }
-        }
-
-        function resetWorkspace() {
-            if(confirm("Confirm resetting virtual workspace? Your unsaved files will be lost.")) {
-                loadDefaultWorkspace('react');
-                mockNotification("Workspace reset successfully.");
-            }
-        }
-
-        function exitIde() {
-            if(confirm("Exit Visual Studio? All changes can be exported using Save All (ZIP) first.")) {
-                document.body.innerHTML = `
-                    <div class="h-screen w-screen bg-[#1e1e1e] flex flex-col items-center justify-center text-center">
-                        <svg class="w-16 h-16 text-[#8d54d2] mb-4" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M17 2H7c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-3 18h-4v-1h4v1zm3-3H7V6h10v11z"/>
-                        </svg>
-                        <h2 class="text-xl font-bold text-white mb-2">Visual Studio Web Session Closed</h2>
-                        <p class="text-gray-400 text-sm mb-4">You have successfully shut down the compiling agent host.</p>
-                        <button onclick="window.location.reload()" class="bg-[#007acc] text-white px-4 py-2 rounded text-xs">Restart Session</button>
-                    </div>
-                `;
-            }
-        }
-
-        // --------------------------------------------------------
-        // EXPORT WORKSPACE SOURCE FILE GRAPH AS ZIP
-        // --------------------------------------------------------
-        async function exportWorkspace() {
+        async function exportZip() {
+            if (Object.keys(vfs).length === 0) return;
+            logConsole("Packing ZIP workspace...");
             const zip = new JSZip();
+            
             Object.keys(vfs).forEach(path => {
-                if (vfs[path].isDir) zip.folder(path.substring(1));
-                else {
-                    if(vfs[path].isText) zip.file(path.substring(1), vfs[path].content);
-                }
+                if (vfs[path].fileObj) zip.file(path, vfs[path].fileObj);
+                else zip.file(path, vfs[path].content);
             });
+
             const content = await zip.generateAsync({ type: "blob" });
             const url = URL.createObjectURL(content);
             const a = document.createElement('a');
-            a.href = url; 
-            a.download = `Visual_Studio_Web_Project.zip`;
+            a.href = url; a.download = `HyperLive_Project.zip`;
             a.click();
-            mockNotification("Workspace project tree fully zipped and downloaded.");
+            URL.revokeObjectURL(url);
+            logConsole("Export complete.");
         }
 
-        // Shortcut Key Listener System
-        window.addEventListener('keydown', (e) => {
-            if (e.ctrlKey && e.key === 's') {
-                e.preventDefault();
-                saveActiveFile();
-            }
-            if (e.ctrlKey && e.shiftKey && e.key === 'S') {
-                e.preventDefault();
-                exportWorkspace();
-            }
-            if (e.ctrlKey && e.shiftKey && e.key === 'N') {
-                e.preventDefault();
-                showNewProjectModal();
-            }
-            if (e.ctrlKey && !e.shiftKey && e.key === 'n') {
-                e.preventDefault();
-                showNewFileModal();
-            }
-            if (e.ctrlKey && e.key === '`') {
-                e.preventDefault();
-                toggleTerminal();
-            }
-        });
+        function loadDemo() {
+            vfs = {
+                'index.html': { name: 'index.html', isText: true, content: `<!DOCTYPE html>\n<html>\n<head>\n  <link rel="stylesheet" href="styles.css">\n</head>\n<body>\n  <div class="card">\n    <h1>Welcome to HyperLive Pro</h1>\n    <p>Try editing this HTML, CSS, or JS. The preview updates instantly!</p>\n    <button id="btn">Click Me</button>\n    <p id="out"></p>\n  </div>\n  <script src="script.js"><\/script>\n</body>\n</html>`},
+                'styles.css': { name: 'styles.css', isText: true, content: `body {\n  font-family: system-ui;\n  background: #f0f2f5;\n  display: grid;\n  place-items: center;\n  height: 100vh;\n  margin: 0;\n}\n.card {\n  background: white;\n  padding: 2rem;\n  border-radius: 12px;\n  box-shadow: 0 4px 6px rgba(0,0,0,0.1);\n  text-align: center;\n}\nbutton {\n  background: #007acc;\n  color: white;\n  border: none;\n  padding: 8px 16px;\n  border-radius: 6px;\n  cursor: pointer;\n}`},
+                'script.js': { name: 'script.js', isText: true, content: `document.getElementById('btn').addEventListener('click', () => {\n  document.getElementById('out').innerText = "JavaScript is working!";\n  console.log("Button was clicked inside VFS!");\n});`}
+            };
+            finalizeMount();
+        }
 
-        // Initialize Workspace Frame or Live Server Preview Mode
-        window.onload = () => {
-            if (window.location.hash === '#preview') {
-                const content = sessionStorage.getItem('vs_web_live_preview');
-                if (content) {
-                    document.open();
-                    document.write(content);
-                    document.close();
-                } else {
-                    document.body.innerHTML = '<h2 style="font-family:sans-serif;text-align:center;margin-top:20px;color:#333;">Preview Session Expired or Empty</h2>';
-                }
-                return; // Halt IDE initialization, render only preview
-            }
-            init();
-        };
+        // Init blank state message
+        setTimeout(() => { if(Object.keys(vfs).length===0) logConsole("Ready. Drop a folder or use the File menu."); }, 1000);
     </script>
 </body>
 </html>
