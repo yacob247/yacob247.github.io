@@ -176,7 +176,7 @@
                     <div class="menu-dropdown absolute top-full left-0 bg-[#252526] border border-[#454545] shadow-xl py-1 min-w-[220px] rounded-sm z-50">
                         <div class="menu-list-item" onclick="execEditorAction('editor.action.quickCommand')"><span>Show Command Palette...</span><span class="menu-shortcut">F1</span></div>
                         <div class="h-px bg-[#454545] my-1"></div>
-                        <div class="menu-list-item" onclick="alert('HyperLive Pro\nVersion: 1.1 (Multi-Tab Edition)\nEngine: Monaco Editor\nStatus: Local Execution')"><span>About HyperLive Pro</span></div>
+                        <div class="menu-list-item" onclick="alert('HyperLive Pro\nVersion: 1.2 (Smart Router Edition)\nEngine: Monaco Editor\nStatus: Local Execution')"><span>About HyperLive Pro</span></div>
                     </div>
                 </div>
 
@@ -332,13 +332,16 @@
         let vfs = {}; // Virtual File System
         let openFiles = []; // Array of file paths currently open in tabs
         let activeFile = null; // Path of the file focused in the editor
+        
         let activeIframeFile = 'index.html'; // Path loaded in the preview frame
+        let activeIframeQuery = ''; // Real-time simulated query parameters (?page=xyz)
+
         let editor = null;
         let isMonacoReady = false;
         let saveTimeout = null;
         
-        // Supports Unlimited Pop-out Servers 
-        let liveServers = []; // e.g. { window: WinObj, path: string }
+        // Supports Unlimited Pop-out Servers with unique parameters preserved
+        let liveServers = []; // e.g. { window: WinObj, path: string, query: string }
 
         // Editor Options State
         let isWordWrap = false;
@@ -487,6 +490,7 @@
             
             if (activeIframeFile === path) {
                 activeIframeFile = Object.keys(vfs).find(p => p.endsWith('.html')) || null;
+                activeIframeQuery = '';
                 if(activeIframeFile) refreshPreview();
                 else document.getElementById('live-frame').srcdoc = "";
             }
@@ -511,14 +515,15 @@
         function openPreviewInNewWindow() {
             if (!activeIframeFile) return;
             const newServerWindow = window.open('', '_blank');
-            const html = compileVFS(activeIframeFile, true);
+            const html = compileVFS(activeIframeFile, true, activeIframeQuery);
             newServerWindow.document.open();
             newServerWindow.document.write(html);
             newServerWindow.document.close();
             
             liveServers.push({
                 window: newServerWindow,
-                path: activeIframeFile
+                path: activeIframeFile,
+                query: activeIframeQuery
             });
             logConsole("Live Server started in new tab. Pop-out connected.");
         }
@@ -615,6 +620,7 @@
             // Automatically switch preview window if it's an HTML file
             if (path.endsWith('.html') || path.endsWith('.htm')) {
                 activeIframeFile = path;
+                activeIframeQuery = ''; // Reset virtual query parameters when starting fresh
                 refreshPreview();
             }
         }
@@ -724,10 +730,10 @@
                     if (['html', 'htm', 'js', 'css'].includes(ext)) {
                         refreshPreview();
                         
-                        // Push Hot Reload to ALL open Live Server Tabs
+                        // Push Hot Reload to ALL open Live Server Tabs while preserving their unique page queries!
                         liveServers = liveServers.filter(s => !s.window.closed);
                         liveServers.forEach(server => {
-                            server.window.postMessage({ type: 'HOT_RELOAD', html: compileVFS(server.path, true) }, '*');
+                            server.window.postMessage({ type: 'HOT_RELOAD', html: compileVFS(server.path, true, server.query || '') }, '*');
                         });
                     }
                 }, 600); // 600ms debounce
@@ -802,6 +808,7 @@
 
         function finalizeMount() {
             renderFileTree();
+            activeIframeQuery = ''; // reset parameter simulation
             
             let entryPoint = Object.keys(vfs).find(p => p.toLowerCase() === 'index.html');
             if (!entryPoint) entryPoint = Object.keys(vfs).find(p => p.toLowerCase() === 'main.html');
@@ -917,19 +924,33 @@
         }
 
         // --------------------------------------------------------
-        // VFS COMPILER (The "Intelligence")
+        // VFS COMPILER with robust Query and Hash Proxying
         // --------------------------------------------------------
         function resolveRelative(basePath, relative) {
             if (/^(http|https|data:|#)/.test(relative)) return relative;
+            
+            // Isolate queries (?key=val) and hash targets (#heading)
+            const queryMatch = relative.match(/[\?#].*$/);
+            const queryAndHash = queryMatch ? queryMatch[0] : '';
+            const cleanRelative = queryMatch ? relative.slice(0, queryMatch.index) : relative;
+            
+            if (cleanRelative === '') {
+                return basePath + queryAndHash;
+            }
+            
+            if (cleanRelative.startsWith('/')) {
+                return cleanRelative.slice(1) + queryAndHash;
+            }
+            
             const stack = basePath.split('/');
             stack.pop(); 
-            const parts = relative.split('/');
+            const parts = cleanRelative.split('/');
             for (let p of parts) {
                 if (p === '.') continue;
                 if (p === '..') stack.pop();
                 else stack.push(p);
             }
-            return stack.join('/');
+            return stack.join('/') + queryAndHash;
         }
 
         function getMimeType(filename) {
@@ -951,13 +972,110 @@
             });
         }
 
-        function compileVFS(targetHtmlPath, isExternalWindow = false) {
+        function compileVFS(targetHtmlPath, isExternalWindow = false, queryAndHash = '') {
             const file = vfs[targetHtmlPath];
             if (!file || !file.isText) return "<h1>404 File Not Found</h1>";
 
             const parser = new DOMParser();
             const doc = parser.parseFromString(file.content, 'text/html');
 
+            // Extract distinct query parts
+            const queryMatch = queryAndHash.match(/\?[^#]*/);
+            const virtualQuery = queryMatch ? queryMatch[0] : '';
+            const hashMatch = queryAndHash.match(/#.*/);
+            const virtualHash = hashMatch ? hashMatch[0] : '';
+
+            // Inject the Core Router Interceptor with Proxy Location handlers
+            const routerScript = doc.createElement('script');
+            routerScript.textContent = `
+                (function() {
+                    const isExternal = ${isExternalWindow};
+                    const parentWin = isExternal ? window.opener : window.parent;
+                    const virtualQuery = ${JSON.stringify(virtualQuery)};
+                    const virtualHash = ${JSON.stringify(virtualHash)};
+                    const virtualPathname = "/" + ${JSON.stringify(targetHtmlPath)};
+                    
+                    // Shadow URLSearchParams instantiation to default to virtual query
+                    const OriginalURLSearchParams = window.URLSearchParams;
+                    window.URLSearchParams = class extends OriginalURLSearchParams {
+                        constructor(init) {
+                            if (init === window.location.search || !init) {
+                                super(virtualQuery);
+                            } else {
+                                super(init);
+                            }
+                        }
+                    };
+
+                    // Shadow Location with modern get/set interception
+                    try {
+                        const virtualLocation = new Proxy(window.location, {
+                            get(target, prop) {
+                                if (prop === 'pathname') return virtualPathname;
+                                if (prop === 'search') return virtualQuery;
+                                if (prop === 'hash') return virtualHash;
+                                if (prop === 'href') return window.location.origin + virtualPathname + virtualQuery + virtualHash;
+                                if (prop === 'assign' || prop === 'replace') {
+                                    return function(url) {
+                                        if (parentWin) {
+                                            parentWin.postMessage({ type: 'NAVIGATE', path: url, current: ${JSON.stringify(targetHtmlPath)}, isExternal }, '*');
+                                        }
+                                    };
+                                }
+                                const val = target[prop];
+                                return typeof val === 'function' ? val.bind(target) : val;
+                            },
+                            set(target, prop, value) {
+                                if (prop === 'href') {
+                                    if (parentWin) {
+                                        parentWin.postMessage({ type: 'NAVIGATE', path: value, current: ${JSON.stringify(targetHtmlPath)}, isExternal }, '*');
+                                    }
+                                    return true;
+                                }
+                                target[prop] = value;
+                                return true;
+                            }
+                        });
+                        
+                        Object.defineProperty(window, 'location', {
+                            get() { return virtualLocation; },
+                            configurable: true
+                        });
+                    } catch(e) {}
+
+                    // Intercept static click links (<a> clicks)
+                    document.addEventListener('click', function(e) {
+                        const a = e.target.closest('a');
+                        if (a) {
+                            const href = a.getAttribute('href');
+                            if (href && !href.startsWith('http') && !href.startsWith('#') && !href.startsWith('javascript:')) {
+                                e.preventDefault();
+                                if (parentWin) {
+                                    parentWin.postMessage({ type: 'NAVIGATE', path: href, current: ${JSON.stringify(targetHtmlPath)}, isExternal }, '*');
+                                }
+                            }
+                        }
+                    });
+
+                    if (isExternal) {
+                        window.addEventListener('message', (e) => {
+                            if (e.data.type === 'HOT_RELOAD') {
+                                document.open();
+                                document.write(e.data.html);
+                                document.close();
+                            }
+                        });
+                    } else {
+                        const _log = console.log, _err = console.error;
+                        console.log = (...a) => { parentWin.postMessage({type:'LOG', val: a.join(' ')}, '*'); _log(...a); };
+                        console.error = (...a) => { parentWin.postMessage({type:'ERR', val: a.join(' ')}, '*'); _err(...a); };
+                        window.onerror = (m,s,l) => parentWin.postMessage({type:'ERR', val: m + ' at line ' + l}, '*');
+                    }
+                })();
+            `;
+            doc.head.insertBefore(routerScript, doc.head.firstChild);
+
+            // Map CSS to secure independent Blob URLs
             doc.querySelectorAll('link[rel="stylesheet"]').forEach(link => {
                 const href = link.getAttribute('href');
                 if (href && !href.startsWith('http')) {
@@ -970,6 +1088,7 @@
                 }
             });
 
+            // Map Media to Blob URLs
             doc.querySelectorAll('img, audio, video, source').forEach(el => {
                 const src = el.getAttribute('src');
                 if (src && !src.startsWith('http') && !src.startsWith('data:')) {
@@ -980,6 +1099,7 @@
                 }
             });
 
+            // Map JS to secure independent Blob URLs
             doc.querySelectorAll('script').forEach(script => {
                 const src = script.getAttribute('src');
                 if (src && !src.startsWith('http')) {
@@ -991,69 +1111,44 @@
                 }
             });
 
-            const routerScript = doc.createElement('script');
-            routerScript.textContent = `
-                const isExternal = ${isExternalWindow};
-                const parentWin = isExternal ? window.opener : window.parent;
-                
-                document.addEventListener('click', function(e) {
-                    const a = e.target.closest('a');
-                    if (a) {
-                        const href = a.getAttribute('href');
-                        if (href && !href.startsWith('http') && !href.startsWith('#') && !href.startsWith('javascript:')) {
-                            e.preventDefault();
-                            if (parentWin) {
-                                parentWin.postMessage({ type: 'NAVIGATE', path: href, current: '${targetHtmlPath}', isExternal }, '*');
-                            }
-                        }
-                    }
-                });
-
-                if (isExternal) {
-                    window.addEventListener('message', (e) => {
-                        if (e.data.type === 'HOT_RELOAD') {
-                            document.open();
-                            document.write(e.data.html);
-                            document.close();
-                        }
-                    });
-                } else {
-                    const _log = console.log, _err = console.error;
-                    console.log = (...a) => { parentWin.postMessage({type:'LOG', val: a.join(' ')}, '*'); _log(...a); };
-                    console.error = (...a) => { parentWin.postMessage({type:'ERR', val: a.join(' ')}, '*'); _err(...a); };
-                    window.onerror = (m,s,l) => parentWin.postMessage({type:'ERR', val: m + ' at line ' + l}, '*');
-                }
-            `;
-            doc.head.insertBefore(routerScript, doc.head.firstChild);
-
             return "<!DOCTYPE html>\n" + doc.documentElement.outerHTML;
         }
 
         function refreshPreview() {
             if (!activeIframeFile) return;
+            // Update Simulated Browser Address Bar with virtual parameters
+            document.getElementById('address-bar').innerText = `hyperlive://local/${activeIframeFile}${activeIframeQuery}`;
             const iframe = document.getElementById('live-frame');
-            document.getElementById('address-bar').innerText = `hyperlive://local/${activeIframeFile}`;
-            iframe.srcdoc = compileVFS(activeIframeFile);
+            iframe.srcdoc = compileVFS(activeIframeFile, false, activeIframeQuery);
         }
 
         window.addEventListener('message', (e) => {
             if (e.data.type === 'NAVIGATE') {
                 const newPath = resolveRelative(e.data.current, e.data.path);
-                const cleanPath = newPath.split(/[?#]/)[0];
+                
+                // Extract file path from virtual queries/hashes
+                const queryMatch = newPath.match(/[\?#].*$/);
+                const queryAndHash = queryMatch ? queryMatch[0] : '';
+                const cleanPath = queryMatch ? newPath.slice(0, queryMatch.index) : newPath;
+
                 if (vfs[cleanPath]) {
                     if (e.data.isExternal) {
                         liveServers = liveServers.filter(s => !s.window.closed);
                         const server = liveServers.find(s => s.window === e.source);
                         if (server) {
                             server.path = cleanPath;
-                            server.window.postMessage({ type: 'HOT_RELOAD', html: compileVFS(cleanPath, true) }, '*');
+                            server.query = queryAndHash;
+                            server.window.postMessage({ type: 'HOT_RELOAD', html: compileVFS(cleanPath, true, queryAndHash) }, '*');
                         }
                     } else {
                         activeIframeFile = cleanPath;
+                        activeIframeQuery = queryAndHash; // Preserve state queries in virtual iframe navigation
                         refreshPreview();
                         if(vfs[cleanPath].isText) openFile(cleanPath);
                     }
-                } else logConsole(`404: Cannot route to ${cleanPath}`, true);
+                } else {
+                    logConsole(`404: Cannot route to ${cleanPath}`, true);
+                }
             } else if (e.data.type === 'LOG') logConsole(e.data.val);
             else if (e.data.type === 'ERR') logConsole(e.data.val, true);
         });
