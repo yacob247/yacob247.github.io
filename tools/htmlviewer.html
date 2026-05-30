@@ -176,7 +176,7 @@
                     <div class="menu-dropdown absolute top-full left-0 bg-[#252526] border border-[#454545] shadow-xl py-1 min-w-[220px] rounded-sm z-50">
                         <div class="menu-list-item" onclick="execEditorAction('editor.action.quickCommand')"><span>Show Command Palette...</span><span class="menu-shortcut">F1</span></div>
                         <div class="h-px bg-[#454545] my-1"></div>
-                        <div class="menu-list-item" onclick="alert('HyperLive Pro\nVersion: 1.0 (VS Reference Edition)\nEngine: Monaco Editor\nStatus: Local Execution')"><span>About HyperLive Pro</span></div>
+                        <div class="menu-list-item" onclick="alert('HyperLive Pro\nVersion: 1.1 (Multi-Tab Edition)\nEngine: Monaco Editor\nStatus: Local Execution')"><span>About HyperLive Pro</span></div>
                     </div>
                 </div>
 
@@ -234,10 +234,11 @@
         <!-- Center: Monaco Editor -->
         <main id="editor-pane" class="flex-1 flex flex-col min-w-[200px] bg-ide-bg relative">
             <div class="flex bg-[#2d2d2d] border-b border-[#1e1e1e] h-9 shrink-0 justify-between items-center pr-2">
-                <div id="editor-tabs" class="flex overflow-x-auto h-full scrollbar-none">
-                    <!-- Tabs injected here -->
+                <!-- Editor Tabs container -->
+                <div id="editor-tabs" class="flex overflow-x-auto h-full scrollbar-none flex-1">
+                    <!-- Tabs dynamically injected here -->
                 </div>
-                <div class="flex items-center gap-1 shrink-0">
+                <div class="flex items-center gap-1 shrink-0 ml-2">
                     <button onclick="execEditorAction('editor.action.formatDocument')" class="p-1 hover:bg-ide-active rounded text-gray-400 hover:text-white" title="Format Document"><i data-lucide="align-left" class="w-4 h-4"></i></button>
                     <button onclick="execEditorAction('editor.action.commentLine')" class="p-1 hover:bg-ide-active rounded text-gray-400 hover:text-white" title="Toggle Comment"><i data-lucide="message-square" class="w-4 h-4"></i></button>
                 </div>
@@ -329,12 +330,15 @@
         // STATE MANAGEMENT
         // --------------------------------------------------------
         let vfs = {}; // Virtual File System
-        let activeFile = null;
-        let activeIframeFile = 'index.html';
+        let openFiles = []; // Array of file paths currently open in tabs
+        let activeFile = null; // Path of the file focused in the editor
+        let activeIframeFile = 'index.html'; // Path loaded in the preview frame
         let editor = null;
         let isMonacoReady = false;
         let saveTimeout = null;
-        let liveServerWindow = null; // Tracks the external Live Server tab
+        
+        // Supports Unlimited Pop-out Servers 
+        let liveServers = []; // e.g. { window: WinObj, path: string }
 
         // Editor Options State
         let isWordWrap = false;
@@ -397,7 +401,7 @@
         }
 
         // --------------------------------------------------------
-        // FILE MANAGEMENT ACTIONS
+        // FILE MANAGEMENT ACTIONS (Tabs, Rename, Delete)
         // --------------------------------------------------------
         function createNewFile() {
             const fileName = prompt("Enter new file name with extension (e.g., script.js):", "untitled.html");
@@ -421,6 +425,76 @@
             logConsole(`Created new file: ${fileName}`);
         }
 
+        function renameFile(path, e) {
+            if (e) e.stopPropagation();
+            const file = vfs[path];
+            if (!file) return;
+            
+            const newName = prompt(`Rename ${file.name} to:`, file.name);
+            if (!newName || newName === file.name) return;
+            
+            const pathParts = path.split('/');
+            pathParts.pop(); // remove old name
+            pathParts.push(newName);
+            const newPath = pathParts.join('/') || newName;
+            
+            if (vfs[newPath]) {
+                alert("A file with this name already exists in this directory.");
+                return;
+            }
+            
+            // Move VFS item
+            vfs[newPath] = vfs[path];
+            vfs[newPath].name = newName;
+            delete vfs[path];
+            
+            // Update internal path tracking arrays
+            const tabIndex = openFiles.indexOf(path);
+            if (tabIndex > -1) openFiles[tabIndex] = newPath;
+            
+            if (activeFile === path) activeFile = newPath;
+            if (activeIframeFile === path) activeIframeFile = newPath;
+            
+            // Re-render UIs
+            renderFileTree();
+            renderTabs();
+            
+            // Re-evaluate editor lang in case extension changed
+            if (activeFile === newPath && vfs[newPath].isText && isMonacoReady) {
+                const ext = newPath.split('.').pop().toLowerCase();
+                const langMap = { 'js': 'javascript', 'html': 'html', 'css': 'css', 'json': 'json', 'md': 'markdown' };
+                const lang = langMap[ext] || 'plaintext';
+                monaco.editor.setModelLanguage(editor.getModel(), lang);
+                document.getElementById('sb-language').innerText = lang.toUpperCase();
+            }
+            
+            // Recompile Live Servers observing this path
+            liveServers.forEach(server => {
+                if (server.path === path) server.path = newPath;
+            });
+            refreshPreview();
+            
+            logConsole(`Renamed file to ${newPath}`);
+        }
+
+        function deleteFile(path, e) {
+            if (e) e.stopPropagation();
+            if (!confirm(`Are you sure you want to delete '${vfs[path].name}'?`)) return;
+            
+            delete vfs[path];
+            
+            if (openFiles.includes(path)) closeTab(path);
+            
+            if (activeIframeFile === path) {
+                activeIframeFile = Object.keys(vfs).find(p => p.endsWith('.html')) || null;
+                if(activeIframeFile) refreshPreview();
+                else document.getElementById('live-frame').srcdoc = "";
+            }
+            
+            renderFileTree();
+            logConsole(`Deleted ${path}`);
+        }
+
         function saveActiveFile() {
             if (!activeFile || !vfs[activeFile]) return;
             const fileData = vfs[activeFile].content;
@@ -434,18 +508,115 @@
             logConsole(`Downloaded ${activeFile}`);
         }
 
-        function printPreview() {
-            const iframe = document.getElementById('live-frame');
-            iframe.contentWindow.focus();
-            iframe.contentWindow.print();
-        }
-
         function openPreviewInNewWindow() {
             if (!activeIframeFile) return;
-            const html = compileVFS(activeIframeFile);
-            const blob = new Blob([html], { type: 'text/html' });
-            const url = URL.createObjectURL(blob);
-            window.open(url, '_blank');
+            const newServerWindow = window.open('', '_blank');
+            const html = compileVFS(activeIframeFile, true);
+            newServerWindow.document.open();
+            newServerWindow.document.write(html);
+            newServerWindow.document.close();
+            
+            liveServers.push({
+                window: newServerWindow,
+                path: activeIframeFile
+            });
+            logConsole("Live Server started in new tab. Pop-out connected.");
+        }
+
+        // --------------------------------------------------------
+        // TABS UI LOGIC
+        // --------------------------------------------------------
+        function renderTabs() {
+            const tabsContainer = document.getElementById('editor-tabs');
+            tabsContainer.innerHTML = '';
+            
+            openFiles.forEach(path => {
+                const file = vfs[path];
+                const isActive = (path === activeFile);
+                
+                const tab = document.createElement('div');
+                tab.className = `group flex items-center gap-2 px-3 py-1.5 min-w-fit max-w-[200px] cursor-pointer border-r border-[#2d2d2d] select-none ${isActive ? 'bg-[#1e1e1e] text-white border-t-2 border-t-[#007acc]' : 'bg-[#2d2d2d] text-gray-400 hover:bg-[#2d2d2d]/80 border-t-2 border-t-transparent'}`;
+                tab.onclick = () => openFile(path);
+                
+                const nameSpan = document.createElement('span');
+                nameSpan.className = "truncate text-xs font-mono";
+                nameSpan.innerText = file ? file.name : path.split('/').pop();
+                
+                const closeBtn = document.createElement('div');
+                closeBtn.className = `p-0.5 rounded hover:bg-gray-600 transition-colors ${isActive ? 'opacity-100 text-gray-300' : 'opacity-0 group-hover:opacity-100 text-gray-400'}`;
+                closeBtn.innerHTML = `<i data-lucide="x" class="w-3.5 h-3.5"></i>`;
+                closeBtn.onclick = (e) => { e.stopPropagation(); closeTab(path); };
+                
+                tab.appendChild(nameSpan);
+                tab.appendChild(closeBtn);
+                tabsContainer.appendChild(tab);
+            });
+            lucide.createIcons();
+        }
+
+        function closeTab(path) {
+            openFiles = openFiles.filter(p => p !== path);
+            if (activeFile === path) {
+                if (openFiles.length > 0) {
+                    openFile(openFiles[openFiles.length - 1]);
+                } else {
+                    activeFile = null;
+                    document.getElementById('editor-empty').classList.remove('hidden');
+                    document.getElementById('editor-empty').innerHTML = `
+                        <div class="text-center">
+                            <i data-lucide="code-2" class="w-16 h-16 text-gray-600 mx-auto mb-4"></i>
+                            <p class="text-gray-500 font-mono text-sm">Select a file or press Ctrl+N to start</p>
+                        </div>
+                    `;
+                    document.getElementById('editor-tabs').innerHTML = ''; // clear tabs
+                    if (isMonacoReady) editor.setValue('');
+                    lucide.createIcons();
+                }
+            } else {
+                renderTabs(); // Just update visually
+            }
+        }
+
+        function openFile(path) {
+            if (!vfs[path]) return;
+            
+            if (!openFiles.includes(path)) openFiles.push(path);
+            activeFile = path;
+            
+            document.querySelectorAll('.file-item').forEach(el => el.classList.remove('active'));
+            const activeNode = document.getElementById(`tree-node-${path.replace(/[^a-zA-Z0-9]/g, '-')}`);
+            if (activeNode) activeNode.classList.add('active');
+
+            renderTabs();
+
+            if (vfs[path].isText) {
+                document.getElementById('editor-empty').classList.add('hidden');
+                if (isMonacoReady) {
+                    const ext = path.split('.').pop().toLowerCase();
+                    const langMap = { 'js': 'javascript', 'html': 'html', 'css': 'css', 'json': 'json', 'md': 'markdown' };
+                    const lang = langMap[ext] || 'plaintext';
+                    monaco.editor.setModelLanguage(editor.getModel(), lang);
+                    editor.setValue(vfs[path].content || '');
+                    
+                    document.getElementById('sb-language').innerText = lang.toUpperCase();
+                } else {
+                    setTimeout(() => openFile(path), 100);
+                }
+            } else {
+                document.getElementById('editor-empty').classList.remove('hidden');
+                document.getElementById('editor-empty').innerHTML = `
+                    <div class="text-center">
+                        <img src="${vfs[path].blobUrl}" class="max-w-xs max-h-48 mx-auto mb-4 rounded shadow-lg border border-[#333]">
+                        <p class="text-gray-500 font-mono text-sm">${vfs[path].name}</p>
+                    </div>
+                `;
+            }
+            
+            // Automatically switch preview window if it's an HTML file
+            if (path.endsWith('.html') || path.endsWith('.htm')) {
+                activeIframeFile = path;
+                refreshPreview();
+            }
         }
 
         // --------------------------------------------------------
@@ -525,12 +696,10 @@
 
             isMonacoReady = true;
 
-            // Status Bar Updates: Cursor Position
             editor.onDidChangeCursorPosition((e) => {
                 document.getElementById('sb-cursor').innerText = `Ln ${e.position.lineNumber}, Col ${e.position.column}`;
             });
 
-            // Status Bar Updates: Markers (Errors/Warnings)
             monaco.editor.onDidChangeMarkers(() => {
                 const markers = monaco.editor.getModelMarkers({ resource: editor.getModel().uri });
                 let errors = 0, warnings = 0;
@@ -550,15 +719,16 @@
                 saveTimeout = setTimeout(() => {
                     vfs[activeFile].content = editor.getValue();
                     
-                    // Only auto-reload if editing a web file
+                    // Auto-reload web files
                     const ext = activeFile.split('.').pop().toLowerCase();
                     if (['html', 'htm', 'js', 'css'].includes(ext)) {
                         refreshPreview();
                         
-                        // Push Hot Reload to Live Server Tab
-                        if (liveServerWindow && !liveServerWindow.closed) {
-                            liveServerWindow.postMessage({ type: 'HOT_RELOAD', html: compileVFS(activeIframeFile, true) }, '*');
-                        }
+                        // Push Hot Reload to ALL open Live Server Tabs
+                        liveServers = liveServers.filter(s => !s.window.closed);
+                        liveServers.forEach(server => {
+                            server.window.postMessage({ type: 'HOT_RELOAD', html: compileVFS(server.path, true) }, '*');
+                        });
                     }
                 }, 600); // 600ms debounce
             });
@@ -577,7 +747,9 @@
             e.preventDefault();
             document.body.classList.remove('drag-active');
             if (e.dataTransfer.items) {
-                vfs = {}; // Reset
+                // Reset State
+                vfs = {}; openFiles = []; activeFile = null; document.getElementById('editor-tabs').innerHTML = '';
+                
                 const items = Array.from(e.dataTransfer.items).filter(i => i.kind === 'file');
                 for (let item of items) {
                     const entry = item.webkitGetAsEntry();
@@ -590,7 +762,10 @@
         async function handleFolderSelect(e) {
             const files = e.target.files;
             if (files.length === 0) return;
-            vfs = {};
+            
+            // Reset State
+            vfs = {}; openFiles = []; activeFile = null; document.getElementById('editor-tabs').innerHTML = '';
+            
             for (let file of files) {
                 const pathParts = file.webkitRelativePath.split('/');
                 pathParts.shift(); 
@@ -628,7 +803,6 @@
         function finalizeMount() {
             renderFileTree();
             
-            // Intelligent Entry Point Detection
             let entryPoint = Object.keys(vfs).find(p => p.toLowerCase() === 'index.html');
             if (!entryPoint) entryPoint = Object.keys(vfs).find(p => p.toLowerCase() === 'main.html');
             if (!entryPoint) entryPoint = Object.keys(vfs).find(p => p.toLowerCase().endsWith('.html'));
@@ -645,13 +819,23 @@
         }
 
         // --------------------------------------------------------
-        // FILE TREE UI
+        // FILE TREE UI (Now Supports Rename & Delete Icons)
         // --------------------------------------------------------
         function renderFileTree() {
             const container = document.getElementById('file-tree');
             container.innerHTML = '';
             
-            if (Object.keys(vfs).length === 0) return;
+            if (Object.keys(vfs).length === 0) {
+                 container.innerHTML = `
+                    <div class="p-6 text-center text-gray-500 mt-10">
+                        <i data-lucide="layout-grid" class="w-10 h-10 mx-auto mb-3 opacity-50"></i>
+                        <p>No folder opened.</p>
+                        <button onclick="triggerFolderUpload()" class="mt-4 px-4 py-1.5 bg-[#007acc] hover:bg-[#005f9e] text-white rounded-md transition font-sans text-xs">Open Folder</button>
+                        <button onclick="loadDemo()" class="mt-2 px-4 py-1.5 border border-ide-border hover:bg-ide-active text-gray-300 rounded-md transition font-sans text-xs block mx-auto w-[122px]">Load Demo</button>
+                    </div>`;
+                 lucide.createIcons();
+                 return;
+            }
 
             const tree = { dirs: {}, files: [] };
             Object.keys(vfs).forEach(path => {
@@ -694,7 +878,7 @@
 
                 node.files.sort((a,b) => a.name.localeCompare(b.name)).forEach(file => {
                     const el = document.createElement('div');
-                    el.className = `flex items-center gap-2 py-1 px-2 text-gray-400 file-item ${activeFile === file.path ? 'active' : ''}`;
+                    el.className = `group flex items-center justify-between py-1 px-2 text-gray-400 file-item ${activeFile === file.path ? 'active' : ''}`;
                     el.style.paddingLeft = `${depth * 12 + 24}px`;
                     el.id = `tree-node-${file.path.replace(/[^a-zA-Z0-9]/g, '-')}`;
                     
@@ -705,62 +889,31 @@
                     else if (ext === 'js') { icon = 'file-json'; color = 'text-yellow-400'; }
                     else if (['png','jpg','svg'].includes(ext)) { icon = 'image'; color = 'text-green-400'; }
 
-                    el.innerHTML = `<i data-lucide="${icon}" class="w-4 h-4 ${color}"></i><span class="truncate">${file.name}</span>`;
-                    el.onclick = () => openFile(file.path);
+                    const leftDiv = document.createElement('div');
+                    leftDiv.className = 'flex items-center gap-2 overflow-hidden truncate';
+                    leftDiv.innerHTML = `<i data-lucide="${icon}" class="w-4 h-4 shrink-0 ${color}"></i><span class="truncate">${file.name}</span>`;
+                    
+                    const rightDiv = document.createElement('div');
+                    rightDiv.className = 'hidden group-hover:flex items-center gap-1.5 shrink-0 pr-1 text-gray-500';
+                    rightDiv.innerHTML = `
+                        <button class="hover:text-white transition-colors" onclick="renameFile('${file.path}', event)" title="Rename File"><i data-lucide="edit-2" class="w-3.5 h-3.5"></i></button>
+                        <button class="hover:text-red-400 transition-colors" onclick="deleteFile('${file.path}', event)" title="Delete File"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                    `;
+                    
+                    el.appendChild(leftDiv);
+                    el.appendChild(rightDiv);
+                    
+                    el.onclick = (e) => {
+                        // Prevent openFile if we clicked rename/delete
+                        if (e.target.closest('button')) return;
+                        openFile(file.path);
+                    };
                     containerNode.appendChild(el);
                 });
             }
 
             buildHTML(tree, container, 0);
             lucide.createIcons();
-        }
-
-        // --------------------------------------------------------
-        // EDITOR OPERATIONS
-        // --------------------------------------------------------
-        function openFile(path) {
-            if (!vfs[path]) return;
-            activeFile = path;
-            
-            document.querySelectorAll('.file-item').forEach(el => el.classList.remove('active'));
-            const activeNode = document.getElementById(`tree-node-${path.replace(/[^a-zA-Z0-9]/g, '-')}`);
-            if (activeNode) activeNode.classList.add('active');
-
-            const tabs = document.getElementById('editor-tabs');
-            tabs.innerHTML = `
-                <div class="flex items-center gap-2 px-3 py-1.5 bg-[#1e1e1e] text-white border-t-2 border-[#007acc] min-w-[120px] max-w-[200px] cursor-default border-r border-[#2d2d2d]">
-                    <span class="truncate text-xs font-mono">${vfs[path].name}</span>
-                </div>
-            `;
-
-            if (vfs[path].isText) {
-                document.getElementById('editor-empty').classList.add('hidden');
-                if (isMonacoReady) {
-                    const ext = path.split('.').pop().toLowerCase();
-                    const langMap = { 'js': 'javascript', 'html': 'html', 'css': 'css', 'json': 'json', 'md': 'markdown' };
-                    const lang = langMap[ext] || 'plaintext';
-                    monaco.editor.setModelLanguage(editor.getModel(), lang);
-                    editor.setValue(vfs[path].content || '');
-                    
-                    // Update Status bar language display
-                    document.getElementById('sb-language').innerText = lang.toUpperCase();
-                } else {
-                    setTimeout(() => openFile(path), 100);
-                }
-            } else {
-                document.getElementById('editor-empty').classList.remove('hidden');
-                document.getElementById('editor-empty').innerHTML = `
-                    <div class="text-center">
-                        <img src="${vfs[path].blobUrl}" class="max-w-xs max-h-48 mx-auto mb-4 rounded shadow-lg border border-[#333]">
-                        <p class="text-gray-500 font-mono text-sm">${vfs[path].name}</p>
-                    </div>
-                `;
-            }
-            
-            if (path.endsWith('.html') || path.endsWith('.htm')) {
-                activeIframeFile = path;
-                refreshPreview();
-            }
         }
 
         // --------------------------------------------------------
@@ -786,7 +939,6 @@
         }
 
         function compileCSS(path, content) {
-            // Fix relative paths inside CSS files (e.g. background-image)
             return content.replace(/url\(['"]?([^'"()]+)['"]?\)/g, (match, url) => {
                 if (url.startsWith('data:') || url.startsWith('http')) return match;
                 const absPath = resolveRelative(path, url);
@@ -806,7 +958,6 @@
             const parser = new DOMParser();
             const doc = parser.parseFromString(file.content, 'text/html');
 
-            // Map CSS to secure independent Blob URLs
             doc.querySelectorAll('link[rel="stylesheet"]').forEach(link => {
                 const href = link.getAttribute('href');
                 if (href && !href.startsWith('http')) {
@@ -819,7 +970,6 @@
                 }
             });
 
-            // Map Media to Blob URLs
             doc.querySelectorAll('img, audio, video, source').forEach(el => {
                 const src = el.getAttribute('src');
                 if (src && !src.startsWith('http') && !src.startsWith('data:')) {
@@ -830,7 +980,6 @@
                 }
             });
 
-            // Map JS to secure independent Blob URLs (Supports interconnectivity!)
             doc.querySelectorAll('script').forEach(script => {
                 const src = script.getAttribute('src');
                 if (src && !src.startsWith('http')) {
@@ -842,7 +991,6 @@
                 }
             });
 
-            // Smart Interceptor Script
             const routerScript = doc.createElement('script');
             routerScript.textContent = `
                 const isExternal = ${isExternalWindow};
@@ -888,28 +1036,19 @@
             iframe.srcdoc = compileVFS(activeIframeFile);
         }
 
-        function openPreviewInNewWindow() {
-            if (!activeIframeFile) return;
-            liveServerWindow = window.open('', '_blank');
-            const html = compileVFS(activeIframeFile, true);
-            liveServerWindow.document.open();
-            liveServerWindow.document.write(html);
-            liveServerWindow.document.close();
-            logConsole("Live Server started in new tab. Pop-out connected.");
-        }
-
         window.addEventListener('message', (e) => {
             if (e.data.type === 'NAVIGATE') {
                 const newPath = resolveRelative(e.data.current, e.data.path);
                 const cleanPath = newPath.split(/[?#]/)[0];
                 if (vfs[cleanPath]) {
                     if (e.data.isExternal) {
-                        // Route external Live Server Tab to new page
-                        if (liveServerWindow && !liveServerWindow.closed) {
-                            liveServerWindow.postMessage({ type: 'HOT_RELOAD', html: compileVFS(cleanPath, true) }, '*');
+                        liveServers = liveServers.filter(s => !s.window.closed);
+                        const server = liveServers.find(s => s.window === e.source);
+                        if (server) {
+                            server.path = cleanPath;
+                            server.window.postMessage({ type: 'HOT_RELOAD', html: compileVFS(cleanPath, true) }, '*');
                         }
                     } else {
-                        // Route internal iframe
                         activeIframeFile = cleanPath;
                         refreshPreview();
                         if(vfs[cleanPath].isText) openFile(cleanPath);
@@ -956,6 +1095,9 @@
         }
 
         function loadDemo() {
+            openFiles = [];
+            document.getElementById('editor-tabs').innerHTML = '';
+            
             vfs = {
                 'index.html': { name: 'index.html', isText: true, content: `<!DOCTYPE html>\n<html>\n<head>\n  <link rel="stylesheet" href="styles.css">\n</head>\n<body>\n  <div class="card">\n    <h1>Welcome to HyperLive Pro</h1>\n    <p>Try editing this HTML, CSS, or JS. The preview updates instantly!</p>\n    <button id="btn">Click Me</button>\n    <p id="out"></p>\n  </div>\n  <script src="script.js"><\/script>\n</body>\n</html>`},
                 'styles.css': { name: 'styles.css', isText: true, content: `body {\n  font-family: system-ui;\n  background: #f0f2f5;\n  display: grid;\n  place-items: center;\n  height: 100vh;\n  margin: 0;\n}\n.card {\n  background: white;\n  padding: 2rem;\n  border-radius: 12px;\n  box-shadow: 0 4px 6px rgba(0,0,0,0.1);\n  text-align: center;\n}\nbutton {\n  background: #007acc;\n  color: white;\n  border: none;\n  padding: 8px 16px;\n  border-radius: 6px;\n  cursor: pointer;\n}`},
