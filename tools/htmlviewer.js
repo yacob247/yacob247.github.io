@@ -110,27 +110,47 @@ const menuDefinition = [
             { label: 'Sort Lines Descending', action: () => sortLines(false) },
         ]
     },
-    {
+{
         label: 'View',
         items: [
-            { label: 'Explorer', shortcut: 'Ctrl+Shift+E', action: () => switchSidebar('explorer') },
-            { label: 'Search', shortcut: 'Ctrl+Shift+F', action: () => switchSidebar('search') },
-            { label: 'Source Control', shortcut: 'Ctrl+Shift+G', action: () => switchSidebar('git') },
-            { label: 'Bookmarks', action: () => switchSidebar('bookmarks') },
+            { label: 'Command Palette…',  shortcut: 'Ctrl+Shift+P', action: () => openCommandPalette() },
             { separator: true },
-            { label: 'Toggle Terminal', shortcut: 'Ctrl+`', action: () => switchSidebar('terminal') },
-            { label: 'Toggle Output/Console', action: () => toggleBottomPanel() },
+            { label: 'Explorer',          shortcut: 'Ctrl+Shift+E', action: () => switchSidebar('explorer') },
+            { label: 'Search',            shortcut: 'Ctrl+Shift+F', action: () => { switchSidebar('search'); document.getElementById('global-search-input').focus(); } },
+            { label: 'Source Control',    shortcut: 'Ctrl+Shift+G', action: () => switchSidebar('git') },
+            { label: 'Run',               shortcut: 'Ctrl+Shift+D', action: () => { openBottomPanel(); switchBottomTab('console'); } },
             { separator: true },
-            { label: 'Toggle Word Wrap', shortcut: 'Alt+Z', action: () => toggleWordWrap() },
-            { label: 'Toggle Minimap', action: () => toggleMinimap() },
-            { label: 'Toggle Line Numbers', action: () => toggleLineNumbers() },
-            { label: 'Toggle Render Whitespace', action: () => toggleWhitespace() },
+            { label: 'Problems',          shortcut: 'Ctrl+Shift+M', action: () => { openBottomPanel(); switchBottomTab('problems'); } },
+            { label: 'Output',            shortcut: 'Ctrl+Shift+U', action: () => { openBottomPanel(); switchBottomTab('output'); } },
+            { label: 'Debug Console',     shortcut: 'Ctrl+Shift+Y', action: () => { openBottomPanel(); switchBottomTab('debug'); } },
+            { label: 'Terminal',          shortcut: 'Ctrl+`',        action: () => switchSidebar('terminal') },
             { separator: true },
-            { label: 'Zoom In', shortcut: 'Ctrl+=', action: () => zoomEditor(1) },
-            { label: 'Zoom Out', shortcut: 'Ctrl+-', action: () => zoomEditor(-1) },
-            { label: 'Reset Zoom', shortcut: 'Ctrl+0', action: () => zoomEditor(0) },
+            { label: 'Word Wrap',         shortcut: 'Alt+Z',        action: () => toggleWordWrap() },
+            { label: 'Toggle Minimap',                               action: () => toggleMinimap() },
+            { label: 'Toggle Line Numbers',                          action: () => toggleLineNumbers() },
+            { label: 'Toggle Render Whitespace',                     action: () => toggleWhitespace() },
             { separator: true },
-            { label: 'Full Screen', shortcut: 'F11', action: () => toggleFullScreen() },
+            { label: 'Zoom In',           shortcut: 'Ctrl+=',       action: () => zoomEditor(1) },
+            { label: 'Zoom Out',          shortcut: 'Ctrl+-',       action: () => zoomEditor(-1) },
+            { label: 'Reset Zoom',        shortcut: 'Ctrl+0',       action: () => zoomEditor(0) },
+            { separator: true },
+            { label: 'Full Screen',       shortcut: 'F11',          action: () => toggleFullScreen() },
+        ]
+    },
+    {
+        label: 'Go',
+        items: [
+            { label: 'Back',                    shortcut: 'Alt+Left',      action: () => execEditorCmd('cursorUndo') },
+            { label: 'Forward',                 shortcut: 'Alt+Right',     action: () => execEditorCmd('cursorRedo') },
+            { separator: true },
+            { label: 'Go to File…',             shortcut: 'Ctrl+P',        action: () => goToFile() },
+            { label: 'Go to Symbol in Editor…', shortcut: 'Ctrl+Shift+O',  action: () => execEditorCmd('workbench.action.gotoSymbol') },
+            { separator: true },
+            { label: 'Go to Line / Column…',    shortcut: 'Ctrl+G',        action: () => execEditorCmd('editor.action.gotoLine') },
+            { label: 'Go to Bracket',           shortcut: 'Ctrl+Shift+\\', action: () => execEditorCmd('editor.action.jumpToBracket') },
+            { separator: true },
+            { label: 'Next Problem',            shortcut: 'F8',            action: () => execEditorCmd('editor.action.marker.next') },
+            { label: 'Previous Problem',        shortcut: 'Shift+F8',      action: () => execEditorCmd('editor.action.marker.prev') },
         ]
     },
     {
@@ -172,19 +192,29 @@ const menuDefinition = [
         ]
     },
     {
-        label: 'Debug',
+        label: 'Run',
         items: [
-            { label: 'Start Debugging (Live Preview)', shortcut: 'F5', action: () => refreshPreview() },
-            { label: 'Stop Debugging', shortcut: 'Shift+F5', action: () => stopDebugging() },
+            { label: 'Start Debugging',         shortcut: 'F5',           action: () => runActiveFile() },
+            { label: 'Run Without Debugging',   shortcut: 'Ctrl+F5',      action: () => runActiveFile() },
             { separator: true },
-            { label: 'Open DevTools', shortcut: 'F12', action: () => openDevTools() },
-            { label: 'Inspect Element', action: () => inspectElement() },
+            { label: 'Toggle Breakpoint',       shortcut: 'F9',           action: () => toggleBreakpoint() },
+            { label: 'New Breakpoint at Line…',                           action: () => addBreakpointAtLine() },
             { separator: true },
-            { label: 'Toggle Breakpoint', shortcut: 'F9', action: () => toggleBreakpoint() },
-            { label: 'Clear All Breakpoints', action: () => clearAllBreakpoints() },
+            { label: 'Enable All Breakpoints',                            action: () => setAllBreakpoints(true) },
+            { label: 'Disable All Breakpoints',                           action: () => setAllBreakpoints(false) },
+            { label: 'Remove All Breakpoints',                            action: () => clearAllBreakpoints() },
             { separator: true },
-            { label: 'Open Console', shortcut: 'Ctrl+`', action: () => toggleBottomPanel() },
-            { label: 'Clear Console', action: () => clearBottomPanel() },
+            { label: 'Open DevTools',           shortcut: 'F12',          action: () => openDevTools() },
+            { label: 'Clear Console',                                     action: () => clearBottomPanel() },
+        ]
+    },
+    {
+        label: 'Terminal',
+        items: [
+            { label: 'New Terminal',            shortcut: 'Ctrl+Shift+`', action: () => switchSidebar('terminal') },
+            { separator: true },
+            { label: 'Run Active File',                                   action: () => runActiveFile() },
+            { label: 'Run Selected Text',                                 action: () => runSelectedText() },
         ]
     },
     {
@@ -232,14 +262,17 @@ const menuDefinition = [
             { label: 'Reset Layout', action: () => resetLayout() },
         ]
     },
-    {
+{
         label: 'Help',
         items: [
-            { label: 'Command Palette…', shortcut: 'F1', action: () => openCommandPalette() },
+            { label: 'Show All Commands',           shortcut: 'Ctrl+Shift+P', action: () => openCommandPalette() },
             { separator: true },
-            { label: 'Keyboard Shortcuts Reference', action: () => showKeyboardShortcuts() },
+            { label: 'Keyboard Shortcuts Reference',shortcut: 'Ctrl+K Ctrl+R',action: () => showKeyboardShortcuts() },
             { separator: true },
-            { label: 'About HyperLive Pro', action: () => showAbout() },
+            { label: 'Report Issue',                                          action: () => window.open('https://github.com/', '_blank') },
+            { label: 'View License',                                          action: () => showLicense() },
+            { separator: true },
+            { label: 'About HyperLive Pro',                                   action: () => showAbout() },
         ]
     },
 ];
@@ -316,33 +349,41 @@ document.addEventListener('click', e => {
 // KEYBOARD SHORTCUTS
 // ============================================================
 document.addEventListener('keydown', e => {
-    const ctrl = e.ctrlKey || e.metaKey;
+    const ctrl  = e.ctrlKey || e.metaKey;
     const shift = e.shiftKey;
-    const alt = e.altKey;
-    const key = e.key.toLowerCase();
+    const alt   = e.altKey;
+    const key   = e.key.toLowerCase();
 
-    // Don't intercept when typing in inputs
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
-    if (ctrl && !shift && !alt && key === 'n') { e.preventDefault(); createNewFile(); }
-    else if (ctrl && !shift && !alt && key === 'o') { e.preventDefault(); triggerFolderUpload(); }
-    else if (ctrl && !shift && !alt && key === 's') { e.preventDefault(); saveActiveFile(); }
-    else if (ctrl && shift && key === 's') { e.preventDefault(); exportZip(); }
-    else if (ctrl && !shift && !alt && key === 'p') { e.preventDefault(); openPreviewInNewWindow(); }
-    else if (ctrl && !shift && !alt && key === 'w') { e.preventDefault(); if(activeFile) closeTab(activeFile); }
-    else if (ctrl && shift && key === 'e') { e.preventDefault(); switchSidebar('explorer'); }
-    else if (ctrl && shift && key === 'f') { e.preventDefault(); switchSidebar('search'); document.getElementById('global-search-input').focus(); }
-    else if (ctrl && shift && key === 'g') { e.preventDefault(); switchSidebar('git'); }
-    else if (ctrl && !shift && !alt && key === '`') { e.preventDefault(); switchSidebar('terminal'); }
-    else if (key === 'f11') { e.preventDefault(); toggleFullScreen(); }
-    else if (key === 'f5') { e.preventDefault(); refreshPreview(); }
+    if      (ctrl && !shift && !alt && key === 'n')   { e.preventDefault(); createNewFile(); }
+    else if (ctrl && !shift && !alt && key === 'o')   { e.preventDefault(); triggerFolderUpload(); }
+    else if (ctrl && !shift && !alt && key === 's')   { e.preventDefault(); saveActiveFile(); }
+    else if (ctrl &&  shift &&        key === 's')    { e.preventDefault(); exportZip(); }
+    else if (ctrl && !shift && !alt && key === 'w')   { e.preventDefault(); if(activeFile) closeTab(activeFile); }
+    else if (ctrl &&  shift &&        key === 'e')    { e.preventDefault(); switchSidebar('explorer'); }
+    else if (ctrl &&  shift &&        key === 'f')    { e.preventDefault(); switchSidebar('search'); document.getElementById('global-search-input').focus(); }
+    else if (ctrl &&  shift &&        key === 'g')    { e.preventDefault(); switchSidebar('git'); }
+    else if (ctrl &&  shift &&        key === 'd')    { e.preventDefault(); openBottomPanel(); switchBottomTab('console'); }
+    else if (ctrl &&  shift &&        key === 'm')    { e.preventDefault(); openBottomPanel(); switchBottomTab('problems'); }
+    else if (ctrl &&  shift &&        key === 'u')    { e.preventDefault(); openBottomPanel(); switchBottomTab('output'); }
+    else if (ctrl &&  shift &&        key === 'y')    { e.preventDefault(); openBottomPanel(); switchBottomTab('debug'); }
+    else if (ctrl && !shift && !alt && key === '`')   { e.preventDefault(); switchSidebar('terminal'); }
+    else if (ctrl &&  shift &&        key === '`')    { e.preventDefault(); switchSidebar('terminal'); }
+    else if (ctrl && !shift && !alt && key === 'b')   { e.preventDefault(); toggleSidebar(); }
     else if (ctrl && !shift && !alt && key === 'tab') { e.preventDefault(); cycleTab(1); }
-    else if (ctrl && shift && key === 'tab') { e.preventDefault(); cycleTab(-1); }
-    else if (key === 'f1') { e.preventDefault(); openCommandPalette(); }
-    else if (ctrl && shift && key === 'p') { e.preventDefault(); openCommandPalette(); }
-    else if (ctrl && !shift && !alt && key === 'b') { e.preventDefault(); toggleSidebar(); }
+    else if (ctrl &&  shift &&        key === 'tab')  { e.preventDefault(); cycleTab(-1); }
+    else if (ctrl && !shift && !alt && key === 'p')   { e.preventDefault(); openPreviewInNewWindow(); }
+    else if (ctrl &&  shift &&        key === 'p')    { e.preventDefault(); openCommandPalette(); }
+    else if (key === 'f1')  { e.preventDefault(); openCommandPalette(); }
+    else if (key === 'f5' && !ctrl)  { e.preventDefault(); runActiveFile(); }
+    else if (key === 'f5' &&  ctrl)  { e.preventDefault(); runActiveFile(); }
+    else if (key === 'f8' && !shift) { e.preventDefault(); execEditorCmd('editor.action.marker.next'); }
+    else if (key === 'f8' &&  shift) { e.preventDefault(); execEditorCmd('editor.action.marker.prev'); }
+    else if (key === 'f9')  { e.preventDefault(); toggleBreakpoint(); }
+    else if (key === 'f11') { e.preventDefault(); toggleFullScreen(); }
+    else if (key === 'f12') { e.preventDefault(); openDevTools(); }
 });
-
 // ============================================================
 // MONACO EDITOR
 // ============================================================
@@ -946,23 +987,26 @@ function openBottomPanel() {
 
 function switchBottomTab(tab) {
     activeBottomTab = tab;
-    ['console','output','problems'].forEach(t => {
-        const el = document.getElementById('bp-' + t);
+    ['console','output','problems','debug'].forEach(t => {
+        const el  = document.getElementById('bp-' + t);
         const btn = document.getElementById('bp-tab-' + t);
-        if (el) el.classList.toggle('hidden', t !== tab);
+        if (el)  el.classList.toggle('hidden', t !== tab);
         if (btn) {
-            btn.classList.toggle('text-white', t === tab);
-            btn.classList.toggle('border-[#007acc]', t === tab);
-            btn.classList.toggle('text-gray-400', t !== tab);
-            btn.classList.toggle('border-transparent', t !== tab);
+            btn.classList.toggle('text-white',           t === tab);
+            btn.classList.toggle('border-[#007acc]',     t === tab);
+            btn.classList.toggle('text-gray-400',        t !== tab);
+            btn.classList.toggle('border-transparent',   t !== tab);
         }
     });
 }
 
 function clearBottomPanel() {
-    document.getElementById('bp-console').innerHTML = '';
-    document.getElementById('bp-output').innerHTML = '';
-    document.getElementById('bp-problems').innerHTML = '';
+    ['console','output','problems'].forEach(id => {
+        const el = document.getElementById('bp-' + id);
+        if (el) el.innerHTML = '';
+    });
+    const dbg = document.getElementById('bp-debug-output');
+    if (dbg) dbg.innerHTML = '';
 }
 
 function logOutput(msg, type = 'log') {
@@ -2311,6 +2355,185 @@ btn.addEventListener('click', () => {
 console.log('Demo project loaded successfully!');` }
     };
     finalizeMount();
+}
+
+
+// ============================================================
+// RUN ACTIVE FILE + LANGUAGE RUNNERS
+// ============================================================
+let pyodide     = null;
+let pyodideReady = false;
+
+async function initPyodide() {
+    if (pyodide) return pyodide;
+    if (pyodideReady === 'loading') {
+        while (pyodideReady === 'loading') await new Promise(r => setTimeout(r, 150));
+        return pyodide;
+    }
+    pyodideReady = 'loading';
+    switchSidebar('terminal');
+    addTerminalLine('Loading Python runtime (first run only, ~10 MB)…', 'text-yellow-400');
+    logOutput('Loading Pyodide…', 'system');
+    try {
+        await new Promise((res, rej) => {
+            const s = document.createElement('script');
+            s.src = 'https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js';
+            s.onload = res; s.onerror = rej;
+            document.head.appendChild(s);
+        });
+        pyodide = await loadPyodide({
+            stdout: msg => { addTerminalLine(msg, 'text-gray-300'); logDebugOutput(msg, 'log'); },
+            stderr: msg => { addTerminalLine(msg, 'text-red-400');  logDebugOutput(msg, 'error'); },
+        });
+        pyodideReady = true;
+        addTerminalLine('Python 3 ready.', 'text-green-400');
+        logOutput('Pyodide loaded — Python 3 ready.', 'system');
+    } catch(err) {
+        pyodideReady = false;
+        pyodide = null;
+        addTerminalLine('Failed to load Python: ' + err.message, 'text-red-400');
+        logOutput('Pyodide load failed: ' + err.message, 'error');
+    }
+    return pyodide;
+}
+
+async function runPython(code) {
+    const py = await initPyodide();
+    if (!py) return;
+    switchSidebar('terminal');
+    addTerminalLine('$ python', 'text-green-300');
+    try {
+        await py.runPythonAsync(code);
+        addTerminalLine('Process exited with code 0', 'text-gray-500');
+    } catch(err) {
+        addTerminalLine(err.message, 'text-red-400');
+        addTerminalLine('Process exited with code 1', 'text-red-400');
+    }
+}
+
+async function runActiveFile() {
+    if (!activeFile || !vfs[activeFile]) { logOutput('No active file.', 'warn'); return; }
+    const content = editor ? editor.getValue() : (vfs[activeFile].content || '');
+    const ext = activeFile.split('.').pop().toLowerCase();
+
+    switch (ext) {
+        case 'html': case 'htm':
+            refreshPreview();
+            logOutput(`Running ${activeFile} in preview.`, 'system');
+            break;
+
+        case 'js': case 'mjs': case 'cjs':
+            openBottomPanel(); switchBottomTab('debug');
+            logDebugOutput('> Running ' + activeFile, 'system');
+            try {
+                const r = (0, eval)(content);
+                if (r !== undefined) logDebugOutput(typeof r === 'object' ? JSON.stringify(r, null, 2) : String(r), 'result');
+                logDebugOutput('Finished.', 'system');
+            } catch(err) {
+                logDebugOutput('✖ ' + err.message, 'error');
+            }
+            break;
+
+        case 'py':
+            await runPython(content);
+            break;
+
+        case 'json':
+            openBottomPanel(); switchBottomTab('debug');
+            try {
+                const parsed = JSON.parse(content);
+                logDebugOutput('✔ Valid JSON', 'system');
+                logDebugOutput(JSON.stringify(parsed, null, 2).slice(0, 2000), 'result');
+            } catch(err) {
+                logDebugOutput('✖ Invalid JSON: ' + err.message, 'error');
+            }
+            break;
+
+        default:
+            logOutput(`No runner for .${ext} — open in preview or switch to JS/Python.`, 'warn');
+    }
+}
+
+async function runSelectedText() {
+    if (!editor) return;
+    const sel = editor.getModel()?.getValueInRange(editor.getSelection());
+    if (!sel?.trim()) { logOutput('No text selected.', 'warn'); return; }
+    const ext = activeFile?.split('.').pop().toLowerCase();
+    if (ext === 'py') {
+        await runPython(sel);
+    } else {
+        openBottomPanel(); switchBottomTab('debug');
+        logDebugOutput('> (selected text)', 'system');
+        try {
+            const r = (0, eval)(sel);
+            if (r !== undefined) logDebugOutput(typeof r === 'object' ? JSON.stringify(r, null, 2) : String(r), 'result');
+        } catch(err) {
+            logDebugOutput('✖ ' + err.message, 'error');
+        }
+    }
+}
+
+// ============================================================
+// DEBUG CONSOLE
+// ============================================================
+function logDebugOutput(msg, type = 'log') {
+    const out = document.getElementById('bp-debug-output');
+    if (!out) return;
+    const colors = { log: 'text-gray-300', error: 'text-red-400', warn: 'text-yellow-400', result: 'text-cyan-300', system: 'text-blue-400' };
+    const d = document.createElement('div');
+    d.className = `${colors[type] || 'text-gray-300'} font-mono text-[11px] py-0.5 border-b border-[#252525] whitespace-pre-wrap break-all`;
+    d.textContent = msg;
+    out.appendChild(d);
+    out.scrollTop = out.scrollHeight;
+}
+
+function handleDebugConsoleInput(e) {
+    if (e.key !== 'Enter') return;
+    const input = document.getElementById('debug-console-input');
+    const raw = input.value.trim();
+    input.value = '';
+    if (!raw) return;
+    openBottomPanel(); switchBottomTab('debug');
+    logDebugOutput('> ' + raw, 'system');
+    try {
+        const r = (0, eval)(raw);
+        if (r !== undefined)
+            logDebugOutput(typeof r === 'object' ? JSON.stringify(r, null, 2) : String(r), 'result');
+    } catch(err) {
+        logDebugOutput('✖ ' + err.message, 'error');
+    }
+}
+
+// ============================================================
+// GO MENU HELPERS
+// ============================================================
+function goToFile() {
+    const files = Object.keys(vfs);
+    if (!files.length) { logOutput('No files in workspace.', 'warn'); return; }
+    const name = prompt('Go to file:\n\n' + files.join('\n'));
+    if (!name) return;
+    const path = files.find(f => f === name || f.endsWith('/' + name) || f.split('/').pop() === name);
+    if (path) openFile(path);
+    else logOutput(`File not found: ${name}`, 'warn');
+}
+
+function addBreakpointAtLine() {
+    if (!editor) return;
+    const line = parseInt(prompt('Add breakpoint at line:'));
+    if (isNaN(line)) return;
+    if (!bookmarks[activeFile]) bookmarks[activeFile] = new Set();
+    bookmarks[activeFile].add(line);
+    renderBookmarks(); applyBookmarkDecorations();
+    logOutput(`Breakpoint added at line ${line}.`, 'system');
+}
+
+function setAllBreakpoints(enabled) {
+    if (!bookmarks[activeFile]) return;
+    logOutput(`All breakpoints ${enabled ? 'enabled' : 'disabled'}.`, 'system');
+}
+
+function showLicense() {
+    alert('HyperLive Pro\nMIT License\nCopyright © 2025\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies.');
 }
 
 // ============================================================
