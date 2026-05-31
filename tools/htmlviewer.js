@@ -594,116 +594,327 @@ function clearAllBookmarks() {
 }
 
 // ============================================================
-// TERMINAL
+// TERMINAL v2.0
 // ============================================================
+let termHistory = [];
+let termHistoryIndex = -1;
+let termMode = 'shell'; // 'shell' | 'js'
+
+function termSetMode(mode) {
+    termMode = mode;
+    const sym = document.getElementById('terminal-prompt-symbol');
+    const shBtn = document.getElementById('term-mode-shell');
+    const jsBtn = document.getElementById('term-mode-js');
+    const active = 'px-1.5 py-0.5 text-[10px] rounded bg-[#007acc] text-white font-mono';
+    const inactive = 'px-1.5 py-0.5 text-[10px] rounded border border-[#555] text-gray-400 hover:border-[#007acc] font-mono';
+    if (mode === 'js') {
+        sym.textContent = '>'; sym.className = 'text-yellow-400 text-xs font-mono shrink-0 select-none';
+        shBtn.className = inactive; jsBtn.className = active;
+        addTerminalLine('» JavaScript REPL — full page context. Try: Object.keys(vfs)', 'text-yellow-400');
+    } else {
+        sym.textContent = '$'; sym.className = 'text-green-400 text-xs font-mono shrink-0 select-none';
+        shBtn.className = active; jsBtn.className = inactive;
+        addTerminalLine('» Shell mode', 'text-green-400');
+    }
+}
+
+function resolveTermPath(name) {
+    if (!name) return null;
+    if (vfs[name]) return name;
+    return Object.keys(vfs).find(p => p.endsWith('/' + name) || p.split('/').pop() === name) || null;
+}
+
 const terminalCommands = {
-    help: () => ['Available commands:', 'ls - list files', 'cat [file] - print file', 'echo [text]', 'clear - clear terminal', 'mkdir [name] - new folder', 'touch [name] - new file', 'rm [file] - delete file', 'rename [old] [new]', 'pwd - print working dir', 'date', 'minify [file]', 'validate [file]'],
-    ls: () => Object.keys(vfs).length ? Object.keys(vfs) : ['(empty workspace)'],
-    pwd: () => ['/workspace'],
-    date: () => [new Date().toLocaleString()],
-    clear: () => { clearTerminal(); return []; },
-    echo: (args) => [args.join(' ')],
+    help: () => [
+        { t: '─── File System ──────────────────────────', c: 'text-[#007acc]' },
+        { t: '  ls [path]            list files', c: 'text-gray-300' },
+        { t: '  cat [file]           print contents (up to 200 lines)', c: 'text-gray-300' },
+        { t: '  head [-n] [file]     first N lines (default 10)', c: 'text-gray-300' },
+        { t: '  tail [-n] [file]     last N lines (default 10)', c: 'text-gray-300' },
+        { t: '  grep [pattern] [f]   search lines matching pattern', c: 'text-gray-300' },
+        { t: '  wc [file]            line/word/char count', c: 'text-gray-300' },
+        { t: '  find [pattern]       find files matching pattern', c: 'text-gray-300' },
+        { t: '  touch [name]         create empty file', c: 'text-gray-300' },
+        { t: '  mkdir [name]         create directory', c: 'text-gray-300' },
+        { t: '  rm [file]            delete file', c: 'text-gray-300' },
+        { t: '  mv [old] [new]       rename / move', c: 'text-gray-300' },
+        { t: '  cp [src] [dst]       copy file', c: 'text-gray-300' },
+        { t: '─── Editor ───────────────────────────────', c: 'text-[#007acc]' },
+        { t: '  open [file]          open in editor', c: 'text-gray-300' },
+        { t: '  preview [file]       load in preview pane', c: 'text-gray-300' },
+        { t: '  format               format current file', c: 'text-gray-300' },
+        { t: '  minify [file]        minify CSS or JS', c: 'text-gray-300' },
+        { t: '  validate [file]      validate JSON', c: 'text-gray-300' },
+        { t: '─── Utilities ────────────────────────────', c: 'text-[#007acc]' },
+        { t: '  echo [text]          print text', c: 'text-gray-300' },
+        { t: '  pwd                  working directory', c: 'text-gray-300' },
+        { t: '  date                 current date/time', c: 'text-gray-300' },
+        { t: '  history              command history', c: 'text-gray-300' },
+        { t: '  zip                  export project as ZIP', c: 'text-gray-300' },
+        { t: '  clear                clear terminal', c: 'text-gray-300' },
+        { t: '─── Tips ─────────────────────────────────', c: 'text-[#007acc]' },
+        { t: '  ↑ / ↓               navigate history', c: 'text-gray-500' },
+        { t: '  Tab                  autocomplete command or filename', c: 'text-gray-500' },
+        { t: '  ls | grep .js        basic pipe + grep', c: 'text-gray-500' },
+        { t: '  [JS] button          real JavaScript eval with full page access', c: 'text-gray-500' },
+    ],
+
+    ls: (args) => {
+        const prefix = args[0] ? args[0].replace(/\/$/, '') + '/' : '';
+        const raw = Object.keys(vfs).filter(p => !prefix || p.startsWith(prefix))
+            .map(p => {
+                const rel = prefix ? p.slice(prefix.length) : p;
+                const parts = rel.split('/');
+                return parts.length > 1 ? parts[0] + '/' : parts[0];
+            });
+        const unique = [...new Set(raw)].sort();
+        if (!unique.length) return [{ t: '(empty)', c: 'text-gray-500' }];
+        return unique.map(f => ({
+            t: '  ' + f,
+            c: f.endsWith('/') ? 'text-[#007acc]'
+              : /\.(js|ts|jsx|tsx)$/.test(f) ? 'text-yellow-300'
+              : /\.(html|htm)$/.test(f) ? 'text-orange-300'
+              : /\.css$/.test(f) ? 'text-blue-300'
+              : /\.(json|yaml|yml)$/.test(f) ? 'text-green-300'
+              : 'text-gray-300'
+        }));
+    },
+
     cat: (args) => {
-        const path = args[0];
-        if (!path) return ['Usage: cat [filename]'];
-        const file = vfs[path] || Object.values(vfs).find(f => f.name === path);
-        if (!file) return [`cat: ${path}: No such file`];
-        if (!file.isText) return ['[binary file]'];
-        return (file.content || '').split('\n').slice(0, 50);
+        const path = resolveTermPath(args[0]);
+        if (!path) return [{ t: 'Usage: cat [filename]', c: 'text-red-400' }];
+        if (!vfs[path]) return [{ t: `cat: ${args[0]}: No such file`, c: 'text-red-400' }];
+        if (!vfs[path].isText) return [{ t: '[binary — cannot display]', c: 'text-gray-500' }];
+        const lines = (vfs[path].content || '').split('\n');
+        const out = lines.slice(0, 200).map((l, i) => ({ t: String(i + 1).padStart(4) + '  ' + l, c: 'text-gray-300' }));
+        if (lines.length > 200) out.push({ t: `… ${lines.length - 200} more lines`, c: 'text-gray-500' });
+        return out;
     },
-    mkdir: (args) => {
-        const name = args[0];
-        if (!name) return ['Usage: mkdir [dirname]'];
-        vfs[name + '/.gitkeep'] = { name: '.gitkeep', isText: true, content: '', fileObj: null, blobUrl: null };
-        renderFileTree();
-        return [`Created directory: ${name}`];
+
+    head: (args) => {
+        let n = 10, fname;
+        if (args[0] && args[0].startsWith('-')) { n = parseInt(args[0].slice(1)) || 10; fname = args[1]; }
+        else fname = args[0];
+        const path = resolveTermPath(fname);
+        if (!path || !vfs[path]) return [{ t: `head: ${fname || '?'}: No such file`, c: 'text-red-400' }];
+        return (vfs[path].content || '').split('\n').slice(0, n).map(l => ({ t: l, c: 'text-gray-300' }));
     },
+
+    tail: (args) => {
+        let n = 10, fname;
+        if (args[0] && args[0].startsWith('-')) { n = parseInt(args[0].slice(1)) || 10; fname = args[1]; }
+        else fname = args[0];
+        const path = resolveTermPath(fname);
+        if (!path || !vfs[path]) return [{ t: `tail: ${fname || '?'}: No such file`, c: 'text-red-400' }];
+        const lines = (vfs[path].content || '').split('\n');
+        return lines.slice(-n).map(l => ({ t: l, c: 'text-gray-300' }));
+    },
+
+    grep: (args) => {
+        if (args.length < 2) return [{ t: 'Usage: grep [pattern] [file]', c: 'text-red-400' }];
+        let re; try { re = new RegExp(args[0], 'i'); } catch { re = new RegExp(args[0].replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'i'); }
+        const path = resolveTermPath(args[1]);
+        if (!path || !vfs[path]) return [{ t: `grep: ${args[1]}: No such file`, c: 'text-red-400' }];
+        const matches = (vfs[path].content || '').split('\n').map((l, i) => ({ n: i + 1, l })).filter(x => re.test(x.l));
+        if (!matches.length) return [{ t: '(no matches)', c: 'text-gray-500' }];
+        return matches.map(m => ({ t: `${String(m.n).padStart(4)}: ${m.l}`, c: 'text-gray-300' }));
+    },
+
+    wc: (args) => {
+        const path = resolveTermPath(args[0]);
+        if (!path || !vfs[path]) return [{ t: `wc: ${args[0] || '?'}: No such file`, c: 'text-red-400' }];
+        const c = vfs[path].content || '';
+        return [{ t: `  lines ${c.split('\n').length}   words ${c.split(/\s+/).filter(Boolean).length}   chars ${c.length}   ${args[0]}`, c: 'text-gray-300' }];
+    },
+
+    find: (args) => {
+        const pat = args[0] || '';
+        let re; try { re = new RegExp(pat, 'i'); } catch { re = new RegExp(pat.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'i'); }
+        const hits = Object.keys(vfs).filter(p => re.test(p));
+        return hits.length ? hits.map(p => ({ t: './' + p, c: 'text-gray-300' })) : [{ t: '(no matches)', c: 'text-gray-500' }];
+    },
+
+    pwd:     ()     => [{ t: '/workspace', c: 'text-gray-300' }],
+    date:    ()     => [{ t: new Date().toString(), c: 'text-gray-300' }],
+    echo:    (args) => [{ t: args.join(' '), c: 'text-gray-300' }],
+    clear:   ()     => { clearTerminal(); return []; },
+    history: ()     => termHistory.length
+        ? termHistory.map((h, i) => ({ t: `  ${String(i + 1).padStart(3)}  ${h}`, c: 'text-gray-400' }))
+        : [{ t: '(no history)', c: 'text-gray-500' }],
+
     touch: (args) => {
         const name = args[0];
-        if (!name) return ['Usage: touch [filename]'];
-        if (!vfs[name]) {
-            vfs[name] = { name, isText: isTextBased(name), content: '', fileObj: null, blobUrl: null };
-            markGitChanged(name, 'A');
-            renderFileTree();
-        }
-        return [`Touched: ${name}`];
+        if (!name) return [{ t: 'Usage: touch [filename]', c: 'text-red-400' }];
+        if (!vfs[name]) { vfs[name] = { name: name.split('/').pop(), isText: isTextBased(name), content: '', fileObj: null, blobUrl: null }; markGitChanged(name, 'A'); renderFileTree(); }
+        return [{ t: `created: ${name}`, c: 'text-green-400' }];
     },
+
+    mkdir: (args) => {
+        const name = args[0];
+        if (!name) return [{ t: 'Usage: mkdir [dirname]', c: 'text-red-400' }];
+        vfs[name + '/.gitkeep'] = { name: '.gitkeep', isText: true, content: '', fileObj: null, blobUrl: null };
+        renderFileTree();
+        return [{ t: `created directory: ${name}`, c: 'text-green-400' }];
+    },
+
     rm: (args) => {
-        const name = args[0];
-        if (!name) return ['Usage: rm [filename]'];
-        const path = Object.keys(vfs).find(p => p === name || p.endsWith('/'+name));
-        if (!path) return [`rm: ${name}: No such file`];
-        delete vfs[path];
-        if (openFiles.includes(path)) closeTab(path);
-        renderFileTree();
-        return [`Removed: ${path}`];
+        const path = resolveTermPath(args[0]);
+        if (!path) return [{ t: `rm: ${args[0] || '?'}: No such file`, c: 'text-red-400' }];
+        delete vfs[path]; if (openFiles.includes(path)) closeTab(path); renderFileTree();
+        return [{ t: `removed: ${path}`, c: 'text-green-400' }];
     },
-    rename: (args) => {
-        if (args.length < 2) return ['Usage: rename [old] [new]'];
-        const [old, nw] = args;
-        const path = Object.keys(vfs).find(p => p === old || p.endsWith('/'+old));
-        if (!path) return [`rename: ${old}: Not found`];
-        vfs[nw] = vfs[path];
-        vfs[nw].name = nw.split('/').pop();
-        delete vfs[path];
-        renderFileTree();
-        return [`Renamed ${old} → ${nw}`];
+
+    mv: (args) => {
+        if (args.length < 2) return [{ t: 'Usage: mv [old] [new]', c: 'text-red-400' }];
+        const path = resolveTermPath(args[0]);
+        if (!path) return [{ t: `mv: ${args[0]}: Not found`, c: 'text-red-400' }];
+        vfs[args[1]] = { ...vfs[path], name: args[1].split('/').pop() }; delete vfs[path]; renderFileTree();
+        return [{ t: `${args[0]} → ${args[1]}`, c: 'text-green-400' }];
     },
+    rename: (args) => terminalCommands.mv(args),
+
+    cp: (args) => {
+        if (args.length < 2) return [{ t: 'Usage: cp [src] [dst]', c: 'text-red-400' }];
+        const path = resolveTermPath(args[0]);
+        if (!path) return [{ t: `cp: ${args[0]}: Not found`, c: 'text-red-400' }];
+        vfs[args[1]] = { ...vfs[path], name: args[1].split('/').pop(), fileObj: null, blobUrl: null }; renderFileTree();
+        return [{ t: `copied: ${args[0]} → ${args[1]}`, c: 'text-green-400' }];
+    },
+
+    open: (args) => {
+        const path = resolveTermPath(args[0]);
+        if (!path || !vfs[path]) return [{ t: `open: ${args[0] || '?'}: Not found`, c: 'text-red-400' }];
+        openFile(path);
+        return [{ t: `opened: ${path}`, c: 'text-green-400' }];
+    },
+
+    preview: (args) => {
+        const path = resolveTermPath(args[0]);
+        if (!path || !vfs[path]) return [{ t: `preview: ${args[0] || '?'}: Not found`, c: 'text-red-400' }];
+        activeIframeFile = path; refreshPreview();
+        return [{ t: `preview: ${path}`, c: 'text-green-400' }];
+    },
+
+    format: () => { execEditorCmd('editor.action.formatDocument'); return [{ t: 'formatted.', c: 'text-green-400' }]; },
+    zip:    () => { exportZip(); return [{ t: 'exporting ZIP…', c: 'text-green-400' }]; },
+
     validate: (args) => {
-        const name = args[0];
-        if (!name) return ['Usage: validate [filename]'];
-        const path = Object.keys(vfs).find(p => p === name || p.endsWith('/'+name));
-        if (!path) return [`Not found: ${name}`];
+        const path = resolveTermPath(args[0]);
+        if (!path || !vfs[path]) return [{ t: `Not found: ${args[0] || '?'}`, c: 'text-red-400' }];
         const ext = path.split('.').pop().toLowerCase();
         if (ext === 'json') {
-            try { JSON.parse(vfs[path].content); return ['✔ Valid JSON']; }
-            catch(e) { return [`✖ Invalid JSON: ${e.message}`]; }
+            try { JSON.parse(vfs[path].content); return [{ t: '✔ Valid JSON', c: 'text-green-400' }]; }
+            catch(e) { return [{ t: `✖ ${e.message}`, c: 'text-red-400' }]; }
         }
-        return [`Validation not available for .${ext}`];
+        return [{ t: `Validation not available for .${ext}`, c: 'text-yellow-400' }];
     },
+
     minify: (args) => {
-        const name = args[0];
-        if (!name) return ['Usage: minify [filename]'];
-        const path = Object.keys(vfs).find(p => p === name || p.endsWith('/'+name));
-        if (!path) return [`Not found: ${name}`];
+        const path = resolveTermPath(args[0]);
+        if (!path || !vfs[path]) return [{ t: `Not found: ${args[0] || '?'}`, c: 'text-red-400' }];
         const ext = path.split('.').pop().toLowerCase();
-        if (ext === 'css') {
-            vfs[path].content = vfs[path].content.replace(/\s*([{}:;,>~+])\s*/g,'$1').replace(/\/\*[^*]*\*+([^/*][^*]*\*+)*\//g,'').replace(/\s+/g,' ').trim();
-        } else if (ext === 'js') {
-            vfs[path].content = vfs[path].content.replace(/\/\/[^\n]*/g,'').replace(/\/\*[\s\S]*?\*\//g,'').replace(/\s+/g,' ').trim();
-        }
+        if (ext === 'css') vfs[path].content = vfs[path].content.replace(/\s*([{}:;,>~+])\s*/g,'$1').replace(/\/\*[\s\S]*?\*\//g,'').replace(/\s+/g,' ').trim();
+        else if (ext === 'js') vfs[path].content = vfs[path].content.replace(/\/\/[^\n]*/g,'').replace(/\/\*[\s\S]*?\*\//g,'').replace(/\s+/g,' ').trim();
+        else return [{ t: `Minify not supported for .${ext}`, c: 'text-yellow-400' }];
         renderFileTree();
-        return [`Minified: ${path}`];
-    }
+        return [{ t: `minified: ${path}`, c: 'text-green-400' }];
+    },
 };
 
 function handleTerminalInput(e) {
-    if (e.key !== 'Enter') return;
     const input = document.getElementById('terminal-input');
-    const raw = input.value.trim();
-    input.value = '';
-    if (!raw) return;
-    addTerminalLine('$ ' + raw, 'text-gray-300');
-    const [cmd, ...args] = raw.split(/\s+/);
-    if (terminalCommands[cmd]) {
-        const result = terminalCommands[cmd](args);
-        (result || []).forEach(line => addTerminalLine(line, 'text-gray-400'));
-    } else {
-        addTerminalLine(`zsh: command not found: ${cmd}`, 'text-red-400');
+
+    // ↑ / ↓ history navigation
+    if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (!termHistory.length) return;
+        if (termHistoryIndex === -1) termHistoryIndex = termHistory.length;
+        if (termHistoryIndex > 0) termHistoryIndex--;
+        input.value = termHistory[termHistoryIndex] || '';
+        setTimeout(() => input.setSelectionRange(input.value.length, input.value.length), 0);
+        return;
     }
+    if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (termHistoryIndex === -1) return;
+        termHistoryIndex++;
+        if (termHistoryIndex >= termHistory.length) { termHistoryIndex = -1; input.value = ''; }
+        else input.value = termHistory[termHistoryIndex];
+        return;
+    }
+
+    // Tab completion
+    if (e.key === 'Tab') {
+        e.preventDefault();
+        const parts = input.value.split(/\s+/);
+        if (parts.length === 1) {
+            const matches = Object.keys(terminalCommands).filter(c => c.startsWith(parts[0].toLowerCase()));
+            if (matches.length === 1) input.value = matches[0] + ' ';
+            else if (matches.length > 1) addTerminalLine('  ' + matches.join('  '), 'text-gray-400');
+        } else {
+            const partial = parts[parts.length - 1].toLowerCase();
+            const matches = Object.keys(vfs).filter(p => p.toLowerCase().startsWith(partial) || p.split('/').pop().toLowerCase().startsWith(partial));
+            if (matches.length === 1) { parts[parts.length - 1] = matches[0]; input.value = parts.join(' '); }
+            else if (matches.length > 1) addTerminalLine('  ' + matches.join('  '), 'text-gray-400');
+        }
+        return;
+    }
+
+    if (e.key !== 'Enter') return;
+    const raw = input.value.trim();
+    input.value = ''; termHistoryIndex = -1;
+    if (!raw) return;
+    if (raw !== termHistory[termHistory.length - 1]) termHistory.push(raw);
+
+    const promptChar = termMode === 'js' ? '>' : '$';
+    addTerminalLine(promptChar + ' ' + raw, termMode === 'js' ? 'text-yellow-300' : 'text-green-300');
+
+    // ── JavaScript REPL ──
+    if (termMode === 'js') {
+        try {
+            const result = (0, eval)(raw);
+            if (result !== undefined) {
+                const str = typeof result === 'object' ? JSON.stringify(result, null, 2) : String(result);
+                str.split('\n').forEach(l => addTerminalLine('← ' + l, 'text-cyan-300'));
+            }
+        } catch(err) {
+            addTerminalLine('✖ ' + err.message, 'text-red-400');
+        }
+        return;
+    }
+
+    // ── Shell with pipe support ──
+    const segments = raw.split('|').map(s => s.trim());
+    let output = null;
+    for (let i = 0; i < segments.length; i++) {
+        const [cmd, ...args] = segments[i].split(/\s+/);
+        if (i > 0 && output && cmd === 'grep') {
+            let re; try { re = new RegExp(args[0], 'i'); } catch { re = /./; }
+            output = output.filter(item => re.test(item.t || item));
+            continue;
+        }
+        const fn = terminalCommands[cmd.toLowerCase()];
+        output = fn ? (fn(args) || []) : [{ t: `zsh: command not found: ${cmd}`, c: 'text-red-400' }];
+    }
+    (output || []).forEach(item => addTerminalLine(item.t ?? item, item.c || 'text-gray-300'));
 }
 
 function addTerminalLine(text, cls) {
     const out = document.getElementById('terminal-output');
+    if (!out) return;
     const d = document.createElement('div');
-    d.className = cls + ' font-mono text-xs';
+    d.className = (cls || 'text-gray-300') + ' font-mono text-xs leading-[1.6] whitespace-pre-wrap break-all';
     d.textContent = text;
     out.appendChild(d);
     out.scrollTop = out.scrollHeight;
 }
 
 function clearTerminal() {
-    document.getElementById('terminal-output').innerHTML = '<div class="text-green-400 text-xs">HyperLive Terminal v1.0</div>';
+    const out = document.getElementById('terminal-output');
+    if (!out) return;
+    out.innerHTML = '';
+    addTerminalLine('HyperLive Terminal v2.0', 'text-green-400 font-bold');
+    addTerminalLine("type help · ↑/↓ history · Tab complete · [JS] for real JS eval", 'text-gray-500 text-[11px]');
 }
 
 // ============================================================
