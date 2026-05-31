@@ -1565,6 +1565,69 @@ GENRES.forEach(g=>{
   });
 });
 
+document.addEventListener('DOMContentLoaded', () => {
+    const modal = document.getElementById('envizion-welcome-modal');
+    const backdrop = document.getElementById('envizion-modal-backdrop');
+    const closeBtn = document.getElementById('close-modal-btn');
+    const exploreBtn = document.getElementById('explore-btn');
+    const dontShowCheckbox = document.getElementById('dont-show-again');
+
+    // LocalStorage key unique to this welcome feature
+    const STORAGE_KEY = 'envizion_welcome_seen';
+
+    // Open Modal Function
+    function openModal() {
+        modal.classList.remove('hidden');
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden'; // Stop background scrolling
+    }
+
+    // Close Modal Function
+    function closeModal() {
+        modal.classList.add('hidden');
+        modal.setAttribute('aria-hidden', 'true');
+        document.body.style.overflow = ''; // Restore background scrolling
+
+        // Save preference if checkbox is checked
+        if (dontShowCheckbox.checked) {
+            localStorage.setItem(STORAGE_KEY, 'true');
+        }
+    }
+
+    // Check if user has already dismissed the popup
+    const hasSeenWelcome = localStorage.getItem(STORAGE_KEY);
+    if (!hasSeenWelcome) {
+        // Trigger popup on page load (with an optional short delay)
+        setTimeout(openModal, 1200); 
+    }
+
+    // Event Listeners
+    closeBtn.addEventListener('click', closeModal);
+    exploreBtn.addEventListener('click', closeModal);
+    backdrop.addEventListener('click', closeModal); // Close when clicking outer blur
+
+    // OPTIONAL: Keep escape key responsive to close modal
+    window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
+            closeModal();
+        }
+    });
+
+    /**
+     * PRO TIP: 
+     * If you want a way for users to manually trigger this modal again, 
+     * just add a button with ID "envizion-info-trigger" anywhere on your site!
+     */
+    const infoTrigger = document.getElementById('envizion-info-trigger');
+    if (infoTrigger) {
+        infoTrigger.addEventListener('click', (e) => {
+            e.preventDefault();
+            // Reset checkbox visual when opening manually
+            dontShowCheckbox.checked = false;
+            openModal();
+        });
+    }
+});
 // Init Nav Stats
 const navStats = document.getElementById('nav-stats');
 navStats.innerHTML = `
