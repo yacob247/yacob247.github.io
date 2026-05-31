@@ -1,8 +1,5 @@
-// -------------------------------------------------------------------------
-    // DEFINITION OF ALL 90+ BUILT-IN ENVIZION TOOLS & MATH UTILITIES
-    // -------------------------------------------------------------------------
+
     const RAW_TOOLS = [
-      // Original 70 Tools
       ["age-calculator","Age Calculator","Planning","Calculate exact age and days lived from a birth date.","date:Birth date","=AGE(A1)"],
       ["date-difference","Date Difference","Planning","Count the time between two dates.","date:Start date|date:End date","=DATEDIFF(A1, B1)"],
       ["countdown-maker","Countdown Maker","Planning","Count down to a future event or deadline.","date:Target date|text:Event name","=COUNTDOWN(A1, \"Launch\")"],
@@ -12,7 +9,7 @@
       ["bmr-estimator","BMR Estimator","Health","Estimate baseline daily calories.","number:Weight kg|number:Height cm|number:Age|select:Sex:Female,Male","=BMR(A1, B1, C1, \"Female\")"],
       ["calorie-target","Calorie Target","Health","Set a simple daily calorie target from maintenance.","number:Maintenance calories|select:Goal:Lose,Gain,Maintain","=CALORIE(A1, \"Lose\")"],
       ["protein-target","Protein Target","Health","Estimate a useful daily protein range.","number:Weight kg","=PROTEIN(A1)"],
-      ["pace-calculator","Pace Calculator","Fitness","Convert distance and time into pace and speed.","number:Distance km|number:Hours|number:Minutes","=PACE(A1, B1, C1)"],
+      ["pace-calculator","Pace Calculator","Fitness","Convert distance and time into pace and speed.","number:Distance kg|number:Hours|number:Minutes","=PACE(A1, B1, C1)"],
       ["study-planner","Study Session Planner","Study","Split a study block into focus and break sessions.","number:Total minutes|number:Block minutes|number:Break minutes","=STUDY(A1, 25, 5)"],
       ["timetable-blocks","Timetable Blocks","Study","Create equal time blocks between start and end.","time:Start|time:End|number:Block minutes","=TIMETABLE(A1, B1, 45)"],
       ["grade-average","Weighted Grade Average","Study","Calculate weighted marks from score,weight rows.","textarea:Scores as score,weight","=GRADEAVERAGE(A1)"],
@@ -84,7 +81,7 @@
       ["ai-accuracy-check","AI Accuracy Checklist","Research","Produce verifications list from assertions.","textarea:Claims, one per line","=AIACCURACY(A1)"],
       ["source-triangulator","Source Triangulator","Research","Score assertions by source abundance.","textarea:Rows as claim,sources,confidence","=SOURCETRIANGULATE(A1)"],
 
-      // 20 NEW ADDONS ADDED FOR EXTENDED SPREADSHEET CAPABILITY
+      // 20 NEW ADDONS FOR SPREADSHEET CAPABILITY
       ["mortgage-calc","Mortgage Estimator","Money","Estimate mortgage payments.","number:Principal|number:Rate %|number:Years","=PMT(B1/100/12, C1*12, -A1)"],
       ["compound-interest","Compound Interest","Money","Calculate compound growth.","number:Principal|number:Rate %|number:Years|number:Times/Yr","=FV(B1/100/D1, C1*D1, 0, -A1)"],
       ["roi-calc","ROI Calculator","Money","Return on Investment percentage.","number:Initial Cost|number:Final Value","=(B1-A1)/A1"],
@@ -155,101 +152,96 @@
     let currentWorkbookId = null;
 
     let evaluationCache = {};
-    const excelParser = new formulaParser.Parser(); // Powered by hot-formula-parser for core excel standards
+    const excelParser = new formulaParser.Parser(); // Core parser library
+
+    // Welcome Guide Configuration
+    const WELCOME_KEY = "envizion_workbench_guide_dismissed";
+    let welcomeModal, welcomeBackdrop, closeWelcomeBtn, startWorkbenchBtn, dontShowWelcomeCheckbox;
 
     // -------------------------------------------------------------------------
-    // SYSTEM LIFECYCLE
+    // SYSTEM LIFECYCLE INITIALIZER
     // -------------------------------------------------------------------------
-// Welcome Modal Global Variables (defined cleanly at top level scope)
-const WELCOME_KEY = "envizion_workbench_guide_dismissed";
-let welcomeModal, welcomeBackdrop, closeWelcomeBtn, startWorkbenchBtn, dontShowWelcomeCheckbox;
+    window.onload = async function() {
+      lucide.createIcons();
+      setupFormulaParser();
 
-window.onload = async function() {
-  lucide.createIcons();
-  setupFormulaParser();
+      currentWorkbookId = getWorkbookIdFromUrl() || localStorage.getItem(LAST_WORKBOOK_KEY) || ensureDefaultWorkbook();
+      const saved = localStorage.getItem(`envizion_excel_workbook_${currentWorkbookId}`);
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          sheets = parsed.sheets || sheets;
+          activeSheet = parsed.activeSheet || Object.keys(sheets)[0];
+          document.getElementById("project-title").value = parsed.title || "Untitled";
+        } catch(e) {}
+      }
 
-  currentWorkbookId = getWorkbookIdFromUrl() || localStorage.getItem(LAST_WORKBOOK_KEY) || ensureDefaultWorkbook();
-  const saved = localStorage.getItem(`envizion_excel_workbook_${currentWorkbookId}`);
-  if (saved) {
-    try {
-      const parsed = JSON.parse(saved);
-      sheets = parsed.sheets || sheets;
-      activeSheet = parsed.activeSheet || Object.keys(sheets)[0];
-      document.getElementById("project-title").value = parsed.title || "Untitled";
-    } catch(e) {}
-  }
+      renderSheetTabs();
+      rebuildGrid();
+      renderAddonsList();
+      renderFormulaGlossary();
 
-  renderSheetTabs();
-  rebuildGrid();
-  renderAddonsList();
-  renderFormulaGlossary();
+      document.addEventListener("keydown", handleGlobalKeyDown);
+      document.getElementById("formula-bar-input").addEventListener("input", handleFormulaBarInput);
+      document.getElementById("formula-bar-input").addEventListener("keydown", handleFormulaBarKeyDown);
+      document.getElementById("addon-search").addEventListener("input", filterAddons);
+      document.getElementById("project-title").addEventListener("input", () => {
+        saveToLocalStorage();
+        syncWorkbookIndex();
+      });
 
-  document.addEventListener("keydown", handleGlobalKeyDown);
-  document.getElementById("formula-bar-input").addEventListener("input", handleFormulaBarInput);
-  document.getElementById("formula-bar-input").addEventListener("keydown", handleFormulaBarKeyDown);
-  document.getElementById("addon-search").addEventListener("input", filterAddons);
-  document.getElementById("project-title").addEventListener("input", () => {
-    saveToLocalStorage();
-    syncWorkbookIndex();
-  });
+      if (localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        document.documentElement.classList.add('dark');
+        document.getElementById("theme-sun").classList.remove("hidden");
+        document.getElementById("theme-moon").classList.add("hidden");
+      }
 
-  if (localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-    document.documentElement.classList.add('dark');
-    document.getElementById("theme-sun").classList.remove("hidden");
-    document.getElementById("theme-moon").classList.add("hidden");
-  }
+      initWelcomeModal();
+    };
 
-  // Initialize Welcome Modal configuration
-  initWelcomeModal();
-};
+    function initWelcomeModal() {
+      welcomeModal = document.getElementById("envizion-welcome-modal");
+      welcomeBackdrop = document.getElementById("envizion-modal-backdrop");
+      closeWelcomeBtn = document.getElementById("close-welcome-btn");
+      startWorkbenchBtn = document.getElementById("start-workbench-btn");
+      dontShowWelcomeCheckbox = document.getElementById("dont-show-welcome");
 
-// Welcome Modal Initialization & Core Operations
-function initWelcomeModal() {
-  welcomeModal = document.getElementById("envizion-welcome-modal");
-  welcomeBackdrop = document.getElementById("envizion-modal-backdrop");
-  closeWelcomeBtn = document.getElementById("close-welcome-btn");
-  startWorkbenchBtn = document.getElementById("start-workbench-btn");
-  dontShowWelcomeCheckbox = document.getElementById("dont-show-welcome");
+      if (!welcomeModal) return;
 
-  // Verify elements exist on page first to prevent crashes
-  if (!welcomeModal) return;
+      closeWelcomeBtn.addEventListener("click", closeWelcomeModal);
+      startWorkbenchBtn.addEventListener("click", closeWelcomeModal);
+      welcomeBackdrop.addEventListener("click", closeWelcomeModal);
 
-  // Bind interaction event listeners
-  closeWelcomeBtn.addEventListener("click", closeWelcomeModal);
-  startWorkbenchBtn.addEventListener("click", closeWelcomeModal);
-  welcomeBackdrop.addEventListener("click", closeWelcomeModal);
+      const alreadySeen = localStorage.getItem(WELCOME_KEY);
+      if (!alreadySeen) {
+        setTimeout(openWelcomeModal, 1000);
+      }
+    }
 
-  // Automatically trigger modal slide-in if not previously dismissed
-  const alreadySeen = localStorage.getItem(WELCOME_KEY);
-  if (!alreadySeen) {
-    setTimeout(openWelcomeModal, 1000); // 1-second delay for smooth landing page entry
-  }
-}
+    function openWelcomeModal() {
+      if (!welcomeModal) return;
+      welcomeModal.classList.remove("opacity-0", "pointer-events-none");
+      welcomeModal.querySelector(".relative").classList.remove("scale-95");
+      welcomeModal.querySelector(".relative").classList.add("scale-100");
+      welcomeModal.setAttribute("aria-hidden", "false");
+    }
 
-function openWelcomeModal() {
-  if (!welcomeModal) return;
-  welcomeModal.classList.remove("opacity-0", "pointer-events-none");
-  welcomeModal.querySelector(".relative").classList.remove("scale-95");
-  welcomeModal.querySelector(".relative").classList.add("scale-100");
-  welcomeModal.setAttribute("aria-hidden", "false");
-}
+    function closeWelcomeModal() {
+      if (!welcomeModal) return;
+      welcomeModal.classList.add("opacity-0", "pointer-events-none");
+      welcomeModal.querySelector(".relative").classList.remove("scale-100");
+      welcomeModal.querySelector(".relative").classList.add("scale-95");
+      welcomeModal.setAttribute("aria-hidden", "true");
 
-function closeWelcomeModal() {
-  if (!welcomeModal) return;
-  welcomeModal.classList.add("opacity-0", "pointer-events-none");
-  welcomeModal.querySelector(".relative").classList.remove("scale-100");
-  welcomeModal.querySelector(".relative").classList.add("scale-95");
-  welcomeModal.setAttribute("aria-hidden", "true");
+      if (dontShowWelcomeCheckbox && dontShowWelcomeCheckbox.checked) {
+        localStorage.setItem(WELCOME_KEY, "true");
+      }
+    }
 
-  if (dontShowWelcomeCheckbox && dontShowWelcomeCheckbox.checked) {
-    localStorage.setItem(WELCOME_KEY, "true");
-  }
-}
     // -------------------------------------------------------------------------
     // FORMULA ENGINE CONFIGURATION & EXCEL STANDARD MATH REGISTRATION
     // -------------------------------------------------------------------------
     function setupFormulaParser() {
-      // Handle resolving values of standard coordinates like A1, B3
       excelParser.on('callCellValue', function(cellCoord, done) {
         const coord = cellCoord.label;
         const activeData = sheets[activeSheet] || {};
@@ -261,7 +253,7 @@ function closeWelcomeModal() {
           return;
         }
         
-        evaluationCache[coord] = 0; // prevent circular loop infinite stack trace
+        evaluationCache[coord] = 0; // prevent circular dependency loops
         if (cell.formula) {
           const res = excelParser.parse(cell.formula.substring(1));
           const val = res.error ? res.error : res.result;
@@ -275,7 +267,6 @@ function closeWelcomeModal() {
         }
       });
 
-      // Handle resolving blocks like SUM(A1:B5)
       excelParser.on('callRangeValue', function(startCellCoord, endCellCoord, done) {
         const bounds = getRangeBounds(startCellCoord.label, endCellCoord.label);
         let matrix = [];
@@ -290,7 +281,7 @@ function closeWelcomeModal() {
         done(matrix);
       });
 
-      // --- REGISTER EXTRA EXCEL FUNCTIONS MISSING OR OVERRIDDEN ---
+      // Standard additions
       excelParser.setFunction('CONCATENATE', params => params.join(''));
       excelParser.setFunction('LEN', params => String(params[0]).length);
       excelParser.setFunction('NETWORKDAYS', params => {
@@ -305,7 +296,6 @@ function closeWelcomeModal() {
         return days;
       });
 
-      // Register custom Envzion add-ons directly into the parser
       const customFormulasList = [
         "AGE", "DATEDIFF", "COUNTDOWN", "SLEEP", "WATER", "BMI", "BMR", "CALORIE", "PROTEIN", "PACE", 
         "STUDY", "FINALGRADE", "TIP", "DISCOUNT", "SAVINGS", "HOURLYTOYEARLY", "LOAN", "SUBSCRIPTION", 
@@ -348,7 +338,7 @@ function closeWelcomeModal() {
         updateCellDisplay(coord);
         applyCellStyle(coord);
       });
-      updateSelectionVisuals(); // Will update stats as well
+      updateSelectionVisuals();
       renderCharts();
     }
 
@@ -408,6 +398,7 @@ function closeWelcomeModal() {
       reevaluateAll();
     }
 
+    let showFormulasMode = false;
     function updateCellDisplay(coord) {
       if (isEditing && editingCoord === coord) return;
       const el = document.getElementById(`cell-${coord}`);
@@ -417,7 +408,13 @@ function closeWelcomeModal() {
       const activeData = sheets[activeSheet] || {};
       const cell = activeData[coord];
       
-      el.innerText = (val !== null && val !== undefined) ? val : "";
+      if (showFormulasMode && cell && cell.formula) {
+        el.innerText = cell.formula;
+        el.classList.add('text-brand-600', 'dark:text-brand-400');
+      } else {
+        el.innerText = (val !== null && val !== undefined) ? val : "";
+        el.classList.remove('text-brand-600', 'dark:text-brand-400');
+      }
       el.title = (cell && cell.formula) ? `Formula: ${cell.formula}` : "";
     }
 
@@ -478,7 +475,6 @@ function closeWelcomeModal() {
       selectionEnd = coord;
       updateSelectionVisuals();
       
-      // Auto-scroll logic if off-screen
       const el = document.getElementById(`cell-${coord}`);
       if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
     }
@@ -490,7 +486,7 @@ function closeWelcomeModal() {
       const cells = getRangeCells(selectionStart, selectionEnd);
       cells.forEach(c => document.getElementById(`cell-${c}`)?.classList.add('grid-cell-selected'));
       
-      selectedCell = selectionStart; // Use start as the anchor
+      selectedCell = selectionStart;
       document.getElementById("formula-cell-id").textContent = selectedCell;
       document.getElementById("status-selected-cell").textContent = selectedCell;
       
@@ -544,7 +540,6 @@ function closeWelcomeModal() {
       editor.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
           saveCellEditingValue();
-          // Logic: Auto select the cell below on Enter execution
           const col = coord.match(/[A-Z]+/i)[0].toUpperCase();
           const row = parseInt(coord.match(/[0-9]+/)[0]);
           if (row < currentRowsRendered) selectCell(`${col}${row + 1}`);
@@ -623,8 +618,6 @@ function closeWelcomeModal() {
       if (e.key === "Enter") {
         document.getElementById("formula-bar-input").blur();
         reevaluateAll();
-        
-        // Push user down one row dynamically like excel does via the formula bar.
         const col = selectedCell.match(/[A-Z]+/i)[0].toUpperCase();
         const row = parseInt(selectedCell.match(/[0-9]+/)[0]);
         if (row < currentRowsRendered) selectCell(`${col}${row + 1}`);
@@ -644,7 +637,6 @@ function closeWelcomeModal() {
       const labels = [];
       const datasets = [];
       
-      // Treat first column as labels, remaining as numerical datasets
       for (let c = bounds.minCol + 1; c <= bounds.maxCol; c++) {
         datasets.push({
           label: evaluateCell(`${COLUMNS[c]}${bounds.minRow}`) || `Series ${c - bounds.minCol}`,
@@ -704,7 +696,6 @@ function closeWelcomeModal() {
         const ctx = document.getElementById(chartData.id).getContext('2d');
         new Chart(ctx, chartData.config);
         
-        // Simple drag setup for floating elements
         let isDraggingChart = false, startX, startY;
         chartDiv.querySelector('.chart-header').addEventListener('mousedown', (e) => {
           isDraggingChart = true;
@@ -805,7 +796,7 @@ function closeWelcomeModal() {
     }
 
     // -------------------------------------------------------------------------
-    // ENVIZION CUSTOM ADDON FUNCTIONS ENGINE
+    // CUSTOM ADDON FUNCTIONS ENGINE
     // -------------------------------------------------------------------------
     function runCustomFormula(name, args) {
       const getNum = (v) => parseFloat(v) || 0;
@@ -1050,6 +1041,46 @@ function closeWelcomeModal() {
       }
     }
 
+    // -------------------------------------------------------------------------
+    // FILE/WORKBOOK MANAGEMENT (UPGRADES)
+    // -------------------------------------------------------------------------
+    function createNewWorkbookFromApp() {
+      saveStateForHistory();
+      const newId = makeWorkbookId();
+      const now = new Date().toISOString();
+      const index = readWorkbookIndex();
+      writeWorkbookIndex([{ id: newId, title: "New Workbook", createdAt: now, updatedAt: now }, ...index]);
+      
+      currentWorkbookId = newId;
+      sheets = { "Sheet 1": {} };
+      activeSheet = "Sheet 1";
+      document.getElementById("project-title").value = "New Workbook";
+      
+      saveToLocalStorage();
+      renderSheetTabs();
+      rebuildGrid();
+    }
+
+    function renameCurrentWorkbook() {
+      const currentTitle = document.getElementById("project-title").value;
+      const newTitle = prompt("Enter new name for this workbook:", currentTitle);
+      if (newTitle && newTitle.trim()) {
+        document.getElementById("project-title").value = newTitle.trim();
+        saveToLocalStorage();
+      }
+    }
+
+    function copyCurrentWorkbook() {
+      const currentTitle = document.getElementById("project-title").value;
+      const newId = makeWorkbookId();
+      const now = new Date().toISOString();
+      const index = readWorkbookIndex();
+      writeWorkbookIndex([{ id: newId, title: `${currentTitle} (Copy)`, createdAt: now, updatedAt: now }, ...index]);
+      
+      localStorage.setItem(getWorkbookStorageKey(newId), JSON.stringify({ sheets, activeSheet, title: `${currentTitle} (Copy)` }));
+      alert("Workbook copy created successfully!");
+    }
+
     // Sheet Tabs Manager
     function renderSheetTabs() {
       const container = document.getElementById("sheet-tabs-container");
@@ -1068,7 +1099,6 @@ function closeWelcomeModal() {
     function addSheet() { saveStateForHistory(); const newName = `Sheet ${Object.keys(sheets).length + 1}`; sheets[newName] = {}; activeSheet = newName; renderSheetTabs(); rebuildGrid(); saveToLocalStorage(); }
     function deleteSheet(name) { if(Object.keys(sheets).length <= 1) return; saveStateForHistory(); delete sheets[name]; if(activeSheet === name) activeSheet = Object.keys(sheets)[0]; renderSheetTabs(); rebuildGrid(); saveToLocalStorage(); }
 
-    // Formula Overlay Glossary and Setup
     function toggleFormulaHelp() { document.getElementById("formula-help-overlay").classList.toggle("hidden"); }
 
     function renderFormulaGlossary() {
@@ -1106,7 +1136,6 @@ function closeWelcomeModal() {
       `;
     }
 
-    // Utility escape html
     function escapeHtml(value) { return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;"); }
 
     // Search and Render logic for Sidebar Tools
@@ -1170,3 +1199,197 @@ function closeWelcomeModal() {
       document.getElementById("theme-sun").classList.toggle("hidden", !isDark);
       document.getElementById("theme-moon").classList.toggle("hidden", isDark);
     }
+
+    // -------------------------------------------------------------------------
+    // EXCEL RIBBON & COMMAND FUNCTIONALITY
+    // -------------------------------------------------------------------------
+
+    // 1. Tab Switching Engine
+    function switchRibbonTab(tabId) {
+      const tabs = ['home', 'insert', 'formulas', 'data', 'view'];
+      tabs.forEach(t => {
+        const btn = document.getElementById('tab-btn-' + t);
+        const content = document.getElementById('ribbon-' + t);
+        if (!btn || !content) return;
+        
+        if (t === tabId) {
+          content.classList.remove('hidden');
+          content.classList.add('flex');
+          btn.className = "px-3 py-1.5 text-xs font-semibold rounded-t bg-white dark:bg-slate-900 border-t border-l border-r border-slate-200 dark:border-slate-800 text-brand-600 dark:text-brand-400";
+        } else {
+          content.classList.remove('flex');
+          content.classList.add('hidden');
+          btn.className = "px-3 py-1.5 text-xs font-semibold rounded-t text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 border-t border-l border-r border-transparent transition-colors";
+        }
+      });
+      if (window.lucide) lucide.createIcons();
+    }
+
+    // 2. Clipboard Group (Fully Localized & Preserves Data/Formulas)
+    let internalClipboard = null;
+
+    function execCopy() {
+      internalClipboard = getRangeCells(selectionStart, selectionEnd).map(coord => ({
+        coord,
+        data: JSON.parse(JSON.stringify((sheets[activeSheet] || {})[coord] || {value: "", formula: "", style: {}}))
+      }));
+    }
+
+    function execCut() {
+      execCopy();
+      clearSelectedCells();
+    }
+
+    function execPaste() {
+      if (!internalClipboard || !internalClipboard.length) return;
+      saveStateForHistory();
+
+      const baseColIdx = COLUMNS.indexOf(selectionStart.match(/[A-Z]+/i)[0].toUpperCase());
+      const baseRowIdx = parseInt(selectionStart.match(/[0-9]+/)[0]);
+      const sourceBaseColIdx = COLUMNS.indexOf(internalClipboard[0].coord.match(/[A-Z]+/i)[0].toUpperCase());
+      const sourceBaseRowIdx = parseInt(internalClipboard[0].coord.match(/[0-9]+/)[0]);
+
+      internalClipboard.forEach(item => {
+        const cIdx = COLUMNS.indexOf(item.coord.match(/[A-Z]+/i)[0].toUpperCase());
+        const rIdx = parseInt(item.coord.match(/[0-9]+/)[0]);
+        const targetColIdx = baseColIdx + (cIdx - sourceBaseColIdx);
+        const targetRowIdx = baseRowIdx + (rIdx - sourceBaseRowIdx);
+
+        if (targetColIdx >= 0 && targetColIdx < COLUMNS.length) {
+          const targetCoord = `${COLUMNS[targetColIdx]}${targetRowIdx}`;
+          if (!sheets[activeSheet]) sheets[activeSheet] = {};
+          sheets[activeSheet][targetCoord] = JSON.parse(JSON.stringify(item.data));
+        }
+      });
+      
+      reevaluateAll();
+      saveToLocalStorage();
+    }
+
+    function clearSelectedCells() {
+      saveStateForHistory();
+      const cells = getRangeCells(selectionStart, selectionEnd);
+      cells.forEach(c => setCellValue(c, ""));
+      reevaluateAll();
+    }
+
+    // 3. Formulas Group (Show Formulas feature)
+    function toggleShowFormulas() {
+      showFormulasMode = !showFormulasMode;
+      const btn = document.getElementById('btn-show-formulas');
+      if (showFormulasMode) {
+        btn.classList.add('bg-brand-100', 'dark:bg-brand-900', 'text-brand-600', 'dark:text-brand-400');
+      } else {
+        btn.classList.remove('bg-brand-100', 'dark:bg-brand-900', 'text-brand-600', 'dark:text-brand-400');
+      }
+      reevaluateAll(); 
+    }
+
+    // 4. Data Group (Sorting & Cleaning)
+    function sortSelectedRange(direction = 'asc') {
+      const bounds = getRangeBounds(selectionStart, selectionEnd);
+      if (bounds.minRow === bounds.maxRow) return;
+      saveStateForHistory();
+
+      const rowsData = [];
+      for (let r = bounds.minRow; r <= bounds.maxRow; r++) {
+        const row = [];
+        for (let c = bounds.minCol; c <= bounds.maxCol; c++) {
+          const coord = `${COLUMNS[c]}${r}`;
+          row.push((sheets[activeSheet] || {})[coord] || {value: "", formula: "", style: {}});
+        }
+        rowsData.push(row);
+      }
+
+      rowsData.sort((a, b) => {
+        const valA = (a[0].value || "").toString().toLowerCase();
+        const valB = (b[0].value || "").toString().toLowerCase();
+        if (valA < valB) return direction === 'asc' ? -1 : 1;
+        if (valA > valB) return direction === 'asc' ? 1 : -1;
+        return 0;
+      });
+
+      for (let r = bounds.minRow; r <= bounds.maxRow; r++) {
+        for (let c = bounds.minCol; c <= bounds.maxCol; c++) {
+          const coord = `${COLUMNS[c]}${r}`;
+          if (!sheets[activeSheet]) sheets[activeSheet] = {};
+          sheets[activeSheet][coord] = rowsData[r - bounds.minRow][c - bounds.minCol];
+        }
+      }
+      reevaluateAll();
+      saveToLocalStorage();
+    }
+
+    function removeDuplicates() {
+      const bounds = getRangeBounds(selectionStart, selectionEnd);
+      if (bounds.minRow === bounds.maxRow) return;
+      saveStateForHistory();
+
+      const seen = new Set();
+      const uniqueRows = [];
+
+      for (let r = bounds.minRow; r <= bounds.maxRow; r++) {
+        const row = [];
+        let rowStr = "";
+        for (let c = bounds.minCol; c <= bounds.maxCol; c++) {
+          const coord = `${COLUMNS[c]}${r}`;
+          const cellData = (sheets[activeSheet] || {})[coord] || {value: "", formula: "", style: {}};
+          row.push(cellData);
+          rowStr += cellData.value + "|";
+        }
+        if (!seen.has(rowStr)) {
+          seen.add(rowStr);
+          uniqueRows.push(row);
+        }
+      }
+
+      let currRow = bounds.minRow;
+      uniqueRows.forEach(row => {
+        for (let c = bounds.minCol; c <= bounds.maxCol; c++) {
+          const coord = `${COLUMNS[c]}${currRow}`;
+          sheets[activeSheet][coord] = row[c - bounds.minCol];
+        }
+        currRow++;
+      });
+
+      for (let r = currRow; r <= bounds.maxRow; r++) {
+        for (let c = bounds.minCol; c <= bounds.maxCol; c++) {
+          const coord = `${COLUMNS[c]}${r}`;
+          sheets[activeSheet][coord] = {value: "", formula: "", style: {}};
+        }
+      }
+
+      reevaluateAll();
+      saveToLocalStorage();
+    }
+
+    // 5. View Group (Zoom & Gridlines)
+    let hideGridlinesMode = false;
+    function toggleGridlines() {
+      hideGridlinesMode = !hideGridlinesMode;
+      const btn = document.getElementById('btn-gridlines');
+      
+      if (hideGridlinesMode) {
+        btn.classList.remove('bg-slate-200', 'dark:bg-slate-700');
+        let style = document.getElementById('gridline-override-style');
+        if (!style) {
+          style = document.createElement('style');
+          style.id = 'gridline-override-style';
+          document.head.appendChild(style);
+        }
+        style.innerHTML = '#excel-grid-inner div[id^="cell-"] { border-right-color: transparent !important; border-bottom-color: transparent !important; }';
+      } else {
+        btn.classList.add('bg-slate-200', 'dark:bg-slate-700');
+        const style = document.getElementById('gridline-override-style');
+        if (style) style.innerHTML = '';
+      }
+    }
+
+    function setZoom(scale) {
+      const grid = document.getElementById('excel-grid');
+      grid.style.transform = `scale(${scale})`;
+      grid.style.transformOrigin = 'top left';
+      grid.style.width = `${100 / scale}%`;
+      grid.style.height = `${100 / scale}%`;
+    }
+  
