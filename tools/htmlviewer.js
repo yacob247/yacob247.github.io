@@ -1,4 +1,3 @@
-
 lucide.createIcons();
 
 // ============================================================
@@ -110,7 +109,7 @@ const menuDefinition = [
             { label: 'Sort Lines Descending', action: () => sortLines(false) },
         ]
     },
-{
+    {
         label: 'View',
         items: [
             { label: 'Command Palette…',  shortcut: 'Ctrl+Shift+P', action: () => openCommandPalette() },
@@ -262,7 +261,7 @@ const menuDefinition = [
             { label: 'Reset Layout', action: () => resetLayout() },
         ]
     },
-{
+    {
         label: 'Help',
         items: [
             { label: 'Show All Commands',           shortcut: 'Ctrl+Shift+P', action: () => openCommandPalette() },
@@ -384,6 +383,7 @@ document.addEventListener('keydown', e => {
     else if (key === 'f11') { e.preventDefault(); toggleFullScreen(); }
     else if (key === 'f12') { e.preventDefault(); openDevTools(); }
 });
+
 // ============================================================
 // MONACO EDITOR
 // ============================================================
@@ -1041,27 +1041,41 @@ function logOutput(msg, type = 'log') {
 // SIDEBAR SWITCHING
 // ============================================================
 function switchSidebar(view) {
+    const sidebar = document.getElementById('sidebar');
+    const isActive = document.getElementById('activity-' + view)?.classList.contains('active');
+    const isCollapsed = parseInt(sidebar.style.width) < 10;
+
+    // Toggle behaviour: If clicking already active panel, close sidebar
+    if (isActive && !isCollapsed) {
+        sidebar.style.width = '0px';
+        return;
+    }
+
     ['explorer','search','git','bookmarks','terminal'].forEach(v => {
-        document.getElementById('panel-' + v)?.classList.replace('flex', 'hidden');
-        document.getElementById('panel-' + v)?.classList.add('hidden');
+        const p = document.getElementById('panel-' + v);
+        if (p) {
+            p.classList.remove('flex');
+            p.classList.add('hidden');
+        }
         document.getElementById('activity-' + v)?.classList.remove('active');
     });
+
     const panel = document.getElementById('panel-' + view);
     if (panel) {
         panel.classList.remove('hidden');
-        panel.style.display = 'flex';
         panel.classList.add('flex');
     }
     document.getElementById('activity-' + view)?.classList.add('active');
 
     // Make sure sidebar is visible
-    const sidebar = document.getElementById('sidebar');
-    if (parseInt(sidebar.style.width) < 10) sidebar.style.width = '240px';
+    if (isCollapsed) sidebar.style.width = '240px';
+    lucide.createIcons();
 }
 
 function toggleSidebar() {
     const sidebar = document.getElementById('sidebar');
-    sidebar.style.width = parseInt(sidebar.style.width) > 10 ? '0px' : '240px';
+    const isCollapsed = parseInt(sidebar.style.width) < 10;
+    sidebar.style.width = isCollapsed ? '240px' : '0px';
 }
 
 function toggleGitPanel() { switchSidebar('git'); }
@@ -1228,7 +1242,7 @@ function saveActiveFileAs() {
 }
 
 // ============================================================
-// FILE UPLOAD / FOLDER OPEN
+// FILE UPLOAD / FOLDER OPEN (WITH ROBUST DIRECTORY ITERATION)
 // ============================================================
 function triggerFolderUpload() { document.getElementById('folder-input').click(); }
 function triggerFileUpload() { document.getElementById('file-input').click(); }
@@ -1257,6 +1271,7 @@ document.getElementById('file-input').addEventListener('change', async e => {
     logOutput(`${e.target.files.length} file(s) added.`, 'system');
 });
 
+// Drag and drop events
 document.body.addEventListener('dragover', e => { e.preventDefault(); document.body.classList.add('drag-active'); });
 document.body.addEventListener('dragleave', e => { if (e.target.id === 'drag-overlay') document.body.classList.remove('drag-active'); });
 document.body.addEventListener('drop', async e => {
@@ -1267,7 +1282,12 @@ document.body.addEventListener('drop', async e => {
         document.getElementById('editor-tabs').innerHTML = '';
         for (const item of Array.from(e.dataTransfer.items).filter(i => i.kind === 'file')) {
             const entry = item.webkitGetAsEntry();
-            if (entry) await traverseEntry(entry, '');
+            if (entry) {
+                await traverseEntry(entry, '');
+            } else if (item.getAsFile()) {
+                const file = item.getAsFile();
+                await processFile(file, file.name, file.name);
+            }
         }
         finalizeMount();
     }
@@ -1275,21 +1295,43 @@ document.body.addEventListener('drop', async e => {
 
 async function traverseEntry(entry, path) {
     if (entry.isFile) {
-        const file = await new Promise(r => entry.file(r));
+        const file = await new Promise((resolve, reject) => entry.file(resolve, reject));
         await processFile(file, path + entry.name, entry.name);
     } else if (entry.isDirectory) {
         const reader = entry.createReader();
-        const entries = await new Promise(r => reader.readEntries(r));
-        for (const e of entries) await traverseEntry(e, path + entry.name + '/');
+        const readAllEntries = async () => {
+            let allEntries = [];
+            let results = await new Promise(resolve => reader.readEntries(resolve));
+            while (results.length > 0) {
+                allEntries.push(...results);
+                results = await new Promise(resolve => reader.readEntries(resolve));
+            }
+            return allEntries;
+        };
+        try {
+            const entries = await readAllEntries();
+            for (const e of entries) {
+                await traverseEntry(e, path + entry.name + '/');
+            }
+        } catch (err) {
+            console.error("Error reading directory entry:", err);
+        }
     }
 }
 
 async function processFile(file, fullPath, name) {
-    const isText = isTextBased(name);
-    let content = null, blobUrl = null;
-    if (isText) content = await file.text();
-    else blobUrl = URL.createObjectURL(file);
-    vfs[fullPath] = { name, isText, content, fileObj: file, blobUrl };
+    try {
+        const isText = isTextBased(name);
+        let content = null, blobUrl = null;
+        if (isText) {
+            content = await file.text();
+        } else {
+            blobUrl = URL.createObjectURL(file);
+        }
+        vfs[fullPath] = { name, isText, content, fileObj: file, blobUrl };
+    } catch (err) {
+        console.error("Error processing file " + fullPath, err);
+    }
 }
 
 function finalizeMount() {
@@ -1902,6 +1944,10 @@ function showKeyboardShortcuts() {
     vfs['SHORTCUTS.md'] = { name: 'SHORTCUTS.md', isText: true, content: '# Keyboard Shortcuts\n\n' + shortcuts.map(s => '- ' + s).join('\n'), fileObj: null, blobUrl: null };
     renderFileTree();
     openFile('SHORTCUTS.md');
+}
+
+function showLicense() {
+    alert('HyperLive Pro\nMIT License\nCopyright © 2025\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies.');
 }
 
 function showAbout() {
@@ -2532,10 +2578,6 @@ function setAllBreakpoints(enabled) {
     logOutput(`All breakpoints ${enabled ? 'enabled' : 'disabled'}.`, 'system');
 }
 
-function showLicense() {
-    alert('HyperLive Pro\nMIT License\nCopyright © 2025\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies.');
-}
-
 // ============================================================
 // INIT
 // ============================================================
@@ -2543,7 +2585,7 @@ setTimeout(() => {
     if (!Object.keys(vfs).length) {
         logOutput('Ready — Drop a folder, File → Open Folder, or Load Demo.', 'system');
     }
-    // Initialize bottom panel with one tab active
+    // Initialize bottom panel with console active
     switchBottomTab('console');
 }, 800);
 
