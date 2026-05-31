@@ -160,42 +160,91 @@
     // -------------------------------------------------------------------------
     // SYSTEM LIFECYCLE
     // -------------------------------------------------------------------------
-    window.onload = async function() {
-      lucide.createIcons();
-      setupFormulaParser();
+// Welcome Modal Global Variables (defined cleanly at top level scope)
+const WELCOME_KEY = "envizion_workbench_guide_dismissed";
+let welcomeModal, welcomeBackdrop, closeWelcomeBtn, startWorkbenchBtn, dontShowWelcomeCheckbox;
 
-      currentWorkbookId = getWorkbookIdFromUrl() || localStorage.getItem(LAST_WORKBOOK_KEY) || ensureDefaultWorkbook();
-      const saved = localStorage.getItem(`envizion_excel_workbook_${currentWorkbookId}`);
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          sheets = parsed.sheets || sheets;
-          activeSheet = parsed.activeSheet || Object.keys(sheets)[0];
-          document.getElementById("project-title").value = parsed.title || "Untitled";
-        } catch(e) {}
-      }
+window.onload = async function() {
+  lucide.createIcons();
+  setupFormulaParser();
 
-      renderSheetTabs();
-      rebuildGrid();
-      renderAddonsList();
-      renderFormulaGlossary();
+  currentWorkbookId = getWorkbookIdFromUrl() || localStorage.getItem(LAST_WORKBOOK_KEY) || ensureDefaultWorkbook();
+  const saved = localStorage.getItem(`envizion_excel_workbook_${currentWorkbookId}`);
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved);
+      sheets = parsed.sheets || sheets;
+      activeSheet = parsed.activeSheet || Object.keys(sheets)[0];
+      document.getElementById("project-title").value = parsed.title || "Untitled";
+    } catch(e) {}
+  }
 
-      document.addEventListener("keydown", handleGlobalKeyDown);
-      document.getElementById("formula-bar-input").addEventListener("input", handleFormulaBarInput);
-      document.getElementById("formula-bar-input").addEventListener("keydown", handleFormulaBarKeyDown);
-      document.getElementById("addon-search").addEventListener("input", filterAddons);
-      document.getElementById("project-title").addEventListener("input", () => {
-        saveToLocalStorage();
-        syncWorkbookIndex();
-      });
+  renderSheetTabs();
+  rebuildGrid();
+  renderAddonsList();
+  renderFormulaGlossary();
 
-      if (localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-        document.documentElement.classList.add('dark');
-        document.getElementById("theme-sun").classList.remove("hidden");
-        document.getElementById("theme-moon").classList.add("hidden");
-      }
-    };
+  document.addEventListener("keydown", handleGlobalKeyDown);
+  document.getElementById("formula-bar-input").addEventListener("input", handleFormulaBarInput);
+  document.getElementById("formula-bar-input").addEventListener("keydown", handleFormulaBarKeyDown);
+  document.getElementById("addon-search").addEventListener("input", filterAddons);
+  document.getElementById("project-title").addEventListener("input", () => {
+    saveToLocalStorage();
+    syncWorkbookIndex();
+  });
 
+  if (localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+    document.documentElement.classList.add('dark');
+    document.getElementById("theme-sun").classList.remove("hidden");
+    document.getElementById("theme-moon").classList.add("hidden");
+  }
+
+  // Initialize Welcome Modal configuration
+  initWelcomeModal();
+};
+
+// Welcome Modal Initialization & Core Operations
+function initWelcomeModal() {
+  welcomeModal = document.getElementById("envizion-welcome-modal");
+  welcomeBackdrop = document.getElementById("envizion-modal-backdrop");
+  closeWelcomeBtn = document.getElementById("close-welcome-btn");
+  startWorkbenchBtn = document.getElementById("start-workbench-btn");
+  dontShowWelcomeCheckbox = document.getElementById("dont-show-welcome");
+
+  // Verify elements exist on page first to prevent crashes
+  if (!welcomeModal) return;
+
+  // Bind interaction event listeners
+  closeWelcomeBtn.addEventListener("click", closeWelcomeModal);
+  startWorkbenchBtn.addEventListener("click", closeWelcomeModal);
+  welcomeBackdrop.addEventListener("click", closeWelcomeModal);
+
+  // Automatically trigger modal slide-in if not previously dismissed
+  const alreadySeen = localStorage.getItem(WELCOME_KEY);
+  if (!alreadySeen) {
+    setTimeout(openWelcomeModal, 1000); // 1-second delay for smooth landing page entry
+  }
+}
+
+function openWelcomeModal() {
+  if (!welcomeModal) return;
+  welcomeModal.classList.remove("opacity-0", "pointer-events-none");
+  welcomeModal.querySelector(".relative").classList.remove("scale-95");
+  welcomeModal.querySelector(".relative").classList.add("scale-100");
+  welcomeModal.setAttribute("aria-hidden", "false");
+}
+
+function closeWelcomeModal() {
+  if (!welcomeModal) return;
+  welcomeModal.classList.add("opacity-0", "pointer-events-none");
+  welcomeModal.querySelector(".relative").classList.remove("scale-100");
+  welcomeModal.querySelector(".relative").classList.add("scale-95");
+  welcomeModal.setAttribute("aria-hidden", "true");
+
+  if (dontShowWelcomeCheckbox && dontShowWelcomeCheckbox.checked) {
+    localStorage.setItem(WELCOME_KEY, "true");
+  }
+}
     // -------------------------------------------------------------------------
     // FORMULA ENGINE CONFIGURATION & EXCEL STANDARD MATH REGISTRATION
     // -------------------------------------------------------------------------
