@@ -1040,6 +1040,11 @@ function logOutput(msg, type = 'log') {
 // ============================================================
 // SIDEBAR SWITCHING
 // ============================================================
+function closeSidebar() {
+    document.getElementById('sidebar').style.width = '0px';
+    document.querySelectorAll('.activity-icon').forEach(icon => icon.classList.remove('active'));
+}
+
 function switchSidebar(view) {
     const sidebar = document.getElementById('sidebar');
     const isActive = document.getElementById('activity-' + view)?.classList.contains('active');
@@ -1047,7 +1052,7 @@ function switchSidebar(view) {
 
     // Toggle behaviour: If clicking already active panel, close sidebar
     if (isActive && !isCollapsed) {
-        sidebar.style.width = '0px';
+        closeSidebar();
         return;
     }
 
@@ -1075,7 +1080,11 @@ function switchSidebar(view) {
 function toggleSidebar() {
     const sidebar = document.getElementById('sidebar');
     const isCollapsed = parseInt(sidebar.style.width) < 10;
-    sidebar.style.width = isCollapsed ? '240px' : '0px';
+    if (isCollapsed) {
+        sidebar.style.width = '240px';
+    } else {
+        closeSidebar();
+    }
 }
 
 function toggleGitPanel() { switchSidebar('git'); }
@@ -1248,7 +1257,7 @@ function triggerFolderUpload() { document.getElementById('folder-input').click()
 function triggerFileUpload() { document.getElementById('file-input').click(); }
 
 document.getElementById('folder-input').addEventListener('change', async e => {
-    const files = e.target.files;
+    const files = Array.from(e.target.files);
     if (!files.length) return;
     vfs = {}; openFiles = []; activeFile = null;
     document.getElementById('editor-tabs').innerHTML = '';
@@ -1263,12 +1272,13 @@ document.getElementById('folder-input').addEventListener('change', async e => {
 });
 
 document.getElementById('file-input').addEventListener('change', async e => {
-    for (const file of e.target.files) {
+    const filesArray = Array.from(e.target.files);
+    for (const file of filesArray) {
         await processFile(file, file.name, file.name);
     }
     e.target.value = '';
     renderFileTree();
-    logOutput(`${e.target.files.length} file(s) added.`, 'system');
+    logOutput(`${filesArray.length} file(s) added.`, 'system');
 });
 
 // Drag and drop events
@@ -1280,7 +1290,8 @@ document.body.addEventListener('drop', async e => {
     if (e.dataTransfer.items) {
         vfs = {}; openFiles = []; activeFile = null;
         document.getElementById('editor-tabs').innerHTML = '';
-        for (const item of Array.from(e.dataTransfer.items).filter(i => i.kind === 'file')) {
+        const items = Array.from(e.dataTransfer.items).filter(i => i.kind === 'file');
+        for (const item of items) {
             const entry = item.webkitGetAsEntry();
             if (entry) {
                 await traverseEntry(entry, '');
@@ -1301,10 +1312,10 @@ async function traverseEntry(entry, path) {
         const reader = entry.createReader();
         const readAllEntries = async () => {
             let allEntries = [];
-            let results = await new Promise(resolve => reader.readEntries(resolve));
+            let results = await new Promise((resolve, reject) => reader.readEntries(resolve, reject));
             while (results.length > 0) {
                 allEntries.push(...results);
-                results = await new Promise(resolve => reader.readEntries(resolve));
+                results = await new Promise((resolve, reject) => reader.readEntries(resolve, reject));
             }
             return allEntries;
         };
@@ -2087,6 +2098,17 @@ function compileVFS(targetHtmlPath, isExternal = false, queryAndHash = '') {
             const a=e.target.closest('a');
             if(a){
                 const href=a.getAttribute('href');
+                if (href && href.startsWith('#')) {
+                    e.preventDefault();
+                    const targetId = href.substring(1);
+                    if (targetId) {
+                        const targetEl = document.getElementById(targetId) || document.querySelector('[name="' + targetId + '"]');
+                        if (targetEl) targetEl.scrollIntoView({ behavior: 'smooth' });
+                    } else {
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }
+                    return;
+                }
                 if(href&&!href.startsWith('http')&&!href.startsWith('#')&&!href.startsWith('javascript:')&&!href.startsWith('mailto:')){
                     e.preventDefault();
                     parentWin&&parentWin.postMessage({type:'NAVIGATE',path:href,current:${JSON.stringify(targetHtmlPath)},isExt},'*');
