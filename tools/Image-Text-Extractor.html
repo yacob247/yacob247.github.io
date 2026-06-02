@@ -1,0 +1,863 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!-- Powerful SEO Meta Tags for envizion.work -->
+    <title>Premium Live-Text OCR | Free Image to Text Extractor by envizion.work</title>
+    <meta name="description" content="Instantly extract, highlight, and copy text directly from images. A premium, browser-based Optical Character Recognition (OCR) tool featuring automatic 2x upscaling and high-accuracy contrast boost.">
+    <meta name="keywords" content="image to text, OCR, extract text from image, envizion.work, live text, copy text from picture, tesseract, online OCR, free image text extractor">
+    <meta name="author" content="envizion.work">
+    <meta name="robots" content="index, follow">
+    
+    <!-- Open Graph / Social Media SEO -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://envizion.work/ocr">
+    <meta property="og:title" content="Live-Text OCR | Free Image to Text Extractor">
+    <meta property="og:description" content="Highlight, select, and copy text directly on your images instantly. High-accuracy OCR powered by envizion.work.">
+    <meta property="og:image" content="https://envizion.work/og-image-ocr.jpg">
+    
+    <!-- Premium Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+    <!-- Structured Data (JSON-LD) for rich Google snippets -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "envizion.work Live-Text OCR",
+      "url": "https://envizion.work/ocr",
+      "description": "An advanced, browser-based Optical Character Recognition (OCR) tool that allows users to seamlessly extract and copy text directly from images.",
+      "applicationCategory": "UtilitiesApplication",
+      "operatingSystem": "All",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "provider": {
+        "@type": "Organization",
+        "name": "envizion.work",
+        "url": "https://envizion.work"
+      }
+    }
+    </script>
+
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+                        mono: ['"JetBrains Mono"', 'monospace'],
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- Tesseract.js for OCR -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <!-- Phosphor Icons for UI icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    
+    <style>
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 9999px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+        
+        .dropzone-active {
+            border-color: #3b82f6 !important;
+            box-shadow: 0 0 25px rgba(59, 130, 246, 0.2);
+            background-color: rgba(30, 41, 59, 0.7) !important;
+        }
+
+        /* Seamless selection overlay mapping */
+        .ocr-line-container { user-select: text; cursor: text; }
+        .selectable-text {
+            color: rgba(0, 0, 0, 0);
+            cursor: text;
+            user-select: text;
+            white-space: nowrap;
+            transition: color 0.2s ease, background-color 0.2s ease;
+        }
+        .show-overlay-text .selectable-text {
+            color: rgba(248, 250, 252, 0.95) !important;
+            background-color: rgba(15, 23, 42, 0.85);
+            border-radius: 2px;
+        }
+        .selectable-text::selection {
+            background-color: rgba(59, 130, 246, 0.4);
+            color: rgba(255, 255, 255, 0.99);
+        }
+        .show-overlay-text .selectable-text::selection {
+            background-color: rgba(59, 130, 246, 0.55);
+            color: #ffffff;
+        }
+
+        .has-image {
+            cursor: default !important;
+        }
+        .has-image #fileInput { display: none; }
+
+        /* Smooth Glow Animations */
+        @keyframes subtle-glow {
+            0%, 100% { opacity: 0.3; }
+            50% { opacity: 0.6; }
+        }
+        .glow-effect {
+            position: relative;
+        }
+        .glow-effect::before {
+            content: '';
+            position: absolute;
+            inset: -1px;
+            background: linear-gradient(90deg, #3b82f6, #6366f1);
+            border-radius: inherit;
+            z-index: -1;
+            opacity: 0.25;
+            transition: opacity 0.3s ease;
+        }
+        .glow-effect:hover::before {
+            opacity: 0.45;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 min-h-screen text-slate-100 font-sans p-4 md:p-8 flex flex-col items-center selection:bg-blue-600/30">
+
+    <!-- Ambient background glows -->
+    <div class="absolute top-0 left-1/4 w-96 h-96 bg-blue-600/10 rounded-full blur-[120px] pointer-events-none"></div>
+    <div class="absolute bottom-0 right-1/4 w-96 h-96 bg-indigo-600/10 rounded-full blur-[120px] pointer-events-none"></div>
+
+    <div class="max-w-7xl w-full mx-auto space-y-8 relative z-10">
+        
+        <!-- Header Section -->
+        <header class="flex flex-col lg:flex-row items-center justify-between gap-6 pb-6 border-b border-slate-800">
+            <div class="space-y-2 text-center lg:text-left">
+                <div class="flex items-center justify-center lg:justify-start gap-3">
+                    <span class="p-2 bg-blue-600/20 text-blue-400 rounded-xl border border-blue-500/30">
+                        <i class="ph-fill ph-textbox text-2xl"></i>
+                    </span>
+                    <div>
+                        <h1 class="text-2xl md:text-3xl font-extrabold tracking-tight bg-gradient-to-r from-white via-slate-100 to-slate-400 bg-clip-text text-transparent">
+                            envizion<span class="text-blue-500">.work</span> Live-Text OCR
+                        </h1>
+                    </div>
+                </div>
+                <p class="text-slate-400 text-sm max-w-xl">
+                    High-end, completely private in-browser document layer digitization. Drag, paste, and instantly select text like a digital PDF.
+                </p>
+            </div>
+            
+            <!-- Top Dashboard Controls -->
+            <div class="flex flex-wrap items-center justify-center gap-3 w-full lg:w-auto">
+                <button id="aboutBtn" class="flex items-center gap-1.5 text-sm font-semibold text-slate-300 hover:text-white px-4 py-2 bg-slate-900 hover:bg-slate-850 rounded-xl border border-slate-800 transition-all shadow-lg shadow-black/20">
+                    <i class="ph ph-info text-base"></i> About System
+                </button>
+                
+                <div class="flex items-center gap-2 bg-slate-900 px-3 py-2 rounded-xl border border-slate-800 text-sm font-semibold shadow-lg shadow-black/20">
+                    <i class="ph ph-translate text-slate-400"></i>
+                    <select id="langSelect" class="bg-transparent text-slate-200 outline-none cursor-pointer pr-1">
+                        <option value="eng" class="bg-slate-900">English</option>
+                        <option value="spa" class="bg-slate-900">Spanish</option>
+                        <option value="fra" class="bg-slate-900">French</option>
+                        <option value="deu" class="bg-slate-900">German</option>
+                        <option value="jpn" class="bg-slate-900">Japanese</option>
+                    </select>
+                </div>
+
+                <label class="flex items-center gap-2 bg-slate-900 px-4 py-2 rounded-xl border border-slate-800 text-sm font-semibold cursor-pointer hover:bg-slate-850 transition-all shadow-lg shadow-black/20">
+                    <input type="checkbox" id="accuracyBoost" checked class="rounded border-slate-700 bg-slate-950 text-blue-600 focus:ring-blue-500 w-4 h-4">
+                    <span class="flex items-center gap-1.5">
+                        <i class="ph-fill ph-sparkle text-amber-400"></i> Auto-Upscale (2x)
+                    </span>
+                </label>
+            </div>
+        </header>
+
+        <!-- AdSense Slot 1: Premium Top Banner -->
+        <div class="w-full bg-slate-900/60 border border-slate-800/80 rounded-2xl overflow-hidden flex flex-col items-center justify-center text-slate-500 min-h-[100px] shadow-2xl relative glow-effect backdrop-blur-md">
+            <div class="absolute top-2 left-3 flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-widest text-slate-500">
+                <i class="ph-fill ph-info"></i> Advertisement Area
+            </div>
+            <span class="text-xs font-semibold uppercase tracking-wider text-slate-400 mt-2">Sponsored Content Slot</span>
+            <!-- REPLACE AND INSERT ADSENSE CODE BELOW -->
+            <!-- <ins class="adsbygoogle" style="display:block" data-ad-client="ca-pub-XXXXX" data-ad-slot="XXXXX" data-ad-format="auto" data-full-width-responsive="true"></ins> -->
+            <!-- <script>(adsbygoogle = window.adsbygoogle || []).push({});</script> -->
+        </div>
+
+        <!-- Main Workspace -->
+        <main class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            
+            <!-- Left Panel: Premium Selection Workspace (7 cols) -->
+            <div class="lg:col-span-7 space-y-6">
+                <div class="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-5 shadow-2xl backdrop-blur-md space-y-4">
+                    
+                    <div class="flex items-center justify-between border-b border-slate-800 pb-4">
+                        <h2 class="font-bold text-slate-200 flex items-center gap-2.5 text-base">
+                            <i class="ph ph-layout text-blue-400"></i> Document Studio
+                        </h2>
+                        
+                        <!-- Interactive Selection Mode Controls -->
+                        <div id="workspaceControls" class="hidden flex items-center gap-4 text-xs">
+                            <div class="flex items-center gap-2.5 bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-800">
+                                <span class="text-slate-400">Text Masking:</span>
+                                <input type="range" id="opacitySlider" min="0" max="100" value="0" class="w-16 h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-500">
+                                <span id="opacityVal" class="text-xs font-mono font-bold text-slate-300 w-6">0%</span>
+                            </div>
+                            <button id="selectAllOverlayBtn" class="bg-blue-650 hover:bg-blue-600 text-white px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1 transition-colors border border-blue-500/30">
+                                <i class="ph ph-selection-all"></i> Select All
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Dropzone -->
+                    <div id="dropzone" class="relative border-2 border-dashed border-slate-800 rounded-xl p-8 text-center bg-slate-950/40 transition-all duration-300 hover:border-slate-700 hover:bg-slate-900/20 flex flex-col items-center justify-center min-h-[420px] overflow-hidden group">
+                        
+                        <input type="file" id="fileInput" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" accept="image/png, image/jpeg, image/webp, image/bmp">
+                        
+                        <div id="uploadPrompt" class="space-y-5 z-10 pointer-events-none">
+                            <div class="w-20 h-20 bg-blue-550/10 text-blue-400 rounded-2xl flex items-center justify-center mx-auto border border-blue-500/20 shadow-inner group-hover:scale-105 transition-transform duration-300">
+                                <i class="ph ph-cloud-arrow-up text-4xl"></i>
+                            </div>
+                            <div class="space-y-1">
+                                <p class="text-lg font-bold text-slate-100">Drag or Paste Screenshot</p>
+                                <p class="text-sm text-slate-400">Supports PNG, JPG, WEBP, or BMP format.</p>
+                            </div>
+                            <div class="pt-2">
+                                <span class="px-5 py-2.5 bg-slate-900 text-slate-200 text-xs font-bold rounded-xl border border-slate-800 shadow-lg pointer-events-auto hover:bg-slate-800 transition-colors inline-block cursor-pointer">
+                                    Browse Device
+                                </span>
+                            </div>
+                        </div>
+
+                        <!-- Main Image Container -->
+                        <div id="imagePreviewContainer" class="hidden w-full h-full flex flex-col items-center justify-center relative z-20">
+                            <!-- Popout Zoom Button Overlay -->
+                            <button id="expandImgBtn" class="absolute top-3 right-3 p-2.5 bg-slate-950/80 hover:bg-blue-600 border border-slate-800 text-slate-100 rounded-xl z-50 backdrop-blur transition-all duration-300 opacity-0 group-hover:opacity-100 shadow-2xl scale-95 group-hover:scale-100" title="Theater View Mode">
+                                <i class="ph ph-corners-out text-lg"></i>
+                            </button>
+
+                            <div id="imageWrapper" class="relative inline-block max-w-full">
+                                <img id="imagePreview" src="" alt="OCR Target Preview" class="max-w-full max-h-[500px] w-auto h-auto block rounded-lg border border-slate-800 bg-slate-900 shadow-2xl">
+                                <!-- OCR coordinate overlays are precisely drawn inside here -->
+                                <div id="textOverlay" class="absolute top-0 left-0 w-full h-full overflow-hidden rounded-lg pointer-events-auto"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Live Status Indicators -->
+                <div id="statusContainer" class="hidden bg-slate-900/60 p-5 rounded-2xl border border-slate-800/80 shadow-2xl space-y-3.5 backdrop-blur-md">
+                    <div class="flex items-center justify-between text-xs font-semibold">
+                        <span id="statusText" class="text-blue-400 flex items-center gap-2">
+                            <i class="ph ph-spinner-gap animate-spin text-base"></i>
+                            Preparing engine...
+                        </span>
+                        <span id="statusPercentage" class="text-slate-400 font-mono">0%</span>
+                    </div>
+                    <div class="w-full bg-slate-950 rounded-full h-1.5 overflow-hidden border border-slate-800">
+                        <div id="progressBar" class="bg-gradient-to-r from-blue-550 to-indigo-500 h-1.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Panel: Smart Metrics & Raw Terminal Output (5 cols) -->
+            <div class="lg:col-span-5 space-y-6">
+                
+                <!-- SaaS Stats Widgets -->
+                <div id="statsBox" class="grid grid-cols-3 gap-3">
+                    <div class="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-4 text-center backdrop-blur-md">
+                        <p class="text-[10px] text-slate-400 uppercase tracking-widest font-bold">Total Words</p>
+                        <p id="statWords" class="text-2xl font-extrabold text-slate-200 mt-1 font-mono">-</p>
+                    </div>
+                    <div class="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-4 text-center backdrop-blur-md border-x">
+                        <p class="text-[10px] text-slate-400 uppercase tracking-widest font-bold">Confidence</p>
+                        <p id="statConfidence" class="text-2xl font-extrabold text-slate-200 mt-1 font-mono">-</p>
+                    </div>
+                    <div class="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-4 text-center backdrop-blur-md">
+                        <p class="text-[10px] text-slate-400 uppercase tracking-widest font-bold">Total Lines</p>
+                        <p id="statLines" class="text-2xl font-extrabold text-slate-200 mt-1 font-mono">-</p>
+                    </div>
+                </div>
+
+                <!-- Structured Editor Output Card -->
+                <div class="bg-slate-900/40 border border-slate-800/80 rounded-2xl shadow-2xl flex flex-col h-[350px] backdrop-blur-md relative overflow-hidden">
+                    <div class="p-4 border-b border-slate-800/80 flex items-center justify-between bg-slate-950/40">
+                        <h3 class="font-bold text-slate-200 flex items-center gap-2 text-sm">
+                            <i class="ph ph-terminal-window text-blue-400"></i> Digitized Workspace Output
+                        </h3>
+                        <div class="flex gap-2">
+                            <button id="clearBtn" class="px-2.5 py-1.5 text-xs text-slate-400 hover:text-rose-400 bg-slate-950 hover:bg-slate-900 border border-slate-800 rounded-lg transition-all flex items-center gap-1 font-semibold" disabled>
+                                <i class="ph ph-trash"></i> Reset
+                            </button>
+                            <button id="copyBtn" class="px-3.5 py-1.5 text-xs bg-blue-650 hover:bg-blue-600 border border-blue-500/30 text-white rounded-lg transition-all flex items-center gap-1.5 font-bold shadow-lg disabled:opacity-40" disabled>
+                                <i class="ph ph-copy"></i> Copy Output
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="flex-grow p-5 relative h-0 bg-slate-950/20">
+                        <textarea id="outputText" class="w-full h-full resize-none outline-none border-none text-slate-300 leading-relaxed placeholder-slate-500 bg-transparent text-sm font-mono scrollbar-thin" placeholder="Live text coordinates will build here cleanly..." readonly></textarea>
+                        
+                        <!-- Premium copy confirmation toast -->
+                        <div id="copyToast" class="absolute bottom-5 left-1/2 -translate-x-1/2 bg-blue-600 text-white px-5 py-2.5 rounded-xl text-xs font-bold opacity-0 transition-all duration-300 pointer-events-none flex items-center gap-2 shadow-2xl border border-blue-400/30 transform translate-y-2">
+                            <i class="ph-fill ph-check-circle text-green-300 text-sm"></i> Copied to Clipboard
+                        </div>
+                    </div>
+                </div>
+
+                <!-- AdSense Slot 2: Premium Sidebar Box -->
+                <div class="w-full bg-slate-900/60 border border-slate-800/80 rounded-2xl overflow-hidden flex flex-col items-center justify-center text-slate-500 min-h-[250px] shadow-2xl relative glow-effect backdrop-blur-md">
+                    <div class="absolute top-2 left-3 flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-widest text-slate-500">
+                        <i class="ph-fill ph-info"></i> Advertisement Area
+                    </div>
+                    <span class="text-xs font-semibold uppercase tracking-wider text-slate-400 mt-2">Sponsored Content Slot</span>
+                    <!-- REPLACE AND INSERT ADSENSE CODE BELOW -->
+                    <!-- <ins class="adsbygoogle" style="display:block" data-ad-client="ca-pub-XXXXX" data-ad-slot="XXXXX" data-ad-format="auto" data-full-width-responsive="true"></ins> -->
+                    <!-- <script>(adsbygoogle = window.adsbygoogle || []).push({});</script> -->
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- Full-Screen Interactive Theater Modal Overlay -->
+    <div id="theaterModal" class="fixed inset-0 bg-slate-950/98 backdrop-blur-md z-[9999] opacity-0 pointer-events-none transition-all duration-300 flex flex-col items-center justify-center p-4">
+        <!-- Close overlay button -->
+        <button id="closeTheaterBtn" class="absolute top-4 right-4 md:top-6 md:right-6 p-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl border border-slate-800 transition-colors shadow-2xl z-[10000]">
+            <i class="ph ph-x text-xl font-bold"></i>
+        </button>
+        
+        <!-- Controls layer inside theater -->
+        <div class="absolute top-4 left-4 md:top-6 md:left-6 flex items-center gap-3 z-[10000] bg-slate-900/80 p-2 rounded-xl border border-slate-850 backdrop-blur-sm">
+            <div class="flex items-center gap-2 text-xs">
+                <span class="text-slate-400 pl-1">Overlay Opacity:</span>
+                <input type="range" id="theaterOpacitySlider" min="0" max="100" value="0" class="w-24 h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-500">
+                <span id="theaterOpacityVal" class="text-xs font-mono font-bold text-slate-300 w-6">0%</span>
+            </div>
+            <div class="w-px h-4 bg-slate-800"></div>
+            <button id="theaterSelectAllBtn" class="text-blue-400 hover:text-blue-300 text-xs font-semibold px-2 py-1 flex items-center gap-1">
+                <i class="ph ph-selection-all"></i> Select All
+            </button>
+        </div>
+
+        <div id="theaterImageContainer" class="relative max-w-full max-h-[85vh] overflow-auto flex items-center justify-center p-2">
+            <div id="theaterWrapper" class="relative inline-block">
+                <img id="theaterPreview" src="" alt="Expanded View" class="max-w-[95vw] max-h-[80vh] w-auto h-auto rounded border border-slate-800 shadow-2xl">
+                <div id="theaterTextOverlay" class="absolute top-0 left-0 w-full h-full overflow-hidden rounded pointer-events-auto"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- SEO & System Info Description Modal (Auto-Opens on entry with smooth drop down transition) -->
+    <div id="aboutModalWrapper" class="fixed inset-0 z-[100] flex items-center justify-center p-4 opacity-0 pointer-events-none transition-opacity duration-300 bg-slate-950/80 backdrop-blur-md">
+        <article class="bg-slate-900 border border-slate-800 rounded-3xl max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-2xl transform scale-95 transition-transform duration-300" id="aboutModalContent">
+            <div class="p-6 border-b border-slate-800 flex justify-between items-center sticky top-0 bg-slate-900/95 backdrop-blur-sm z-10">
+                <h2 class="text-xl font-extrabold text-slate-100 flex items-center gap-2.5">
+                    <i class="ph-fill ph-info text-blue-500"></i> Platform Systems Overview
+                </h2>
+                <button id="closeAboutBtn" class="p-2 bg-slate-850 hover:bg-slate-800 text-slate-300 hover:text-white rounded-full transition-all">
+                    <i class="ph ph-x font-bold"></i>
+                </button>
+            </div>
+            
+            <div class="p-6 space-y-6 text-slate-400 leading-relaxed text-xs md:text-sm">
+                <section class="space-y-2">
+                    <h3 class="text-sm font-bold text-slate-200">State-Of-The-Art Digital OCR System</h3>
+                    <p>Welcome to the premium flagship tool of <strong>envizion.work</strong>. This system integrates browser-based Neural-Character Mapping and Computer Vision technology to digitize imagery directly. Unlike server-side conversion pipelines that risk data leaks, your documents are processed locally, ensuring strict confidentiality.</p>
+                </section>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="bg-slate-950/60 p-4 rounded-xl border border-slate-800">
+                        <i class="ph-fill ph-sparkle text-xl text-amber-400 mb-2"></i>
+                        <h4 class="font-bold text-slate-200 text-xs uppercase tracking-wide">Dynamic Image Upscaling</h4>
+                        <p class="text-xs text-slate-400 mt-1">Our system leverages canvas transformations to upscale lower resolution captures by 200%. High-contrast scaling processes text lines and character boundaries for optimal OCR performance.</p>
+                    </div>
+                    <div class="bg-slate-950/60 p-4 rounded-xl border border-slate-800">
+                        <i class="ph-fill ph-lock-key text-xl text-green-400 mb-2"></i>
+                        <h4 class="font-bold text-slate-200 text-xs uppercase tracking-wide">Secure Client Sandbox</h4>
+                        <p class="text-xs text-slate-400 mt-1">All computing threads execute in an isolated environment. Tesseract compilation scripts operate within the memory constraints of your local web explorer container.</p>
+                    </div>
+                </div>
+
+                <section class="space-y-2">
+                    <h3 class="text-sm font-bold text-slate-200">How to Operate This Framework</h3>
+                    <ul class="list-disc pl-5 space-y-2">
+                        <li><strong>Drop & Paste:</strong> You can paste screenshots with <kbd class="px-1.5 py-0.5 bg-slate-950 rounded border border-slate-800 text-slate-300 font-mono text-xs">Ctrl + V</kbd> or drag and drop image arrays into the dashboard dropzone.</li>
+                        <li><strong>Interactive Selection Layer:</strong> After processing, highlight boundaries on the image exactly like dynamic text blocks.</li>
+                        <li><strong>Theater Zoom:</strong> Click the expand button on the workspace to open an immersive pop-out layout designed for massive documents.</li>
+                    </ul>
+                </section>
+                
+                <p class="text-xs text-slate-500 text-center pt-4">Published and engineered by <a href="https://envizion.work" class="text-blue-400 hover:underline">envizion.work</a></p>
+            </div>
+        </article>
+    </div>
+
+    <!-- Hidden Canvas for Accuracy Boost Pre-processing & Upscaling -->
+    <canvas id="procCanvas" class="hidden"></canvas>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const dropzone = document.getElementById('dropzone');
+            const fileInput = document.getElementById('fileInput');
+            const uploadPrompt = document.getElementById('uploadPrompt');
+            const imagePreviewContainer = document.getElementById('imagePreviewContainer');
+            const imagePreview = document.getElementById('imagePreview');
+            const textOverlay = document.getElementById('textOverlay');
+            
+            const statusContainer = document.getElementById('statusContainer');
+            const statusText = document.getElementById('statusText');
+            const statusPercentage = document.getElementById('statusPercentage');
+            const progressBar = document.getElementById('progressBar');
+            
+            const outputText = document.getElementById('outputText');
+            const copyBtn = document.getElementById('copyBtn');
+            const clearBtn = document.getElementById('clearBtn');
+            const copyToast = document.getElementById('copyToast');
+            const selectAllOverlayBtn = document.getElementById('selectAllOverlayBtn');
+            const workspaceControls = document.getElementById('workspaceControls');
+            const opacitySlider = document.getElementById('opacitySlider');
+            const opacityVal = document.getElementById('opacityVal');
+            
+            const langSelect = document.getElementById('langSelect');
+            const accuracyBoost = document.getElementById('accuracyBoost');
+            const procCanvas = document.getElementById('procCanvas');
+
+            const expandImgBtn = document.getElementById('expandImgBtn');
+
+            // Theater elements
+            const theaterModal = document.getElementById('theaterModal');
+            const closeTheaterBtn = document.getElementById('closeTheaterBtn');
+            const theaterPreview = document.getElementById('theaterPreview');
+            const theaterTextOverlay = document.getElementById('theaterTextOverlay');
+            const theaterOpacitySlider = document.getElementById('theaterOpacitySlider');
+            const theaterOpacityVal = document.getElementById('theaterOpacityVal');
+            const theaterSelectAllBtn = document.getElementById('theaterSelectAllBtn');
+
+            // Stats
+            const statWords = document.getElementById('statWords');
+            const statConfidence = document.getElementById('statConfidence');
+            const statLines = document.getElementById('statLines');
+
+            let isProcessing = false;
+            let ocrData = null; 
+            let lastOcrScale = 1; // Scaling multiplier tracking
+            let isExpanded = false;
+
+            // --- About Modal Logic ---
+            const aboutBtn = document.getElementById('aboutBtn');
+            const closeAboutBtn = document.getElementById('closeAboutBtn');
+            const aboutModalWrapper = document.getElementById('aboutModalWrapper');
+            const aboutModalContent = document.getElementById('aboutModalContent');
+
+            function toggleAboutModal(show) {
+                if (show) {
+                    aboutModalWrapper.classList.remove('opacity-0', 'pointer-events-none');
+                    aboutModalContent.classList.remove('scale-95');
+                } else {
+                    aboutModalWrapper.classList.add('opacity-0', 'pointer-events-none');
+                    aboutModalContent.classList.add('scale-95');
+                }
+            }
+            aboutBtn.addEventListener('click', () => toggleAboutModal(true));
+            closeAboutBtn.addEventListener('click', () => toggleAboutModal(false));
+            aboutModalWrapper.addEventListener('click', (e) => {
+                if (e.target === aboutModalWrapper) toggleAboutModal(false);
+            });
+
+            // Auto-trigger the System Overview modal on load
+            setTimeout(() => {
+                toggleAboutModal(true);
+            }, 600);
+
+            // --- Theater Expanded Pop-out View Logic ---
+            function toggleTheaterMode(show) {
+                isExpanded = show;
+                if(show) {
+                    theaterPreview.src = imagePreview.src;
+                    theaterOpacitySlider.value = opacitySlider.value;
+                    theaterOpacityVal.textContent = opacityVal.textContent;
+                    
+                    theaterModal.classList.remove('opacity-0', 'pointer-events-none');
+                    document.body.style.overflow = 'hidden';
+                    setTimeout(renderTheaterTextOverlay, 150);
+                } else {
+                    theaterModal.classList.add('opacity-0', 'pointer-events-none');
+                    document.body.style.overflow = '';
+                    theaterTextOverlay.innerHTML = '';
+                    theaterPreview.src = '';
+                }
+            }
+
+            expandImgBtn.addEventListener('click', () => toggleTheaterMode(true));
+            closeTheaterBtn.addEventListener('click', () => toggleTheaterMode(false));
+
+            // Sync Opacity inside the theater mode
+            theaterOpacitySlider.addEventListener('input', (e) => {
+                const val = e.target.value;
+                theaterOpacityVal.textContent = `${val}%`;
+                
+                // Keep the standard opacity slider in sync
+                opacitySlider.value = val;
+                opacityVal.textContent = `${val}%`;
+                
+                updateOpacityForContainer(theaterTextOverlay, val);
+                updateOpacityForContainer(textOverlay, val);
+            });
+
+            // Sync Opacity inside standard workspace
+            opacitySlider.addEventListener('input', (e) => {
+                const val = e.target.value;
+                opacityVal.textContent = `${val}%`;
+                
+                theaterOpacitySlider.value = val;
+                theaterOpacityVal.textContent = `${val}%`;
+
+                updateOpacityForContainer(textOverlay, val);
+                updateOpacityForContainer(theaterTextOverlay, val);
+            });
+
+            function updateOpacityForContainer(container, val) {
+                if (val > 0) {
+                    container.classList.add('show-overlay-text');
+                    const spans = container.querySelectorAll('.selectable-text');
+                    spans.forEach(span => {
+                        span.style.color = `rgba(248, 250, 252, ${val / 100})`;
+                        span.style.backgroundColor = `rgba(15, 23, 42, ${(val / 100) * 0.95})`;
+                    });
+                } else {
+                    container.classList.remove('show-overlay-text');
+                    const spans = container.querySelectorAll('.selectable-text');
+                    spans.forEach(span => {
+                        span.style.color = 'rgba(0, 0, 0, 0)';
+                        span.style.backgroundColor = 'transparent';
+                    });
+                }
+            }
+
+            // Select all for theater mode
+            theaterSelectAllBtn.addEventListener('click', () => {
+                const range = document.createRange();
+                range.selectNodeContents(theaterTextOverlay);
+                const selection = window.getSelection();
+                selection.removeAllRanges();
+                selection.addRange(range);
+            });
+
+            // Recalculate dynamic overlays when the window bounds resize
+            const resizeObserver = new ResizeObserver(() => {
+                if (ocrData && imagePreview.src) {
+                    renderTextOverlay();
+                    if(isExpanded) renderTheaterTextOverlay();
+                }
+            });
+            resizeObserver.observe(document.getElementById('imageWrapper'));
+
+            // --- 1. Clipboard Paste Event Handler ---
+            document.addEventListener('paste', (e) => {
+                if (isProcessing) return;
+                const items = e.clipboardData.items;
+                for (let i = 0; i < items.length; i++) {
+                    if (items[i].type.indexOf('image') !== -1) {
+                        e.preventDefault();
+                        const file = items[i].getAsFile();
+                        handleFile(file);
+                        break;
+                    }
+                }
+            });
+
+            // --- 2. Drag & Drop Event Handling ---
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                dropzone.addEventListener(eventName, preventDefaults, false);
+            });
+            function preventDefaults(e) { e.preventDefault(); e.stopPropagation(); }
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropzone.addEventListener(eventName, () => {
+                    if (!isProcessing) dropzone.classList.add('dropzone-active');
+                }, false);
+            });
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropzone.addEventListener(eventName, () => { dropzone.classList.remove('dropzone-active'); }, false);
+            });
+            dropzone.addEventListener('drop', (e) => {
+                if (isProcessing) return;
+                const files = e.dataTransfer.files;
+                if (files.length > 0 && files[0].type.startsWith('image/')) { handleFile(files[0]); }
+            });
+
+            // --- 3. Click-to-Upload Trigger ---
+            fileInput.addEventListener('change', function() {
+                if (this.files && this.files[0]) {
+                    handleFile(this.files[0]);
+                    this.value = ''; 
+                }
+            });
+
+            function handleFile(file) {
+                if (!file.type.startsWith('image/')) {
+                    alert('Please load a valid image asset (PNG, JPG, WEBP, or BMP).');
+                    return;
+                }
+
+                ocrData = null;
+                textOverlay.innerHTML = '';
+                theaterTextOverlay.innerHTML = '';
+                workspaceControls.classList.add('hidden');
+                
+                if(isExpanded) toggleTheaterMode(false);
+
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    imagePreview.src = e.target.result;
+                    uploadPrompt.classList.add('hidden');
+                    imagePreviewContainer.classList.remove('hidden');
+                    dropzone.classList.add('has-image');
+                    
+                    processAndOCR(file);
+                };
+                reader.readAsDataURL(file);
+            }
+
+            // High Accuracy Processing Pipeline (With 2x Upscaling)
+            function processAndOCR(file) {
+                const tempImg = new Image();
+                tempImg.onload = () => {
+                    let sourceToOCR = tempImg;
+                    lastOcrScale = 1;
+
+                    if (accuracyBoost.checked) {
+                        lastOcrScale = 2; // Auto-Upscale by 200%
+                        
+                        const ctx = procCanvas.getContext('2d', { willReadFrequently: true });
+                        procCanvas.width = tempImg.naturalWidth * lastOcrScale;
+                        procCanvas.height = tempImg.naturalHeight * lastOcrScale;
+                        
+                        // Enforce premium bilinear upscaling filters
+                        ctx.imageSmoothingEnabled = true;
+                        ctx.imageSmoothingQuality = 'high';
+                        ctx.drawImage(tempImg, 0, 0, procCanvas.width, procCanvas.height);
+
+                        const imgData = ctx.getImageData(0, 0, procCanvas.width, procCanvas.height);
+                        const data = imgData.data;
+
+                        // Grayscale and High-Contrast enhancements
+                        for (let i = 0; i < data.length; i += 4) {
+                            const r = data[i], g = data[i+1], b = data[i+2];
+                            let gray = 0.299 * r + 0.587 * g + 0.114 * b;
+                            
+                            if (gray > 128) { gray = Math.min(255, gray * 1.12); } 
+                            else { gray = Math.max(0, gray * 0.88); }
+                            
+                            data[i] = gray; data[i+1] = gray; data[i+2] = gray;
+                        }
+                        ctx.putImageData(imgData, 0, 0);
+                        sourceToOCR = procCanvas.toDataURL('image/jpeg', 0.95);
+                    }
+                    
+                    performOCR(sourceToOCR);
+                };
+                tempImg.src = URL.createObjectURL(file);
+            }
+
+            // Render coordinates overlay for Standard View
+            function renderTextOverlay() {
+                renderOverlayForContainer(imagePreview, textOverlay);
+            }
+
+            // Render coordinates overlay for Theater Mode view
+            function renderTheaterTextOverlay() {
+                renderOverlayForContainer(theaterPreview, theaterTextOverlay);
+            }
+
+            function renderOverlayForContainer(imgElement, overlayContainer) {
+                if (!ocrData || !imgElement.src) return;
+                
+                overlayContainer.innerHTML = ''; 
+                
+                const rect = imgElement.getBoundingClientRect();
+                const naturalW = imgElement.naturalWidth;
+                const naturalH = imgElement.naturalHeight;
+                
+                if (!naturalW || !naturalH) return; 
+                
+                // Account for 2x scaling when mapping coordinates
+                const scaleX = rect.width / (naturalW * lastOcrScale);
+                const scaleY = rect.height / (naturalH * lastOcrScale);
+                
+                const processedLines = [];
+
+                ocrData.lines.forEach(line => {
+                    if (line.confidence < 20 || !line.text.trim()) return;
+                    processedLines.push(line.text.trim());
+
+                    const bbox = line.bbox;
+                    const left = bbox.x0 * scaleX;
+                    const top = bbox.y0 * scaleY;
+                    const width = (bbox.x1 - bbox.x0) * scaleX;
+                    const height = (bbox.y1 - bbox.y0) * scaleY;
+                    
+                    const lineEl = document.createElement('div');
+                    lineEl.className = 'ocr-line-container';
+                    lineEl.style.position = 'absolute';
+                    lineEl.style.left = `${left}px`;
+                    lineEl.style.top = `${top}px`;
+                    lineEl.style.width = `${width}px`;
+                    lineEl.style.height = `${height}px`;
+                    lineEl.style.overflow = 'hidden';
+                    
+                    const textSpan = document.createElement('span');
+                    textSpan.className = 'selectable-text';
+                    textSpan.textContent = line.text; 
+                    
+                    textSpan.style.position = 'absolute';
+                    textSpan.style.left = '0';
+                    textSpan.style.top = '50%';
+                    textSpan.style.transform = 'translateY(-50%)';
+                    textSpan.style.whiteSpace = 'nowrap';
+                    textSpan.style.fontSize = `${height * 0.75}px`;
+                    textSpan.style.fontFamily = 'monospace, sans-serif'; 
+                    textSpan.style.transformOrigin = 'left center';
+                    
+                    const op = parseInt(opacitySlider.value);
+                    if (op > 0) {
+                        textSpan.style.color = `rgba(248, 250, 252, ${op / 100})`;
+                        textSpan.style.backgroundColor = `rgba(15, 23, 42, ${(op / 100) * 0.95})`;
+                    }
+                    
+                    lineEl.appendChild(textSpan);
+                    overlayContainer.appendChild(lineEl);
+                    
+                    const naturalSpanWidth = textSpan.getBoundingClientRect().width;
+                    if (naturalSpanWidth > 0 && width > 0) {
+                        const stretchFactor = width / naturalSpanWidth;
+                        textSpan.style.transform = `translateY(-50%) scaleX(${stretchFactor})`;
+                    }
+                });
+
+                if (opacitySlider.value > 0) { overlayContainer.classList.add('show-overlay-text'); }
+                
+                // Sync Output Pane Text only on first render/load
+                if(processedLines.length > 0 && !outputText.value && overlayContainer === textOverlay) {
+                    outputText.value = processedLines.join('\n');
+                }
+            }
+
+            async function performOCR(source) {
+                isProcessing = true;
+                fileInput.disabled = true;
+                
+                outputText.value = '';
+                copyBtn.disabled = true;
+                clearBtn.disabled = true;
+                statusContainer.classList.remove('hidden');
+                progressBar.style.width = '0%';
+                statusPercentage.textContent = '0%';
+                statusText.innerHTML = '<i class="ph ph-spinner-gap animate-spin text-lg"></i> Booting engine core...';
+
+                statWords.textContent = '...';
+                statConfidence.textContent = '...';
+                statLines.textContent = '...';
+
+                try {
+                    const selectedLang = langSelect.value;
+                    const result = await Tesseract.recognize(
+                        source,
+                        selectedLang,
+                        {
+                            logger: m => {
+                                if (m.status === 'recognizing text') {
+                                    const progress = Math.round(m.progress * 100);
+                                    progressBar.style.width = `${progress}%`;
+                                    statusPercentage.textContent = `${progress}%`;
+                                    statusText.innerHTML = '<i class="ph ph-eye text-lg"></i> Rasterizing text arrays...';
+                                } else {
+                                    statusText.innerHTML = `<i class="ph ph-cpu animate-pulse text-lg"></i> ${m.status}...`;
+                                }
+                            }
+                        }
+                    );
+
+                    ocrData = result.data;
+                    renderTextOverlay();
+
+                    const parsedText = outputText.value.trim();
+                    if (parsedText && parsedText !== "No text could be processed in this image.") {
+                        copyBtn.disabled = false;
+                        clearBtn.disabled = false;
+                        workspaceControls.classList.remove('hidden');
+                        statusText.innerHTML = '<i class="ph-fill ph-check-circle text-green-400 text-lg"></i> System mapping synchronized!';
+                        progressBar.classList.replace('bg-blue-600', 'bg-green-500');
+
+                        statWords.textContent = ocrData.words.length;
+                        statConfidence.textContent = `${Math.round(ocrData.confidence)}%`;
+                        statLines.textContent = ocrData.lines.filter(l => l.confidence >= 20 && l.text.trim()).length;
+                    } else {
+                        outputText.value = "No text could be processed in this image.";
+                        clearBtn.disabled = false;
+                        statusText.innerHTML = '<i class="ph-fill ph-warning-circle text-yellow-400 text-lg"></i> OCR scanning complete. No text detected.';
+                        statWords.textContent = '0';
+                        statConfidence.textContent = '0%';
+                        statLines.textContent = '0';
+                    }
+
+                } catch (error) {
+                    console.error(error);
+                    outputText.value = "OCR process failed. Please try again with a cleaner image.";
+                    statusText.innerHTML = '<i class="ph-fill ph-x-circle text-rose-500 text-lg"></i> Pipeline execution failure.';
+                } finally {
+                    isProcessing = false;
+                    fileInput.disabled = false;
+                    setTimeout(() => {
+                        statusContainer.classList.add('hidden');
+                        progressBar.classList.replace('bg-green-500', 'bg-blue-600');
+                    }, 4000);
+                }
+            }
+
+            // Copy Handler
+            copyBtn.addEventListener('click', () => {
+                if (!outputText.value) return;
+                navigator.clipboard.writeText(outputText.value).then(() => {
+                    copyToast.classList.remove('opacity-0', 'translate-y-2');
+                    setTimeout(() => copyToast.classList.add('opacity-0', 'translate-y-2'), 2500);
+                }).catch(() => {
+                    outputText.select();
+                    document.execCommand('copy');
+                    copyToast.classList.remove('opacity-0', 'translate-y-2');
+                    setTimeout(() => copyToast.classList.add('opacity-0', 'translate-y-2'), 2500);
+                });
+            });
+
+            // Reset UI States Handler
+            clearBtn.addEventListener('click', () => {
+                if(isExpanded) toggleTheaterMode(false);
+                outputText.value = '';
+                uploadPrompt.classList.remove('hidden');
+                imagePreviewContainer.classList.add('hidden');
+                dropzone.classList.remove('has-image');
+                workspaceControls.classList.add('hidden');
+                imagePreview.src = '';
+                textOverlay.innerHTML = '';
+                ocrData = null;
+                copyBtn.disabled = true;
+                clearBtn.disabled = true;
+                statWords.textContent = '-';
+                statConfidence.textContent = '-';
+                statLines.textContent = '-';
+                opacitySlider.value = 0;
+                opacityVal.textContent = "0%";
+            });
+        });
+    </script>
+</body>
+</html>
