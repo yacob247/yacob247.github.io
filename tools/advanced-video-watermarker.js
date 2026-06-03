@@ -380,56 +380,74 @@
     previewing = false;
     els.previewBtn.textContent = "Preview Motion";
     els.video.pause();
-    els.video.currentTime = 0;
     els.downloadLink.classList.add("hidden");
     toggleBusy(true);
 
     try {
-      await waitForSeek();
+      await seekVideo(0);
+      drawFrame(0);
       const canvasStream = els.canvas.captureStream(30);
       const stream = new MediaStream(canvasStream.getVideoTracks());
       const sourceStream = getSourceStream();
       if (sourceStream) {
         sourceStream.getAudioTracks().forEach((track) => stream.addTrack(track));
       }
-      const options = bestMimeType() ? { mimeType: bestMimeType(), videoBitsPerSecond: 6500000 } : { videoBitsPerSecond: 6500000 };
+      const mimeType = bestMimeType();
+      const options = mimeType ? { mimeType, videoBitsPerSecond: 6500000 } : { videoBitsPerSecond: 6500000 };
       const recorder = new MediaRecorder(stream, options);
       const chunks = [];
+      let animationId = 0;
       recorder.addEventListener("dataavailable", (event) => {
         if (event.data && event.data.size) chunks.push(event.data);
       });
+      const recorderError = new Promise((resolve, reject) => {
+        recorder.addEventListener("error", (event) => reject(event.error || new Error("The browser recorder failed.")), { once: true });
+      });
       const stopped = new Promise((resolve) => recorder.addEventListener("stop", resolve, { once: true }));
-      recorder.start(250);
-      const start = performance.now();
+      const ended = new Promise((resolve) => els.video.addEventListener("ended", resolve, { once: true }));
+      recorder.start(200);
       await els.video.play();
-      await new Promise((resolve) => {
+
+      const drawing = new Promise((resolve) => {
         function tick(now) {
           drawFrame(now / 1000);
           const progress = els.video.duration ? (els.video.currentTime / els.video.duration) * 100 : 0;
           setProgress(progress);
           setStatus(`Rendering ${Math.round(progress)}%... keep this tab open.`);
-          if (els.video.ended || !renderInProgress) {
+          if (!renderInProgress || els.video.ended) {
             resolve();
             return;
           }
-          if ((now - start) / 1000 > els.video.duration + 4) {
-            resolve();
-            return;
-          }
-          requestAnimationFrame(tick);
+          animationId = requestAnimationFrame(tick);
         }
-        requestAnimationFrame(tick);
+        animationId = requestAnimationFrame(tick);
       });
-      recorder.stop();
+
+      await Promise.race([
+        ended,
+        drawing,
+        recorderError,
+        waitForRenderTimeout()
+      ]);
+      if (animationId) cancelAnimationFrame(animationId);
+      if (recorder.state !== "inactive") {
+        recorder.requestData();
+        recorder.stop();
+      }
       await stopped;
+      renderInProgress = false;
       stream.getTracks().forEach((track) => track.stop());
+      if (!chunks.length) {
+        throw new Error("The browser produced an empty recording. Try a shorter video or use Chrome/Edge with WebM recording support.");
+      }
       const blob = new Blob(chunks, { type: recorder.mimeType || "video/webm" });
       const url = URL.createObjectURL(blob);
       els.downloadLink.href = url;
       els.downloadLink.download = `${baseName(els.input.files[0].name)}-watermarked.webm`;
       els.downloadLink.classList.remove("hidden");
+      els.downloadLink.click();
       setProgress(100);
-      setStatus("Render complete. Download your watermarked video.");
+      setStatus("Render complete. If the download did not start automatically, use the download button.");
     } catch (error) {
       console.error(error);
       setStatus(error.message || "Video render failed.", true);
@@ -690,14 +708,26 @@
     els.status.style.color = isError ? "#fb7185" : "";
   }
 
-  function waitForSeek() {
+  function seekVideo(time) {
     return new Promise((resolve) => {
-      if (els.video.readyState >= 2) {
+      if (els.video.readyState < 1) {
+        els.video.addEventListener("loadedmetadata", () => seekVideo(time).then(resolve), { once: true });
+        return;
+      }
+      const target = Math.min(Math.max(0, time), Math.max(0, (els.video.duration || 0) - 0.05));
+      if (Math.abs(els.video.currentTime - target) < 0.03 && els.video.readyState >= 2) {
         resolve();
         return;
       }
-      els.video.addEventListener("loadeddata", resolve, { once: true });
+      const done = () => resolve();
+      els.video.addEventListener("seeked", done, { once: true });
+      els.video.currentTime = target;
     });
+  }
+
+  function waitForRenderTimeout() {
+    const duration = Number.isFinite(els.video.duration) ? els.video.duration : 60;
+    return new Promise((resolve) => setTimeout(resolve, (duration + 3) * 1000));
   }
 
   function baseName(name) {
