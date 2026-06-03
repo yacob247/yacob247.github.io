@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Saved Audio Library | Envizion Tools</title>
+  <meta name="description" content="Save unlimited local MP3 and audio files, then export selected files to Envizion tools.">
+  <link rel="canonical" href="https://envizion.work/tools/media-library.html">
+  <meta property="og:url" content="https://envizion.work/tools/media-library.html">
+  <link rel="icon" type="image/png" href="../logo.png" sizes="32x32">
+  <style>
+    :root{--canvas:#f6f8fa;--panel:#fff;--ink:#24292f;--muted:#57606a;--line:#d0d7de;--blue:#0969da;--green:#1a7f37;--red:#cf222e;--shadow:0 8px 24px rgba(140,149,159,.2);--radius:6px}
+    *{box-sizing:border-box}body{background:var(--canvas);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans",Helvetica,Arial,sans-serif;font-size:14px;margin:0;min-height:100vh}
+    button,input,select{font:inherit}.topbar{align-items:center;background:#24292f;color:#fff;display:flex;gap:12px;justify-content:space-between;padding:12px 24px;position:sticky;top:0;z-index:10}.brand{align-items:center;color:#fff;display:inline-flex;font-weight:700;gap:10px;text-decoration:none}.brand-mark{align-items:center;background:#fff;border-radius:var(--radius);color:#24292f;display:inline-flex;height:32px;justify-content:center;width:32px}
+    .button-row{display:flex;flex-wrap:wrap;gap:8px}.button{align-items:center;background:#f6f8fa;border:1px solid rgba(27,31,36,.15);border-radius:var(--radius);color:var(--ink);cursor:pointer;display:inline-flex;font-weight:600;justify-content:center;min-height:34px;padding:6px 12px;text-decoration:none}.topbar .button{background:#32383f;border-color:#57606a;color:#fff}.primary{background:var(--blue)!important;border-color:var(--blue)!important;color:#fff!important}.green{background:var(--green)!important;border-color:var(--green)!important;color:#fff!important}.red{background:var(--red)!important;border-color:var(--red)!important;color:#fff!important}.button:disabled{cursor:not-allowed;opacity:.55}
+    main{display:grid;gap:16px;grid-template-columns:360px minmax(0,1fr);padding:16px}.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px}.panel-head{border-bottom:1px solid var(--line);margin:-16px -16px 16px;padding:12px 16px}h1,h2,p{margin-top:0}h1{font-size:16px;margin-bottom:4px}.hint,.status{color:var(--muted);font-size:13px;line-height:1.45}label{color:var(--muted);display:block;font-size:12px;font-weight:700;margin-bottom:6px}input[type=file],select{background:#fff;border:1px solid var(--line);border-radius:var(--radius);min-height:34px;padding:6px 8px;width:100%}.field{margin-bottom:12px}
+    .file-list{display:grid;gap:10px}.file-row{align-items:center;border:1px solid var(--line);border-radius:var(--radius);display:grid;gap:10px;grid-template-columns:auto 1fr auto;padding:10px}.file-row strong{display:block}.file-row small{color:var(--muted)}audio{width:100%}@media(max-width:800px){.topbar{align-items:flex-start;flex-direction:column;padding:12px}main{grid-template-columns:1fr;padding:12px}.button,.button-row{width:100%}.file-row{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html"><span class="brand-mark">A</span><span>Saved Audio Library</span></a>
+    <div class="button-row">
+      <a class="button" href="voice-recorder.html">Recorder</a>
+      <a class="button" href="vocal-music-separator.html">Separator</a>
+      <a class="button" href="teleprompter.html">Teleprompter</a>
+    </div>
+  </header>
+
+  <main>
+    <aside class="panel">
+      <div class="panel-head">
+        <h1>Add Audio</h1>
+        <p class="hint">Save as many MP3/audio files as your browser storage allows. Files stay local.</p>
+      </div>
+      <div class="field">
+        <label for="fileInput">Add MP3/audio files</label>
+        <input id="fileInput" type="file" multiple accept="audio/mpeg,audio/mp3,audio/wav,audio/webm,audio/ogg,audio/*">
+      </div>
+      <div class="field">
+        <label for="targetSelect">Export selected to</label>
+        <select id="targetSelect">
+          <option value="separator">Automatic Separator</option>
+          <option value="recorder">Voice Recorder Editor</option>
+          <option value="teleprompter">Teleprompter Audio</option>
+        </select>
+      </div>
+      <div class="button-row">
+        <button class="button primary" id="exportBtn" type="button">Export Selected</button>
+        <button class="button red" id="deleteBtn" type="button">Delete Selected</button>
+      </div>
+      <p class="status" id="statusText">Ready.</p>
+    </aside>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h1>Saved Files</h1>
+        <p class="hint">Select one or more files, export them, then open the target page.</p>
+      </div>
+      <div class="file-list" id="fileList"></div>
+    </section>
+  </main>
+
+  <script>
+    (() => {
+      const dbName = "envizion-media-library";
+      const fileStore = "files";
+      const exportStore = "exports";
+      const els = {
+        fileInput: document.getElementById("fileInput"),
+        targetSelect: document.getElementById("targetSelect"),
+        exportBtn: document.getElementById("exportBtn"),
+        deleteBtn: document.getElementById("deleteBtn"),
+        fileList: document.getElementById("fileList"),
+        statusText: document.getElementById("statusText")
+      };
+
+      function setStatus(text) { els.statusText.textContent = text; }
+
+      function openDb() {
+        return new Promise((resolve, reject) => {
+          const request = indexedDB.open(dbName, 1);
+          request.onupgradeneeded = () => {
+            const db = request.result;
+            if (!db.objectStoreNames.contains(fileStore)) db.createObjectStore(fileStore, { keyPath: "id" });
+            if (!db.objectStoreNames.contains(exportStore)) db.createObjectStore(exportStore);
+          };
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+      }
+
+      async function txStore(name, mode) {
+        const db = await openDb();
+        return db.transaction(name, mode).objectStore(name);
+      }
+
+      async function getAllFiles() {
+        const store = await txStore(fileStore, "readonly");
+        return new Promise((resolve, reject) => {
+          const request = store.getAll();
+          request.onsuccess = () => resolve(request.result.sort((a, b) => b.savedAt.localeCompare(a.savedAt)));
+          request.onerror = () => reject(request.error);
+        });
+      }
+
+      async function saveFiles(files) {
+        const db = await openDb();
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction(fileStore, "readwrite");
+          Array.from(files).forEach((file) => tx.objectStore(fileStore).put({
+            id: `${Date.now()}-${crypto.randomUUID()}`,
+            name: file.name,
+            type: file.type || "audio/mpeg",
+            size: file.size,
+            blob: file,
+            savedAt: new Date().toISOString()
+          }));
+          tx.oncomplete = resolve;
+          tx.onerror = () => reject(tx.error);
+        });
+      }
+
+      async function putExport(target, files) {
+        const db = await openDb();
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction(exportStore, "readwrite");
+          tx.objectStore(exportStore).put({ target, files, exportedAt: new Date().toISOString() }, target);
+          tx.oncomplete = resolve;
+          tx.onerror = () => reject(tx.error);
+        });
+      }
+
+      async function deleteFiles(ids) {
+        const db = await openDb();
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction(fileStore, "readwrite");
+          ids.forEach((id) => tx.objectStore(fileStore).delete(id));
+          tx.oncomplete = resolve;
+          tx.onerror = () => reject(tx.error);
+        });
+      }
+
+      async function render() {
+        const files = await getAllFiles();
+        els.fileList.innerHTML = "";
+        if (!files.length) {
+          els.fileList.innerHTML = `<p class="hint">No saved audio yet.</p>`;
+          return;
+        }
+        files.forEach((file) => {
+          const row = document.createElement("article");
+          row.className = "file-row";
+          row.innerHTML = `<input type="checkbox" data-id="${file.id}"><div><strong>${file.name}</strong><small>${Math.round(file.size / 1024)} KB saved ${new Date(file.savedAt).toLocaleString()}</small><audio controls src="${URL.createObjectURL(file.blob)}"></audio></div><a class="button green" download="${file.name}" href="${URL.createObjectURL(file.blob)}">Download</a>`;
+          els.fileList.appendChild(row);
+        });
+      }
+
+      function selectedIds() {
+        return Array.from(els.fileList.querySelectorAll("input[type=checkbox]:checked")).map((input) => input.dataset.id);
+      }
+
+      els.fileInput.addEventListener("change", async () => {
+        if (!els.fileInput.files.length) return;
+        await saveFiles(els.fileInput.files);
+        setStatus(`Saved ${els.fileInput.files.length} file(s).`);
+        els.fileInput.value = "";
+        render();
+      });
+
+      els.exportBtn.addEventListener("click", async () => {
+        const ids = selectedIds();
+        if (!ids.length) return setStatus("Select at least one file.");
+        const files = (await getAllFiles()).filter((file) => ids.includes(file.id));
+        await putExport(els.targetSelect.value, files);
+        setStatus(`Exported ${files.length} file(s) to ${els.targetSelect.options[els.targetSelect.selectedIndex].text}.`);
+      });
+
+      els.deleteBtn.addEventListener("click", async () => {
+        const ids = selectedIds();
+        if (!ids.length) return setStatus("Select at least one file.");
+        await deleteFiles(ids);
+        setStatus(`Deleted ${ids.length} file(s).`);
+        render();
+      });
+
+      render();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Teleprompter Studio | Envizion Tools</title>
+  <meta name="description" content="A simple company-ready browser teleprompter with fullscreen reading, local text input, voice tracking, audio import, and a separate recorder editor.">
+  <link rel="canonical" href="https://envizion.work/tools/teleprompter.html">
+  <meta property="og:url" content="https://envizion.work/tools/teleprompter.html">
+  <link rel="icon" type="image/png" href="../logo.png" sizes="32x32">
+  <style>
+    :root {
+      color-scheme: light;
+      --page: #f6f8fa;
+      --panel: #ffffff;
+      --ink: #24292f;
+      --muted: #57606a;
+      --line: #d0d7de;
+      --reader: #ffffff;
+      --reader-ink: #24292f;
+      --blue: #0969da;
+      --blue-strong: #0550ae;
+      --shadow: 0 8px 24px rgba(140, 149, 159, 0.2);
+      --reader-font: 42px;
+    }
+
+    body.dark {
+      color-scheme: dark;
+      --page: #071326;
+      --panel: #0d1c34;
+      --ink: #f8fafc;
+      --muted: #b6c2d5;
+      --line: #24415f;
+      --reader: #0a1730;
+      --reader-ink: #ffffff;
+      --shadow: 0 18px 55px rgba(0, 0, 0, 0.26);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      min-height: 100%;
+    }
+
+    body {
+      background: var(--page);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+      font-size: 14px;
+      margin: 0;
+    }
+
+    button,
+    input,
+    select,
+    textarea {
+      font: inherit;
+    }
+
+    .topbar {
+      align-items: center;
+      background: #24292f;
+      border-bottom: 1px solid #24292f;
+      color: #fff;
+      display: flex;
+      gap: 0.75rem;
+      justify-content: space-between;
+      padding: 0.85rem clamp(1rem, 3vw, 2rem);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .brand {
+      align-items: center;
+      color: inherit;
+      display: inline-flex;
+      font-weight: 900;
+      gap: 0.65rem;
+      text-decoration: none;
+    }
+
+    .brand-mark {
+      align-items: center;
+      background: var(--blue);
+      border-radius: 6px;
+      color: #fff;
+      display: inline-flex;
+      height: 34px;
+      justify-content: center;
+      width: 34px;
+    }
+
+    .top-actions,
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.55rem;
+    }
+
+    .button {
+      align-items: center;
+      background: var(--panel);
+      border: 1px solid rgba(27, 31, 36, 0.15);
+      border-radius: 6px;
+      color: var(--ink);
+      cursor: pointer;
+      display: inline-flex;
+      font-weight: 850;
+      justify-content: center;
+      min-height: 42px;
+      padding: 0.64rem 0.82rem;
+      text-decoration: none;
+    }
+
+    .button.primary {
+      background: var(--blue);
+      border-color: var(--blue);
+      color: #fff;
+    }
+
+    .button.primary:hover {
+      background: var(--blue-strong);
+    }
+
+    .topbar .button {
+      background: #32383f;
+      border-color: #57606a;
+      color: #fff;
+    }
+
+    .topbar .button.primary {
+      background: var(--blue);
+      border-color: var(--blue);
+      color: #fff;
+    }
+
+    .layout {
+      display: grid;
+      gap: 1rem;
+      grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+      min-height: calc(100vh - 64px);
+      padding: 1rem;
+    }
+
+    .panel,
+    .reader-wrap {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      box-shadow: var(--shadow);
+    }
+
+    .panel {
+      align-self: start;
+      max-height: calc(100vh - 88px);
+      overflow: auto;
+      padding: 1rem;
+    }
+
+    .reader-wrap {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      min-height: calc(100vh - 88px);
+      overflow: hidden;
+    }
+
+    .reader-head {
+      align-items: center;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      gap: 0.8rem;
+      justify-content: space-between;
+      padding: 0.85rem 1rem;
+    }
+
+    h1,
+    h2,
+    p {
+      margin-top: 0;
+    }
+
+    h1 {
+      font-size: 1.08rem;
+      margin-bottom: 0.15rem;
+    }
+
+    h2 {
+      font-size: 0.82rem;
+      letter-spacing: 0.08em;
+      margin: 1.05rem 0 0.58rem;
+      text-transform: uppercase;
+    }
+
+    .hint,
+    .status {
+      color: var(--muted);
+      font-size: 0.86rem;
+      font-weight: 700;
+      line-height: 1.45;
+      margin-bottom: 0.8rem;
+    }
+
+    label {
+      color: var(--muted);
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 900;
+      margin-bottom: 0.35rem;
+    }
+
+    textarea,
+    input[type="file"],
+    select {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      color: var(--ink);
+      min-height: 42px;
+      padding: 0.68rem;
+      width: 100%;
+    }
+
+    textarea {
+      line-height: 1.45;
+      min-height: 190px;
+      resize: vertical;
+    }
+
+    input[type="range"] {
+      accent-color: var(--blue);
+      width: 100%;
+    }
+
+    .field {
+      margin-bottom: 0.82rem;
+    }
+
+    .range-line {
+      align-items: center;
+      display: grid;
+      gap: 0.65rem;
+      grid-template-columns: 1fr auto;
+    }
+
+    .pill {
+      background: rgba(37, 99, 235, 0.12);
+      border: 1px solid rgba(37, 99, 235, 0.22);
+      border-radius: 6px;
+      color: var(--blue);
+      font-size: 0.78rem;
+      font-weight: 900;
+      min-width: 70px;
+      padding: 0.42rem 0.5rem;
+      text-align: center;
+    }
+
+    .reader-shell {
+      background: var(--page);
+      min-height: 0;
+      overflow: auto;
+      padding: clamp(0.8rem, 2vw, 1.35rem);
+    }
+
+    .reader-card {
+      background: var(--reader);
+      border: 1px solid var(--reader-ink);
+      border-radius: 6px;
+      color: var(--reader-ink);
+      height: 100%;
+      margin: 0 auto;
+      max-width: 1080px;
+      min-height: 58vh;
+      overflow: auto;
+      padding: clamp(1rem, 3vw, 2.4rem);
+      scroll-behavior: smooth;
+    }
+
+    .prompter-text {
+      color: var(--reader-ink);
+      font-size: var(--reader-font);
+      font-weight: 760;
+      line-height: 1.5;
+      margin: 0;
+      overflow-wrap: anywhere;
+      text-align: justify;
+      text-justify: inter-word;
+      white-space: pre-wrap;
+    }
+
+    .word {
+      border-radius: 7px;
+      padding: 0.02em 0.05em;
+      transition: background 120ms ease, color 120ms ease;
+    }
+
+    .word.active {
+      background: var(--blue);
+      color: #fff;
+    }
+
+    audio {
+      width: 100%;
+    }
+
+    .audio-box {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0.8rem;
+    }
+
+    .reader-shell:fullscreen {
+      background: #020817;
+      display: flex;
+      height: 100vh;
+      padding: clamp(14px, 3.6vw, 64px);
+      width: 100vw;
+    }
+
+    .reader-shell:fullscreen .reader-card {
+      height: calc(100vh - clamp(28px, 7.2vw, 128px));
+      max-width: 1180px;
+      width: 100%;
+    }
+
+    .reader-shell:fullscreen .prompter-text {
+      font-size: calc(var(--reader-font) * 1.45);
+      line-height: 1.45;
+    }
+
+    @media (max-width: 920px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      .panel,
+      .reader-wrap {
+        max-height: none;
+        min-height: auto;
+      }
+    }
+
+    @media (max-width: 560px) {
+      .topbar,
+      .reader-head {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .top-actions,
+      .button-row,
+      .button {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="teleprompter-home.html"><span class="brand-mark">T</span><span>Teleprompter Studio</span></a>
+    <div class="top-actions">
+      <a class="button" href="index.html">Tools</a>
+      <a class="button" href="media-library.html">Audio Library</a>
+      <a class="button" href="voice-recorder.html" target="_blank" rel="noopener">Voice Recorder / Editor</a>
+      <button class="button primary" id="fullscreenBtn" type="button">Fullscreen</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="panel" aria-label="Teleprompter setup">
+      <h1>Script</h1>
+      <p class="hint">Paste text or upload a readable file. The reader stays simple and scrolls with the spoken words.</p>
+
+      <div class="field">
+        <label for="fileInput">Upload text file</label>
+        <input id="fileInput" type="file" accept=".txt,.md,.csv,.json,.html,.htm,text/*">
+      </div>
+
+      <div class="field">
+        <label for="scriptInput">Script text</label>
+        <textarea id="scriptInput" spellcheck="true" placeholder="Paste your company script here..."></textarea>
+      </div>
+
+      <div class="button-row">
+        <button class="button primary" id="loadBtn" type="button">Load</button>
+        <button class="button" id="sampleBtn" type="button">Sample</button>
+        <button class="button" id="clearBtn" type="button">Clear</button>
+      </div>
+
+      <h2>Read Aloud</h2>
+      <div class="field">
+        <label for="voiceSelect">Voice</label>
+        <select id="voiceSelect"></select>
+      </div>
+
+      <div class="field">
+        <div class="range-line">
+          <label for="rateRange">Reading speed</label>
+          <span class="pill" id="rateValue">1.00x</span>
+        </div>
+        <input id="rateRange" type="range" min="0.65" max="1.6" step="0.05" value="1">
+      </div>
+
+      <div class="field">
+        <div class="range-line">
+          <label for="fontRange">Font size</label>
+          <span class="pill" id="fontValue">42 px</span>
+        </div>
+        <input id="fontRange" type="range" min="28" max="72" step="1" value="42">
+      </div>
+
+      <div class="button-row">
+        <button class="button primary" id="playBtn" type="button">Play</button>
+        <button class="button" id="pauseBtn" type="button">Pause</button>
+        <button class="button" id="stopBtn" type="button">Stop</button>
+      </div>
+
+      <h2>Theme</h2>
+      <div class="button-row">
+        <button class="button primary" id="lightBtn" type="button">Light</button>
+        <button class="button" id="darkBtn" type="button">Dark Blue</button>
+      </div>
+
+      <h2>Recorded Audio</h2>
+      <div class="audio-box">
+        <p class="hint" id="audioStatus">Open the recorder in a separate tab, save the edit, then import it here.</p>
+        <audio id="recordedAudio" controls></audio>
+        <div id="libraryAudioList"></div>
+        <div class="button-row" style="margin-top:0.65rem">
+          <a class="button" href="voice-recorder.html" target="_blank" rel="noopener">Open Recorder</a>
+          <a class="button" href="media-library.html">Audio Library</a>
+          <button class="button primary" id="loadRecordingBtn" type="button">Import Latest</button>
+        </div>
+        <div class="field" style="margin-top:0.75rem">
+          <label for="audioInput">Import MP3 or audio file</label>
+          <input id="audioInput" type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/webm,audio/ogg,audio/*">
+        </div>
+      </div>
+    </aside>
+
+    <section class="reader-wrap" aria-label="Teleprompter reader">
+      <div class="reader-head">
+        <div>
+          <h1>Reader</h1>
+          <p class="status" id="statusText">Load a script to begin.</p>
+        </div>
+        <div class="button-row">
+          <button class="button" id="resetBtn" type="button">Reset</button>
+          <button class="button primary" id="fullscreenBtn2" type="button">Fullscreen</button>
+        </div>
+      </div>
+
+      <div class="reader-shell" id="readerShell">
+        <article class="reader-card" id="readerCard" tabindex="0">
+          <p class="prompter-text" id="prompterText">Paste your script, press Load, then Play. Fullscreen shows only this bordered text box with large readable type.</p>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    (() => {
+      const els = {
+        scriptInput: document.getElementById("scriptInput"),
+        fileInput: document.getElementById("fileInput"),
+        loadBtn: document.getElementById("loadBtn"),
+        sampleBtn: document.getElementById("sampleBtn"),
+        clearBtn: document.getElementById("clearBtn"),
+        voiceSelect: document.getElementById("voiceSelect"),
+        rateRange: document.getElementById("rateRange"),
+        rateValue: document.getElementById("rateValue"),
+        fontRange: document.getElementById("fontRange"),
+        fontValue: document.getElementById("fontValue"),
+        playBtn: document.getElementById("playBtn"),
+        pauseBtn: document.getElementById("pauseBtn"),
+        stopBtn: document.getElementById("stopBtn"),
+        resetBtn: document.getElementById("resetBtn"),
+        lightBtn: document.getElementById("lightBtn"),
+        darkBtn: document.getElementById("darkBtn"),
+        fullscreenBtn: document.getElementById("fullscreenBtn"),
+        fullscreenBtn2: document.getElementById("fullscreenBtn2"),
+        loadRecordingBtn: document.getElementById("loadRecordingBtn"),
+        audioInput: document.getElementById("audioInput"),
+        recordedAudio: document.getElementById("recordedAudio"),
+        libraryAudioList: document.getElementById("libraryAudioList"),
+        audioStatus: document.getElementById("audioStatus"),
+        readerShell: document.getElementById("readerShell"),
+        readerCard: document.getElementById("readerCard"),
+        prompterText: document.getElementById("prompterText"),
+        statusText: document.getElementById("statusText")
+      };
+
+      const sampleText = `Good morning team.
+
+Today we are introducing a cleaner teleprompter workflow for company videos, training scripts, announcements, and recorded presentations.
+
+The page is intentionally simple. Load your script, choose the voice and speed, then press play. The active spoken word turns blue and the text scrolls with the reader.`;
+
+      const dbName = "envizion-voice-studio";
+      const storeName = "recordings";
+      const state = {
+        text: "",
+        words: [],
+        spans: [],
+        voices: [],
+        activeWord: -1,
+        chunks: [],
+        paused: false
+      };
+
+      function setStatus(message) {
+        els.statusText.textContent = message;
+      }
+
+      function escapeHtml(value) {
+        return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      }
+
+      function renderText(value) {
+        stopSpeech();
+        const text = value.trim();
+        state.text = text;
+        state.words = [];
+        state.spans = [];
+        state.activeWord = -1;
+
+        if (!text) {
+          els.prompterText.textContent = "Paste your script, press Load, then Play. Fullscreen shows only this bordered text box with large readable type.";
+          setStatus("Load a script to begin.");
+          saveSettings();
+          return;
+        }
+
+        let html = "";
+        const pattern = /\S+|\s+/g;
+        let match;
+        while ((match = pattern.exec(text))) {
+          const token = match[0];
+          if (/\s+/.test(token)) {
+            html += escapeHtml(token);
+          } else {
+            const index = state.words.length;
+            state.words.push({ start: match.index, end: match.index + token.length });
+            html += `<span class="word" data-index="${index}">${escapeHtml(token)}</span>`;
+          }
+        }
+
+        els.prompterText.innerHTML = html;
+        state.spans = Array.from(els.prompterText.querySelectorAll(".word"));
+        els.readerCard.scrollTop = 0;
+        setStatus(`${state.words.length} words ready.`);
+        saveSettings();
+      }
+
+      function readFile(file) {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          const raw = String(reader.result || "");
+          const text = /\.html?$/i.test(file.name)
+            ? new DOMParser().parseFromString(raw, "text/html").body.textContent
+            : raw;
+          els.scriptInput.value = text.trim();
+          renderText(els.scriptInput.value);
+        };
+        reader.readAsText(file);
+      }
+
+      function loadVoices() {
+        if (!("speechSynthesis" in window)) {
+          els.voiceSelect.innerHTML = "<option>Speech is unavailable</option>";
+          return;
+        }
+
+        state.voices = speechSynthesis.getVoices();
+        els.voiceSelect.innerHTML = "";
+        if (!state.voices.length) {
+          els.voiceSelect.innerHTML = "<option value=''>Default voice</option>";
+          return;
+        }
+
+        state.voices
+          .slice()
+          .sort((a, b) => Number(b.localService) - Number(a.localService) || a.name.localeCompare(b.name))
+          .forEach((voice) => {
+            const option = document.createElement("option");
+            option.value = voice.voiceURI;
+            option.textContent = `${voice.name} (${voice.lang})`;
+            els.voiceSelect.appendChild(option);
+          });
+
+        const savedVoice = localStorage.getItem("envizionTeleprompterVoice");
+        if (savedVoice) els.voiceSelect.value = savedVoice;
+      }
+
+      function selectedVoice() {
+        return state.voices.find((voice) => voice.voiceURI === els.voiceSelect.value) || null;
+      }
+
+      function updateControls() {
+        document.documentElement.style.setProperty("--reader-font", `${els.fontRange.value}px`);
+        els.fontValue.textContent = `${els.fontRange.value} px`;
+        els.rateValue.textContent = `${Number(els.rateRange.value).toFixed(2)}x`;
+        saveSettings();
+      }
+
+      function makeChunks(text) {
+        const chunks = [];
+        let buffer = "";
+        let start = 0;
+        for (const match of text.matchAll(/[^.!?\n]+[.!?\n]+|[^.!?\n]+$/g)) {
+          const part = match[0];
+          if (!buffer) start = match.index;
+          if ((buffer + part).length > 850 && buffer) {
+            chunks.push({ text: buffer, start });
+            buffer = part;
+            start = match.index;
+          } else {
+            buffer += part;
+          }
+        }
+        if (buffer) chunks.push({ text: buffer, start });
+        return chunks.length ? chunks : [{ text, start: 0 }];
+      }
+
+      function findWord(charIndex) {
+        let low = 0;
+        let high = state.words.length - 1;
+        while (low <= high) {
+          const mid = Math.floor((low + high) / 2);
+          const word = state.words[mid];
+          if (charIndex < word.start) high = mid - 1;
+          else if (charIndex >= word.end) low = mid + 1;
+          else return mid;
+        }
+        return Math.max(0, Math.min(low, state.words.length - 1));
+      }
+
+      function activateWord(index) {
+        if (index === state.activeWord || !state.spans[index]) return;
+        if (state.spans[state.activeWord]) state.spans[state.activeWord].classList.remove("active");
+        state.activeWord = index;
+        state.spans[index].classList.add("active");
+        state.spans[index].scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+      }
+
+      function speakChunk(index) {
+        if (index >= state.chunks.length) {
+          state.paused = false;
+          setStatus("Finished.");
+          return;
+        }
+
+        const chunk = state.chunks[index];
+        const utterance = new SpeechSynthesisUtterance(chunk.text);
+        const voice = selectedVoice();
+        if (voice) utterance.voice = voice;
+        utterance.rate = Number(els.rateRange.value);
+        utterance.pitch = 1;
+        utterance.volume = 1;
+        utterance.onboundary = (event) => {
+          if (typeof event.charIndex === "number") activateWord(findWord(chunk.start + event.charIndex));
+        };
+        utterance.onend = () => {
+          if (!state.paused) speakChunk(index + 1);
+        };
+        utterance.onerror = () => setStatus("Voice playback stopped.");
+        speechSynthesis.speak(utterance);
+      }
+
+      function play() {
+        if (!("speechSynthesis" in window)) return setStatus("Speech is unavailable in this browser.");
+        if (!state.text) renderText(els.scriptInput.value);
+        if (!state.text) return;
+
+        if (speechSynthesis.paused) {
+          state.paused = false;
+          speechSynthesis.resume();
+          setStatus("Reading.");
+          return;
+        }
+
+        stopSpeech(false);
+        state.paused = false;
+        state.chunks = makeChunks(state.text);
+        setStatus("Reading.");
+        speakChunk(0);
+      }
+
+      function pause() {
+        if (!("speechSynthesis" in window)) return;
+        state.paused = true;
+        speechSynthesis.pause();
+        setStatus("Paused.");
+      }
+
+      function stopSpeech(resetActive = true) {
+        state.paused = false;
+        if ("speechSynthesis" in window) speechSynthesis.cancel();
+        if (resetActive) {
+          state.spans.forEach((span) => span.classList.remove("active"));
+          state.activeWord = -1;
+        }
+      }
+
+      function resetReader() {
+        stopSpeech();
+        els.readerCard.scrollTop = 0;
+        setStatus(state.text ? `${state.words.length} words ready.` : "Load a script to begin.");
+      }
+
+      function setTheme(theme) {
+        document.body.classList.toggle("dark", theme === "dark");
+        els.lightBtn.classList.toggle("primary", theme === "light");
+        els.darkBtn.classList.toggle("primary", theme === "dark");
+        localStorage.setItem("envizionTeleprompterTheme", theme);
+      }
+
+      function openFullscreen() {
+        if (!document.fullscreenElement && els.readerShell.requestFullscreen) {
+          els.readerShell.requestFullscreen().then(() => els.readerCard.focus()).catch(() => setStatus("Fullscreen was blocked."));
+        } else if (document.exitFullscreen) {
+          document.exitFullscreen();
+        }
+      }
+
+      function openDb() {
+        return new Promise((resolve, reject) => {
+          const request = indexedDB.open(dbName, 1);
+          request.onupgradeneeded = () => request.result.createObjectStore(storeName);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+      }
+
+      async function getRecording() {
+        const db = await openDb();
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction(storeName, "readonly");
+          const request = tx.objectStore(storeName).get("latest");
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+      }
+
+      async function importLatestRecording() {
+        try {
+          const record = await getRecording();
+          if (!record || !record.blob) {
+            els.audioStatus.textContent = "No saved recorder audio found yet.";
+            return;
+          }
+          els.recordedAudio.src = URL.createObjectURL(record.blob);
+          els.audioStatus.textContent = `Imported ${record.name || "latest recording"}.`;
+        } catch {
+          els.audioStatus.textContent = "Could not import the latest recording.";
+        }
+      }
+
+      function openMediaLibraryDb() {
+        return new Promise((resolve, reject) => {
+          const request = indexedDB.open("envizion-media-library", 1);
+          request.onupgradeneeded = () => {
+            const db = request.result;
+            if (!db.objectStoreNames.contains("files")) db.createObjectStore("files", { keyPath: "id" });
+            if (!db.objectStoreNames.contains("exports")) db.createObjectStore("exports");
+          };
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+      }
+
+      async function importTeleprompterLibraryExport() {
+        try {
+          const db = await openMediaLibraryDb();
+          const record = await new Promise((resolve, reject) => {
+            const tx = db.transaction("exports", "readonly");
+            const request = tx.objectStore("exports").get("teleprompter");
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+          });
+          if (!record || !record.files || !record.files.length) return;
+          els.libraryAudioList.innerHTML = "";
+          record.files.forEach((file) => {
+            const wrap = document.createElement("div");
+            wrap.style.marginTop = "0.7rem";
+            wrap.innerHTML = `<p class="hint">${file.name}</p>`;
+            const audio = document.createElement("audio");
+            audio.controls = true;
+            audio.src = URL.createObjectURL(file.blob);
+            wrap.appendChild(audio);
+            els.libraryAudioList.appendChild(wrap);
+          });
+          els.recordedAudio.src = URL.createObjectURL(record.files[0].blob);
+          els.audioStatus.textContent = `Imported ${record.files.length} file(s) from Audio Library.`;
+        } catch {
+          els.audioStatus.textContent = "Open the recorder in a separate tab, save the edit, then import it here.";
+        }
+      }
+
+      function importAudioFile(file) {
+        if (!file) return;
+        els.recordedAudio.src = URL.createObjectURL(file);
+        els.audioStatus.textContent = `Imported ${file.name}.`;
+      }
+
+      function saveSettings() {
+        localStorage.setItem("envizionTeleprompterSimple", JSON.stringify({
+          script: els.scriptInput.value,
+          rate: els.rateRange.value,
+          font: els.fontRange.value
+        }));
+        localStorage.setItem("envizionTeleprompterVoice", els.voiceSelect.value);
+      }
+
+      function restoreSettings() {
+        try {
+          const data = JSON.parse(localStorage.getItem("envizionTeleprompterSimple") || "{}");
+          if (data.script) els.scriptInput.value = data.script;
+          if (data.rate) els.rateRange.value = data.rate;
+          if (data.font) els.fontRange.value = data.font;
+          updateControls();
+          if (data.script) renderText(data.script);
+        } catch {
+          updateControls();
+        }
+        setTheme(localStorage.getItem("envizionTeleprompterTheme") || "light");
+      }
+
+      els.loadBtn.addEventListener("click", () => renderText(els.scriptInput.value));
+      els.sampleBtn.addEventListener("click", () => {
+        els.scriptInput.value = sampleText;
+        renderText(sampleText);
+      });
+      els.clearBtn.addEventListener("click", () => {
+        els.scriptInput.value = "";
+        renderText("");
+      });
+      els.fileInput.addEventListener("change", () => readFile(els.fileInput.files[0]));
+      els.voiceSelect.addEventListener("change", saveSettings);
+      els.rateRange.addEventListener("input", updateControls);
+      els.fontRange.addEventListener("input", updateControls);
+      els.playBtn.addEventListener("click", play);
+      els.pauseBtn.addEventListener("click", pause);
+      els.stopBtn.addEventListener("click", () => {
+        stopSpeech();
+        setStatus("Stopped.");
+      });
+      els.resetBtn.addEventListener("click", resetReader);
+      els.lightBtn.addEventListener("click", () => setTheme("light"));
+      els.darkBtn.addEventListener("click", () => setTheme("dark"));
+      els.fullscreenBtn.addEventListener("click", openFullscreen);
+      els.fullscreenBtn2.addEventListener("click", openFullscreen);
+      els.loadRecordingBtn.addEventListener("click", importLatestRecording);
+      els.audioInput.addEventListener("change", () => importAudioFile(els.audioInput.files[0]));
+
+      els.readerCard.addEventListener("click", () => {
+        if (!document.fullscreenElement) return;
+        if ("speechSynthesis" in window && speechSynthesis.speaking && !speechSynthesis.paused) pause();
+        else play();
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (event.target.matches("textarea,input,select")) return;
+        if (event.code === "Space") {
+          event.preventDefault();
+          if ("speechSynthesis" in window && speechSynthesis.speaking && !speechSynthesis.paused) pause();
+          else play();
+        }
+      });
+
+      if ("speechSynthesis" in window) {
+        speechSynthesis.onvoiceschanged = loadVoices;
+        loadVoices();
+      } else {
+        loadVoices();
+      }
+      restoreSettings();
+      importLatestRecording();
+      importTeleprompterLibraryExport();
+    })();
+  </script>
+</body>
+</html>
