@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Browser Image Upscaler</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color: #0f172a;
+            color: #f8fafc;
+            font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+        }
+        
+        .checkerboard {
+            background-color: #1e293b;
+            background-image: 
+                linear-gradient(45deg, #334155 25%, transparent 25%), 
+                linear-gradient(-45deg, #334155 25%, transparent 25%), 
+                linear-gradient(45deg, transparent 75%, #334155 75%), 
+                linear-gradient(-45deg, transparent 75%, #334155 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+        }
+
+        .dropzone {
+            transition: all 0.3s ease;
+        }
+        
+        .dropzone.dragover {
+            background-color: #1e293b;
+            border-color: #8b5cf6;
+            box-shadow: 0 0 15px rgba(139, 92, 246, 0.5);
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1e293b; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #475569; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #64748b; 
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #8b5cf6;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="border-b border-slate-800 bg-slate-900 px-6 py-4 flex items-center justify-between sticky top-0 z-10">
+        <div class="flex items-center gap-3">
+            <div class="bg-violet-600 p-2 rounded-lg">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-white"><path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/></svg>
+            </div>
+            <h1 class="text-xl font-bold tracking-tight">Local Upscaler <span class="text-xs font-normal bg-slate-800 text-slate-400 px-2 py-1 rounded-full ml-2">Beta</span></h1>
+        </div>
+        <p class="text-sm text-slate-400 hidden sm:block">100% Private • Browser-Based</p>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex flex-col lg:flex-row h-[calc(100vh-73px)]">
+        
+        <!-- Controls Sidebar -->
+        <aside class="w-full lg:w-80 bg-slate-900 border-r border-slate-800 flex flex-col h-full overflow-y-auto">
+            
+            <div class="p-6 flex-1 flex flex-col gap-6">
+                <!-- Upload Area -->
+                <div>
+                    <h2 class="text-sm font-semibold text-slate-300 mb-2 uppercase tracking-wider">1. Select Image</h2>
+                    <div id="dropzone" class="dropzone border-2 border-dashed border-slate-700 rounded-xl p-8 text-center cursor-pointer hover:border-slate-500 hover:bg-slate-800/50">
+                        <input type="file" id="fileInput" class="hidden" accept="image/*">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-3 text-slate-400"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+                        <p class="text-sm font-medium text-slate-200">Click or drag image here</p>
+                        <p class="text-xs text-slate-500 mt-1">Supports PNG, JPG, WEBP</p>
+                    </div>
+                </div>
+
+                <!-- Settings -->
+                <div class="space-y-5 opacity-50 pointer-events-none transition-opacity duration-300" id="settingsPanel">
+                    <div>
+                        <h2 class="text-sm font-semibold text-slate-300 mb-3 uppercase tracking-wider">2. Upscale Settings</h2>
+                        
+                        <div class="space-y-4">
+                            <!-- Scale Factor -->
+                            <div>
+                                <label class="flex justify-between text-sm text-slate-300 mb-2">
+                                    <span>Scale Factor</span>
+                                    <span id="scaleLabel" class="text-violet-400 font-bold">2x</span>
+                                </label>
+                                <input type="range" id="scaleFactor" min="2" max="8" step="1" value="2" class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer">
+                                <div class="flex justify-between text-xs text-slate-500 mt-1">
+                                    <span>2x</span>
+                                    <span>4x</span>
+                                    <span>6x</span>
+                                    <span>8x</span>
+                                </div>
+                            </div>
+
+                            <!-- Algorithm -->
+                            <div>
+                                <label class="block text-sm text-slate-300 mb-2">Algorithm</label>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <label class="cursor-pointer">
+                                        <input type="radio" name="algorithm" value="smooth" class="peer hidden" checked>
+                                        <div class="text-center p-3 rounded-lg border border-slate-700 bg-slate-800 peer-checked:border-violet-500 peer-checked:bg-violet-500/10 transition-colors">
+                                            <div class="font-medium text-sm text-white mb-1">Smooth</div>
+                                            <div class="text-[10px] text-slate-400">Photos & UI</div>
+                                        </div>
+                                    </label>
+                                    <label class="cursor-pointer">
+                                        <input type="radio" name="algorithm" value="pixel" class="peer hidden">
+                                        <div class="text-center p-3 rounded-lg border border-slate-700 bg-slate-800 peer-checked:border-violet-500 peer-checked:bg-violet-500/10 transition-colors">
+                                            <div class="font-medium text-sm text-white mb-1">Crisp</div>
+                                            <div class="text-[10px] text-slate-400">Pixel Art</div>
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Action Button -->
+                    <div class="pt-2">
+                        <button id="processBtn" class="w-full py-3 px-4 bg-violet-600 hover:bg-violet-700 text-white rounded-lg font-semibold transition-colors flex items-center justify-center gap-2 shadow-lg shadow-violet-900/20">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/></svg>
+                            Process Image
+                        </button>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Export Section -->
+            <div id="exportSection" class="p-6 border-t border-slate-800 bg-slate-900 hidden">
+                <button id="downloadBtn" class="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold transition-colors flex items-center justify-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                    Download Upscaled
+                </button>
+            </div>
+        </aside>
+
+        <!-- Preview Area -->
+        <section class="flex-1 bg-slate-950 p-4 lg:p-8 flex flex-col overflow-hidden relative">
+            
+            <!-- Empty State -->
+            <div id="emptyState" class="absolute inset-0 flex flex-col items-center justify-center text-slate-500 pointer-events-none">
+                <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="mb-4 opacity-50"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+                <p class="text-lg">No image selected</p>
+                <p class="text-sm mt-1">Upload an image to see the preview</p>
+            </div>
+
+            <!-- Previews -->
+            <div id="previewContainer" class="hidden h-full flex flex-col lg:flex-row gap-4 lg:gap-8">
+                
+                <!-- Original -->
+                <div class="flex-1 flex flex-col h-full bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
+                    <div class="px-4 py-2 bg-slate-800 border-b border-slate-700 flex justify-between items-center text-sm">
+                        <span class="font-medium text-slate-300">Original</span>
+                        <span id="originalInfo" class="text-slate-500 font-mono text-xs">-- x --</span>
+                    </div>
+                    <div class="flex-1 p-4 checkerboard flex items-center justify-center overflow-auto relative">
+                        <img id="originalPreview" class="max-w-full max-h-full object-contain" alt="Original Image">
+                    </div>
+                </div>
+
+                <!-- Result -->
+                <div class="flex-1 flex flex-col h-full bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
+                    <div class="px-4 py-2 bg-slate-800 border-b border-slate-700 flex justify-between items-center text-sm">
+                        <span class="font-medium text-slate-300 flex items-center gap-2">
+                            Upscaled
+                            <span id="processingBadge" class="hidden flex h-2 w-2 relative">
+                              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-75"></span>
+                              <span class="relative inline-flex rounded-full h-2 w-2 bg-violet-500"></span>
+                            </span>
+                        </span>
+                        <span id="resultInfo" class="text-violet-400 font-mono text-xs">-- x --</span>
+                    </div>
+                    <div class="flex-1 p-4 checkerboard flex items-center justify-center overflow-auto relative">
+                        <canvas id="resultCanvas" class="hidden"></canvas>
+                        <!-- We use an image tag for better responsive display of the canvas result -->
+                        <img id="resultPreview" class="max-w-full max-h-full object-contain hidden" alt="Upscaled Image">
+                        
+                        <div id="resultPlaceholder" class="text-slate-500 flex flex-col items-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="mb-2"><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7"/><line x1="16" x2="22" y1="5" y2="5"/><line x1="19" x2="19" y1="2" y2="8"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+                            <span class="text-sm">Click 'Process Image' to generate</span>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+    </main>
+
+    <!-- Hidden canvas for processing -->
+    <canvas id="processingCanvas" class="hidden"></canvas>
+
+    <!-- Notification system -->
+    <div id="notificationArea" class="fixed bottom-4 right-4 flex flex-col gap-2 z-50"></div>
+
+    <script>
+        // DOM Elements
+        const dropzone = document.getElementById('dropzone');
+        const fileInput = document.getElementById('fileInput');
+        const settingsPanel = document.getElementById('settingsPanel');
+        const scaleFactor = document.getElementById('scaleFactor');
+        const scaleLabel = document.getElementById('scaleLabel');
+        const processBtn = document.getElementById('processBtn');
+        const exportSection = document.getElementById('exportSection');
+        const downloadBtn = document.getElementById('downloadBtn');
+        
+        const emptyState = document.getElementById('emptyState');
+        const previewContainer = document.getElementById('previewContainer');
+        const originalPreview = document.getElementById('originalPreview');
+        const originalInfo = document.getElementById('originalInfo');
+        
+        const resultPreview = document.getElementById('resultPreview');
+        const resultPlaceholder = document.getElementById('resultPlaceholder');
+        const resultInfo = document.getElementById('resultInfo');
+        const processingBadge = document.getElementById('processingBadge');
+        
+        const processingCanvas = document.getElementById('processingCanvas');
+        const ctx = processingCanvas.getContext('2d', { willReadFrequently: true });
+
+        // State
+        let currentImage = null;
+        let originalFilename = 'image';
+        let originalExtension = 'png';
+
+        // Event Listeners
+        dropzone.addEventListener('click', () => fileInput.click());
+        
+        dropzone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropzone.classList.add('dragover');
+        });
+        
+        dropzone.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            dropzone.classList.remove('dragover');
+        });
+        
+        dropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropzone.classList.remove('dragover');
+            if (e.dataTransfer.files.length) {
+                handleFile(e.dataTransfer.files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length) {
+                handleFile(e.target.files[0]);
+            }
+        });
+
+        scaleFactor.addEventListener('input', (e) => {
+            scaleLabel.textContent = `${e.target.value}x`;
+            if (currentImage) {
+                const newW = currentImage.width * parseInt(e.target.value);
+                const newH = currentImage.height * parseInt(e.target.value);
+                resultInfo.textContent = `Expected: ${newW} x ${newH}`;
+            }
+        });
+
+        processBtn.addEventListener('click', processImage);
+        downloadBtn.addEventListener('click', downloadImage);
+
+        // Functions
+        function handleFile(file) {
+            if (!file.type.startsWith('image/')) {
+                showNotification('Please upload an image file.', 'error');
+                return;
+            }
+
+            // Extract original filename for later
+            const parts = file.name.split('.');
+            if(parts.length > 1) {
+                originalExtension = parts.pop();
+                originalFilename = parts.join('.');
+            } else {
+                originalFilename = file.name;
+                originalExtension = 'png';
+            }
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    currentImage = img;
+                    
+                    // Update UI
+                    originalPreview.src = e.target.result;
+                    originalInfo.textContent = `${img.width} x ${img.height}`;
+                    
+                    const scale = parseInt(scaleFactor.value);
+                    resultInfo.textContent = `Expected: ${img.width * scale} x ${img.height * scale}`;
+                    
+                    emptyState.classList.add('hidden');
+                    previewContainer.classList.remove('hidden');
+                    settingsPanel.classList.remove('opacity-50', 'pointer-events-none');
+                    
+                    // Reset result view
+                    resultPreview.classList.add('hidden');
+                    resultPlaceholder.classList.remove('hidden');
+                    exportSection.classList.add('hidden');
+                    resultPreview.src = '';
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function processImage() {
+            if (!currentImage) return;
+
+            // UI Loading state
+            processBtn.disabled = true;
+            processBtn.classList.add('opacity-75', 'cursor-not-allowed');
+            processingBadge.classList.remove('hidden');
+            
+            // Use setTimeout to allow UI to update before heavy canvas operation
+            setTimeout(() => {
+                try {
+                    const scale = parseInt(scaleFactor.value);
+                    const algorithm = document.querySelector('input[name="algorithm"]:checked').value;
+                    
+                    const newWidth = currentImage.width * scale;
+                    const newHeight = currentImage.height * scale;
+
+                    // Safety check for ridiculously large dimensions that might crash the browser
+                    if (newWidth * newHeight > 64000000) { // ~64 megapixels arbitrary safe limit for canvas
+                        throw new Error("Output image is too large for browser memory. Try a lower scale factor.");
+                    }
+
+                    processingCanvas.width = newWidth;
+                    processingCanvas.height = newHeight;
+
+                    // Apply Algorithm
+                    if (algorithm === 'pixel') {
+                        // Nearest Neighbor (Crisp)
+                        ctx.imageSmoothingEnabled = false;
+                        
+                        // Fix for some browsers needing CSS rendering crispness
+                        processingCanvas.style.imageRendering = 'pixelated';
+                        resultPreview.style.imageRendering = 'pixelated';
+                    } else {
+                        // Bicubic/Bilinear (Smooth)
+                        ctx.imageSmoothingEnabled = true;
+                        ctx.imageSmoothingQuality = 'high';
+                        
+                        processingCanvas.style.imageRendering = 'auto';
+                        resultPreview.style.imageRendering = 'auto';
+                    }
+
+                    // Draw scaled image
+                    ctx.drawImage(currentImage, 0, 0, newWidth, newHeight);
+
+                    // Output to preview
+                    const dataUrl = processingCanvas.toDataURL(`image/${originalExtension === 'jpg' ? 'jpeg' : 'png'}`, 1.0);
+                    resultPreview.src = dataUrl;
+                    
+                    resultPreview.classList.remove('hidden');
+                    resultPlaceholder.classList.add('hidden');
+                    
+                    resultInfo.textContent = `${newWidth} x ${newHeight}`;
+                    exportSection.classList.remove('hidden');
+
+                    showNotification('Image upscaled successfully!', 'success');
+
+                } catch (error) {
+                    console.error(error);
+                    showNotification(error.message || 'Error processing image', 'error');
+                } finally {
+                    // Restore UI state
+                    processBtn.disabled = false;
+                    processBtn.classList.remove('opacity-75', 'cursor-not-allowed');
+                    processingBadge.classList.add('hidden');
+                }
+            }, 50);
+        }
+
+        function downloadImage() {
+            if (!resultPreview.src) return;
+
+            const scale = scaleFactor.value;
+            const algorithm = document.querySelector('input[name="algorithm"]:checked').value;
+            const suffix = algorithm === 'pixel' ? 'crisp' : 'smooth';
+            const newFilename = `${originalFilename}-upscaled-${scale}x-${suffix}.${originalExtension}`;
+
+            const link = document.createElement('a');
+            link.download = newFilename;
+            link.href = resultPreview.src;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function showNotification(message, type = 'success') {
+            const container = document.getElementById('notificationArea');
+            const notif = document.createElement('div');
+            
+            const bgColor = type === 'success' ? 'bg-slate-800 border-emerald-500' : 'bg-slate-800 border-red-500';
+            const iconColor = type === 'success' ? 'text-emerald-400' : 'text-red-400';
+            const iconSvg = type === 'success' 
+                ? `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`
+                : `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`;
+
+            notif.className = `${bgColor} border-l-4 text-white p-4 rounded shadow-lg flex items-center gap-3 transform transition-all duration-300 translate-x-full opacity-0`;
+            notif.innerHTML = `
+                <div class="${iconColor}">${iconSvg}</div>
+                <p class="text-sm font-medium">${message}</p>
+            `;
+
+            container.appendChild(notif);
+
+            // Animate in
+            requestAnimationFrame(() => {
+                notif.classList.remove('translate-x-full', 'opacity-0');
+            });
+
+            // Animate out and remove
+            setTimeout(() => {
+                notif.classList.add('translate-x-full', 'opacity-0');
+                setTimeout(() => notif.remove(), 300);
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
