@@ -857,8 +857,14 @@
                  freqWeight = Math.max(0, 1.0 - (freq - vocalHigh) / 2000.0);
               }
 
-              const vocalExtractMask = Math.pow(coherence, vocalPower) * freqWeight;
-              const vocalSuppressMask = Math.pow(coherence, musicCutPower) * freqWeight;
+              // MATHEMATICAL FIX: Map 1-150 slider values to functional exponents.
+              // Vocals (isolation): Higher slider = sharper exponent (>1) for tight extraction
+              // Music (suppression): Higher slider = wider fractional exponent (<1) to heavily gut the center
+              const vExp = 1.0 + (vocalPower / 10.0);
+              const mCutExp = 1.0 / (1.0 + (musicCutPower / 10.0));
+
+              const vocalExtractMask = Math.pow(coherence, vExp) * freqWeight;
+              const vocalSuppressMask = Math.pow(coherence, mCutExp) * freqWeight;
               const finalMusicMask = 1.0 - vocalSuppressMask;
 
               const vReBin = midRe * vocalExtractMask;
@@ -868,8 +874,8 @@
               vocRe[k] = vReBin;
               vocIm[k] = vImBin;
 
-              const smoothL = 1.0 + (vocalSuppressMask * musicSmoothing * 1.5);
-              const smoothR = 1.0 + (vocalSuppressMask * musicSmoothing * 1.5);
+              const smoothL = 1.0 + (vocalSuppressMask * musicSmoothing * 1.2);
+              const smoothR = 1.0 + (vocalSuppressMask * musicSmoothing * 1.2);
 
               musReL[k] = reL[k] * finalMusicMask * smoothL;
               musImL[k] = imL[k] * finalMusicMask * smoothL;
