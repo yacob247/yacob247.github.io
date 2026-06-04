@@ -492,6 +492,16 @@
         <span class="desc">Crucial: Acts as massive makeup gain. This amplifies the remaining stereo elements to perfectly redeem the volume that was lost when destroying the vocals.</span>
       </div>
 
+      <!-- NEW: Automatic Preset Buttons -->
+      <div class="field" style="background: #fff; border-color: #d0d7de; margin-top: 16px;">
+        <label style="font-size: 14px; color: var(--ink);">⚡ Quick Automatic Presets</label>
+        <span class="desc" style="margin-bottom: 12px;">Sets the optimal sliders for your goal instantly. The manual sliders will update and add on top of these automatic edits.</span>
+        <div style="display: flex; gap: 10px;">
+          <button class="button primary" id="autoVocalsBtn" type="button" style="flex: 1; padding: 10px;">🎤 Auto: Pure Vocals</button>
+          <button class="button green" id="autoMusicBtn" type="button" style="flex: 1; padding: 10px;">🎸 Auto: Pure Music</button>
+        </div>
+      </div>
+
       <div style="margin-top: 24px;">
         <button class="button primary" id="separateBtn" style="font-size: 15px; padding: 10px 24px; width: 100%;" type="button" disabled="">Separate Vocals & Music Now!</button>
       </div>
@@ -559,11 +569,11 @@
         playgroundArea: document.getElementById("playgroundArea"),
         activeCardsContainer: document.getElementById("activeCardsContainer"),
         trashCardsContainer: document.getElementById("trashCardsContainer"),
-        tabActive: document.getElementById("tabActive"),
-        tabTrash: document.getElementById("tabTrash"),
-        trashCount: document.getElementById("trashCount"),
-        clearAllBtn: document.getElementById("clearAllBtn"),
-        emptyTrashText: document.getElementById("emptyTrashText")
+        emptyTrashText: document.getElementById("emptyTrashText"),
+        
+        // New UI Elements
+        autoVocalsBtn: document.getElementById("autoVocalsBtn"),
+        autoMusicBtn: document.getElementById("autoMusicBtn")
       };
 
       let resultCounter = 0; // Cumulative ID counter
@@ -601,6 +611,28 @@
 
       els.musicCutPower.oninput = () => els.musicCutPowerVal.textContent = parseFloat(els.musicCutPower.value).toFixed(1);
       els.musicSmoothing.oninput = () => els.musicSmoothingVal.textContent = els.musicSmoothing.value + "%";
+
+      // --- PRESET BUTTON LOGIC ---
+      function updateSliderUI(el, val, valEl, suffix = "") {
+        el.value = val;
+        valEl.textContent = val + suffix;
+      }
+
+      els.autoVocalsBtn.addEventListener("click", () => {
+        updateSliderUI(els.vocalPower, 120.0, els.vocalPowerVal);
+        updateSliderUI(els.vocalGate, -40, els.vocalGateVal, " dB");
+        updateSliderUI(els.musicCutPower, 10.0, els.musicCutPowerVal);
+        updateSliderUI(els.musicSmoothing, 20, els.musicSmoothingVal, "%");
+        setStatus("✅ Settings automatically optimized for Pure Vocal Extraction.");
+      });
+
+      els.autoMusicBtn.addEventListener("click", () => {
+        updateSliderUI(els.vocalPower, 10.0, els.vocalPowerVal);
+        updateSliderUI(els.vocalGate, -80, els.vocalGateVal, " dB");
+        updateSliderUI(els.musicCutPower, 150.0, els.musicCutPowerVal);
+        updateSliderUI(els.musicSmoothing, 100, els.musicSmoothingVal, "%");
+        setStatus("✅ Settings automatically optimized for Pure Music (Total Vocal Destruction).");
+      });
 
       let master = null;
       let masterPeaks = null;
@@ -963,11 +995,22 @@
               }
 
               // --- AGGRESSIVE VOCAL REMOVAL (Eats into music) ---
+              // Force higher coherence detection when heavily cutting to target faint background words
+              let effectiveCoherence = coherence;
+              if (musicCutPower > 100 && coherence > 0.25) {
+                  effectiveCoherence = Math.min(1.0, coherence * 1.6);
+              }
+
               // Uses a deep fractional exponent based on the slider to heavily penalize center frequencies
               const cutStrength = musicCutPower / 10.0;
               const mCutExp = 1.0 / (1.0 + cutStrength);
-              const vocalSuppressMask = Math.pow(coherence, mCutExp) * freqWeight;
+              let vocalSuppressMask = Math.pow(effectiveCoherence, mCutExp) * freqWeight;
               
+              // Hard cutoff to completely eradicate tiny faint words when set aggressively
+              if (musicCutPower > 120 && vocalSuppressMask > 0.35) {
+                  vocalSuppressMask = 1.0; 
+              }
+
               // This acts as a harsh wall. Center gets completely obliterated.
               const finalMidMask = 1.0 - vocalSuppressMask;
 
@@ -983,8 +1026,18 @@
               vocIm[k] = vBinIm;
 
               // --- MUSIC (Aggressive Suppression & Aggressive Volume Redemption) ---
-              const suppressedMidRe = midRe * finalMidMask;
-              const suppressedMidIm = midIm * finalMidMask;
+              // "Replaced by a wave sound" logic: If vocals are removed, we inject side-channel 
+              // ambient audio (waves, synth pads, reverb) into the center to actively MASK the faint words
+              let waveMaskRe = 0;
+              let waveMaskIm = 0;
+              if (vocalSuppressMask > 0.5 && musicSmoothing > 50) {
+                  const maskIntensity = vocalSuppressMask * (musicSmoothing / 100.0);
+                  waveMaskRe = sideRe * maskIntensity * 1.2;
+                  waveMaskIm = sideIm * maskIntensity * 1.2;
+              }
+
+              const suppressedMidRe = (midRe * finalMidMask) + waveMaskRe;
+              const suppressedMidIm = (midIm * finalMidMask) + waveMaskIm;
 
               // Massive Makeup Gain: Uses the "smoothing" slider to multiply the volume 
               // of the remaining non-vocal elements specifically where the mask ate into the track.
