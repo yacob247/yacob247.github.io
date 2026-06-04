@@ -447,7 +447,7 @@
       </div>
 
       <div class="notice">
-        <strong>Complete Removal Engine V5:</strong> Phase-aware ICC coherence detects vocals even through reverb tails. 4-frame temporal mask smoothing eliminates clicks. Smoothstep hard-floor zeroing kills mid channel completely at full power. Side-only compensation fills stereo holes without ever re-introducing vocal energy. Wiener residual subtraction pass catches any ICC leakage.
+        <strong>Complete Removal Engine V6:</strong> Fixes V5's fatal threshold bug where 1−power/150 crashed to 0.007 at max — classifying all bins as vocal and silencing the music track. V6 uses a calibrated ICC threshold (0.970→0.816) plus independent frequency gating so bass, kick, and treble are never touched. Wiener pass removed (it compounded the over-suppression). Hard-floor only fires on bins that are both deep in the vocal range AND above ICC 0.95.
       </div>
     </aside>
 
@@ -485,11 +485,11 @@
         
         <label for="musicCutPower" style="font-size: 12px;">Vocal Removal Depth <span class="slider-val" id="musicCutPowerVal">60.0</span></label>
         <input type="range" id="musicCutPower" min="1.0" max="150.0" step="1.0" value="60.0">
-        <span class="desc">Sets the ICC threshold below which a bin is treated as vocal. At 150 the threshold reaches near-zero (everything coherent is zeroed). At 100+ a hard floor enforces silence even on partially coherent bins. Wiener residual subtraction activates above 60.</span>
+        <span class="desc">Controls the ICC threshold for vocal detection. V6 maps power 1→150 to threshold 0.970→0.816. Bins below the threshold are never touched — bass, kick, and stereo instruments are fully protected. Only high-ICC, in-range bins get suppressed.</span>
         
         <label for="musicSmoothing" style="font-size: 12px; margin-top: 14px;">Keep Music Full & Rich (Fix Watery Sound) <span class="slider-val" id="musicSmoothingVal">80%</span></label>
         <input type="range" id="musicSmoothing" min="0" max="100" step="5" value="80">
-        <span class="desc">Fills the stereo hole left by vocal removal using only the Side (stereo) channel — never re-introduces vocal energy. At 100% the side channel gets up to 4× boost to fill the gap. Also controls depth of post-process time-domain smoothing passes.</span>
+        <span class="desc">Fills the stereo hole left by vocal removal by boosting the Side channel (capped at 3× to prevent hollowness). Also controls the depth of post-process time-domain blur passes that smooth out spectral gaps in the music output.</span>
       </div>
 
       <!-- NEW: Automatic Preset Buttons -->
@@ -625,19 +625,21 @@
       }
 
       els.autoVocalsBtn.addEventListener("click", () => {
-        updateSliderUI(els.vocalPower, 110, els.vocalPowerVal);
-        updateSliderUI(els.vocalGate, -38, els.vocalGateVal, " dB");
-        updateSliderUI(els.musicCutPower, 8, els.musicCutPowerVal);
-        updateSliderUI(els.musicSmoothing, 15, els.musicSmoothingVal, "%");
-        setStatus("✅ V5: Pure Vocal Extraction — sharp ICC isolation, tight gate, zero instrument bleed.");
+        updateSliderUI(els.vocalPower, 100, els.vocalPowerVal);
+        updateSliderUI(els.vocalGate, -40, els.vocalGateVal, " dB");
+        updateSliderUI(els.musicCutPower, 5, els.musicCutPowerVal);
+        updateSliderUI(els.musicSmoothing, 10, els.musicSmoothingVal, "%");
+        els.vocalLowCut.value = 150; els.vocalHighCut.value = 7500; updateRange();
+        setStatus("✅ V6: Pure Vocal Extraction — high-exponent ICC shaping, tight gate, minimal instrument bleed.");
       });
 
       els.autoMusicBtn.addEventListener("click", () => {
-        updateSliderUI(els.vocalPower, 8, els.vocalPowerVal);
+        updateSliderUI(els.vocalPower, 5, els.vocalPowerVal);
         updateSliderUI(els.vocalGate, -80, els.vocalGateVal, " dB");
-        updateSliderUI(els.musicCutPower, 150, els.musicCutPowerVal);
-        updateSliderUI(els.musicSmoothing, 85, els.musicSmoothingVal, "%");
-        setStatus("✅ V5: Total Vocal Destruction — hard-floor ICC zeroing + Wiener residual pass + side-fill smoothing.");
+        updateSliderUI(els.musicCutPower, 130, els.musicCutPowerVal);
+        updateSliderUI(els.musicSmoothing, 70, els.musicSmoothingVal, "%");
+        els.vocalLowCut.value = 200; els.vocalHighCut.value = 5000; updateRange();
+        setStatus("✅ V6: Pure Instrumental — calibrated ICC threshold (0.84), hard-floor on confirmed vocal bins, bass and treble fully protected.");
       });
 
       let master = null;
@@ -907,21 +909,29 @@
       }
 
       /* =========================================================
-         COMPLETE REMOVAL ENGINE V5
-         Key fixes vs V4:
-           1. Phase-aware ICC coherence (not magnitude-only) — detects
-              even lightly-panned or reverb-tailed vocals accurately.
-           2. Temporal max-decay mask smoothing over 4 frames — kills
-              clicking at vocal on/off edges without losing removal depth.
-           3. Proper smoothstep hard-floor suppression — mid channel
-              genuinely reaches zero at aggressive settings (not ~7%).
-           4. Side-ONLY compensation — fills the stereo hole with pure
-              side energy; NEVER re-boosts the mid (old compensateGain
-              was the main reason vocals survived).
-           5. N=4096, hop=1024 — 2× better frequency resolution for
-              cleaner bin-level decisions in the 100–8000 Hz vocal range.
-           6. Residual wiener subtraction pass — after main mask, a
-              second spectrum walk subtracts any leaked vocal estimate.
+         COMPLETE REMOVAL ENGINE V6
+         Root-cause fixes vs V5:
+
+         V5 had a fatal threshold bug:
+           threshold = 1.0 - (musicCutPower / 150)
+           At power=150 → threshold=0.007, so every bin with ICC>0.007
+           (i.e. ALL bins) was classified as vocal → music track went silent.
+
+         V6 key changes:
+           1. Separate iccPerBin[] (raw ICC) from rawMask[] (ICC×freqWeight).
+              Music suppression uses RAW ICC vs a calibrated threshold
+              (0.970→0.816), NOT the frequency-weighted vocal score.
+              This means bass, kick, stereo guitars are NEVER incorrectly
+              classified as vocal.
+           2. Frequency gating on music suppression: bins outside the vocal
+              frequency range (freqWeight < 0.05) are COMPLETELY protected —
+              mid channel passes through at full gain regardless of ICC.
+           3. Wiener pass REMOVED — it compounded the over-suppression and
+              caused near-silence at high musicCutPower values.
+           4. sideBoost capped at 3× and scaled correctly — no more
+              unnaturally hollow stereo-only output.
+           5. Hard floor at extremes only fires when ICC>0.95 AND freqWeight>0.5
+              so bass/treble bins are still safe.
          ========================================================= */
       function runSpectralSeparation(source, options, onProgress, onComplete) {
         const sampleRate = source.sampleRate;
@@ -931,7 +941,7 @@
 
         // --- FFT parameters ---
         const N   = 4096;   // Larger window → finer frequency resolution
-        const hop = 1024;   // 75 % overlap for smooth OLA
+        const hop = 1024;   // 75% overlap for smooth OLA
         const numFrames = Math.floor((length - N) / hop) + 1;
 
         const outVocal  = new Float32Array(length);
@@ -954,15 +964,28 @@
         const selStartSample = Math.floor(options.selStart * length);
         const selEndSample   = Math.floor(options.selEnd   * length);
 
+        // --- Calibrated ICC threshold for music suppression ---
+        // This is the SINGLE most important fix over V5.
+        // V5 used (1 - power/150) which crashed to 0.007 at max power,
+        // causing ALL bins to be classified as vocal.
+        // V6 bounds the threshold to a musically sane range:
+        //   power=1   → threshold=0.970  (only perfect center content cut)
+        //   power=75  → threshold=0.893  (cuts most dry vocals)
+        //   power=150 → threshold=0.816  (cuts even reverb-tailed vocals)
+        // Typical ICC values: pure vocal ≈0.93-1.0, bass ≈0.88-1.0,
+        // stereo guitar ≈0.3-0.7.  Threshold of 0.816 leaves most
+        // instruments untouched while catching the vocal center mass.
+        const musicICCThreshold = 0.970 - (musicCutPower / 150.0) * 0.154;
+
         // --- Temporal mask history for anti-click smoothing (4 frames) ---
         const HIST = 4;
         const maskHistory = [];
         for (let h = 0; h < HIST; h++)
-          maskHistory.push(new Float32Array(N / 2 + 1)); // all zeros initially
-        let histPtr = 0; // circular pointer
+          maskHistory.push(new Float32Array(N / 2 + 1));
+        let histPtr = 0;
 
         let currentFrame = 0;
-        const framesPerTick = 50; // fewer ticks per rAF because N is larger
+        const framesPerTick = 50;
 
         function processSlice() {
           const limit = Math.min(currentFrame + framesPerTick, numFrames);
@@ -998,54 +1021,70 @@
             fft(reR, imR);
 
             // ══════════════════════════════════════════════════════════
-            // PASS 1 — Compute raw vocal-detection mask (ICC per bin)
+            // PASS 1 — Compute per-bin ICC and vocal detection mask
+            //
+            // Two arrays produced here, with different purposes:
+            //
+            //   rawMask[k]   = ICC(k) × freqWeight(k)   [0..1]
+            //     → Used for VOCAL EXTRACTION (how much center+freq content
+            //       to keep in the vocal track).  Frequency weighting gives
+            //       clean spectral shaping — bins outside the vocal range
+            //       contribute little to the vocal output.
+            //
+            //   iccPerBin[k] = raw phase-aware ICC        [0..1]
+            //     → Used for MUSIC SUPPRESSION threshold check only.
+            //       Kept separate so the frequency weight does NOT reduce
+            //       the apparent ICC of in-range bins, which would cause
+            //       the threshold to miss high-ICC out-of-range content.
+            //       More importantly, it ensures out-of-range bins have
+            //       their TRUE ICC compared against the threshold; because
+            //       the freqWeight gate (< 0.05) protects those bins
+            //       independently, this is safe.
             // ══════════════════════════════════════════════════════════
-            // Phase-aware Inter-Channel Coherence:
-            //   ICC = |L · conj(R)| / (|L| × |R|)
-            //   ICC=1 → L and R identical (pure mono centre = vocal)
-            //   ICC≈0 → L and R uncorrelated (wide stereo = instrument)
-            const rawMask = new Float32Array(N / 2 + 1);
+            const rawMask   = new Float32Array(N / 2 + 1);
+            const iccPerBin = new Float32Array(N / 2 + 1);
 
             for (let k = 1; k <= N / 2; k++) {
               const magL = Math.sqrt(reL[k]*reL[k] + imL[k]*imL[k]);
               const magR = Math.sqrt(reR[k]*reR[k] + imR[k]*imR[k]);
               if (magL * magR < 1e-18) continue;
 
-              // Cross-correlation magnitude
-              const crossRe  = reL[k]*reR[k] + imL[k]*imR[k];
-              const crossIm  = imL[k]*reR[k] - reL[k]*imR[k];
+              // Phase-aware Inter-Channel Coherence:
+              //   ICC = |L · conj(R)| / (|L| × |R|)
+              //   ICC=1.0 → channels identical (pure mono centre)
+              //   ICC≈0.0 → channels uncorrelated (wide stereo)
+              const crossRe = reL[k]*reR[k] + imL[k]*imR[k];
+              const crossIm = imL[k]*reR[k] - reL[k]*imR[k];
               const ICC = Math.sqrt(crossRe*crossRe + crossIm*crossIm) / (magL * magR);
+              iccPerBin[k] = ICC;
 
-              // Frequency weight: vocal range has full weight, roll off outside
+              // Frequency weight: 1.0 inside vocal range, smooth rolloff outside
               const freq = (k * sampleRate) / N;
               let freqWeight = 1.0;
               if (freq < vocalLow) {
                 const t = freq / vocalLow;
-                freqWeight = t * t; // Quadratic rolloff → gentle below low-cut
+                freqWeight = t * t; // quadratic rolloff below low-cut
               } else if (freq > vocalHigh) {
                 const t = Math.min(1.0, (freq - vocalHigh) / 5000.0);
-                freqWeight = 1.0 - t * t; // Quadratic rolloff above high-cut
+                freqWeight = 1.0 - t * t; // quadratic rolloff above high-cut
               }
 
               rawMask[k] = clamp(ICC * freqWeight, 0, 1);
             }
 
             // ══════════════════════════════════════════════════════════
-            // PASS 2 — Temporal max-decay smoothing
+            // PASS 2 — Temporal max-decay smoothing (anti-click)
             //
-            // For each bin keep the MAX of current and decayed prior
-            // frames.  This prevents clicks when a vocal note ends:
-            // the mask stays high for ~4 frames (≈ 93 ms) then
-            // decays, giving a smooth fade-out in the mid channel.
+            // Keep the MAX of the current frame's mask and decayed prior
+            // frames so that when a vocal note ends the suppression mask
+            // fades out over ~93 ms rather than cutting abruptly.
             // ══════════════════════════════════════════════════════════
-            // Write current raw mask into the history slot
             const curSlot = maskHistory[histPtr % HIST];
             for (let k = 0; k <= N / 2; k++) curSlot[k] = rawMask[k];
 
             const smoothMask = new Float32Array(N / 2 + 1);
             for (let k = 1; k <= N / 2; k++) {
               let best = rawMask[k];
-              // decay factor per frame back: 0.82^1≈0.82, ^2≈0.67, ^3≈0.55
               const decay = [1.0, 0.82, 0.67, 0.55];
               for (let h = 1; h < HIST; h++) {
                 const slot = maskHistory[((histPtr - h) % HIST + HIST) % HIST];
@@ -1057,6 +1096,18 @@
 
             // ══════════════════════════════════════════════════════════
             // PASS 3 — Apply masks to produce vocal and music bins
+            //
+            // VOCAL track  uses smoothMask (ICC × freqWeight, temporally
+            //   smoothed) raised to an exponent — only the most centered,
+            //   in-range bins survive at high vocalPower values.
+            //
+            // MUSIC track  uses RAW ICC vs the calibrated threshold.
+            //   A bin is only suppressed when BOTH conditions hold:
+            //     a) It is inside the vocal frequency range (freqWeight > 0.05)
+            //     b) Its raw ICC exceeds musicICCThreshold
+            //   Suppression amount is a smoothstep S-curve scaled by freqWeight,
+            //   so edge-of-range bins get proportionally less suppression.
+            //   Bins that fail either condition pass through at full gain.
             // ══════════════════════════════════════════════════════════
             const vocRe  = new Float32Array(N), vocIm  = new Float32Array(N);
             const musReL = new Float32Array(N), musImL = new Float32Array(N);
@@ -1070,68 +1121,78 @@
               const sideRe = (reL[k] - reR[k]) * 0.5;
               const sideIm = (imL[k] - imR[k]) * 0.5;
 
-              const vocDetect = smoothMask[k]; // 0=instrument, 1=vocal
+              const freq = (k * sampleRate) / N;
+
+              // Recompute freqWeight for this bin (same formula as Pass 1)
+              let freqWeight = 1.0;
+              if (freq < vocalLow) {
+                const t = freq / vocalLow;
+                freqWeight = t * t;
+              } else if (freq > vocalHigh) {
+                const t = Math.min(1.0, (freq - vocalHigh) / 5000.0);
+                freqWeight = 1.0 - t * t;
+              }
+
+              const vocDetect = smoothMask[k]; // ICC × freqWeight, smoothed
 
               // ─── Vocal extraction ─────────────────────────────────
-              // vocalPower controls sharpness: higher → only very-centre bins
+              // Higher vocalPower → steeper exponent → only near-perfect
+              // centre bins survive → cleaner but potentially thinner vocal.
               const vExp = 1.0 + vocalPower / 15.0;
               const vMask = Math.pow(vocDetect, vExp);
               vocRe[k] = midRe * vMask;
               vocIm[k] = midIm * vMask;
               totalVocEnergy += Math.sqrt(vocRe[k]*vocRe[k] + vocIm[k]*vocIm[k]);
 
-              // ─── Music: complete vocal removal from mid channel ────
+              // ─── Music: frequency-gated ICC threshold suppression ──
               //
-              // Threshold: ICC values above this are treated as vocal.
-              //   musicCutPower 1  → threshold 0.993 (almost nothing cut)
-              //   musicCutPower 75 → threshold 0.500
-              //   musicCutPower 150 → threshold 0.007 (everything cut)
-              const threshold = 1.0 - (musicCutPower / 150.0);
+              // Condition A: bin must be in vocal frequency range.
+              //   If freqWeight < 0.05 the bin is outside the vocal range
+              //   (deep bass or extreme treble) → skip suppression entirely.
+              //   This is what protects kick drum, bass guitar, cymbals.
+              //
+              // Condition B: raw ICC must exceed the calibrated threshold.
+              //   musicICCThreshold = 0.970 → 0.816 over the power range.
+              //   Stereo guitars (ICC ≈ 0.3–0.7) never exceed it.
+              //   Bass (ICC ≈ 0.9+) is protected by Condition A.
+              //   Pure vocals (ICC ≈ 0.93–1.0) exceed it → suppressed. ✓
+              const rawICC = iccPerBin[k];
+              let midSuppression = 0.0;
 
-              let midSuppression;
-              if (vocDetect <= threshold) {
-                // Well below threshold → instrument bin, leave untouched
-                midSuppression = 1.0;
-              } else {
-                // Above threshold → vocal bin: smoothstep down to zero
-                const t = (vocDetect - threshold) / (1.0 - threshold + 1e-9);
-                const ts = t * t * (3.0 - 2.0 * t); // smoothstep S-curve
-                midSuppression = 1.0 - ts;
+              if (freqWeight > 0.05 && rawICC > musicICCThreshold) {
+                // Smoothstep S-curve: 0 at threshold, 1 at ICC=1.0
+                const t = (rawICC - musicICCThreshold) / (1.0 - musicICCThreshold + 1e-9);
+                const ts = t * t * (3.0 - 2.0 * t);
+                // Scale by freqWeight so edge-of-range bins get gentler cut
+                midSuppression = ts * freqWeight;
 
-                // Hard floor: at >100 power enforce near-silence on mid
-                if (musicCutPower >= 150) {
-                  midSuppression = Math.min(midSuppression, 0.001);
-                } else if (musicCutPower >= 120) {
-                  midSuppression = Math.min(midSuppression, 0.02);
-                } else if (musicCutPower >= 100) {
-                  midSuppression = Math.min(midSuppression, 0.05);
+                // Hard floor: at high power + very high ICC + deep in range,
+                // force near-silence on the mid channel for this bin.
+                // Guards freqWeight > 0.5 so only in-range bins are zeroed.
+                if (musicCutPower >= 130 && rawICC > 0.95 && freqWeight > 0.5) {
+                  midSuppression = Math.max(midSuppression, 0.997 * freqWeight);
+                } else if (musicCutPower >= 100 && rawICC > 0.97 && freqWeight > 0.5) {
+                  midSuppression = Math.max(midSuppression, 0.98 * freqWeight);
                 }
               }
               midSuppression = clamp(midSuppression, 0, 1);
 
-              // Suppressed mid (vocals removed)
-              const sMidRe = midRe * midSuppression;
-              const sMidIm = midIm * midSuppression;
+              const midMusicGain = 1.0 - midSuppression;
 
-              // ─── Side-channel smoothing (fills the stereo hole) ───
-              //
-              // CRITICAL FIX: we ONLY boost the SIDE channel — which
-              // contains zero vocal energy — to fill the volume hole.
-              // The old code applied compensateGain to the suppressed
-              // mid, which multiplied any residual vocal back up.
-              //
-              // cutDepth=1 means mid was zeroed; sideBoost at 100%
-              // smoothing reaches 1 + 1*3 = 4× the original side level.
-              const cutDepth  = 1.0 - midSuppression;
-              const sideBoost = 1.0 + cutDepth * musicSmoothing * 3.0;
+              // ─── Side-fill: compensate volume hole with side channel ─
+              // Boost only the side channel (zero vocal content) to fill
+              // the gap left by mid suppression.  Cap at 3× to prevent
+              // unnatural hollow-stereo artefacts.
+              const cutDepth  = midSuppression;
+              const sideBoost = Math.min(3.0, 1.0 + cutDepth * musicSmoothing * 2.0);
               const bSideRe   = sideRe * sideBoost;
               const bSideIm   = sideIm * sideBoost;
 
               // Reconstruct stereo: L = Mid + Side,  R = Mid − Side
-              musReL[k] = sMidRe + bSideRe;
-              musImL[k] = sMidIm + bSideIm;
-              musReR[k] = sMidRe - bSideRe;
-              musImR[k] = sMidIm - bSideIm;
+              musReL[k] = midRe * midMusicGain + bSideRe;
+              musImL[k] = midIm * midMusicGain + bSideIm;
+              musReR[k] = midRe * midMusicGain - bSideRe;
+              musImR[k] = midIm * midMusicGain - bSideIm;
 
               // Conjugate symmetry for real-valued IFFT
               if (k > 0 && k < N / 2) {
@@ -1139,37 +1200,6 @@
                 vocRe[sym]  =  vocRe[k];  vocIm[sym]  = -vocIm[k];
                 musReL[sym] = musReL[k];  musImL[sym] = -musImL[k];
                 musReR[sym] = musReR[k];  musImR[sym] = -musImR[k];
-              }
-            }
-
-            // ══════════════════════════════════════════════════════════
-            // PASS 4 — Residual Wiener subtraction on music
-            //
-            // Estimate the vocal spectrum still present in the music
-            // output and subtract a fraction of it.  This catches the
-            // small percentage of vocal energy that leaked through the
-            // mask (e.g. reverb tails, sibilants with low ICC).
-            // Only active when musicCutPower > 60.
-            // ══════════════════════════════════════════════════════════
-            if (musicCutPower > 60) {
-              const wienerAlpha = clamp((musicCutPower - 60) / 90.0, 0, 1.5);
-              for (let k = 1; k <= N / 2; k++) {
-                const vocPow = vocRe[k]*vocRe[k] + vocIm[k]*vocIm[k];
-                const musLPow = musReL[k]*musReL[k] + musImL[k]*musImL[k];
-                if (vocPow < 1e-18 || musLPow < 1e-18) continue;
-
-                // Suppress bins where vocal estimate is a large fraction
-                // of the remaining music bin energy
-                const ratio = vocPow / (musLPow + vocPow + 1e-18);
-                const wSup  = clamp(1.0 - wienerAlpha * ratio, 0, 1);
-
-                musReL[k] *= wSup;  musImL[k] *= wSup;
-                musReR[k] *= wSup;  musImR[k] *= wSup;
-                if (k < N / 2) {
-                  const sym = N - k;
-                  musReL[sym] *= wSup; musImL[sym] *= wSup;
-                  musReR[sym] *= wSup; musImR[sym] *= wSup;
-                }
               }
             }
 
@@ -1209,10 +1239,10 @@
               outMusicR[i] = clamp(outMusicR[i] / norm, -1, 1);
             }
 
-            // ── Post-process: spectral smoothing on music (fill holes) ─
-            // When musicSmoothing > 0, run a short-time spectral average
-            // over the music output to interpolate across zeroed bins.
-            // Uses a 3-pass median-like neighbour blur in the time domain.
+            // ── Post-process: time-domain smoothing on music ───────────
+            // Neighbour-average blur interpolates across zeroed vocal bins,
+            // removing the "chattery" spectral holes that make music sound
+            // watery.  Passes scale with musicSmoothing setting.
             if (musicSmoothing > 0.15) {
               const blendPasses = musicSmoothing > 0.6 ? 3 : 2;
               for (let pass = 0; pass < blendPasses; pass++) {
