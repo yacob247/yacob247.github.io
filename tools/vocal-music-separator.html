@@ -4,10 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Automatic Vocal Music Separator | Envizion Tools</title>
-  <meta name="description" content="Free local one-file DSP vocal and music separator with two separated timelines for vocals and music.">
+  <meta name="description" content="Free local one-file DSP vocal and music separator with manual algorithmic control.">
   <link rel="canonical" href="https://envizion.work/tools/vocal-music-separator.html">
   <meta property="og:url" content="https://envizion.work/tools/vocal-music-separator.html">
-  <link rel="icon" type="image/png" href="../logo.png" sizes="32x32">
   <style>
     :root {
       color-scheme: light;
@@ -19,7 +18,6 @@
       --blue: #0969da;
       --blue-dark: #0550ae;
       --green: #1a7f37;
-      --orange: #bc4c00;
       --shadow: 0 8px 24px rgba(140, 149, 159, 0.2);
       --radius: 6px;
     }
@@ -35,7 +33,7 @@
       min-height: 100vh;
     }
 
-    button, input { font: inherit; }
+    button, input, select { font: inherit; }
 
     .topbar {
       align-items: center;
@@ -106,18 +104,6 @@
 
     .button.primary:hover { background: var(--blue-dark); }
 
-    .button.green {
-      background: var(--green);
-      border-color: var(--green);
-      color: #fff;
-    }
-
-    .button.orange {
-      background: var(--orange);
-      border-color: var(--orange);
-      color: #fff;
-    }
-
     .button:disabled {
       cursor: not-allowed;
       opacity: 0.55;
@@ -126,7 +112,7 @@
     .workspace {
       display: grid;
       gap: 16px;
-      grid-template-columns: minmax(300px, 420px) minmax(0, 1fr);
+      grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
       padding: 16px;
     }
 
@@ -157,10 +143,10 @@
     }
 
     label {
-      color: var(--muted);
+      color: var(--ink);
       display: block;
-      font-size: 12px;
-      font-weight: 700;
+      font-size: 13px;
+      font-weight: 600;
       margin-bottom: 6px;
     }
 
@@ -174,24 +160,60 @@
       width: 100%;
     }
 
-    .field { margin-bottom: 12px; }
-
-    .method-grid {
-      display: grid;
-      gap: 12px;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .method {
-      background: #fff;
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
+    .field { 
+      margin-bottom: 20px; 
+      background: #f8f9fa;
       padding: 14px;
+      border-radius: 6px;
+      border: 1px solid #e1e4e6;
     }
 
-    .method strong {
+    .field span.desc {
       display: block;
-      margin-bottom: 6px;
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      margin-top: 6px;
+    }
+
+    .slider-val {
+      float: right;
+      font-family: monospace;
+      font-weight: bold;
+      color: var(--blue);
+      background: #fff;
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--line);
+    }
+
+    .loader-container {
+      display: none;
+      background: #f0f7ff;
+      border: 1px solid #b4d3fe;
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-top: 16px;
+    }
+
+    .progress-bar-bg {
+      background: #d0d7de;
+      border-radius: 10px;
+      height: 10px;
+      width: 100%;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+
+    .progress-bar-fill {
+      background: var(--blue);
+      height: 100%;
+      width: 0%;
+      transition: width 0.1s ease;
     }
 
     .notice {
@@ -202,24 +224,23 @@
       font-size: 12px;
       line-height: 1.45;
       padding: 10px;
+      margin-top: 16px;
     }
 
     @media (max-width: 860px) {
       .topbar { align-items: flex-start; flex-direction: column; padding: 12px; }
-      .workspace, .method-grid { grid-template-columns: 1fr; padding: 12px; }
+      .workspace { grid-template-columns: 1fr; padding: 12px; }
       .button, .button-row { width: 100%; }
     }
   </style>
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="index.html"><span class="brand-mark">S</span><span>Automatic Separator</span></a>
+    <a class="brand" href="index.html"><span class="brand-mark">S</span><span>Advanced Spectro-Separator</span></a>
     <div class="button-row">
       <a class="button" href="index.html">Tools</a>
       <a class="button" href="the-new-project.html">Suite Home</a>
       <a class="button" href="media-library.html">Audio Library</a>
-      <a class="button" href="voice-recorder.html">Voice Editor</a>
-      <a class="button" href="teleprompter.html">Teleprompter</a>
     </div>
   </header>
 
@@ -227,29 +248,87 @@
     <aside class="panel">
       <div class="panel-head">
         <h1>Audio Sources</h1>
-        <p class="hint">Load one song file. Everything runs locally in the browser.</p>
+        <p class="hint">Load one song file. Separation executes locally via browser FFT.</p>
       </div>
 
-      <div class="field">
+      <div class="field" style="background: none; border: none; padding: 0;">
         <label for="masterInput">Song / audio file</label>
         <input id="masterInput" type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/webm,audio/ogg,audio/*">
       </div>
 
       <p class="status" id="statusText">Load a song file to begin.</p>
-      <div class="notice">This is a free local one-file DSP separator. It does not upload audio. Results depend on the stereo mix.</div>
+      
+      <div class="field" id="waveformContainer" style="display: none; padding: 12px; background: #fff;">
+        <label style="font-size: 13px; margin-bottom: 4px;">Target Processing Region</label>
+        <span class="desc" style="margin-bottom: 8px;">Highlight the section to process. Unselected areas will bypass separation (Vocals will be silent, Music will remain original).</span>
+        <canvas id="mainWaveform" height="80" style="width: 100%; height: 80px; background: #f6f8fa; border: 1px solid var(--line); border-radius: 4px; cursor: crosshair; display: block;"></canvas>
+        <div style="display: flex; justify-content: space-between; font-size: 11px; font-weight: 600; margin-top: 6px; color: var(--muted);">
+          <span id="waveStartText">0:00</span>
+          <span id="waveSelectedText" style="color: var(--blue);">Full Track Selected</span>
+          <span id="waveEndText">0:00</span>
+        </div>
+        <button id="resetWaveBtn" class="button" style="margin-top: 10px; width: 100%; font-size: 11px; min-height: 26px; padding: 4px;">Reset Selection to Full Track</button>
+      </div>
+
+      <div class="loader-container" id="loaderContainer">
+        <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 13px;">
+          <span id="loaderStatus">Processing Spectral Separation...</span>
+          <span id="loaderPercent">0%</span>
+        </div>
+        <div class="progress-bar-bg">
+          <div class="progress-bar-fill" id="progressBarFill"></div>
+        </div>
+      </div>
+
+      <div class="notice">
+        <strong>Manual DSP Engine V3:</strong> Computes independent phase-coherence masks for Vocals and Music, allowing you to explicitly dictate the algorithmic limits for extraction and suppression.
+      </div>
     </aside>
 
     <section class="panel">
       <div class="panel-head">
-        <h1>Automatic Separation</h1>
-        <p class="hint">Press one button. The result opens with only two timelines: Vocals and Music.</p>
+        <h1>Manual DSP Algorithm Controls</h1>
+        <p class="hint">Act as the algorithm. Tune the phase-cancellation masks for both tracks independently.</p>
       </div>
 
-      <article class="method">
-        <strong>Separate Automatically</strong>
-        <p class="hint">The tool automatically creates two tracks: vocals and music.</p>
-        <button class="button primary" id="separateBtn" type="button" disabled>Separate Automatically</button>
-      </article>
+      <!-- Vocal DSP Block -->
+      <div class="field" style="background: #f0f7ff; border-color: #b4d3fe;">
+        <label style="font-size: 14px; color: var(--blue-dark);">🎤 Vocal Extraction (Center Isolation)</label>
+        <span class="desc" style="margin-bottom: 12px;">Parameters dictating what gets strictly pulled into the Vocal track.</span>
+        
+        <label for="vocalPower" style="font-size: 12px;">Isolation Strength <span class="slider-val" id="vocalPowerVal">6.0</span></label>
+        <input type="range" id="vocalPower" min="1.0" max="15.0" step="0.5" value="6.0">
+        <span class="desc">Higher values aggressively eliminate instruments, forcing only perfect center signals into the vocals.</span>
+        
+        <label for="vocalGate" style="font-size: 12px; margin-top: 14px;">Noise Gate Threshold <span class="slider-val" id="vocalGateVal">-55 dB</span></label>
+        <input type="range" id="vocalGate" min="-80" max="-20" step="1" value="-55">
+        <span class="desc">Hard-silences the vocal track during sections where vocal energy falls below this threshold.</span>
+
+        <label style="font-size: 12px; margin-top: 14px;">Algorithmic Frequency Range <span class="slider-val" id="vocalRangeVal">110Hz - 8500Hz</span></label>
+        <div style="display: flex; gap: 10px; margin-top: 6px;">
+             <input type="range" id="vocalLowCut" min="20" max="500" step="10" value="110">
+             <input type="range" id="vocalHighCut" min="4000" max="16000" step="100" value="8500">
+        </div>
+        <span class="desc">Manually restrict the FFT mask to ignore deep bass (left) and hi-hats/cymbals (right).</span>
+      </div>
+
+      <!-- Music DSP Block -->
+      <div class="field" style="background: #f1f8f5; border-color: #b5e3c6; margin-top: 16px;">
+        <label style="font-size: 14px; color: var(--green);">🎸 Music Extraction (Vocal Suppression)</label>
+        <span class="desc" style="margin-bottom: 12px;">Parameters dictating how deeply the center channel is cut from the Music track.</span>
+        
+        <label for="musicCutPower" style="font-size: 12px;">Suppression Strength <span class="slider-val" id="musicCutPowerVal">6.0</span></label>
+        <input type="range" id="musicCutPower" min="1.0" max="15.0" step="0.5" value="6.0">
+        <span class="desc">How deep to punch the hole in the music track to remove the vocals. Controlled independently from vocal extraction.</span>
+        
+        <label for="musicSmoothing" style="font-size: 12px; margin-top: 14px;">Dynamic Backfill & Smoothing <span class="slider-val" id="musicSmoothingVal">80%</span></label>
+        <input type="range" id="musicSmoothing" min="0" max="100" step="5" value="80">
+        <span class="desc">Amplifies the remaining instrumentals to smooth out the volume crater left by the removed vocals.</span>
+      </div>
+
+      <div style="margin-top: 24px;">
+        <button class="button primary" id="separateBtn" style="font-size: 15px; padding: 10px 24px; width: 100%;" type="button" disabled="">Force Extravagate Tracks</button>
+      </div>
     </section>
   </main>
 
@@ -258,18 +337,154 @@
       const els = {
         masterInput: document.getElementById("masterInput"),
         separateBtn: document.getElementById("separateBtn"),
-        statusText: document.getElementById("statusText")
+        statusText: document.getElementById("statusText"),
+        loaderContainer: document.getElementById("loaderContainer"),
+        loaderPercent: document.getElementById("loaderPercent"),
+        progressBarFill: document.getElementById("progressBarFill"),
+        
+        waveformContainer: document.getElementById("waveformContainer"),
+        mainWaveform: document.getElementById("mainWaveform"),
+        waveStartText: document.getElementById("waveStartText"),
+        waveEndText: document.getElementById("waveEndText"),
+        waveSelectedText: document.getElementById("waveSelectedText"),
+        resetWaveBtn: document.getElementById("resetWaveBtn"),
+
+        // Vocal DSP
+        vocalPower: document.getElementById("vocalPower"),
+        vocalPowerVal: document.getElementById("vocalPowerVal"),
+        vocalGate: document.getElementById("vocalGate"),
+        vocalGateVal: document.getElementById("vocalGateVal"),
+        vocalLowCut: document.getElementById("vocalLowCut"),
+        vocalHighCut: document.getElementById("vocalHighCut"),
+        vocalRangeVal: document.getElementById("vocalRangeVal"),
+
+        // Music DSP
+        musicCutPower: document.getElementById("musicCutPower"),
+        musicCutPowerVal: document.getElementById("musicCutPowerVal"),
+        musicSmoothing: document.getElementById("musicSmoothing"),
+        musicSmoothingVal: document.getElementById("musicSmoothingVal")
       };
 
+      // UI Sync
+      els.vocalPower.oninput = () => els.vocalPowerVal.textContent = parseFloat(els.vocalPower.value).toFixed(1);
+      els.vocalGate.oninput = () => els.vocalGateVal.textContent = els.vocalGate.value + " dB";
+      
+      const updateRange = () => {
+        if (parseInt(els.vocalLowCut.value) >= parseInt(els.vocalHighCut.value)) els.vocalLowCut.value = els.vocalHighCut.value - 100;
+        els.vocalRangeVal.textContent = `${els.vocalLowCut.value}Hz - ${els.vocalHighCut.value}Hz`;
+      };
+      els.vocalLowCut.oninput = updateRange;
+      els.vocalHighCut.oninput = updateRange;
+
+      els.musicCutPower.oninput = () => els.musicCutPowerVal.textContent = parseFloat(els.musicCutPower.value).toFixed(1);
+      els.musicSmoothing.oninput = () => els.musicSmoothingVal.textContent = els.musicSmoothing.value + "%";
+
       let master = null;
+      let masterPeaks = null;
+      let selStart = 0;
+      let selEnd = 1;
+      let isDragging = false;
+      let masterDuration = 0;
 
-      function setStatus(message) {
-        els.statusText.textContent = message;
+      function setStatus(message) { els.statusText.textContent = message; }
+      function clamp(value, min, max) { return Math.min(max, Math.max(min, value)); }
+
+      function formatTime(secs) {
+        const m = Math.floor(secs / 60);
+        const s = Math.floor(secs % 60).toString().padStart(2, '0');
+        return `${m}:${s}`;
       }
 
-      function clamp(value, min, max) {
-        return Math.min(max, Math.max(min, value));
+      function updateWaveformText() {
+        if (!masterDuration) return;
+        els.waveStartText.textContent = "0:00";
+        els.waveEndText.textContent = formatTime(masterDuration);
+        
+        let s = selStart * masterDuration;
+        let e = selEnd * masterDuration;
+        if (s > e) { const t = s; s = e; e = t; }
+        
+        if (s === 0 && e === masterDuration) {
+          els.waveSelectedText.textContent = "Full Track Selected";
+        } else {
+          els.waveSelectedText.textContent = `${formatTime(s)} - ${formatTime(e)}`;
+        }
       }
+
+      function drawMasterWaveform() {
+        const canvas = els.mainWaveform;
+        const ctx = canvas.getContext("2d");
+        const width = canvas.width;
+        const height = canvas.height;
+        
+        ctx.clearRect(0, 0, width, height);
+        
+        if (masterPeaks) {
+          ctx.fillStyle = "#d0d7de";
+          const mid = height / 2;
+          const amp = height * 0.45;
+          masterPeaks.forEach((point, i) => {
+            const x = (i / masterPeaks.length) * width;
+            ctx.fillRect(x, mid + point[0] * amp, 1, (point[1] - point[0]) * amp);
+          });
+        }
+        
+        const xStart = Math.min(selStart, selEnd) * width;
+        const xEnd = Math.max(selStart, selEnd) * width;
+        
+        ctx.fillStyle = "rgba(255, 255, 255, 0.65)";
+        if (xStart > 0) ctx.fillRect(0, 0, xStart, height);
+        if (xEnd < width) ctx.fillRect(xEnd, 0, width - xEnd, height);
+        
+        ctx.strokeStyle = "var(--blue)";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(xStart, 0); ctx.lineTo(xStart, height);
+        ctx.moveTo(xEnd, 0); ctx.lineTo(xEnd, height);
+        ctx.stroke();
+        
+        ctx.fillStyle = "rgba(9, 105, 218, 0.1)";
+        ctx.fillRect(xStart, 0, xEnd - xStart, height);
+      }
+
+      els.mainWaveform.addEventListener("mousedown", (e) => {
+        const rect = els.mainWaveform.getBoundingClientRect();
+        const x = (e.clientX - rect.left) / rect.width;
+        selStart = Math.max(0, Math.min(1, x));
+        selEnd = selStart;
+        isDragging = true;
+        updateWaveformText();
+        drawMasterWaveform();
+      });
+
+      window.addEventListener("mousemove", (e) => {
+        if (!isDragging) return;
+        const rect = els.mainWaveform.getBoundingClientRect();
+        const x = (e.clientX - rect.left) / rect.width;
+        selEnd = Math.max(0, Math.min(1, x));
+        updateWaveformText();
+        drawMasterWaveform();
+      });
+
+      window.addEventListener("mouseup", () => {
+        if (isDragging) {
+          isDragging = false;
+          if (selStart > selEnd) {
+            const temp = selStart; selStart = selEnd; selEnd = temp;
+          }
+          if (selStart === selEnd) {
+            selStart = 0; selEnd = 1;
+          }
+          updateWaveformText();
+          drawMasterWaveform();
+        }
+      });
+
+      els.resetWaveBtn.addEventListener("click", () => {
+        selStart = 0; selEnd = 1;
+        updateWaveformText();
+        drawMasterWaveform();
+      });
 
       async function decodeBlob(blob) {
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -280,28 +495,223 @@
         for (let channel = 0; channel < buffer.numberOfChannels; channel += 1) {
           channels.push(new Float32Array(buffer.getChannelData(channel)));
         }
-        if (channels.length === 1) channels.push(new Float32Array(channels[0]));
+        if (channels.length === 1) channels.push(new Float32Array(channels[0])); // Fake Stereo
         return { sampleRate: buffer.sampleRate, channels };
       }
 
-      function onePoleLowpass(channel, cutoff, sampleRate) {
-        const rc = 1 / (2 * Math.PI * cutoff);
-        const dt = 1 / sampleRate;
-        const alpha = dt / (rc + dt);
-        const out = new Float32Array(channel.length);
-        let y = channel[0] || 0;
-        for (let i = 0; i < channel.length; i += 1) {
-          y += alpha * ((channel[i] || 0) - y);
-          out[i] = y;
+      function fft(re, im) {
+        const n = re.length;
+        if (n <= 1) return;
+        let i = 0;
+        for (let j = 1; j < n - 1; j++) {
+          let bit = n >> 1;
+          while (i & bit) { i ^= bit; bit >>= 1; }
+          i ^= bit;
+          if (j < i) {
+            let temp = re[j]; re[j] = re[i]; re[i] = temp;
+            temp = im[j]; im[j] = im[i]; im[i] = temp;
+          }
         }
-        return out;
+        for (let len = 2; len <= n; len <<= 1) {
+          let ang = 2 * Math.PI / len;
+          let wlen_re = Math.cos(ang);
+          let wlen_im = -Math.sin(ang);
+          for (let i = 0; i < n; i += len) {
+            let w_re = 1, w_im = 0;
+            for (let j = 0; j < len / 2; j++) {
+              let u_re = re[i + j];
+              let u_im = im[i + j];
+              let v_re = re[i + j + len / 2] * w_re - im[i + j + len / 2] * w_im;
+              let v_im = re[i + j + len / 2] * w_im + im[i + j + len / 2] * w_re;
+              re[i + j] = u_re + v_re;
+              im[i + j] = u_im + v_im;
+              re[i + j + len / 2] = u_re - v_re;
+              im[i + j + len / 2] = u_im - v_im;
+              let next_w_re = w_re * wlen_re - w_im * wlen_im;
+              w_im = w_re * wlen_im + w_im * wlen_re;
+              w_re = next_w_re;
+            }
+          }
+        }
       }
 
-      function onePoleHighpass(channel, cutoff, sampleRate) {
-        const low = onePoleLowpass(channel, cutoff, sampleRate);
-        const out = new Float32Array(channel.length);
-        for (let i = 0; i < channel.length; i += 1) out[i] = channel[i] - low[i];
-        return out;
+      function ifft(re, im) {
+        const n = re.length;
+        for (let i = 0; i < n; i++) im[i] = -im[i];
+        fft(re, im);
+        for (let i = 0; i < n; i++) {
+          re[i] /= n;
+          im[i] = -im[i] / n;
+        }
+      }
+
+      function runSpectralSeparation(source, options, onProgress, onComplete) {
+        const sampleRate = source.sampleRate;
+        const left = source.channels[0];
+        const right = source.channels[1];
+        const length = left.length;
+
+        const N = 2048; // Window Size
+        const hop = 512; // Hop Size (75% Overlap)
+        const numFrames = Math.floor((length - N) / hop) + 1;
+
+        const outVocal = new Float32Array(length);
+        const outMusicL = new Float32Array(length);
+        const outMusicR = new Float32Array(length);
+        const windowSum = new Float32Array(length);
+
+        const hanning = new Float32Array(N);
+        for (let i = 0; i < N; i++) {
+          hanning[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (N - 1)));
+        }
+
+        // Fetch user algorithmic parameters
+        const vocalPower = parseFloat(options.vocalPower);
+        const musicCutPower = parseFloat(options.musicCutPower); // NEW: Independent music cutting
+        const gateLinear = Math.pow(10, parseFloat(options.vocalGate) / 20); 
+        const musicSmoothing = parseFloat(options.musicSmoothing) / 100.0;
+        const vocalLow = parseFloat(options.vocalLow);
+        const vocalHigh = parseFloat(options.vocalHigh);
+        const selStartSample = Math.floor(options.selStart * length);
+        const selEndSample = Math.floor(options.selEnd * length);
+
+        let currentFrame = 0;
+        const framesPerTick = 120; // Chunk rendering
+
+        function processSlice() {
+          const limit = Math.min(currentFrame + framesPerTick, numFrames);
+          
+          for (let f = currentFrame; f < limit; f++) {
+            const start = f * hop;
+            const isSelected = (start >= selStartSample && start <= selEndSample);
+
+            if (!isSelected) {
+              // Bypass FFT completely for unselected regions
+              for (let i = 0; i < N; i++) {
+                const idx = start + i;
+                outMusicL[idx] += left[idx] * hanning[i] * hanning[i];
+                outMusicR[idx] += right[idx] * hanning[i] * hanning[i];
+                windowSum[idx] += hanning[i] * hanning[i];
+              }
+              continue;
+            }
+
+            const reL = new Float32Array(N), imL = new Float32Array(N);
+            const reR = new Float32Array(N), imR = new Float32Array(N);
+
+            for (let i = 0; i < N; i++) {
+              const idx = start + i;
+              reL[i] = left[idx] * hanning[i];
+              reR[i] = right[idx] * hanning[i];
+            }
+
+            fft(reL, imL);
+            fft(reR, imR);
+
+            const vocRe = new Float32Array(N), vocIm = new Float32Array(N);
+            const musReL = new Float32Array(N), musImL = new Float32Array(N);
+            const musReR = new Float32Array(N), musImR = new Float32Array(N);
+
+            let totalVocEnergy = 0;
+
+            for (let k = 0; k <= N / 2; k++) {
+              const magL = Math.sqrt(reL[k] * reL[k] + imL[k] * imL[k]);
+              const magR = Math.sqrt(reR[k] * reR[k] + imR[k] * imR[k]);
+              if (magL + magR < 1e-8) continue;
+
+              const midRe = (reL[k] + reR[k]) * 0.5;
+              const midIm = (imL[k] + imR[k]) * 0.5;
+              const midMag = Math.sqrt(midRe * midRe + midIm * midIm);
+
+              const sideRe = (reL[k] - reR[k]) * 0.5;
+              const sideIm = (imL[k] - imR[k]) * 0.5;
+              const sideMag = Math.sqrt(sideRe * sideRe + sideIm * sideIm);
+
+              const coherence = clamp((midMag - sideMag) / (midMag + 1e-8), 0, 1);
+              
+              // Apply User-Defined Frequency Envelope
+              const freq = (k * sampleRate) / N;
+              let freqWeight = 1.0;
+              if (freq < vocalLow) {
+                 freqWeight = Math.max(0, 1.0 - (vocalLow - freq) / 50.0);
+              } else if (freq > vocalHigh) {
+                 freqWeight = Math.max(0, 1.0 - (freq - vocalHigh) / 2000.0);
+              }
+
+              // MASK 1: Vocal Extraction (Isolation)
+              const vocalExtractMask = Math.pow(coherence, vocalPower) * freqWeight;
+              
+              // MASK 2: Music Extraction (Suppression)
+              // Calculated independently using the musicCutPower parameter
+              const vocalSuppressMask = Math.pow(coherence, musicCutPower) * freqWeight;
+              const finalMusicMask = 1.0 - vocalSuppressMask;
+
+              // Build Vocal Bins
+              const vReBin = midRe * vocalExtractMask;
+              const vImBin = midIm * vocalExtractMask;
+              totalVocEnergy += Math.sqrt(vReBin * vReBin + vImBin * vImBin);
+
+              vocRe[k] = vReBin;
+              vocIm[k] = vImBin;
+
+              // Build Music Bins with Dynamic Backfill Smoothers
+              const smoothL = 1.0 + (vocalSuppressMask * musicSmoothing * 1.5);
+              const smoothR = 1.0 + (vocalSuppressMask * musicSmoothing * 1.5);
+
+              musReL[k] = reL[k] * finalMusicMask * smoothL;
+              musImL[k] = imL[k] * finalMusicMask * smoothL;
+              musReR[k] = reR[k] * finalMusicMask * smoothR;
+              musImR[k] = imR[k] * finalMusicMask * smoothR;
+
+              // Symmetry for Real FFT
+              if (k > 0 && k < N / 2) {
+                const sym = N - k;
+                vocRe[sym] = vocRe[k]; vocIm[sym] = -vocIm[k];
+                musReL[sym] = musReL[k]; musImL[sym] = -musImL[k];
+                musReR[sym] = musReR[k]; musImR[sym] = -musImR[k];
+              }
+            }
+
+            // Apply Gate Threshold
+            const avgEnergy = totalVocEnergy / (N / 2);
+            if (avgEnergy < gateLinear) {
+              for(let k = 0; k < N; k++) { vocRe[k] = 0; vocIm[k] = 0; }
+            }
+
+            ifft(vocRe, vocIm);
+            ifft(musReL, musImL);
+            ifft(musReR, musImR);
+
+            for (let i = 0; i < N; i++) {
+              const idx = start + i;
+              outVocal[idx] += vocRe[i] * hanning[i];
+              outMusicL[idx] += musReL[i] * hanning[i];
+              outMusicR[idx] += musReR[i] * hanning[i];
+              windowSum[idx] += hanning[i] * hanning[i];
+            }
+          }
+
+          currentFrame = limit;
+          onProgress(Math.floor((currentFrame / numFrames) * 100));
+
+          if (currentFrame < numFrames) {
+            requestAnimationFrame(processSlice);
+          } else {
+            for (let i = 0; i < length; i++) {
+              const norm = windowSum[i] > 1e-4 ? windowSum[i] : 1.0;
+              outVocal[i] = clamp(outVocal[i] / norm, -1, 1);
+              outMusicL[i] = clamp(outMusicL[i] / norm, -1, 1);
+              outMusicR[i] = clamp(outMusicR[i] / norm, -1, 1);
+            }
+
+            onComplete({
+              vocals: normalize({ sampleRate, channels: [outVocal, outVocal] }),
+              music: normalize({ sampleRate, channels: [outMusicL, outMusicR] })
+            });
+          }
+        }
+
+        requestAnimationFrame(processSlice);
       }
 
       function normalize(source, target = 0.94) {
@@ -315,32 +725,6 @@
           for (let i = 0; i < channel.length; i += 1) channel[i] = clamp(channel[i] * gain, -1, 1);
         });
         return source;
-      }
-
-      function separateStereoDsp(source) {
-        const left = source.channels[0];
-        const right = source.channels[1] || source.channels[0];
-        const length = left.length;
-        const vocalMono = new Float32Array(length);
-        const musicLeft = new Float32Array(length);
-        const musicRight = new Float32Array(length);
-        const center = new Float32Array(length);
-
-        for (let i = 0; i < length; i += 1) center[i] = ((left[i] || 0) + (right[i] || 0)) * 0.5;
-        const vocalBand = onePoleLowpass(onePoleHighpass(center, 120, source.sampleRate), 8500, source.sampleRate);
-        const bass = onePoleLowpass(center, 150, source.sampleRate);
-
-        for (let i = 0; i < length; i += 1) {
-          const side = ((left[i] || 0) - (right[i] || 0)) * 0.5;
-          vocalMono[i] = clamp(vocalBand[i] * 1.35, -1, 1);
-          musicLeft[i] = clamp(side + bass[i] * 0.85, -1, 1);
-          musicRight[i] = clamp(-side + bass[i] * 0.85, -1, 1);
-        }
-
-        return {
-          vocals: normalize({ sampleRate: source.sampleRate, channels: [vocalMono, new Float32Array(vocalMono)] }),
-          music: normalize({ sampleRate: source.sampleRate, channels: [musicLeft, musicRight] })
-        };
       }
 
       function projectToWav(source) {
@@ -357,19 +741,12 @@
           for (let i = 0; i < value.length; i += 1) view.setUint8(offset + i, value.charCodeAt(i));
         }
 
-        writeString(0, "RIFF");
-        view.setUint32(4, 36 + dataSize, true);
-        writeString(8, "WAVE");
-        writeString(12, "fmt ");
-        view.setUint32(16, 16, true);
-        view.setUint16(20, 1, true);
-        view.setUint16(22, channelCount, true);
-        view.setUint32(24, sampleRate, true);
-        view.setUint32(28, sampleRate * blockAlign, true);
-        view.setUint16(32, blockAlign, true);
-        view.setUint16(34, 16, true);
-        writeString(36, "data");
-        view.setUint32(40, dataSize, true);
+        writeString(0, "RIFF"); view.setUint32(4, 36 + dataSize, true);
+        writeString(8, "WAVE"); writeString(12, "fmt "); view.setUint32(16, 16, true);
+        view.setUint16(20, 1, true); view.setUint16(22, channelCount, true);
+        view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * blockAlign, true);
+        view.setUint16(32, blockAlign, true); view.setUint16(34, 16, true);
+        writeString(36, "data"); view.setUint32(40, dataSize, true);
 
         let offset = 44;
         for (let i = 0; i < frameCount; i += 1) {
@@ -387,8 +764,7 @@
         const step = Math.max(1, Math.ceil(channel.length / points));
         const result = [];
         for (let x = 0; x < points; x += 1) {
-          let min = 1;
-          let max = -1;
+          let min = 1, max = -1;
           for (let i = 0; i < step; i += 1) {
             const sample = channel[x * step + i] || 0;
             if (sample < min) min = sample;
@@ -399,23 +775,15 @@
         return result;
       }
 
-      function escapeJson(value) {
-        return JSON.stringify(value).replace(/</g, "\\u003c");
-      }
-
       function openResultTab(vocals, music, methodLabel) {
         const vocalBlob = projectToWav(vocals);
         const musicBlob = projectToWav(music);
         const vocalUrl = URL.createObjectURL(vocalBlob);
         const musicUrl = URL.createObjectURL(musicBlob);
         const data = {
-          methodLabel,
-          vocalUrl,
-          musicUrl,
-          vocalPeaks: peaks(vocals),
-          musicPeaks: peaks(music),
-          vocalName: "separated-vocals.wav",
-          musicName: "separated-music.wav"
+          methodLabel, vocalUrl, musicUrl,
+          vocalPeaks: peaks(vocals), musicPeaks: peaks(music),
+          vocalName: "separated-vocals.wav", musicName: "separated-music.wav"
         };
         const tab = window.open("", "_blank");
         if (!tab) {
@@ -446,17 +814,13 @@
         function draw(id, peakData, color) {
           const canvas = doc.getElementById(id);
           const ctx = canvas.getContext("2d");
-          ctx.fillStyle = "#0d1117";
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-          ctx.strokeStyle = color;
-          ctx.lineWidth = 2;
-          const mid = canvas.height / 2;
-          const amp = canvas.height * 0.42;
+          ctx.fillStyle = "#0d1117"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.strokeStyle = color; ctx.lineWidth = 2;
+          const mid = canvas.height / 2; const amp = canvas.height * 0.42;
           ctx.beginPath();
           peakData.forEach((point, index) => {
             const x = index / Math.max(1, peakData.length - 1) * canvas.width;
-            ctx.moveTo(x, mid + point[0] * amp);
-            ctx.lineTo(x, mid + point[1] * amp);
+            ctx.moveTo(x, mid + point[0] * amp); ctx.lineTo(x, mid + point[1] * amp);
           });
           ctx.stroke();
         }
@@ -464,84 +828,69 @@
         draw("musicCanvas", data.musicPeaks, "#7ee787");
         doc.getElementById("playBoth").onclick = () => {
           const time = Math.min(vocals.currentTime || 0, music.currentTime || 0);
-          vocals.currentTime = time;
-          music.currentTime = time;
+          vocals.currentTime = time; music.currentTime = time;
           if (!vocals.muted) vocals.play();
           if (!music.muted) music.play();
         };
-        doc.getElementById("pauseBoth").onclick = () => {
-          vocals.pause();
-          music.pause();
-        };
+        doc.getElementById("pauseBoth").onclick = () => { vocals.pause(); music.pause(); };
         doc.getElementById("stopBoth").onclick = () => {
-          vocals.pause();
-          music.pause();
-          vocals.currentTime = 0;
-          music.currentTime = 0;
+          vocals.pause(); music.pause();
+          vocals.currentTime = 0; music.currentTime = 0;
         };
-        doc.getElementById("vocalsOn").onchange = (event) => {
-          vocals.muted = !event.target.checked;
-        };
-        doc.getElementById("musicOn").onchange = (event) => {
-          music.muted = !event.target.checked;
-        };
-      }
-
-      function refreshButtons() {
-        els.separateBtn.disabled = !master;
-      }
-
-      function openLibraryDb() {
-        return new Promise((resolve, reject) => {
-          const request = indexedDB.open("envizion-media-library", 1);
-          request.onupgradeneeded = () => {
-            const db = request.result;
-            if (!db.objectStoreNames.contains("files")) db.createObjectStore("files", { keyPath: "id" });
-            if (!db.objectStoreNames.contains("exports")) db.createObjectStore("exports");
-          };
-          request.onsuccess = () => resolve(request.result);
-          request.onerror = () => reject(request.error);
-        });
-      }
-
-      async function importLibraryExport() {
-        try {
-          const db = await openLibraryDb();
-          const record = await new Promise((resolve, reject) => {
-            const tx = db.transaction("exports", "readonly");
-            const request = tx.objectStore("exports").get("separator");
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
-          });
-          if (record && record.files && record.files[0]) {
-            setStatus("Loading exported library file...");
-            master = await decodeBlob(record.files[0].blob);
-            setStatus(`Imported ${record.files[0].name} from Audio Library.`);
-            refreshButtons();
-          }
-        } catch {
-          setStatus("Load a song file to begin.");
-        }
+        doc.getElementById("vocalsOn").onchange = (e) => vocals.muted = !e.target.checked;
+        doc.getElementById("musicOn").onchange = (e) => music.muted = !e.target.checked;
       }
 
       els.masterInput.addEventListener("change", async () => {
         if (!els.masterInput.files[0]) return;
         setStatus("Decoding original mix...");
         master = await decodeBlob(els.masterInput.files[0]);
-        setStatus("Original mix loaded.");
-        refreshButtons();
+        
+        els.waveformContainer.style.display = "block";
+        els.mainWaveform.width = els.mainWaveform.offsetWidth || 400;
+        masterDuration = master.channels[0].length / master.sampleRate;
+        masterPeaks = peaks(master, els.mainWaveform.width);
+        selStart = 0;
+        selEnd = 1;
+        updateWaveformText();
+        drawMasterWaveform();
+        
+        setStatus("Original mix loaded. Select a region or process full track.");
+        els.separateBtn.disabled = false;
       });
 
-      els.separateBtn.addEventListener("click", async () => {
+      els.separateBtn.addEventListener("click", () => {
         if (!master) return;
-        setStatus("Separating vocals and music...");
-        await new Promise((resolve) => setTimeout(resolve, 40));
-        const result = separateStereoDsp(master);
-        openResultTab(result.vocals, result.music, "Automatic One-File Separation");
-        setStatus("Separation complete. Result opened in a new tab.");
-      });
+        els.separateBtn.disabled = true;
+        els.loaderContainer.style.display = "block";
+        els.progressBarFill.style.width = "0%";
+        els.loaderPercent.textContent = "0%";
+        setStatus("Computing Independent Phase Masks...");
 
-      importLibraryExport();
+        const options = {
+          vocalPower: els.vocalPower.value,
+          vocalGate: els.vocalGate.value,
+          vocalLow: els.vocalLowCut.value,
+          vocalHigh: els.vocalHighCut.value,
+          musicCutPower: els.musicCutPower.value,
+          musicSmoothing: els.musicSmoothing.value,
+          selStart: selStart,
+          selEnd: selEnd
+        };
+
+        runSpectralSeparation(master, options,
+          (progress) => {
+            els.progressBarFill.style.width = `${progress}%`;
+            els.loaderPercent.textContent = `${progress}%`;
+          },
+          (result) => {
+            els.loaderContainer.style.display = "none";
+            openResultTab(result.vocals, result.music, "V3 Dual-Mask Algorithmic Extraction");
+            setStatus("Separation complete. Result opened in a new tab.");
+            els.separateBtn.disabled = false;
+          }
+        );
+      });
     })();
   </script>
 </body>
