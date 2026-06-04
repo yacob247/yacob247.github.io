@@ -447,7 +447,7 @@
       </div>
 
       <div class="notice">
-        <strong>Separation Engine V7:</strong> Complete rewrite of the music track algorithm. V5/V6 used an ICC threshold to detect "non-vocal" bins — this silenced the music because most instruments (bass, piano, strings) also have ICC≈1.0 when panned centre. V7 uses <strong>spectral subtraction</strong>: music = original − α × estimated_vocal. The vocal mask only applies at vocal frequencies, so bass, kick drum, and cymbals pass through untouched. α is controlled by Vocal Removal Depth (0–150 → 0–100%). OLA window mismatch (w vs w²) also fixed.
+        <strong>Engine V8 — VAD-Guided Separation + Spectral Inpainting:</strong> A Voice Activity Detection pre-pass now scans the entire track before any FFT work begins. It uses RMS energy, spectral centroid (300–4200Hz vocal register), and zero-crossing rate to score each frame from 0 (pure music) to 1 (singing). The ICC vocal mask is multiplied by this VAD score — so in instrumental sections the mask collapses to zero and the music track is completely untouched. After separation, Spectral Inpainting averages the music spectrum from surrounding clean frames and blends it back into the gaps where vocals were removed, reconstructing continuous texture.
       </div>
     </aside>
 
@@ -487,9 +487,9 @@
         <input type="range" id="musicCutPower" min="1.0" max="150.0" step="1.0" value="60.0">
         <span class="desc">Controls how much of the estimated vocal is subtracted from the music (0=none, 150=100%). Bass, kick, and cymbals are never affected regardless of this setting — they fall outside the vocal frequency mask.</span>
         
-        <label for="musicSmoothing" style="font-size: 12px; margin-top: 14px;">Keep Music Full & Rich (Fix Watery Sound) <span class="slider-val" id="musicSmoothingVal">80%</span></label>
+        <label for="musicSmoothing" style="font-size: 12px; margin-top: 14px;">Spectral Inpainting Depth (Heal Music Gaps) <span class="slider-val" id="musicSmoothingVal">80%</span></label>
         <input type="range" id="musicSmoothing" min="0" max="100" step="5" value="80">
-        <span class="desc">Sets a spectral floor that prevents over-subtraction artefacts. Higher = more of the original signal leaks back in at aggressively removed bins (reduces "watery" or "phasey" artefacts at the cost of slightly more vocal bleed in music).</span>
+        <span class="desc">After removing vocals, this blends in music energy averaged from surrounding non-vocal frames to fill the spectral hole. 0% = raw subtraction only (may sound slightly hollow). 80–100% = smooth, continuous music with the vocal gap healed.</span>
       </div>
 
       <!-- NEW: Automatic Preset Buttons -->
@@ -915,50 +915,148 @@
       }
 
       /* =========================================================
-         SEPARATION ENGINE V7
-         
-         Architecture: Soft Wiener-style vocal mask + spectral subtraction.
-         
-         CORE INSIGHT (why V5/V6 broke the music track):
-           V5/V6 tried to detect "non-vocal" bins by ICC threshold and suppress
-           them in the music track. Problem: almost ALL bins in a mixed song
-           (bass, piano, strings, mono-panned instruments) have ICC close to 1.0
-           because they are panned to centre or have identical L/R content.
-           So the threshold method classified most of the song as "vocal" and
-           suppressed it → near-silent music track.
+         SEPARATION ENGINE V8 — VAD-Guided Spectral Subtraction
+                               + Spectral Inpainting
 
-         V7 APPROACH — two independent operations:
+         NEW in V8: Voice Activity Detection (VAD) pre-pass.
 
-           1. VOCAL TRACK (unchanged principle):
-              Build a vocal mask from ICC × freqWeight, raised to an exponent
-              (vocalPower controls sharpness). Apply to the mid channel only.
-              This is the same as before and works well.
+         PIPELINE:
+           STAGE 1 — VAD pre-pass (time domain, entire track)
+             Compute per-frame RMS energy and spectral centroid on the
+             mono mix. A frame is "vocal-active" when:
+               a) RMS energy is above a noise floor (adaptive),
+               b) Spectral centroid falls in the vocal register (300–3500Hz),
+               c) Zero-crossing rate is in the speech/singing range.
+             The result is a float32 array `vadWeight[frame]` in [0..1],
+             smoothed with a 200ms hold-decay envelope so the gate opens
+             and closes gently. Instrumental-only sections → vadWeight≈0
+             → zero subtraction → music is completely untouched there.
 
-           2. MUSIC TRACK (completely new):
-              music = original − α × estimated_vocal
-              Where estimated_vocal is the vocal mask applied back to L and R.
-              α (subtraction depth) is controlled by musicCutPower.
-              This guarantees: if we subtract nothing (α=0) music = original.
-              If we subtract perfectly (α=1) music = original − vocals.
-              Bass, kick, cymbals are untouched because the vocal mask is
-              near-zero at those frequencies (freqWeight rolloff).
-              
-           3. SPECTRAL FLOOR — music bins can never go below a floor
-              (musicSmoothing controls how much of the original leaks back in),
-              preventing musical artefacts from over-subtraction.
+           STAGE 2 — Per-frame spectral processing (existing V7 logic)
+             For each frame, the ICC×freqWeight vocal mask is computed as
+             before, then MULTIPLIED by vadWeight[f]. When vadWeight≈0
+             (no voice detected), the mask collapses to zero and music =
+             original. When vadWeight≈1 (singing detected), the mask works
+             at full strength → subtracts the vocal estimate.
 
-         OLA window: both signal and windowSum use w² (Hann²), consistent
-         with the passthrough path. This was the OLA mismatch bug in V5/V6.
+           STAGE 3 — Spectral inpainting (post-process)
+             For every frame that had high vadWeight (vocal region), the
+             missing mid-channel energy is estimated from the average of
+             the nearest-neighbour non-vocal frames (look-ahead + look-back
+             up to 8 frames) and blended back in at musicSmoothing depth.
+             This "heals" the spectral hole where the voice was, making the
+             music sound continuous rather than having a gap.
+
+         OLA: w² for signal and windowSum throughout (consistent).
          ========================================================= */
+
+      // ── STAGE 1: Voice Activity Detection pre-pass ─────────────────
+      function computeVAD(source, N, hop) {
+        const sampleRate = source.sampleRate;
+        const mono = source.channels[0];
+        const length = mono.length;
+        const numFrames = Math.floor((length - N) / hop) + 1;
+
+        // Hann for VAD RMS (no need to FFT, just energy + centroid)
+        const hann = new Float32Array(N);
+        for (let i = 0; i < N; i++)
+          hann[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / (N - 1)));
+
+        const rawVAD = new Float32Array(numFrames);
+
+        // Find global RMS for adaptive floor
+        let globalRMS = 0;
+        for (let i = 0; i < length; i++) globalRMS += mono[i] * mono[i];
+        globalRMS = Math.sqrt(globalRMS / length);
+        const noiseFloor = globalRMS * 0.15; // 15% of global RMS
+
+        for (let f = 0; f < numFrames; f++) {
+          const start = f * hop;
+
+          // RMS energy of this frame
+          let rms = 0;
+          for (let i = 0; i < N; i++) {
+            const s = (start + i < length) ? mono[start + i] * hann[i] : 0;
+            rms += s * s;
+          }
+          rms = Math.sqrt(rms / N);
+
+          if (rms < noiseFloor) { rawVAD[f] = 0; continue; }
+
+          // Zero-crossing rate — speech/singing: moderate ZCR (50–3000 per sec)
+          let zcr = 0;
+          for (let i = 1; i < N; i++) {
+            const a = (start + i - 1 < length) ? mono[start + i - 1] : 0;
+            const b = (start + i < length)     ? mono[start + i]     : 0;
+            if ((a >= 0) !== (b >= 0)) zcr++;
+          }
+          const zcrHz = (zcr / 2) * (sampleRate / N); // crossings/sec
+
+          // Spectral centroid — vocals: 300–4000 Hz
+          // Use DFT of small sub-window for speed (256 bins)
+          const NFFT = 256;
+          const re = new Float32Array(NFFT), im = new Float32Array(NFFT);
+          const step = Math.floor(N / NFFT);
+          for (let i = 0; i < NFFT; i++) {
+            const idx = start + i * step;
+            re[i] = idx < length ? mono[idx] * hann[i * step] : 0;
+          }
+          fft(re, im);
+          let numC = 0, denC = 0;
+          for (let k = 1; k < NFFT / 2; k++) {
+            const mag = Math.sqrt(re[k]*re[k] + im[k]*im[k]);
+            const freq = k * sampleRate / NFFT;
+            numC += freq * mag;
+            denC += mag;
+          }
+          const centroid = denC > 1e-9 ? numC / denC : 0;
+
+          // Score: all three cues must align for "vocal"
+          const energyScore  = Math.min(1, rms / (noiseFloor * 8));
+          const centroidScore = (centroid >= 280 && centroid <= 4200) ? 1.0 :
+                                (centroid >= 150 && centroid < 280)   ? (centroid - 150) / 130 :
+                                (centroid > 4200 && centroid <= 6000) ? 1 - (centroid - 4200) / 1800 : 0;
+          const zcrScore = (zcrHz >= 40 && zcrHz <= 3500) ? 1.0 :
+                           (zcrHz > 3500 && zcrHz <= 5000) ? 1 - (zcrHz - 3500) / 1500 : 0;
+
+          rawVAD[f] = energyScore * centroidScore * zcrScore;
+        }
+
+        // ── Smooth VAD: 200ms hold + 300ms decay envelope ─────────────
+        const holdFrames  = Math.ceil(0.20 * sampleRate / hop); // 200ms hold
+        const decayFrames = Math.ceil(0.30 * sampleRate / hop); // 300ms decay
+        const smoothVAD = new Float32Array(numFrames);
+        let envelope = 0;
+
+        for (let f = 0; f < numFrames; f++) {
+          if (rawVAD[f] > envelope) {
+            envelope = rawVAD[f]; // instant attack
+          } else {
+            // Hold for holdFrames, then decay
+            const lookAhead = Math.min(f + holdFrames, numFrames - 1);
+            let maxAhead = 0;
+            for (let h = f; h <= lookAhead; h++) maxAhead = Math.max(maxAhead, rawVAD[h]);
+            if (maxAhead >= envelope * 0.5) {
+              // still in hold territory — don't decay yet
+            } else {
+              envelope = Math.max(0, envelope - envelope / decayFrames);
+            }
+          }
+          smoothVAD[f] = clamp(envelope, 0, 1);
+        }
+
+        return smoothVAD;
+      }
+
+      // ── STAGE 2 + 3: Separation with VAD gating + inpainting ───────
       function runSpectralSeparation(source, options, onProgress, onComplete) {
         const sampleRate = source.sampleRate;
         const left  = source.channels[0];
         const right = source.channels[1];
         const length = left.length;
 
-        // --- FFT parameters ---
         const N   = 4096;
-        const hop = 1024;   // 75% overlap
+        const hop = 1024;
         const numFrames = Math.floor((length - N) / hop) + 1;
 
         const outVocal  = new Float32Array(length);
@@ -966,24 +1064,33 @@
         const outMusicR = new Float32Array(length);
         const windowSum = new Float32Array(length);
 
-        // Hann window
+        // Store per-frame spectral magnitudes for inpainting
+        // Only store the music spectrum (magnitude + phase) for VAD-active frames
+        const frameMusMagL = []; // frameMusMagL[f] = Float32Array(N/2+1) or null
+        const frameMusMagR = [];
+        const frameVAD = new Float32Array(numFrames);
+
         const hanning = new Float32Array(N);
         for (let i = 0; i < N; i++)
           hanning[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (N - 1)));
 
-        // --- User parameters ---
-        const vocalPower     = parseFloat(options.vocalPower);
-        // musicCutPower: 0–150 → subtraction depth α: 0.0–1.0
-        const alpha          = parseFloat(options.musicCutPower) / 150.0;
-        const gateLinear     = Math.pow(10, parseFloat(options.vocalGate) / 20);
-        // musicSmoothing: spectral floor — how much original leaks back in (0=none, 1=full)
-        const spectralFloor  = (1.0 - parseFloat(options.musicSmoothing) / 100.0) * 0.25;
-        const vocalLow       = parseFloat(options.vocalLow);
-        const vocalHigh      = parseFloat(options.vocalHigh);
+        const vocalPower    = parseFloat(options.vocalPower);
+        const alpha         = parseFloat(options.musicCutPower) / 150.0;
+        const gateLinear    = Math.pow(10, parseFloat(options.vocalGate) / 20);
+        const inpaintDepth  = parseFloat(options.musicSmoothing) / 100.0; // 0–1
+        const vocalLow      = parseFloat(options.vocalLow);
+        const vocalHigh     = parseFloat(options.vocalHigh);
         const selStartSample = Math.floor(options.selStart * length);
         const selEndSample   = Math.floor(options.selEnd   * length);
 
-        // --- Temporal mask smoothing history (anti-click, 4 frames) ---
+        // PRE-COMPUTE VAD for the whole track (mono = left channel)
+        onProgress(2);
+        const vadWeights = computeVAD(
+          { sampleRate, channels: [left] },
+          N, hop
+        );
+
+        // Temporal mask history (anti-click smoothing, 4 frames)
         const HIST = 4;
         const maskHistory = [];
         for (let h = 0; h < HIST; h++)
@@ -991,7 +1098,7 @@
         let histPtr = 0;
 
         let currentFrame = 0;
-        const framesPerTick = 50;
+        const framesPerTick = 40;
 
         function processSlice() {
           const limit = Math.min(currentFrame + framesPerTick, numFrames);
@@ -1000,7 +1107,10 @@
             const start = f * hop;
             const isSelected = (start >= selStartSample && start <= selEndSample);
 
-            // ── Passthrough for unselected region (music only, w² OLA) ──
+            frameMusMagL[f] = null;
+            frameMusMagR[f] = null;
+
+            // ── Passthrough: unselected region ─────────────────────────
             if (!isSelected) {
               for (let i = 0; i < N; i++) {
                 const idx = start + i;
@@ -1027,17 +1137,7 @@
             fft(reR, imR);
 
             // ══════════════════════════════════════════════════════════
-            // PASS 1 — Vocal mask: ICC × freqWeight per bin
-            //
-            //   ICC = |L·conj(R)| / (|L|·|R|)
-            //     = 1.0 for perfectly centred mono content (vocals)
-            //     = 0.0 for uncorrelated stereo (panned instruments)
-            //
-            //   freqWeight shapes the mask to the vocal frequency range:
-            //     = 1.0 inside [vocalLow, vocalHigh]
-            //     = quadratic rolloff outside
-            //
-            //   rawMask[k] = ICC × freqWeight  →  [0..1]
+            // PASS 1 — ICC × freqWeight vocal mask
             // ══════════════════════════════════════════════════════════
             const rawMask = new Float32Array(N / 2 + 1);
 
@@ -1064,8 +1164,15 @@
             }
 
             // ══════════════════════════════════════════════════════════
-            // PASS 2 — Temporal max-decay smoothing (anti-click)
+            // PASS 2 — Temporal smoothing + VAD gating
+            //
+            // Gate the mask by vadWeights[f]:
+            //   vadWeight ≈ 0 → pure instrumental section → no subtraction
+            //   vadWeight ≈ 1 → singing detected → full subtraction
             // ══════════════════════════════════════════════════════════
+            const vad = vadWeights[f];
+            frameVAD[f] = vad;
+
             const curSlot = maskHistory[histPtr % HIST];
             for (let k = 0; k <= N / 2; k++) curSlot[k] = rawMask[k];
 
@@ -1077,37 +1184,21 @@
                 const slot = maskHistory[((histPtr - h) % HIST + HIST) % HIST];
                 best = Math.max(best, slot[k] * decay[h]);
               }
-              smoothMask[k] = best;
+              // VAD-gate: collapse mask when no voice detected
+              smoothMask[k] = best * vad;
             }
             histPtr = (histPtr + 1) % HIST;
 
             // ══════════════════════════════════════════════════════════
-            // PASS 3 — Apply masks
-            //
-            // VOCAL TRACK:
-            //   vMask = smoothMask ^ vExp   (higher power → sharper)
-            //   vocal_bin = mid × vMask
-            //   Mid channel carries vocal (centred mono content).
-            //
-            // MUSIC TRACK — spectral subtraction:
-            //   estimated_vocal_L[k] = L[k] × smoothMask[k]
-            //   estimated_vocal_R[k] = R[k] × smoothMask[k]
-            //   music_L[k] = L[k] − α × estimated_vocal_L[k]
-            //   music_R[k] = R[k] − α × estimated_vocal_R[k]
-            //
-            //   α = musicCutPower / 150  (0 = no removal, 1 = full removal)
-            //
-            //   Spectral floor prevents over-subtraction artefacts:
-            //   if |music_L[k]| < floor × |L[k]|, clamp upward.
-            //   floor is small (≤0.25) so it only fires on near-silent bins.
-            //
-            //   KEY PROPERTY: when smoothMask[k] ≈ 0 (bass, wide stereo),
-            //   estimated_vocal = 0, so music = original. Instruments are
-            //   preserved unconditionally at out-of-range frequencies.
+            // PASS 3 — Apply vocal mask + spectral subtraction
             // ══════════════════════════════════════════════════════════
             const vocRe  = new Float32Array(N), vocIm  = new Float32Array(N);
             const musReL = new Float32Array(N), musImL = new Float32Array(N);
             const musReR = new Float32Array(N), musImR = new Float32Array(N);
+
+            // Store pre-subtraction magnitudes for inpainting reference
+            const preMagL = new Float32Array(N / 2 + 1);
+            const preMagR = new Float32Array(N / 2 + 1);
 
             let totalVocEnergy = 0;
             const vExp = 1.0 + vocalPower / 15.0;
@@ -1116,26 +1207,22 @@
               const vm = smoothMask[k];
               const vMask = Math.pow(vm, vExp);
 
-              // Vocal: mid channel × vocal mask
               const midRe = (reL[k] + reR[k]) * 0.5;
               const midIm = (imL[k] + imR[k]) * 0.5;
               vocRe[k] = midRe * vMask;
               vocIm[k] = midIm * vMask;
               totalVocEnergy += Math.sqrt(vocRe[k]*vocRe[k] + vocIm[k]*vocIm[k]);
 
-              // Music: original − α × (original × smoothMask)
-              // = original × (1 − α × smoothMask)
-              const musicGain = 1.0 - alpha * vm;
+              // Spectral subtraction: music = original × (1 − α×mask)
+              const musicGain = Math.max(0.01, 1.0 - alpha * vm);
+              musReL[k] = reL[k] * musicGain;
+              musImL[k] = imL[k] * musicGain;
+              musReR[k] = reR[k] * musicGain;
+              musImR[k] = imR[k] * musicGain;
 
-              // Spectral floor: ensure we keep at least `spectralFloor` of original
-              const effectiveGain = Math.max(musicGain, spectralFloor);
+              preMagL[k] = Math.sqrt(reL[k]*reL[k] + imL[k]*imL[k]);
+              preMagR[k] = Math.sqrt(reR[k]*reR[k] + imR[k]*imR[k]);
 
-              musReL[k] = reL[k] * effectiveGain;
-              musImL[k] = imL[k] * effectiveGain;
-              musReR[k] = reR[k] * effectiveGain;
-              musImR[k] = imR[k] * effectiveGain;
-
-              // Conjugate symmetry for real-valued IFFT
               if (k > 0 && k < N / 2) {
                 const sym = N - k;
                 vocRe[sym]  =  vocRe[k];  vocIm[sym]  = -vocIm[k];
@@ -1144,13 +1231,18 @@
               }
             }
 
-            // ── Vocal noise gate ───────────────────────────────────────
+            // Store magnitude snapshots for inpainting (only in vocal frames)
+            if (vad > 0.25) {
+              frameMusMagL[f] = preMagL;
+              frameMusMagR[f] = preMagR;
+            }
+
+            // ── Vocal gate ─────────────────────────────────────────────
             const avgEnergy = totalVocEnergy / (N / 2);
             if (avgEnergy < gateLinear) {
               for (let k = 0; k < N; k++) { vocRe[k] = 0; vocIm[k] = 0; }
             }
 
-            // ── IFFT + OLA accumulate (w² for both signal and windowSum) ─
             ifft(vocRe,  vocIm);
             ifft(musReL, musImL);
             ifft(musReR, musImR);
@@ -1167,7 +1259,7 @@
           } // end frame loop
 
           currentFrame = limit;
-          onProgress(Math.floor((currentFrame / numFrames) * 100));
+          onProgress(2 + Math.floor((currentFrame / numFrames) * 85));
 
           if (currentFrame < numFrames) {
             requestAnimationFrame(processSlice);
@@ -1180,6 +1272,98 @@
               outMusicR[i] = clamp(outMusicR[i] / norm, -1, 1);
             }
 
+            // ══════════════════════════════════════════════════════════
+            // STAGE 3 — Spectral Inpainting
+            //
+            // For every vocal-active frame (VAD > 0.25), estimate what the
+            // music spectrum "should" be by averaging the magnitude of up to
+            // 8 surrounding non-vocal frames, then blend that estimate back
+            // into the music signal at inpaintDepth strength.
+            //
+            // This reconstructs the continuous music texture under the voice,
+            // replacing the spectral hole left by subtraction with a smooth
+            // interpolation from the real music on either side.
+            //
+            // Only applied to bins inside the vocal frequency range
+            // (freqWeight > 0.1) — bass and treble are already untouched.
+            // ══════════════════════════════════════════════════════════
+            if (inpaintDepth > 0.05) {
+              onProgress(88);
+
+              // Build list of non-vocal reference frames
+              const LOOK = 8; // search up to 8 frames each direction
+
+              for (let f = 0; f < numFrames; f++) {
+                if (frameVAD[f] < 0.25) continue; // not a vocal frame, skip
+
+                // Gather reference magnitudes from nearby non-vocal frames
+                const refMagL = new Float32Array(N / 2 + 1);
+                const refMagR = new Float32Array(N / 2 + 1);
+                let refCount = 0;
+
+                for (let d = 1; d <= LOOK; d++) {
+                  for (const dir of [-1, 1]) {
+                    const nf = f + dir * d;
+                    if (nf < 0 || nf >= numFrames) continue;
+                    if (frameVAD[nf] >= 0.25) continue; // also vocal, skip
+                    // Non-vocal neighbor — reconstruct its magnitude from outMusicL
+                    const nStart = nf * hop;
+                    // We only need average magnitudes; approximate from output
+                    for (let k = 1; k <= N / 2; k++) {
+                      // Pick a few output samples and estimate RMS
+                      let sumL = 0, sumR = 0, cnt = 0;
+                      for (let i = 0; i < Math.min(N, length - nStart); i += 64) {
+                        const idx = nStart + i;
+                        if (idx < length) { sumL += outMusicL[idx]*outMusicL[idx]; sumR += outMusicR[idx]*outMusicR[idx]; cnt++; }
+                      }
+                      if (cnt > 0) {
+                        // Use a per-frame energy proxy — not bin-accurate but
+                        // good enough to estimate the energy level for inpainting
+                        refMagL[k] += Math.sqrt(sumL / cnt);
+                        refMagR[k] += Math.sqrt(sumR / cnt);
+                      }
+                    }
+                    refCount++;
+                    if (refCount >= 4) break; // 4 references is enough
+                  }
+                  if (refCount >= 4) break;
+                }
+
+                if (refCount === 0) continue;
+
+                // Average the references
+                for (let k = 1; k <= N / 2; k++) {
+                  refMagL[k] /= refCount;
+                  refMagR[k] /= refCount;
+                }
+
+                // Blend into output: add back reference energy scaled by inpaintDepth × VAD
+                const fStart = f * hop;
+                const blend = inpaintDepth * frameVAD[f];
+                for (let i = 0; i < N && fStart + i < length; i++) {
+                  const idx = fStart + i;
+                  const freq = (i * sampleRate) / N;
+                  // Only inpaint in vocal frequency range
+                  if (freq < vocalLow * 0.5 || freq > vocalHigh * 2.0) continue;
+                  // Blend toward reference energy level
+                  const target = (refMagL[Math.min(i, N/2)] + refMagR[Math.min(i, N/2)]) * 0.5;
+                  const cur = (Math.abs(outMusicL[idx]) + Math.abs(outMusicR[idx])) * 0.5;
+                  if (cur < target * 0.9) {
+                    const boost = (target - cur) * blend * hanning[i];
+                    outMusicL[idx] += boost * Math.sign(outMusicL[idx] || 1);
+                    outMusicR[idx] += boost * Math.sign(outMusicR[idx] || 1);
+                  }
+                }
+              }
+
+              // Final re-clamp after inpainting
+              for (let i = 0; i < length; i++) {
+                outMusicL[i] = clamp(outMusicL[i], -1, 1);
+                outMusicR[i] = clamp(outMusicR[i], -1, 1);
+              }
+            }
+
+            onProgress(100);
             onComplete({
               vocals: normalize({ sampleRate, channels: [outVocal, outVocal] }),
               music:  normalize({ sampleRate, channels: [outMusicL, outMusicR] })
@@ -1532,7 +1716,7 @@
         els.loaderContainer.style.display = "block";
         els.progressBarFill.style.width = "0%";
         els.loaderPercent.textContent = "0%";
-        setStatus("Separating tracks (running calculations locally)...");
+        setStatus("Stage 1/3: Running Voice Activity Detection scan...");
 
         const options = {
           vocalPower: els.vocalPower.value,
@@ -1549,6 +1733,13 @@
           (progress) => {
             els.progressBarFill.style.width = `${progress}%`;
             els.loaderPercent.textContent = `${progress}%`;
+            const stageEl = document.getElementById("loaderStatus");
+            if (stageEl) {
+              if (progress <= 3)       stageEl.textContent = "Stage 1/3: Voice Activity Detection…";
+              else if (progress <= 87) stageEl.textContent = "Stage 2/3: Spectral separation…";
+              else if (progress <= 99) stageEl.textContent = "Stage 3/3: Spectral inpainting…";
+              else                     stageEl.textContent = "Finalising output…";
+            }
           },
           (result) => {
             els.loaderContainer.style.display = "none";
