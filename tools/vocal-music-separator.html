@@ -447,7 +447,7 @@
       </div>
 
       <div class="notice">
-        <strong>Dynamic Correction V3:</strong> Computes independent phase-coherence masks for Vocals and Music, preserving instrument punch and avoiding hollow/watery phase cancellation.
+        <strong>Aggressive Engine V4:</strong> Overrides limits to forcefully cut out all vocals. Use the "Keep Music Full" slider to mathematically redeem and restore the volume in the carved-out sections.
       </div>
     </aside>
 
@@ -485,11 +485,11 @@
         
         <label for="musicCutPower" style="font-size: 12px;">Vocal Removal Depth <span class="slider-val" id="musicCutPowerVal">60.0</span></label>
         <input type="range" id="musicCutPower" min="1.0" max="150.0" step="1.0" value="60.0">
-        <span class="desc">How deeply the center vocal frequency is cut from the instrumental track. Scale up to 150 for near-absolute dynamic removal.</span>
+        <span class="desc">How deeply the center vocal frequency is cut from the instrumental track. Will eat into the music heavily to guarantee vocal destruction.</span>
         
         <label for="musicSmoothing" style="font-size: 12px; margin-top: 14px;">Keep Music Full & Rich (Fix Watery Sound) <span class="slider-val" id="musicSmoothingVal">80%</span></label>
         <input type="range" id="musicSmoothing" min="0" max="100" step="5" value="80">
-        <span class="desc">Amplifies stereo instruments and fills in sound gaps left by vocal removal, preventing a thin, hollow, or "flangy" sound.</span>
+        <span class="desc">Crucial: Acts as massive makeup gain. This amplifies the remaining stereo elements to perfectly redeem the volume that was lost when destroying the vocals.</span>
       </div>
 
       <div style="margin-top: 24px;">
@@ -869,7 +869,7 @@
       }
 
       /* =========================================================
-         CORRECTED & OPTIMIZED MID/SIDE (M/S) DSP ENGINE
+         AGGRESSIVE ENGINE V4 (Hard Cut + Massive Makeup Gain)
          ========================================================= */
       function runSpectralSeparation(source, options, onProgress, onComplete) {
         const sampleRate = source.sampleRate;
@@ -894,7 +894,7 @@
         const vocalPower = parseFloat(options.vocalPower);
         const musicCutPower = parseFloat(options.musicCutPower); 
         const gateLinear = Math.pow(10, parseFloat(options.vocalGate) / 20); 
-        const musicSmoothing = parseFloat(options.musicSmoothing) / 100.0;
+        const musicSmoothing = parseFloat(options.musicSmoothing); // Using as heavy multiplier
         const vocalLow = parseFloat(options.vocalLow);
         const vocalHigh = parseFloat(options.vocalHigh);
         const selStartSample = Math.floor(options.selStart * length);
@@ -962,16 +962,17 @@
                  freqWeight = Math.max(0, 1.0 - (freq - vocalHigh) / 2000.0);
               }
 
-              // --- FIXED: CLEAN VOCAL REMOVAL WITH NO FLANGEY ARTIFACTS ---
-              // Squares coherence to surgically capture vocal energy panned exactly dead center.
-              const vocalSuppressMask = Math.pow(coherence, 2.0) * freqWeight;
+              // --- AGGRESSIVE VOCAL REMOVAL (Eats into music) ---
+              // Uses a deep fractional exponent based on the slider to heavily penalize center frequencies
+              const cutStrength = musicCutPower / 10.0;
+              const mCutExp = 1.0 / (1.0 + cutStrength);
+              const vocalSuppressMask = Math.pow(coherence, mCutExp) * freqWeight;
               
-              // Map the music slider value safely to linear attenuation depth (0.0 to 1.0)
-              const attenuationFactor = clamp(musicCutPower / 150.0, 0, 1);
-              const finalMidMask = 1.0 - (vocalSuppressMask * attenuationFactor);
+              // This acts as a harsh wall. Center gets completely obliterated.
+              const finalMidMask = 1.0 - vocalSuppressMask;
 
-              // --- VOCALS (Perfect Center Isolation) ---
-              const vExp = 1.0 + (vocalPower / 10.0);
+              // --- AGGRESSIVE VOCAL ISOLATION ---
+              const vExp = 1.0 + (vocalPower / 5.0); 
               const vocalExtractMask = Math.pow(coherence, vExp) * freqWeight;
 
               const vBinRe = midRe * vocalExtractMask;
@@ -981,19 +982,21 @@
               vocRe[k] = vBinRe;
               vocIm[k] = vBinIm;
 
-              // --- MUSIC (Balanced Mid/Side Reconstruction & Smooth Side Expansion) ---
+              // --- MUSIC (Aggressive Suppression & Aggressive Volume Redemption) ---
               const suppressedMidRe = midRe * finalMidMask;
               const suppressedMidIm = midIm * finalMidMask;
 
-              // Tame backfill scaling coefficients to eradicate hollow, watery, phase-cancelled artifacts
-              const sideCompensateGain = 1.0 + (vocalSuppressMask * musicSmoothing * 0.4);
-              const makeupMidGain = 1.0 + (vocalSuppressMask * musicSmoothing * 0.2);
+              // Massive Makeup Gain: Uses the "smoothing" slider to multiply the volume 
+              // of the remaining non-vocal elements specifically where the mask ate into the track.
+              // If set to 100%, it applies a massive 6x multiplier (1 + 5) to redeem the lost volume.
+              const aggressiveSmoothing = musicSmoothing / 20.0; 
+              const compensateGain = 1.0 + (vocalSuppressMask * aggressiveSmoothing);
 
-              const backfilledSideRe = sideRe * sideCompensateGain;
-              const backfilledSideIm = sideIm * sideCompensateGain;
+              const backfilledSideRe = sideRe * compensateGain;
+              const backfilledSideIm = sideIm * compensateGain;
 
-              const smoothMidRe = suppressedMidRe * makeupMidGain;
-              const smoothMidIm = suppressedMidIm * makeupMidGain;
+              const smoothMidRe = suppressedMidRe * compensateGain;
+              const smoothMidIm = suppressedMidIm * compensateGain;
 
               // Reconstruct stereo channels: L = Mid + Side, R = Mid - Side
               musReL[k] = smoothMidRe + backfilledSideRe;
