@@ -31,6 +31,8 @@
       font-size: 14px;
       margin: 0;
       min-height: 100vh;
+      display: flex;
+      flex-direction: column;
     }
 
     button, input, select { font: inherit; }
@@ -103,6 +105,12 @@
     }
 
     .button.primary:hover { background: var(--blue-dark); }
+    
+    .button.green {
+      background: var(--green);
+      border-color: var(--green);
+      color: #fff;
+    }
 
     .button:disabled {
       cursor: not-allowed;
@@ -114,6 +122,7 @@
       gap: 16px;
       grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
       padding: 16px;
+      align-items: start;
     }
 
     .panel {
@@ -227,10 +236,104 @@
       margin-top: 16px;
     }
 
-    @media (max-width: 860px) {
+    /* Playground / Results Area Styles */
+    .playground-area {
+      padding: 0 16px 32px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .result-card {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .result-header {
+      background: #f6f8fa;
+      border-bottom: 1px solid var(--line);
+      padding: 12px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .result-header h3 {
+      margin: 0;
+      font-size: 15px;
+      color: var(--ink);
+    }
+    
+    .result-header .tag {
+      font-size: 11px;
+      background: #e1e4e6;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: normal;
+      color: var(--muted);
+    }
+
+    .track-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1px;
+      background: var(--line);
+    }
+
+    .track-col {
+      background: #fff;
+      padding: 16px;
+    }
+
+    .track-title {
+      font-weight: 600;
+      margin-bottom: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .track-canvas {
+      width: 100%;
+      height: 120px;
+      background: #0d1117;
+      border-radius: 4px;
+      display: block;
+      margin-bottom: 12px;
+    }
+
+    .track-controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+      background: #f6f8fa;
+      padding: 8px;
+      border-radius: 4px;
+      border: 1px solid #e1e4e6;
+    }
+
+    .track-controls input[type="range"] {
+      flex: 1;
+      margin: 0;
+    }
+
+    .track-audio {
+      width: 100%;
+      height: 36px;
+      outline: none;
+    }
+
+    @media (max-width: 900px) {
       .topbar { align-items: flex-start; flex-direction: column; padding: 12px; }
       .workspace { grid-template-columns: 1fr; padding: 12px; }
       .button, .button-row { width: 100%; }
+      .track-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -238,8 +341,7 @@
   <header class="topbar">
     <a class="brand" href="index.html"><span class="brand-mark">S</span><span>Advanced Spectro-Separator</span></a>
     <div class="button-row">
-      <a class="button" href="index.html">Tools</a>
-      <a class="button" href="the-new-project.html">Suite Home</a>
+      <a class="button" href="#playgroundArea">↓ View Playground</a>
       <a class="button" href="media-library.html">Audio Library</a>
     </div>
   </header>
@@ -262,12 +364,20 @@
         <label style="font-size: 13px; margin-bottom: 4px;">Target Processing Region</label>
         <span class="desc" style="margin-bottom: 8px;">Highlight the section to process. Unselected areas will bypass separation (Vocals will be silent, Music will remain original).</span>
         <canvas id="mainWaveform" height="80" style="width: 100%; height: 80px; background: #f6f8fa; border: 1px solid var(--line); border-radius: 4px; cursor: crosshair; display: block;"></canvas>
+        
         <div style="display: flex; justify-content: space-between; font-size: 11px; font-weight: 600; margin-top: 6px; color: var(--muted);">
           <span id="waveStartText">0:00</span>
           <span id="waveSelectedText" style="color: var(--blue);">Full Track Selected</span>
           <span id="waveEndText">0:00</span>
         </div>
-        <button id="resetWaveBtn" class="button" style="margin-top: 10px; width: 100%; font-size: 11px; min-height: 26px; padding: 4px;">Reset Selection to Full Track</button>
+
+        <!-- Interactive Preview Controls -->
+        <div style="display: flex; gap: 8px; margin-top: 10px;">
+          <button id="playPreviewBtn" class="button" style="flex: 1; font-size: 11px; min-height: 28px; padding: 4px;" disabled>▶ Play Selection</button>
+          <button id="stopPreviewBtn" class="button" style="flex: 1; font-size: 11px; min-height: 28px; padding: 4px;" disabled>⏹ Stop</button>
+        </div>
+
+        <button id="resetWaveBtn" class="button" style="margin-top: 8px; width: 100%; font-size: 11px; min-height: 26px; padding: 4px;">Reset Selection to Full Track</button>
       </div>
 
       <div class="loader-container" id="loaderContainer">
@@ -296,9 +406,10 @@
         <label style="font-size: 14px; color: var(--blue-dark);">🎤 Vocal Extraction (Center Isolation)</label>
         <span class="desc" style="margin-bottom: 12px;">Parameters dictating what gets strictly pulled into the Vocal track.</span>
         
-        <label for="vocalPower" style="font-size: 12px;">Isolation Strength <span class="slider-val" id="vocalPowerVal">6.0</span></label>
-        <input type="range" id="vocalPower" min="1.0" max="15.0" step="0.5" value="6.0">
-        <span class="desc">Higher values aggressively eliminate instruments, forcing only perfect center signals into the vocals.</span>
+        <!-- Scaled to 150 -->
+        <label for="vocalPower" style="font-size: 12px;">Isolation Strength <span class="slider-val" id="vocalPowerVal">60.0</span></label>
+        <input type="range" id="vocalPower" min="1.0" max="150.0" step="1.0" value="60.0">
+        <span class="desc">Higher values aggressively eliminate instruments, forcing only perfect center signals into the vocals. Range extended to 150.0 for extreme parsing.</span>
         
         <label for="vocalGate" style="font-size: 12px; margin-top: 14px;">Noise Gate Threshold <span class="slider-val" id="vocalGateVal">-55 dB</span></label>
         <input type="range" id="vocalGate" min="-80" max="-20" step="1" value="-55">
@@ -317,9 +428,10 @@
         <label style="font-size: 14px; color: var(--green);">🎸 Music Extraction (Vocal Suppression)</label>
         <span class="desc" style="margin-bottom: 12px;">Parameters dictating how deeply the center channel is cut from the Music track.</span>
         
-        <label for="musicCutPower" style="font-size: 12px;">Suppression Strength <span class="slider-val" id="musicCutPowerVal">6.0</span></label>
-        <input type="range" id="musicCutPower" min="1.0" max="15.0" step="0.5" value="6.0">
-        <span class="desc">How deep to punch the hole in the music track to remove the vocals. Controlled independently from vocal extraction.</span>
+        <!-- Scaled to 150 -->
+        <label for="musicCutPower" style="font-size: 12px;">Suppression Strength <span class="slider-val" id="musicCutPowerVal">60.0</span></label>
+        <input type="range" id="musicCutPower" min="1.0" max="150.0" step="1.0" value="60.0">
+        <span class="desc">How deep to punch the hole in the music track to remove the vocals. Range extended to 150.0 for near-absolute dynamic removal.</span>
         
         <label for="musicSmoothing" style="font-size: 12px; margin-top: 14px;">Dynamic Backfill & Smoothing <span class="slider-val" id="musicSmoothingVal">80%</span></label>
         <input type="range" id="musicSmoothing" min="0" max="100" step="5" value="80">
@@ -331,6 +443,11 @@
       </div>
     </section>
   </main>
+
+  <!-- Inline Playground for Results and Downloads -->
+  <section class="playground-area" id="playgroundArea">
+    <!-- Dynamically injected Result Cards will appear here -->
+  </section>
 
   <script>
     (() => {
@@ -349,7 +466,9 @@
         waveSelectedText: document.getElementById("waveSelectedText"),
         resetWaveBtn: document.getElementById("resetWaveBtn"),
 
-        // Vocal DSP
+        playPreviewBtn: document.getElementById("playPreviewBtn"),
+        stopPreviewBtn: document.getElementById("stopPreviewBtn"),
+
         vocalPower: document.getElementById("vocalPower"),
         vocalPowerVal: document.getElementById("vocalPowerVal"),
         vocalGate: document.getElementById("vocalGate"),
@@ -358,12 +477,15 @@
         vocalHighCut: document.getElementById("vocalHighCut"),
         vocalRangeVal: document.getElementById("vocalRangeVal"),
 
-        // Music DSP
         musicCutPower: document.getElementById("musicCutPower"),
         musicCutPowerVal: document.getElementById("musicCutPowerVal"),
         musicSmoothing: document.getElementById("musicSmoothing"),
-        musicSmoothingVal: document.getElementById("musicSmoothingVal")
+        musicSmoothingVal: document.getElementById("musicSmoothingVal"),
+
+        playgroundArea: document.getElementById("playgroundArea")
       };
+
+      let resultCounter = 0; // Tracks number of generations for IDs
 
       // UI Sync
       els.vocalPower.oninput = () => els.vocalPowerVal.textContent = parseFloat(els.vocalPower.value).toFixed(1);
@@ -385,6 +507,15 @@
       let selEnd = 1;
       let isDragging = false;
       let masterDuration = 0;
+
+      let audioCtx = null;
+      let previewSourceNode = null;
+      let previewBuffer = null;
+      let isPreviewPlaying = false;
+      let previewStartTime = 0;
+      let previewStartOffsetSec = 0;
+      let previewDurationSec = 0;
+      let animationFrameId = null;
 
       function setStatus(message) { els.statusText.textContent = message; }
       function clamp(value, min, max) { return Math.min(max, Math.max(min, value)); }
@@ -445,9 +576,29 @@
         
         ctx.fillStyle = "rgba(9, 105, 218, 0.1)";
         ctx.fillRect(xStart, 0, xEnd - xStart, height);
+
+        if (isPreviewPlaying) {
+          const elapsed = (audioCtx.currentTime - previewStartTime);
+          let currentSec = previewStartOffsetSec + elapsed;
+          if (currentSec > previewStartOffsetSec + previewDurationSec) {
+            currentSec = previewStartOffsetSec + previewDurationSec;
+          }
+          const playRatio = currentSec / masterDuration;
+          const playX = playRatio * width;
+          
+          ctx.strokeStyle = "#ff4500";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(playX, 0);
+          ctx.lineTo(playX, height);
+          ctx.stroke();
+
+          animationFrameId = requestAnimationFrame(drawMasterWaveform);
+        }
       }
 
       els.mainWaveform.addEventListener("mousedown", (e) => {
+        stopAudioPreview();
         const rect = els.mainWaveform.getBoundingClientRect();
         const x = (e.clientX - rect.left) / rect.width;
         selStart = Math.max(0, Math.min(1, x));
@@ -481,23 +632,94 @@
       });
 
       els.resetWaveBtn.addEventListener("click", () => {
+        stopAudioPreview();
         selStart = 0; selEnd = 1;
         updateWaveformText();
         drawMasterWaveform();
       });
 
       async function decodeBlob(blob) {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (audioCtx.state === 'suspended') {
+          await audioCtx.resume();
+        }
         const arrayBuffer = await blob.arrayBuffer();
-        const buffer = await ctx.decodeAudioData(arrayBuffer.slice(0));
-        await ctx.close();
+        const buffer = await audioCtx.decodeAudioData(arrayBuffer.slice(0));
+        
         const channels = [];
         for (let channel = 0; channel < buffer.numberOfChannels; channel += 1) {
           channels.push(new Float32Array(buffer.getChannelData(channel)));
         }
-        if (channels.length === 1) channels.push(new Float32Array(channels[0])); // Fake Stereo
+        if (channels.length === 1) channels.push(new Float32Array(channels[0]));
         return { sampleRate: buffer.sampleRate, channels };
       }
+
+      function buildPreviewBuffer(source) {
+        if (!audioCtx) return;
+        previewBuffer = audioCtx.createBuffer(2, source.channels[0].length, source.sampleRate);
+        previewBuffer.copyToChannel(source.channels[0], 0);
+        previewBuffer.copyToChannel(source.channels[1], 1);
+        
+        els.playPreviewBtn.disabled = false;
+        els.stopPreviewBtn.disabled = false;
+      }
+
+      function startAudioPreview() {
+        if (!audioCtx || !previewBuffer || !master) return;
+        stopAudioPreview();
+
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+
+        const startPct = Math.min(selStart, selEnd);
+        const endPct = Math.max(selStart, selEnd);
+        previewStartOffsetSec = startPct * masterDuration;
+        previewDurationSec = (endPct - startPct) * masterDuration;
+
+        if (previewDurationSec <= 0.05) return; 
+
+        previewSourceNode = audioCtx.createBufferSource();
+        previewSourceNode.buffer = previewBuffer;
+        previewSourceNode.connect(audioCtx.destination);
+        
+        previewSourceNode.start(0, previewStartOffsetSec, previewDurationSec);
+        previewStartTime = audioCtx.currentTime;
+        isPreviewPlaying = true;
+        
+        els.playPreviewBtn.textContent = "⏸ Pause Preview";
+
+        previewSourceNode.onended = () => {
+          if (isPreviewPlaying && (audioCtx.currentTime - previewStartTime >= previewDurationSec - 0.05)) {
+            stopAudioPreview();
+          }
+        };
+
+        drawMasterWaveform();
+      }
+
+      function stopAudioPreview() {
+        isPreviewPlaying = false;
+        if (animationFrameId) {
+          cancelAnimationFrame(animationFrameId);
+          animationFrameId = null;
+        }
+        if (previewSourceNode) {
+          try { previewSourceNode.stop(); } catch(e) {}
+          previewSourceNode = null;
+        }
+        els.playPreviewBtn.textContent = "▶ Play Selection";
+        drawMasterWaveform();
+      }
+
+      els.playPreviewBtn.addEventListener("click", () => {
+        if (isPreviewPlaying) stopAudioPreview();
+        else startAudioPreview();
+      });
+
+      els.stopPreviewBtn.addEventListener("click", () => {
+        stopAudioPreview();
+      });
 
       function fft(re, im) {
         const n = re.length;
@@ -551,8 +773,8 @@
         const right = source.channels[1];
         const length = left.length;
 
-        const N = 2048; // Window Size
-        const hop = 512; // Hop Size (75% Overlap)
+        const N = 2048;
+        const hop = 512;
         const numFrames = Math.floor((length - N) / hop) + 1;
 
         const outVocal = new Float32Array(length);
@@ -565,9 +787,8 @@
           hanning[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (N - 1)));
         }
 
-        // Fetch user algorithmic parameters
         const vocalPower = parseFloat(options.vocalPower);
-        const musicCutPower = parseFloat(options.musicCutPower); // NEW: Independent music cutting
+        const musicCutPower = parseFloat(options.musicCutPower); 
         const gateLinear = Math.pow(10, parseFloat(options.vocalGate) / 20); 
         const musicSmoothing = parseFloat(options.musicSmoothing) / 100.0;
         const vocalLow = parseFloat(options.vocalLow);
@@ -576,7 +797,7 @@
         const selEndSample = Math.floor(options.selEnd * length);
 
         let currentFrame = 0;
-        const framesPerTick = 120; // Chunk rendering
+        const framesPerTick = 120;
 
         function processSlice() {
           const limit = Math.min(currentFrame + framesPerTick, numFrames);
@@ -586,7 +807,6 @@
             const isSelected = (start >= selStartSample && start <= selEndSample);
 
             if (!isSelected) {
-              // Bypass FFT completely for unselected regions
               for (let i = 0; i < N; i++) {
                 const idx = start + i;
                 outMusicL[idx] += left[idx] * hanning[i] * hanning[i];
@@ -629,7 +849,6 @@
 
               const coherence = clamp((midMag - sideMag) / (midMag + 1e-8), 0, 1);
               
-              // Apply User-Defined Frequency Envelope
               const freq = (k * sampleRate) / N;
               let freqWeight = 1.0;
               if (freq < vocalLow) {
@@ -638,15 +857,10 @@
                  freqWeight = Math.max(0, 1.0 - (freq - vocalHigh) / 2000.0);
               }
 
-              // MASK 1: Vocal Extraction (Isolation)
               const vocalExtractMask = Math.pow(coherence, vocalPower) * freqWeight;
-              
-              // MASK 2: Music Extraction (Suppression)
-              // Calculated independently using the musicCutPower parameter
               const vocalSuppressMask = Math.pow(coherence, musicCutPower) * freqWeight;
               const finalMusicMask = 1.0 - vocalSuppressMask;
 
-              // Build Vocal Bins
               const vReBin = midRe * vocalExtractMask;
               const vImBin = midIm * vocalExtractMask;
               totalVocEnergy += Math.sqrt(vReBin * vReBin + vImBin * vImBin);
@@ -654,7 +868,6 @@
               vocRe[k] = vReBin;
               vocIm[k] = vImBin;
 
-              // Build Music Bins with Dynamic Backfill Smoothers
               const smoothL = 1.0 + (vocalSuppressMask * musicSmoothing * 1.5);
               const smoothR = 1.0 + (vocalSuppressMask * musicSmoothing * 1.5);
 
@@ -663,7 +876,6 @@
               musReR[k] = reR[k] * finalMusicMask * smoothR;
               musImR[k] = imR[k] * finalMusicMask * smoothR;
 
-              // Symmetry for Real FFT
               if (k > 0 && k < N / 2) {
                 const sym = N - k;
                 vocRe[sym] = vocRe[k]; vocIm[sym] = -vocIm[k];
@@ -672,7 +884,6 @@
               }
             }
 
-            // Apply Gate Threshold
             const avgEnergy = totalVocEnergy / (N / 2);
             if (avgEnergy < gateLinear) {
               for(let k = 0; k < N; k++) { vocRe[k] = 0; vocIm[k] = 0; }
@@ -775,77 +986,155 @@
         return result;
       }
 
-      function openResultTab(vocals, music, methodLabel) {
+      // Replaces "openResultTab" - Injects fully functional UI inline into Playground
+      function addResultToPlayground(vocals, music, configLabel) {
+        resultCounter++;
+        const idPrefix = `res_${resultCounter}`;
+
         const vocalBlob = projectToWav(vocals);
         const musicBlob = projectToWav(music);
         const vocalUrl = URL.createObjectURL(vocalBlob);
         const musicUrl = URL.createObjectURL(musicBlob);
-        const data = {
-          methodLabel, vocalUrl, musicUrl,
-          vocalPeaks: peaks(vocals), musicPeaks: peaks(music),
-          vocalName: "separated-vocals.wav", musicName: "separated-music.wav"
-        };
-        const tab = window.open("", "_blank");
-        if (!tab) {
-          setStatus("Popup blocked. Allow popups for this page, then run separation again.");
-          return;
-        }
-        tab.document.open();
-        tab.document.write(resultHtml(data));
-        tab.document.close();
-        setupResultTab(tab, data);
-      }
 
-      function resultHtml(data) {
-        return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Separated Tracks</title><style>
-          :root{--canvas:#f6f8fa;--panel:#fff;--ink:#24292f;--muted:#57606a;--line:#d0d7de;--blue:#0969da;--green:#1a7f37;--radius:6px}
-          *{box-sizing:border-box}body{background:var(--canvas);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans",Helvetica,Arial,sans-serif;font-size:14px;margin:0}
-          header{align-items:center;background:#24292f;color:#fff;display:flex;gap:12px;justify-content:space-between;padding:12px 24px}
-          main{display:grid;gap:16px;padding:16px}.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:0 8px 24px rgba(140,149,159,.2);padding:16px}
-          .tracks{display:grid;gap:16px;grid-template-columns:1fr 1fr}.row{display:flex;flex-wrap:wrap;gap:8px}.button,a.button{align-items:center;background:#f6f8fa;border:1px solid rgba(27,31,36,.15);border-radius:var(--radius);color:var(--ink);cursor:pointer;display:inline-flex;font-weight:600;min-height:34px;padding:6px 12px;text-decoration:none}.primary{background:var(--blue)!important;border-color:var(--blue)!important;color:#fff!important}.green{background:var(--green)!important;border-color:var(--green)!important;color:#fff!important}
-          canvas{background:#0d1117;border-radius:var(--radius);display:block;height:210px;width:100%}audio{margin-top:10px;width:100%}.muted{color:var(--muted)}label{font-weight:600}@media(max-width:800px){.tracks{grid-template-columns:1fr}header{align-items:flex-start;flex-direction:column}}
-        </style></head><body><header><strong>Separated Tracks</strong><span>${data.methodLabel}</span></header><main><section class="panel"><div class="row"><button class="button primary" id="playBoth">Play Together</button><button class="button" id="pauseBoth">Pause</button><button class="button" id="stopBoth">Stop</button><label><input id="vocalsOn" type="checkbox" checked> Vocals on</label><label><input id="musicOn" type="checkbox" checked> Music on</label></div><p class="muted">Use the toggles to hear vocals only, music only, or both together.</p></section><section class="tracks"><article class="panel"><h2>Vocals</h2><canvas id="vocalCanvas" width="900" height="260"></canvas><audio id="vocals" controls src="${data.vocalUrl}"></audio><p><a class="button green" download="${data.vocalName}" href="${data.vocalUrl}">Download Vocals</a></p></article><article class="panel"><h2>Music</h2><canvas id="musicCanvas" width="900" height="260"></canvas><audio id="music" controls src="${data.musicUrl}"></audio><p><a class="button green" download="${data.musicName}" href="${data.musicUrl}">Download Music</a></p></article></section></main></body></html>`;
-      }
+        const vPeaks = peaks(vocals);
+        const mPeaks = peaks(music);
+        
+        const timestamp = new Date().toLocaleTimeString();
 
-      function setupResultTab(tab, data) {
-        const doc = tab.document;
-        const vocals = doc.getElementById("vocals");
-        const music = doc.getElementById("music");
-        function draw(id, peakData, color) {
-          const canvas = doc.getElementById(id);
+        const cardHTML = `
+          <div class="result-card" id="card_${idPrefix}">
+            <div class="result-header">
+              <div>
+                <h3>Test ${resultCounter} <span class="tag">${timestamp}</span></h3>
+                <span style="font-size: 11px; color: var(--muted);">${configLabel}</span>
+              </div>
+              <div class="button-row">
+                <button class="button primary" id="playAll_${idPrefix}">▶ Play Together</button>
+                <button class="button" id="pauseAll_${idPrefix}">⏸ Pause</button>
+                <button class="button" id="stopAll_${idPrefix}">⏹ Stop</button>
+              </div>
+            </div>
+            
+            <div class="track-grid">
+              <!-- Vocal Track Column -->
+              <div class="track-col">
+                <div class="track-title">🎤 Vocals <a class="button green" style="padding: 2px 8px; font-size: 11px; min-height: 24px;" download="separated-vocals-${resultCounter}.wav" href="${vocalUrl}">⬇ Download</a></div>
+                <canvas class="track-canvas" id="canvasVoc_${idPrefix}" width="400" height="120"></canvas>
+                
+                <!-- Independent Editing/Testing Tools -->
+                <div class="track-controls">
+                  <span style="font-size: 12px; font-weight: bold; width: 30px;">Vol</span>
+                  <input type="range" id="volVoc_${idPrefix}" min="0" max="1" step="0.05" value="1">
+                  <button class="button" id="muteVoc_${idPrefix}" style="min-height: 24px; padding: 2px 8px; font-size: 11px;">Mute</button>
+                </div>
+                <audio id="audioVoc_${idPrefix}" src="${vocalUrl}" controls class="track-audio"></audio>
+              </div>
+
+              <!-- Music Track Column -->
+              <div class="track-col">
+                <div class="track-title">🎸 Music <a class="button green" style="padding: 2px 8px; font-size: 11px; min-height: 24px;" download="separated-music-${resultCounter}.wav" href="${musicUrl}">⬇ Download</a></div>
+                <canvas class="track-canvas" id="canvasMus_${idPrefix}" width="400" height="120"></canvas>
+                
+                <!-- Independent Editing/Testing Tools -->
+                <div class="track-controls">
+                  <span style="font-size: 12px; font-weight: bold; width: 30px;">Vol</span>
+                  <input type="range" id="volMus_${idPrefix}" min="0" max="1" step="0.05" value="1">
+                  <button class="button" id="muteMus_${idPrefix}" style="min-height: 24px; padding: 2px 8px; font-size: 11px;">Mute</button>
+                </div>
+                <audio id="audioMus_${idPrefix}" src="${musicUrl}" controls class="track-audio"></audio>
+              </div>
+            </div>
+          </div>
+        `;
+
+        // Prepend so the newest result is always at the top of the playground
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = cardHTML;
+        els.playgroundArea.prepend(wrapper.firstElementChild);
+
+        // Bind interactive elements
+        const audVoc = document.getElementById(`audioVoc_${idPrefix}`);
+        const audMus = document.getElementById(`audioMus_${idPrefix}`);
+        const btnPlayAll = document.getElementById(`playAll_${idPrefix}`);
+        const btnPauseAll = document.getElementById(`pauseAll_${idPrefix}`);
+        const btnStopAll = document.getElementById(`stopAll_${idPrefix}`);
+        
+        const volVoc = document.getElementById(`volVoc_${idPrefix}`);
+        const muteVoc = document.getElementById(`muteVoc_${idPrefix}`);
+        const volMus = document.getElementById(`volMus_${idPrefix}`);
+        const muteMus = document.getElementById(`muteMus_${idPrefix}`);
+
+        // Draw Peak Data inline
+        const drawPeaks = (canvasId, peakData, color) => {
+          const canvas = document.getElementById(canvasId);
           const ctx = canvas.getContext("2d");
-          ctx.fillStyle = "#0d1117"; ctx.fillRect(0, 0, canvas.width, canvas.height);
-          ctx.strokeStyle = color; ctx.lineWidth = 2;
-          const mid = canvas.height / 2; const amp = canvas.height * 0.42;
+          ctx.fillStyle = "#0d1117"; 
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.strokeStyle = color; 
+          ctx.lineWidth = 1.5;
+          const mid = canvas.height / 2; 
+          const amp = canvas.height * 0.45;
           ctx.beginPath();
           peakData.forEach((point, index) => {
             const x = index / Math.max(1, peakData.length - 1) * canvas.width;
-            ctx.moveTo(x, mid + point[0] * amp); ctx.lineTo(x, mid + point[1] * amp);
+            ctx.moveTo(x, mid + point[0] * amp); 
+            ctx.lineTo(x, mid + point[1] * amp);
           });
           ctx.stroke();
-        }
-        draw("vocalCanvas", data.vocalPeaks, "#58a6ff");
-        draw("musicCanvas", data.musicPeaks, "#7ee787");
-        doc.getElementById("playBoth").onclick = () => {
-          const time = Math.min(vocals.currentTime || 0, music.currentTime || 0);
-          vocals.currentTime = time; music.currentTime = time;
-          if (!vocals.muted) vocals.play();
-          if (!music.muted) music.play();
         };
-        doc.getElementById("pauseBoth").onclick = () => { vocals.pause(); music.pause(); };
-        doc.getElementById("stopBoth").onclick = () => {
-          vocals.pause(); music.pause();
-          vocals.currentTime = 0; music.currentTime = 0;
-        };
-        doc.getElementById("vocalsOn").onchange = (e) => vocals.muted = !e.target.checked;
-        doc.getElementById("musicOn").onchange = (e) => music.muted = !e.target.checked;
+
+        drawPeaks(`canvasVoc_${idPrefix}`, vPeaks, "#58a6ff"); // Blue for Vocals
+        drawPeaks(`canvasMus_${idPrefix}`, mPeaks, "#7ee787"); // Green for Music
+
+        // Track specific tool functionality (100% Real bindings)
+        volVoc.addEventListener("input", (e) => { audVoc.volume = e.target.value; });
+        volMus.addEventListener("input", (e) => { audMus.volume = e.target.value; });
+
+        muteVoc.addEventListener("click", () => {
+          audVoc.muted = !audVoc.muted;
+          muteVoc.style.background = audVoc.muted ? "#ffcccc" : "";
+          muteVoc.textContent = audVoc.muted ? "Unmute" : "Mute";
+        });
+
+        muteMus.addEventListener("click", () => {
+          audMus.muted = !audMus.muted;
+          muteMus.style.background = audMus.muted ? "#ffcccc" : "";
+          muteMus.textContent = audMus.muted ? "Unmute" : "Mute";
+        });
+
+        // Global sync tools
+        btnPlayAll.addEventListener("click", () => {
+          // Sync times dynamically based on which one the user scrubbed last, defaulting to shortest scrub
+          const time = Math.min(audVoc.currentTime || 0, audMus.currentTime || 0);
+          audVoc.currentTime = time; 
+          audMus.currentTime = time;
+          audVoc.play();
+          audMus.play();
+        });
+
+        btnPauseAll.addEventListener("click", () => {
+          audVoc.pause();
+          audMus.pause();
+        });
+
+        btnStopAll.addEventListener("click", () => {
+          audVoc.pause();
+          audMus.pause();
+          audVoc.currentTime = 0;
+          audMus.currentTime = 0;
+        });
       }
 
       els.masterInput.addEventListener("change", async () => {
         if (!els.masterInput.files[0]) return;
         setStatus("Decoding original mix...");
+        
+        stopAudioPreview();
+        
         master = await decodeBlob(els.masterInput.files[0]);
         
+        buildPreviewBuffer(master);
+
         els.waveformContainer.style.display = "block";
         els.mainWaveform.width = els.mainWaveform.offsetWidth || 400;
         masterDuration = master.channels[0].length / master.sampleRate;
@@ -855,12 +1144,14 @@
         updateWaveformText();
         drawMasterWaveform();
         
-        setStatus("Original mix loaded. Select a region or process full track.");
+        setStatus("Original mix loaded. Drag to highlight a region to hear/preview or process.");
         els.separateBtn.disabled = false;
       });
 
       els.separateBtn.addEventListener("click", () => {
         if (!master) return;
+        stopAudioPreview();
+
         els.separateBtn.disabled = true;
         els.loaderContainer.style.display = "block";
         els.progressBarFill.style.width = "0%";
@@ -885,9 +1176,18 @@
           },
           (result) => {
             els.loaderContainer.style.display = "none";
-            openResultTab(result.vocals, result.music, "V3 Dual-Mask Algorithmic Extraction");
-            setStatus("Separation complete. Result opened in a new tab.");
+            // Instead of a new tab, render directly into the playground area
+            addResultToPlayground(
+              result.vocals, 
+              result.music, 
+              `Vocals [Power: ${options.vocalPower}, Gate: ${options.vocalGate}dB] | Music [Suppression: ${options.musicCutPower}]`
+            );
+            
+            setStatus("Separation complete. Result added to playground below.");
             els.separateBtn.disabled = false;
+            
+            // Smoothly scroll down to show the user the new result
+            document.getElementById('playgroundArea').scrollIntoView({ behavior: 'smooth', block: 'start' });
           }
         );
       });
