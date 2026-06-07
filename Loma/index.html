@@ -374,9 +374,9 @@
 
         // Configuration targeting your specific Hugging Face compiled model defaults
         let systemConfig = {
-host: localStorage.getItem('envizion_host') || 'https://yacob-okour14342-llama-engine.hf.space',
-model: localStorage.getItem('envizion_model') || 'llama3.2',
-            sysystemPrompt: 'You are a fast, minimal code assistant. Reply with code only. No explanations, no comments, no preamble. Just the solution.',stemPrompt: 'You are the core AI Engine for an independent software development platform. Your primary directive is to write clean, secure, and production-ready code. Always skip conversational fluff and supply direct code blocks.',
+            host: localStorage.getItem('envizion_host') || 'https://yacob-okour14342-llama-engine.hf.space',
+            model: localStorage.getItem('envizion_model') || 'llama3.2',
+            systemPrompt: 'You are Gemini (specifically Gemini 3.5 Thinking), a highly sophisticated thinking AI, expert developer, and advanced technical architect. Prioritize absolute completeness, production-ready implementation, deep step-by-step planning (thinking), and secure structural design. Adapt intuitively to the developer\'s intent, maintain long-term context across conversational history, and craft robust outputs with elegant presentation.',
             geminiKey: localStorage.getItem('envizion_key') || ''
         };
 
@@ -457,28 +457,28 @@ model: localStorage.getItem('envizion_model') || 'llama3.2',
         }
 
         // Verify active remote tunnel or localhost connection status
-      async function verifyLocalOllamaConnection() {
-    const connectionDot = document.getElementById('connection-dot');
-    const connectionLabel = document.getElementById('connection-label');
-    if (!systemConfig.host) {
-        connectionDot.className = "h-2.5 w-2.5 rounded-full bg-yellow-500 animate-pulse";
-        connectionLabel.innerHTML = `<span class="text-yellow-400 font-semibold cursor-pointer" onclick="openWizardModal()">Setup Host</span>`;
-        return;
-    }
-    try {
-        const controller = new AbortController();
-        setTimeout(() => controller.abort(), 3500);
-        const cleanHost = systemConfig.host.replace(/\/$/, "");
-        const response = await fetch(`${cleanHost}/api/tags`, { method: 'GET', signal: controller.signal });
-        if (response.ok) {
-            connectionDot.className = "h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]";
-            connectionLabel.innerHTML = `Active: <span class="text-white font-semibold">${systemConfig.model}</span>`;
-        } else { throw new Error(); }
-    } catch (err) {
-        connectionDot.className = "h-2.5 w-2.5 rounded-full bg-red-500 animate-pulse";
-        connectionLabel.innerHTML = `<span class="text-red-400 font-semibold">Offline</span>`;
-    }
-}
+        async function verifyLocalOllamaConnection() {
+            const connectionDot = document.getElementById('connection-dot');
+            const connectionLabel = document.getElementById('connection-label');
+            if (!systemConfig.host) {
+                connectionDot.className = "h-2.5 w-2.5 rounded-full bg-yellow-500 animate-pulse";
+                connectionLabel.innerHTML = `<span class="text-yellow-400 font-semibold cursor-pointer" onclick="openWizardModal()">Setup Host</span>`;
+                return;
+            }
+            try {
+                const controller = new AbortController();
+                setTimeout(() => controller.abort(), 3500);
+                const cleanHost = systemConfig.host.replace(/\/$/, "");
+                const response = await fetch(`${cleanHost}/api/tags`, { method: 'GET', signal: controller.signal });
+                if (response.ok) {
+                    connectionDot.className = "h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]";
+                    connectionLabel.innerHTML = `Active: <span class="text-white font-semibold">${systemConfig.model}</span>`;
+                } else { throw new Error(); }
+            } catch (err) {
+                connectionDot.className = "h-2.5 w-2.5 rounded-full bg-red-500 animate-pulse";
+                connectionLabel.innerHTML = `<span class="text-red-400 font-semibold">Offline</span>`;
+            }
+        }
 
         function toggleCanvasVisibility(forcedState = null) {
             const canvasColumn = document.getElementById('canvas-column');
@@ -583,6 +583,9 @@ model: localStorage.getItem('envizion_model') || 'llama3.2',
             activeAttachments = [];
             renderFilePills();
 
+            // Store user message in conversational memory context
+            messageHistoryMemory.push({ role: 'user', content: compositePayload });
+
             await runOllamaOrCloudQuery(compositePayload);
         }
 
@@ -609,40 +612,48 @@ model: localStorage.getItem('envizion_model') || 'llama3.2',
             stream.scrollTop = stream.scrollHeight;
         }
 
-     async function runOllamaOrCloudQuery(promptText) {
-    renderChatBubble('assistant', 'Calculating...');
-    const lastBubble = document.querySelector('#chat-stream > div:last-child .output-response-zone');
-    try {
-        const cleanHost = systemConfig.host.replace(/\/$/, "");
-const response = await fetch(`${cleanHost}/api/chat`, {
-    mode: 'cors',
-                method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-body: JSON.stringify({
-    model: systemConfig.model,
-    messages: [
-        { role: 'system', content: systemConfig.systemPrompt },
-        { role: 'user', content: promptText }
-    ],
-    stream: false,
-    options: {
-        temperature: 0.3,
-        num_predict: 99999,
-        num_ctx: 2048
-    }
-})
-        });
-        if (!response.ok) throw new Error();
-        const data = await response.json();
-        const reply = data.message.content;
-        lastBubble.innerHTML = parseMarkdownResponse(reply);
-        analyzeOutputForCanvasExecution(reply);
-    } catch (err) {
-        lastBubble.innerHTML = `<span class="text-red-400 font-semibold">❌ Failed to reach HF Space. Make sure it is running.</span>`;
-    }
-}
+        async function runOllamaOrCloudQuery(promptText) {
+            renderChatBubble('assistant', 'Calculating...');
+            const lastBubble = document.querySelector('#chat-stream > div:last-child .output-response-zone');
+            try {
+                const cleanHost = systemConfig.host.replace(/\/$/, "");
+                
+                // Enforce proper initial system prompt in memory history block
+                if (messageHistoryMemory.length === 0 || messageHistoryMemory[0].role !== 'system') {
+                    messageHistoryMemory.unshift({ role: 'system', content: systemConfig.systemPrompt });
+                } else {
+                    messageHistoryMemory[0].content = systemConfig.systemPrompt;
+                }
 
-        
+                const response = await fetch(`${cleanHost}/api/chat`, {
+                    mode: 'cors',
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        model: systemConfig.model,
+                        messages: messageHistoryMemory, // Emulates unified historical memory
+                        stream: false,
+                        options: {
+                            temperature: 0.7,      // Balanced reasoning temperature
+                            num_predict: 8192,     // High-capacity output tokens
+                            num_ctx: 32768        // Deep context length mimicking Gemini size
+                        }
+                    })
+                });
+                if (!response.ok) throw new Error();
+                const data = await response.json();
+                const reply = data.message.content;
+
+                // Push assistant reply to conversational memory
+                messageHistoryMemory.push({ role: 'assistant', content: reply });
+
+                lastBubble.innerHTML = parseMarkdownResponse(reply);
+                analyzeOutputForCanvasExecution(reply);
+            } catch (err) {
+                lastBubble.innerHTML = `<span class="text-red-400 font-semibold">❌ Failed to reach HF Space. Make sure it is running.</span>`;
+            }
+        }
+
         function parseMarkdownResponse(text) {
             let formatted = escapeHtmlString(text);
             
@@ -706,6 +717,7 @@ body: JSON.stringify({
             }, 6000);
         }
 
+        // Modals
         function openWizardModal() {
             document.getElementById('wizard-modal').classList.remove('hidden');
         }
