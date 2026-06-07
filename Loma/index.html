@@ -185,7 +185,7 @@
             </div>
         </div>
 
-        <!-- Bottom User Profile Section (Upgraded to match circular Gemini Design) -->
+        <!-- Bottom User Profile Section (Gemini Design) -->
         <div class="p-4 border-t border-gemini-border/20 flex items-center justify-between bg-gemini-sidebar">
             <div class="flex items-center space-x-3 cursor-pointer group" onclick="window.toggleConfigSidebar()">
                 <div id="user-avatar" class="h-9 w-9 rounded-full bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center text-white font-bold text-xs shadow-md border border-white/10 overflow-hidden smooth-transition group-hover:scale-105">
@@ -205,7 +205,7 @@
     <!-- MAIN INTERACTIVE SPACE -->
     <main class="flex-1 flex overflow-hidden relative bg-gemini-bg md:rounded-l-3xl shadow-[-10px_0_30px_rgba(0,0,0,0.5)]">
 
-        <!-- COLLAPSIBLE CONFIGURATION OVERLAY (Upgraded with Real, fully-functional settings) -->
+        <!-- COLLAPSIBLE CONFIGURATION OVERLAY -->
         <aside id="config-sidebar" class="glass-menu fixed left-0 top-0 bottom-0 w-80 border-r border-gemini-border/50 z-50 transform -translate-x-full smooth-transition flex flex-col shadow-2xl rounded-r-3xl">
             <div class="p-6 border-b border-gemini-border/40 flex items-center justify-between no-select">
                 <h3 class="font-bold text-xs uppercase text-slate-300 tracking-wider flex items-center gap-2">
@@ -339,7 +339,7 @@
 
                         <!-- Right Action Items (Responsive wrapping) -->
                         <div class="flex items-center space-x-2 w-full sm:w-auto justify-between sm:justify-end gap-2">
-                            <!-- Model Dropdown Selector (Defaulted to Flash first as requested) -->
+                            <!-- Model Dropdown Selector -->
                             <div class="relative flex items-center bg-gemini-bg/80 rounded-full border border-gemini-border/40 hover:border-gemini-border smooth-transition flex-1 sm:flex-initial">
                                 <select id="model-selector" class="appearance-none bg-transparent text-indigo-300 text-xs font-semibold py-2 pl-4 pr-9 outline-none cursor-pointer h-10 w-full min-w-[150px]">
                                     <option value="flash" class="bg-gemini-sidebar text-slate-200" selected>⚡ Loma Flash 1</option>
@@ -488,7 +488,6 @@
             `;
         }
 
-        // Apply saved accent on boot
         const savedAccent = localStorage.getItem('envizion_accent') || 'indigo';
         window.applyAccentColor(savedAccent);
 
@@ -574,7 +573,6 @@
                     if (fileRes.ok) {
                         const parsedData = await fileRes.json();
                         if (parsedData.sessions) {
-                            // Merge local database with cloud storage priority
                             chatDatabase.sessions = { ...parsedData.sessions, ...chatDatabase.sessions };
                         }
                     }
@@ -593,7 +591,6 @@
         }
 
         async function syncDatabaseToDrive() {
-            // Always update local cached state regardless of Drive sync state
             localStorage.setItem('envizion_local_db', JSON.stringify(chatDatabase));
 
             if (!gDriveAccessToken) return;
@@ -726,7 +723,6 @@
             `).join('');
         }
 
-        // Smooth desktop and mobile sidebar collapsible action
         window.toggleSidebarCollapse = () => {
             const sidebar = document.getElementById('gemini-sidebar');
             const overlay = document.getElementById('mobile-overlay');
@@ -768,7 +764,6 @@
             triggerNotificationToast("Settings Updated", "Loma system configs compiled and applied.", "fa-check-circle", "bg-indigo-600");
         };
 
-        // Continuous Connection Polling
         async function verifyLocalOllamaConnection() {
             const connectionDot = document.getElementById('connection-dot');
             const connectionLabel = document.getElementById('connection-label');
@@ -869,6 +864,7 @@
             await triggerInference();
         };
 
+        // Refactored to return direct DOM node bindings, fully resolving targets across multiple requests
         function appendChatBubble(role, msg, isHistorical = false) {
             const stream = document.getElementById('chat-stream');
             const row = document.createElement('div');
@@ -885,7 +881,7 @@
 
             row.innerHTML = `
                 ${!isUser ? `<div class="h-10 w-10 rounded-2xl border border-gemini-border/30 flex items-center justify-center bg-gemini-bg shrink-0 shadow-sm mt-1">${icon}</div>` : ''}
-                <div class="${cardBg} rounded-[24px] p-5 shadow-lg max-w-3xl relative">
+                <div class="${cardBg} rounded-[24px] p-5 shadow-lg max-w-3xl relative w-full sm:w-auto">
                     <div class="text-sm ${textClass} leading-relaxed whitespace-pre-wrap output-response-zone font-sans">${contentHTML}</div>
                 </div>
                 ${isUser ? `<div class="h-10 w-10 rounded-2xl bg-indigo-600 flex items-center justify-center shrink-0 shadow-md mt-1">${icon}</div>` : ''}
@@ -893,6 +889,9 @@
 
             stream.appendChild(row);
             if (!isHistorical) stream.scrollTop = stream.scrollHeight;
+            
+            // Return reference directly for precise active streaming
+            return row.querySelector('.output-response-zone');
         }
 
         const MODEL_PROFILES = {
@@ -923,9 +922,9 @@
         };
 
         async function triggerInference() {
-            appendChatBubble('assistant', '');
+            // Bind element directly to eliminate bubble targeting issues
+            const activeZone = appendChatBubble('assistant', '');
             const chatStream = document.getElementById('chat-stream');
-            const lastBubble = chatStream.querySelector('div:last-child .output-response-zone');
             
             let session = chatDatabase.sessions[currentSessionId];
             if (!session) {
@@ -936,7 +935,14 @@
             const selectedModelMode = document.getElementById('model-selector')?.value || 'flash';
             const profile = MODEL_PROFILES[selectedModelMode] || MODEL_PROFILES.flash;
 
-            lastBubble.innerHTML = `<span class="streaming-cursor inline-block w-2 h-4 bg-indigo-400 rounded-sm animate-pulse align-middle"></span>`;
+            // Pre-structure the DOM node for lightning-fast appending without UI layout thrashing
+            activeZone.innerHTML = `
+                <div class="thinking-wrapper"></div>
+                <span class="answer-wrapper"><span class="streaming-cursor"></span></span>
+            `;
+
+            const thinkingWrapper = activeZone.querySelector('.thinking-wrapper');
+            const answerWrapper = activeZone.querySelector('.answer-wrapper');
 
             try {
                 const cleanHost = systemConfig.host.replace(/\/$/, "");
@@ -950,7 +956,6 @@
                     finalMessages = [{ role: 'system', content: activePrompt }, ...finalMessages];
                 }
 
-                // Inject dynamic parameters from Real Settings panel
                 const actualTemp = systemConfig.temperature || profile.options.temperature;
                 const actualPredict = systemConfig.maxTokens || profile.options.num_predict;
 
@@ -975,12 +980,14 @@
                 const decoder = new TextDecoder();
                 let rawAccumulated = '';
                 let buffer = '';
-                let pendingTokens = '';       
-                let isInsideThink = false;    
-                let thinkBuffer = '';         
-                let lastRenderTime = 0;       
-
-                lastBubble.innerHTML = '';
+                
+                // --- HIGH-SPEED TOKEN ANIMATOR QUEUE ---
+                // Stores raw characters and streams them smoothly onto the screen at exactly 60-80 TPS
+                let tokenQueue = [];
+                let renderLoopActive = true;
+                let isInsideThink = false;
+                let thinkBuffer = '';
+                let answerText = '';
 
                 const thinkingSteps = [
                     "Analyzing query patterns...",
@@ -990,56 +997,69 @@
                     "Drafting response structure..."
                 ];
 
-                const flushToScreen = () => {
-                    if (!pendingTokens) return;
+                // Buttery-smooth requestAnimationFrame typewriter loop
+                const animateTypewriter = () => {
+                    if (!renderLoopActive && tokenQueue.length === 0) return;
 
-                    if (selectedModelMode === 'flash') {
-                        const clean = rawAccumulated.replace(/<think>[\s\S]*?<\/think>/gi, '');
-                        lastBubble.textContent = clean;
-                    } else {
-                        let display = '';
-                        const stepIndex = Math.min(Math.floor(thinkBuffer.length / 150), thinkingSteps.length - 1);
-                        const currentStepText = thinkingSteps[stepIndex];
+                    // Speed config: Pop 4-5 characters per frame (~60-80 tokens per second equivalent)
+                    if (tokenQueue.length > 0) {
+                        const batchSize = Math.min(5, tokenQueue.length);
+                        for (let i = 0; i < batchSize; i++) {
+                            const char = tokenQueue.shift();
+                            rawAccumulated += char;
 
-                        if (isInsideThink && thinkBuffer) {
-                            display += `
-                            <div class="gemini-thought-container mb-3">
-                                <div class="flex items-center gap-2 mb-2 select-none text-accent font-medium text-xs">
-                                    <div class="flex items-center gap-1">
-                                        <span class="gemini-loading-dot"></span>
-                                        <span class="gemini-loading-dot"></span>
-                                        <span class="gemini-loading-dot"></span>
+                            // Handle thinking sequence routing
+                            if (rawAccumulated.endsWith('<think>')) {
+                                isInsideThink = true;
+                                continue;
+                            }
+                            if (rawAccumulated.endsWith('</think>')) {
+                                isInsideThink = false;
+                                // Collapse active thinking layout
+                                thinkingWrapper.innerHTML = `
+                                    <div class="mb-3">
+                                        <div onclick="window.toggleThoughtBox(this)" class="flex items-center justify-between bg-zinc-800/40 hover:bg-zinc-800/80 px-3 py-1.5 rounded-lg text-[11px] text-accent cursor-pointer select-none border border-gemini-border/20 smooth-transition">
+                                            <span class="font-medium flex items-center gap-1.5"><i class="fa-solid fa-brain text-[10px]"></i> View thought process</span>
+                                            <i class="fa-solid fa-chevron-down thought-chevron smooth-transition text-[9px]"></i>
+                                        </div>
+                                        <div class="hidden mt-2 p-3 bg-zinc-900/40 border-l-2 border-zinc-600 rounded-r-lg text-[11px] text-zinc-400 font-mono whitespace-pre-wrap leading-relaxed">${escapeHtmlString(thinkBuffer)}</div>
                                     </div>
-                                    <span>${currentStepText}</span>
-                                </div>
-                                <div class="text-[11px] text-[#9ca3af] font-mono whitespace-pre-wrap leading-relaxed">${thinkBuffer.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
-                            </div>`;
-                        } else if (thinkBuffer && !isInsideThink) {
-                            display += `
-                            <div class="mb-3">
-                                <div onclick="window.toggleThoughtBox(this)" class="flex items-center justify-between bg-zinc-800/40 hover:bg-zinc-800/80 px-3 py-1.5 rounded-lg text-[11px] text-accent cursor-pointer select-none border border-gemini-border/20 smooth-transition">
-                                    <span class="font-medium flex items-center gap-1.5"><i class="fa-solid fa-brain text-[10px]"></i> View thought process</span>
-                                    <i class="fa-solid fa-chevron-down thought-chevron smooth-transition text-[9px]"></i>
-                                </div>
-                                <div class="hidden mt-2 p-3 bg-zinc-900/40 border-l-2 border-zinc-600 rounded-r-lg text-[11px] text-zinc-400 font-mono whitespace-pre-wrap leading-relaxed">${thinkBuffer.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
-                            </div>`;
-                        }
+                                `;
+                                continue;
+                            }
 
-                        const answerSoFar = rawAccumulated
-                            .replace(/<think>[\s\S]*?<\/think>/gi, '')
-                            .replace(/<think>[\s\S]*/i, '')
-                            .trim();
+                            if (isInsideThink) {
+                                thinkBuffer += char;
+                                const stepIndex = Math.min(Math.floor(thinkBuffer.length / 150), thinkingSteps.length - 1);
+                                const currentStepText = thinkingSteps[stepIndex];
 
-                        if (answerSoFar) {
-                            display += `<span>${answerSoFar.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span>`;
+                                thinkingWrapper.innerHTML = `
+                                    <div class="gemini-thought-container mb-3">
+                                        <div class="flex items-center gap-2 mb-2 select-none text-accent font-medium text-xs">
+                                            <div class="flex items-center gap-1">
+                                                <span class="gemini-loading-dot"></span>
+                                                <span class="gemini-loading-dot"></span>
+                                                <span class="gemini-loading-dot"></span>
+                                            </div>
+                                            <span>${currentStepText}</span>
+                                        </div>
+                                        <div class="text-[11px] text-[#9ca3af] font-mono whitespace-pre-wrap leading-relaxed">${escapeHtmlString(thinkBuffer)}</div>
+                                    </div>
+                                `;
+                            } else {
+                                // Exclude raw think elements from showing in actual text node
+                                const cleanChar = char.replace('<think>','').replace('</think>','');
+                                answerText += cleanChar;
+                                answerWrapper.innerHTML = `${escapeHtmlString(answerText)}<span class="streaming-cursor"></span>`;
+                            }
                         }
-                        lastBubble.innerHTML = display;
+                        chatStream.scrollTop = chatStream.scrollHeight;
                     }
-
-                    lastBubble.innerHTML += `<span class="streaming-cursor"></span>`;
-                    chatStream.scrollTop = chatStream.scrollHeight;
-                    pendingTokens = '';
+                    requestAnimationFrame(animateTypewriter);
                 };
+
+                // Start typewriter animation instantly
+                requestAnimationFrame(animateTypewriter);
 
                 while (true) {
                     const { value, done } = await reader.read();
@@ -1053,28 +1073,15 @@
                         const trimmed = line.trim();
                         if (!trimmed) continue;
                         
-                        // Smart Token Extraction: Split compound JSON chunks instantly if packet coalescing occurs
                         try {
                             const chunk = JSON.parse(trimmed);
                             const token = chunk?.message?.content || '';
-                            if (!token) continue;
-
-                            rawAccumulated += token;
-                            pendingTokens += token;
-
-                            if (token.includes('<think>')) isInsideThink = true;
-                            if (token.includes('</think>')) isInsideThink = false;
-                            
-                            if (isInsideThink) {
-                                thinkBuffer += token.replace('<think>','');
-                            }
-
-                            const now = performance.now();
-                            if (now - lastRenderTime >= 32) {
-                                flushToScreen();
-                                lastRenderTime = now;
+                            if (token) {
+                                // Feed characters straight into animation queue
+                                tokenQueue.push(...token.split(''));
                             }
                         } catch (_) {
+                            // Split coalesced JSON packets if network pressure causes merge
                             const objects = trimmed.match(/\{.*?\}/g);
                             if (objects) {
                                 for (const obj of objects) {
@@ -1082,11 +1089,7 @@
                                         const chunk = JSON.parse(obj);
                                         const token = chunk?.message?.content || '';
                                         if (token) {
-                                            rawAccumulated += token;
-                                            pendingTokens += token;
-                                            if (token.includes('<think>')) isInsideThink = true;
-                                            if (token.includes('</think>')) isInsideThink = false;
-                                            if (isInsideThink) thinkBuffer += token.replace('<think>','');
+                                            tokenQueue.push(...token.split(''));
                                         }
                                     } catch(__){}
                                 }
@@ -1095,14 +1098,22 @@
                     }
                 }
 
-                flushToScreen();
+                // Halt the raw streaming feed & flush remaining items
+                renderLoopActive = false;
 
+                // Wait briefly for typewriter animation loop to finish popping tokens
+                while (tokenQueue.length > 0) {
+                    await new Promise(resolve => setTimeout(resolve, 10));
+                }
+
+                // Finalize layout rendering once stream is fully downloaded
                 let finalReply = rawAccumulated;
                 if (selectedModelMode === 'flash') {
                     finalReply = finalReply.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
                 }
 
-                lastBubble.innerHTML = parseMarkdownResponse(finalReply);
+                // Fully render complete Markdown layout
+                activeZone.innerHTML = parseMarkdownResponse(finalReply);
                 chatStream.scrollTop = chatStream.scrollHeight;
 
                 session.messages.push({ role: 'assistant', content: finalReply });
@@ -1112,7 +1123,7 @@
                 analyzeOutputForCanvasExecution(finalReply);
 
             } catch (err) {
-                lastBubble.innerHTML = `<span class="text-red-400 font-semibold"><i class="fa-solid fa-triangle-exclamation mr-2"></i>Failed to reach engine. Ensure the Ollama/HF tunnel is active and CORS is allowed.</span>`;
+                activeZone.innerHTML = `<span class="text-red-400 font-semibold"><i class="fa-solid fa-triangle-exclamation mr-2"></i>Failed to reach engine. Ensure the Ollama/HF tunnel is active and CORS is allowed.</span>`;
             }
         }
 
@@ -1175,7 +1186,6 @@
         }
 
         function analyzeOutputForCanvasExecution(text) {
-            // Guard Canvas Execution: Only trigger sandbox render if signed up/connected
             if (!gDriveAccessToken) return;
 
             const regex = /```html([\s\S]*?)```/i;
@@ -1316,7 +1326,6 @@
             document.getElementById('file-attached-dot').classList.add('hidden');
         };
 
-        // Track active custom user sessions
         onAuthStateChanged(auth, (user) => {
             if (user) {
                 updateDriveUIStatus(true, user.displayName, user.photoURL);
