@@ -10,6 +10,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Puter.js — free cloud AI, ChatGPT-speed streaming, no API key needed -->
+    <script src="https://js.puter.com/v2/"></script>
     
     <script>
         tailwind.config = {
@@ -134,12 +136,12 @@
         .streaming-cursor {
             display: inline-block;
             width: 2px;
-            height: 1em;
-            background: #818cf8;
+            height: 1.1em;
+            background: #a5b4fc;
             border-radius: 1px;
-            margin-left: 2px;
+            margin-left: 1px;
             vertical-align: text-bottom;
-            animation: cursorBlink 0.75s step-end infinite;
+            animation: cursorBlink 0.55s step-end infinite;
         }
     </style>
 </head>
@@ -283,9 +285,21 @@
                     <div class="flex flex-col sm:flex-row items-center justify-between mt-3 pt-3 px-1 gap-3 border-t border-gemini-border/10">
                         <!-- Left Action Items -->
                         <div class="flex space-x-2 items-center w-full sm:w-auto justify-start">
-                            <button class="h-10 w-10 rounded-full hover:bg-gemini-card/80 text-slate-400 hover:text-white smooth-transition flex items-center justify-center border border-transparent hover:border-gemini-border/40" title="Attachments">
+                            <!-- Hidden real file input -->
+                            <input type="file" id="file-upload-input" accept=".txt,.md,.csv,.json,.js,.py,.html,.css,.ts,.pdf" class="hidden" onchange="window.handleFileAttachment(this)">
+                            <!-- Attachment Button -->
+                            <button onclick="document.getElementById('file-upload-input').click()" class="h-10 w-10 rounded-full hover:bg-gemini-card/80 text-slate-400 hover:text-white smooth-transition flex items-center justify-center border border-transparent hover:border-gemini-border/40 relative" title="Attach file">
                                 <i class="fa-solid fa-paperclip text-sm"></i>
+                                <span id="file-attached-dot" class="absolute top-1 right-1 h-2 w-2 rounded-full bg-emerald-400 hidden"></span>
                             </button>
+                            <!-- Attached file pill (shown when file is loaded) -->
+                            <div id="attached-file-pill" class="hidden items-center gap-1.5 px-2.5 py-1 bg-indigo-900/50 border border-indigo-700/50 rounded-full text-[10px] text-indigo-300 font-medium max-w-[120px]">
+                                <i class="fa-solid fa-file-lines text-[9px]"></i>
+                                <span id="attached-file-name" class="truncate"></span>
+                                <button onclick="window.clearFileAttachment()" class="ml-1 text-slate-400 hover:text-red-400">
+                                    <i class="fa-solid fa-xmark text-[9px]"></i>
+                                </button>
+                            </div>
                             <!-- Microphone Button -->
                             <button id="mic-btn" onclick="window.toggleMicrophone()" class="h-10 w-10 rounded-full hover:bg-gemini-card/80 text-slate-400 hover:text-white smooth-transition flex items-center justify-center border border-transparent hover:border-gemini-border/40 relative animate-none" title="Voice Input">
                                 <i class="fa-solid fa-microphone text-sm"></i>
@@ -695,15 +709,22 @@ model: localStorage.getItem('envizion_model') || 'llama3.2',
             input.value = '';
             input.style.height = 'auto';
 
+            // If a file is attached, prepend its content to the message
+            let finalUserMsg = userMsg;
+            if (attachedFileContent) {
+                finalUserMsg = `Here is the file "${attachedFileName}":\n\`\`\`\n${attachedFileContent}\n\`\`\`\n\n${userMsg}`;
+                window.clearFileAttachment(); // auto-clear after sending
+            }
+
             const session = chatDatabase.sessions[currentSessionId];
             if (session.messages.length === 1) {
                 session.title = userMsg.length > 25 ? userMsg.substring(0, 25) + "..." : userMsg;
                 document.getElementById('current-chat-title').innerText = session.title;
             }
 
-            appendChatBubble('user', userMsg);
-            
-            session.messages.push({ role: 'user', content: userMsg });
+            appendChatBubble('user', userMsg); // show clean version in UI
+
+            session.messages.push({ role: 'user', content: finalUserMsg }); // send full version to model
             session.updated = Date.now();
             
             syncDatabaseToDrive();
@@ -798,11 +819,60 @@ model: localStorage.getItem('envizion_model') || 'llama3.2',
                 // ── REAL STREAMING: read the body as it arrives ──
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
-                let rawAccumulated = '';   // raw text from model (may include <think> tags)
-                let buffer = '';           // leftover partial JSON line
+                let rawAccumulated = '';
+                let buffer = '';
+                let pendingTokens = '';       // tokens not yet flushed to screen
+                let isInsideThink = false;    // track if we're mid <think> block
+                let thinkBuffer = '';         // accumulate think content separately
+                let lastRenderTime = 0;       // throttle re-renders
 
-                // Clear the cursor — first token is about to arrive
+                // Clear cursor, ready to stream
                 lastBubble.innerHTML = '';
+
+                // ── RENDER THROTTLE: flush to DOM max every 32ms (≈30fps) ──
+                // This means we batch tokens together visually instead of 
+                // hammering the DOM on every single token — much faster
+                const flushToScreen = () => {
+                    if (!pendingTokens) return;
+
+                    // For flash: just append raw text node — zero parsing overhead
+                    if (selectedModelMode === 'flash') {
+                        // Strip any stray think tags inline
+                        const clean = rawAccumulated.replace(/<think>[\s\S]*?<\/think>/gi, '');
+                        lastBubble.textContent = clean;
+                    } else {
+                        // For thinking/pro: show think block live + raw answer text below
+                        // Only do full markdown parse at end — during stream just show plain text
+                        // so the CPU isn't re-parsing the whole response on every token
+                        let display = '';
+                        if (isInsideThink && thinkBuffer) {
+                            display += `<div class="thinking-block thinking-block-live">
+                                <div class="thinking-block-header"><i class="fa-solid fa-brain fa-beat-fade"></i> Thinking...</div>
+                                <div>${thinkBuffer.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+                            </div>`;
+                        } else if (thinkBuffer && !isInsideThink) {
+                            // Think block is complete — show it collapsed
+                            display += `<div class="thinking-block">
+                                <div class="thinking-block-header"><i class="fa-solid fa-brain"></i> Loma Thinking</div>
+                                <div>${thinkBuffer.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+                            </div>`;
+                        }
+                        // Answer portion: just raw text during stream, no heavy markdown parse
+                        const answerSoFar = rawAccumulated
+                            .replace(/<think>[\s\S]*?<\/think>/gi, '')
+                            .replace(/<think>[\s\S]*/i, '')
+                            .trim();
+                        if (answerSoFar) {
+                            display += `<span>${answerSoFar.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span>`;
+                        }
+                        lastBubble.innerHTML = display;
+                    }
+
+                    // Blinking cursor at end
+                    lastBubble.innerHTML += `<span class="streaming-cursor"></span>`;
+                    chatStream.scrollTop = chatStream.scrollHeight;
+                    pendingTokens = '';
+                };
 
                 while (true) {
                     const { value, done } = await reader.read();
@@ -810,7 +880,7 @@ model: localStorage.getItem('envizion_model') || 'llama3.2',
 
                     buffer += decoder.decode(value, { stream: true });
                     const lines = buffer.split('\n');
-                    buffer = lines.pop(); // last item may be incomplete
+                    buffer = lines.pop();
 
                     for (const line of lines) {
                         const trimmed = line.trim();
@@ -818,23 +888,29 @@ model: localStorage.getItem('envizion_model') || 'llama3.2',
                         try {
                             const chunk = JSON.parse(trimmed);
                             const token = chunk?.message?.content || '';
-                            if (token) {
-                                rawAccumulated += token;
+                            if (!token) continue;
 
-                                // Flash: strip any think tags live as tokens arrive
-                                let displayText = rawAccumulated;
-                                if (selectedModelMode === 'flash') {
-                                    displayText = displayText.replace(/<think>[\s\S]*?<\/think>/gi, '');
-                                }
+                            rawAccumulated += token;
+                            pendingTokens += token;
 
-                                // Live render — re-parse markdown on each chunk so user sees formatted output as it streams
-                                lastBubble.innerHTML = parseMarkdownResponse(displayText) +
-                                    `<span class="streaming-cursor inline-block w-1.5 h-4 bg-indigo-400/80 rounded-sm animate-pulse align-middle ml-0.5"></span>`;
-                                chatStream.scrollTop = chatStream.scrollHeight;
+                            // Track think block open/close so we can render it live
+                            if (token.includes('<think>')) isInsideThink = true;
+                            if (token.includes('</think>')) isInsideThink = false;
+                            if (isInsideThink) thinkBuffer += token.replace('<think>','');
+
+                            // ── Only flush to DOM every 32ms — batches tokens, feels smooth
+                            // but doesn't hammer the DOM 50x/sec ──
+                            const now = performance.now();
+                            if (now - lastRenderTime >= 32) {
+                                flushToScreen();
+                                lastRenderTime = now;
                             }
-                        } catch (_) { /* malformed partial JSON — skip */ }
+                        } catch (_) {}
                     }
                 }
+
+                // Final flush of any remaining tokens
+                flushToScreen();
 
                 // ── DONE STREAMING: finalize ──
                 let finalReply = rawAccumulated;
@@ -1001,10 +1077,52 @@ model: localStorage.getItem('envizion_model') || 'llama3.2',
             }
         };
 
-        // Keep HF Space awake - pings every 4 minutes
-setInterval(() => {
-    fetch('https://yacob-okour14342-llama-engine.hf.space/api/tags').catch(()=>{});
-}, 240000);
+        // ── FILE ATTACHMENT LOGIC ──────────────────────────────
+        let attachedFileContent = null;
+        let attachedFileName = null;
+
+        window.handleFileAttachment = async (input) => {
+            const file = input.files[0];
+            if (!file) return;
+
+            // Reset input so same file can be re-attached
+            input.value = '';
+
+            const maxSize = 500 * 1024; // 500KB limit — keeps context reasonable
+            if (file.size > maxSize) {
+                triggerNotificationToast("File too large", "Max 500KB. Try a smaller file or paste the key section.", "fa-triangle-exclamation", "bg-red-600");
+                return;
+            }
+
+            try {
+                const text = await file.text();
+                attachedFileContent = text;
+                attachedFileName = file.name;
+
+                // Show pill + green dot
+                document.getElementById('attached-file-pill').classList.remove('hidden');
+                document.getElementById('attached-file-pill').classList.add('flex');
+                document.getElementById('attached-file-name').innerText = file.name;
+                document.getElementById('file-attached-dot').classList.remove('hidden');
+
+                triggerNotificationToast("File attached", `${file.name} ready to send.`, "fa-file-lines", "bg-emerald-600");
+            } catch (err) {
+                triggerNotificationToast("Read error", "Could not read file.", "fa-triangle-exclamation", "bg-red-600");
+            }
+        };
+
+        window.clearFileAttachment = () => {
+            attachedFileContent = null;
+            attachedFileName = null;
+            document.getElementById('attached-file-pill').classList.add('hidden');
+            document.getElementById('attached-file-pill').classList.remove('flex');
+            document.getElementById('file-attached-dot').classList.add('hidden');
+        };
+
+        // Keep HF Space hot — ping every 20s so model never unloads from RAM
+        setInterval(() => {
+            fetch('https://yacob-okour14342-llama-engine.hf.space/api/tags').catch(()=>{});
+        }, 20000);
 
     </script>
 </body>
