@@ -1,9 +1,6 @@
 # ==============================================================================
 # 🚀 AUTOMATED OLLAMA GOOGLE COLAB HOSTER (WITH DIRECT HUGGING FACE GGUF DOWNLOAD)
 # ==============================================================================
-# Run this inside your Google Colab instance (with T4 GPU Runtime) to download your 
-# custom GGUF and run the model natively on Colab GPUs!
-# ==============================================================================
 
 import os
 import sys
@@ -12,62 +9,63 @@ import time
 import urllib.request
 import json
 
-HF_REPO = "Yacob-OKour14342/trained_rlhf_adapter-Q4_K_M-GGUF"
+HF_REPO = "Yacob-OKour14342/trained_rlhf_adapter"
 MODEL_ALIAS = "trained-rlhf-llama"
 DATASET_PATH = "my_rlhf_dataset.json"
+GIST_ID = "7e0d2a7fe8ee35a9f802e968c4f3537a"
+GITHUB_TOKEN = "YOUR_GITHUB_TOKEN_HERE"  # ← paste your token here
 
 print("==================================================================")
 print("📦 Preparing Dependencies for Secure Ollama GPU Instance on Colab")
 print("==================================================================\n")
 
-# 1. Install Hugging Face Hub CLI and dependencies
+# 1. Install dependencies
 print("⚡ Installing Hub Client Utilities & Hugging Face Libraries...")
-os.system("pip install -q huggingface_hub trl transformers accelerate datasets")
+os.system("pip install -q huggingface_hub trl transformers accelerate datasets pyngrok")
 
-# 2. Check and Run Optional Automated RLHF Finetuning Sequence on your Dataset
+# 2. Check dataset
 if os.path.exists(DATASET_PATH):
     print(f"✨ Detected local dataset '{DATASET_PATH}'!")
-    print("⏳ Auto-initiating RLHF Optimization sequence via Hugging Face TRL...")
-    # Simulate / pre-process an automated DPO or alignment sequence directly
     try:
         with open(DATASET_PATH, 'r') as f:
             sample_data = json.load(f)
             print(f"📊 Dataset verified with {len(sample_data)} custom human feedback rules.")
-            print("🚀 Alignment matrices mapped successfully.")
     except Exception as e:
         print(f"⚠️ Warning during RLHF pre-checks: {e}")
 else:
-    print("ℹ️ No 'my_rlhf_dataset.json' file found in current directory. Skipping local optimization.")
+    print("ℹ️ No dataset found. Skipping.")
 
-# 3. Download the custom compiled GGUF directly from Hugging Face Repo
+# 3. Download GGUF from Hugging Face
 print(f"\n📥 Finding GGUF Files inside Repository: {HF_REPO}...")
 try:
     from huggingface_hub import HfApi, hf_hub_download
     api = HfApi()
-    files = api.list_repo_files(repo_id=HF_REPO)
-    gguf_filename = [f for f in files if f.endswith(".gguf")][0]
+    files = list(api.list_repo_files(repo_id=HF_REPO))
+    gguf_files = [f for f in files if f.endswith(".gguf")]
+    if not gguf_files:
+        print("❌ No .gguf file found in repo. Please upload a quantized GGUF first.")
+        sys.exit(1)
+    gguf_filename = gguf_files[0]
     print(f"✅ Found GGUF file: {gguf_filename}")
-    
     print(f"⏳ Downloading GGUF weights to local Colab memory...")
     gguf_local_path = hf_hub_download(repo_id=HF_REPO, filename=gguf_filename)
     print(f"💾 Saved to: {gguf_local_path}")
 except Exception as e:
     print(f"❌ Failed to download from Hugging Face: {e}")
-    print("Please verify the Repository ID is public and accessible.")
     sys.exit(1)
 
-# 4. Install Ollama Linux binary locally on the container
+# 4. Install Ollama
 print("\n⚡ Installing Ollama CLI runtime (Linux)...")
 os.system("curl -fsSL https://ollama.com/install.sh | sh")
 
-# 5. Start Ollama Service with permissive CORS enabled
-print("\n🌐 Launching Ollama daemon in background with permissive CORS...")
+# 5. Start Ollama with open CORS
+print("\n🌐 Launching Ollama daemon...")
 env = os.environ.copy()
 env["OLLAMA_ORIGINS"] = "*"
 subprocess.Popen(["ollama", "serve"], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-time.sleep(4) # Wait for startup sequence to finish
+time.sleep(4)
 
-# 6. Build the custom Modelfile using the downloaded GGUF file
+# 6. Build Modelfile
 print("\n📝 Generating Modelfile for Ollama...")
 modelfile_content = f"""FROM {gguf_local_path}
 TEMPLATE \"\"\"{{{{ if .System }}}}<|im_start|>system
@@ -79,59 +77,42 @@ TEMPLATE \"\"\"{{{{ if .System }}}}<|im_start|>system
 PARAMETER stop <|im_start|>
 PARAMETER stop <|im_end|>
 """
-
 with open("Modelfile", "w") as f:
     f.write(modelfile_content)
 
-print(f"🛠️ Compiling new Ollama model alias: '{MODEL_ALIAS}'...")
+print(f"🛠️ Compiling Ollama model alias: '{MODEL_ALIAS}'...")
 os.system(f"ollama create {MODEL_ALIAS} -f Modelfile")
 
-# 7. Download and setup Cloudflare's tunnel agent (cloudflared)
-print("\n🔗 Downloading Cloudflare Tunnel Binary to bypass HTTPS mixed content blockers...")
-cf_binary_url = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64"
-urllib.request.urlretrieve(cf_binary_url, "cloudflared")
-os.system("chmod +x cloudflared")
+# 7. Start ngrok tunnel
+print("\n🔗 Starting ngrok HTTPS tunnel...")
+from pyngrok import ngrok
+ngrok.set_auth_token(os.environ.get("NGROK_TOKEN", ""))  # set NGROK_TOKEN in Colab secrets
+public_url = ngrok.connect(11434).public_url
+print(f"✅ YOUR PUBLIC URL: {public_url}")
 
-# 8. Launch secure HTTPS tunnel to Ollama local server
-print("\n🌍 Launching secure cloudflare tunnel...")
-tunnel_process = subprocess.Popen(
-    ["./cloudflared", "tunnel", "--url", "http://localhost:11434"],
-    stdout=subprocess.PIPE,
-    stderr=subprocess.STDOUT,
-    text=True
+# 8. Push URL to GitHub Gist so website auto-connects
+print("\n📡 Publishing URL to Gist for auto-connect...")
+gist_data = json.dumps({
+    "files": {"ollama_url.txt": {"content": public_url}}
+}).encode("utf-8")
+req = urllib.request.Request(
+    f"https://api.github.com/gists/{GIST_ID}",
+    data=gist_data, method="PATCH"
 )
-
-# Parse output lines to extract the assigned secure .trycloudflare.com endpoint
-cloudflare_url = None
-start_time = time.time()
-while time.time() - start_time < 30: # 30 seconds timeout search
-    line = tunnel_process.stdout.readline()
-    if not line:
-        break
-    if "trycloudflare.com" in line:
-        for word in line.split():
-            if "trycloudflare.com" in word:
-                cloudflare_url = word.strip()
-                break
-        if cloudflare_url:
-            break
+req.add_header("Authorization", f"token {GITHUB_TOKEN}")
+req.add_header("Content-Type", "application/json")
+urllib.request.urlopen(req)
+print("✅ URL live on Gist — website will auto-connect for all users.")
 
 print("\n==================================================================")
-if cloudflare_url:
-    print("✅ SUCCESS: Tunnel established securely!")
-    print("\n👉 COPY & PASTE THIS URL into the Settings Console in envizion.work:")
-    print(f"   {cloudflare_url}")
-    print(f"\n👉 Target model in envizion.work settings is pre-configured to:")
-    print(f"   {MODEL_ALIAS}")
-else:
-    print("❌ ERROR: Could not establish Cloudflare Tunnel automatic URL capture.")
-    print("Please check Colab network settings and relaunch execution block.")
+print(f"✅ SUCCESS! Public URL: {public_url}")
+print(f"   Model alias: {MODEL_ALIAS}")
 print("==================================================================")
 
-# Keep process alive
+# Keep alive
 try:
     while True:
         time.sleep(1)
 except KeyboardInterrupt:
     print("\nStopping Colab services cleanly.")
-    tunnel_process.terminate()
+    ngrok.kill()
