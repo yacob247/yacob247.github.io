@@ -225,7 +225,7 @@
                 </div>
                 <div>
                     <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Target Neural Model (Fallback Tag)</label>
-                    <input id="config-model" type="text" class="w-full bg-gemini-bg border border-gemini-border text-xs text-slate-200 rounded-2xl px-4 py-3 outline-none focus:border-indigo-500 smooth-transition font-mono shadow-inner" value="trained-rlhf-llama">
+                    <input id="config-model" type="text" class="w-full bg-gemini-bg border border-gemini-border text-xs text-slate-200 rounded-2xl px-4 py-3 outline-none focus:border-indigo-500 smooth-transition font-mono shadow-inner" value="llama3.2:1b">
                 </div>
             </div>
             <div class="p-5 border-t border-gemini-border/30 bg-gemini-bg/60 rounded-br-3xl">
@@ -406,7 +406,7 @@
         // Engine Config state
         let systemConfig = {
             host: localStorage.getItem('envizion_host') || 'https://yacob-okour14342-llama-engine.hf.space',
-model: localStorage.getItem('envizion_model') || 'llama3.2:1b',
+            model: localStorage.getItem('envizion_model') || 'llama3.2:1b',
             systemPrompt: 'You are Loma (specifically Loma 1 Thinking), an advanced AI. Show your step-by-step thinking inside <think> tags before answering. Prioritize high quality output.'
         };
 
@@ -648,35 +648,49 @@ model: localStorage.getItem('envizion_model') || 'llama3.2:1b',
             triggerNotificationToast("Workspace updated", `Configured to target ${systemConfig.model}.`, "fa-check-circle", "bg-indigo-600");
         };
 
-        // Highly compatible connection verification using AbortController instead of AbortSignal.timeout
+        // --- NEW: Continuous Connection Polling & Status UI ---
         async function verifyLocalOllamaConnection() {
             const connectionDot = document.getElementById('connection-dot');
             const connectionLabel = document.getElementById('connection-label');
+            
             if (!systemConfig.host) {
                 connectionDot.className = "h-2 w-2 rounded-full bg-yellow-500 animate-pulse";
                 connectionLabel.innerHTML = `Offline`;
                 return;
             }
+            
             try {
                 const cleanHost = systemConfig.host.replace(/\/$/, "");
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 3500);
+                const timeoutId = setTimeout(() => controller.abort(), 6000); // 6 seconds timeout for checks
 
+                // Adding cache busting ensures the browser actually hits HF Spaces to keep it awake
                 const response = await fetch(`${cleanHost}/api/tags`, { 
                     method: 'GET', 
-                    signal: controller.signal 
+                    signal: controller.signal,
+                    headers: {
+                        'Cache-Control': 'no-cache',
+                        'Pragma': 'no-cache'
+                    }
                 });
                 clearTimeout(timeoutId);
 
                 if (response.ok) {
                     connectionDot.className = "h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]";
                     connectionLabel.innerHTML = `<span class="text-white font-medium">${systemConfig.model}</span>`;
-                } else { throw new Error(); }
+                } else { 
+                    throw new Error(`HTTP ${response.status}`); 
+                }
             } catch (err) {
                 connectionDot.className = "h-2 w-2 rounded-full bg-red-500 animate-pulse";
-                connectionLabel.innerHTML = `<span class="text-red-400">Connection Failed</span>`;
+                connectionLabel.innerHTML = `<span class="text-red-400">Reconnecting...</span>`;
             }
         }
+
+        // Loop the check every 10 seconds to keep connection permanent and hot
+        setInterval(() => {
+            verifyLocalOllamaConnection();
+        }, 10000);
 
         window.toggleCanvasVisibility = (forceState = null) => {
             const canvasColumn = document.getElementById('canvas-column');
@@ -1118,11 +1132,6 @@ model: localStorage.getItem('envizion_model') || 'llama3.2:1b',
             document.getElementById('attached-file-pill').classList.remove('flex');
             document.getElementById('file-attached-dot').classList.add('hidden');
         };
-
-        // Keep HF Space hot — ping every 20s so model never unloads from RAM
-        setInterval(() => {
-            fetch('https://yacob-okour14342-llama-engine.hf.space/api/tags').catch(()=>{});
-        }, 20000);
 
     </script>
 </body>
