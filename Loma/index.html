@@ -240,7 +240,7 @@
                 <div>
                     <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 flex justify-between">
                         <span>Temperature</span>
-                        <span id="temp-val" class="font-mono text-accent">0.3</span>
+                        <span id="temp-val" class="font-mono text-accent">0.4</span>
                     </label>
                     <input id="config-temp" type="range" min="0.1" max="1.0" step="0.05" class="w-full accent-indigo-500 bg-zinc-800" oninput="document.getElementById('temp-val').innerText = this.value">
                 </div>
@@ -457,9 +457,9 @@
         let systemConfig = {
             host: localStorage.getItem('envizion_host') || 'https://yacob-okour14342-llama-engine.hf.space',
             model: localStorage.getItem('envizion_model') || 'llama3.2:1b',
-            temperature: parseFloat(localStorage.getItem('envizion_temp')) || 0.3,
+            temperature: parseFloat(localStorage.getItem('envizion_temp')) || 0.4,
             maxTokens: parseInt(localStorage.getItem('envizion_tokens')) || 1024,
-            systemPrompt: localStorage.getItem('envizion_sys_prompt') || 'You are Loma (specifically Loma 1 Flash). You are fast, clean, and concise. Do not show reasoning.'
+            systemPrompt: localStorage.getItem('envizion_sys_prompt') || 'You are Loma, a friendly, ultra-fast and helpful AI assistant. Answer the user directly and clearly.'
         };
 
         // Custom real-time Accent compiler
@@ -864,7 +864,6 @@
             await triggerInference();
         };
 
-        // Refactored to return direct DOM node bindings, fully resolving targets across multiple requests
         function appendChatBubble(role, msg, isHistorical = false) {
             const stream = document.getElementById('chat-stream');
             const row = document.createElement('div');
@@ -890,22 +889,22 @@
             stream.appendChild(row);
             if (!isHistorical) stream.scrollTop = stream.scrollHeight;
             
-            // Return reference directly for precise active streaming
             return row.querySelector('.output-response-zone');
         }
 
+        // Optimized positive prompts for small neural targets to guarantee zero safety refusal overrides
         const MODEL_PROFILES = {
             flash: {
-                systemPrompt: "You are Loma Flash 1. You are exceptionally fast and brief. Never output <think> tags or reasoning steps. Output clear answers immediately.",
-                options: { temperature: 0.2, num_predict: 1024 }
+                systemPrompt: "You are Loma, a friendly, ultra-fast and helpful AI assistant. Answer the user directly and clearly.",
+                options: { temperature: 0.4, num_predict: 1024 }
             },
             thinking: {
-                systemPrompt: "You are Loma 1 Thinking. You must output your intermediate thoughts inside <think>...</think> tags first before providing the final answer.",
+                systemPrompt: "You are Loma 1 Thinking, a helpful assistant. First, output your step-by-step thinking inside <think>...</think> tags, then write your final response.",
                 options: { temperature: 0.5, num_predict: 2048 }
             },
             pro: {
-                systemPrompt: "You are Loma Pro 1. You are highly analytical. You must write deep, detailed structured answers and high-quality programming blocks. Always use <think>...</think> blocks.",
-                options: { temperature: 0.7, num_predict: 4096 }
+                systemPrompt: "You are Loma Pro 1, an expert, highly structured and friendly assistant. Use step-by-step thinking inside <think>...</think> tags first, then provide deep, detailed answers.",
+                options: { temperature: 0.6, num_predict: 4096 }
             }
         };
 
@@ -922,7 +921,6 @@
         };
 
         async function triggerInference() {
-            // Bind element directly to eliminate bubble targeting issues
             const activeZone = appendChatBubble('assistant', '');
             const chatStream = document.getElementById('chat-stream');
             
@@ -935,7 +933,6 @@
             const selectedModelMode = document.getElementById('model-selector')?.value || 'flash';
             const profile = MODEL_PROFILES[selectedModelMode] || MODEL_PROFILES.flash;
 
-            // Pre-structure the DOM node for lightning-fast appending without UI layout thrashing
             activeZone.innerHTML = `
                 <div class="thinking-wrapper"></div>
                 <span class="answer-wrapper"><span class="streaming-cursor"></span></span>
@@ -981,8 +978,6 @@
                 let rawAccumulated = '';
                 let buffer = '';
                 
-                // --- HIGH-SPEED TOKEN ANIMATOR QUEUE ---
-                // Stores raw characters and streams them smoothly onto the screen at exactly 60-80 TPS
                 let tokenQueue = [];
                 let renderLoopActive = true;
                 let isInsideThink = false;
@@ -997,25 +992,21 @@
                     "Drafting response structure..."
                 ];
 
-                // Buttery-smooth requestAnimationFrame typewriter loop
                 const animateTypewriter = () => {
                     if (!renderLoopActive && tokenQueue.length === 0) return;
 
-                    // Speed config: Pop 4-5 characters per frame (~60-80 tokens per second equivalent)
                     if (tokenQueue.length > 0) {
                         const batchSize = Math.min(5, tokenQueue.length);
                         for (let i = 0; i < batchSize; i++) {
                             const char = tokenQueue.shift();
                             rawAccumulated += char;
 
-                            // Handle thinking sequence routing
                             if (rawAccumulated.endsWith('<think>')) {
                                 isInsideThink = true;
                                 continue;
                             }
                             if (rawAccumulated.endsWith('</think>')) {
                                 isInsideThink = false;
-                                // Collapse active thinking layout
                                 thinkingWrapper.innerHTML = `
                                     <div class="mb-3">
                                         <div onclick="window.toggleThoughtBox(this)" class="flex items-center justify-between bg-zinc-800/40 hover:bg-zinc-800/80 px-3 py-1.5 rounded-lg text-[11px] text-accent cursor-pointer select-none border border-gemini-border/20 smooth-transition">
@@ -1047,7 +1038,6 @@
                                     </div>
                                 `;
                             } else {
-                                // Exclude raw think elements from showing in actual text node
                                 const cleanChar = char.replace('<think>','').replace('</think>','');
                                 answerText += cleanChar;
                                 answerWrapper.innerHTML = `${escapeHtmlString(answerText)}<span class="streaming-cursor"></span>`;
@@ -1058,7 +1048,6 @@
                     requestAnimationFrame(animateTypewriter);
                 };
 
-                // Start typewriter animation instantly
                 requestAnimationFrame(animateTypewriter);
 
                 while (true) {
@@ -1077,11 +1066,9 @@
                             const chunk = JSON.parse(trimmed);
                             const token = chunk?.message?.content || '';
                             if (token) {
-                                // Feed characters straight into animation queue
                                 tokenQueue.push(...token.split(''));
                             }
                         } catch (_) {
-                            // Split coalesced JSON packets if network pressure causes merge
                             const objects = trimmed.match(/\{.*?\}/g);
                             if (objects) {
                                 for (const obj of objects) {
@@ -1098,21 +1085,17 @@
                     }
                 }
 
-                // Halt the raw streaming feed & flush remaining items
                 renderLoopActive = false;
 
-                // Wait briefly for typewriter animation loop to finish popping tokens
                 while (tokenQueue.length > 0) {
                     await new Promise(resolve => setTimeout(resolve, 10));
                 }
 
-                // Finalize layout rendering once stream is fully downloaded
                 let finalReply = rawAccumulated;
                 if (selectedModelMode === 'flash') {
                     finalReply = finalReply.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
                 }
 
-                // Fully render complete Markdown layout
                 activeZone.innerHTML = parseMarkdownResponse(finalReply);
                 chatStream.scrollTop = chatStream.scrollHeight;
 
