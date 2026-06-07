@@ -106,6 +106,41 @@
             from { opacity: 0; transform: translateY(5px); }
             to { opacity: 1; transform: translateY(0); }
         }
+
+        /* Live/streaming thinking block — glows while still receiving tokens */
+        .thinking-block-live {
+            border-left-color: #a78bfa;
+            background: rgba(99, 102, 241, 0.07);
+            animation: fadeIn 0.3s ease-in-out;
+        }
+        .thinking-block-live .thinking-block-header {
+            color: #a78bfa;
+        }
+        .thinking-dots {
+            display: inline-flex;
+            gap: 2px;
+            margin-left: 4px;
+        }
+        @keyframes dotPulse {
+            0%, 80%, 100% { opacity: 0.2; }
+            40% { opacity: 1; }
+        }
+
+        /* Blinking cursor shown while streaming */
+        @keyframes cursorBlink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+        .streaming-cursor {
+            display: inline-block;
+            width: 2px;
+            height: 1em;
+            background: #818cf8;
+            border-radius: 1px;
+            margin-left: 2px;
+            vertical-align: text-bottom;
+            animation: cursorBlink 0.75s step-end infinite;
+        }
     </style>
 </head>
 <body class="h-full bg-gemini-bg text-gemini-textMain overflow-hidden flex font-sans antialiased">
@@ -262,10 +297,10 @@
                         <div class="flex items-center space-x-2 w-full sm:w-auto justify-between sm:justify-end gap-2">
                             <!-- Model Dropdown Selector (Always visible on mobile now) -->
                             <div class="relative flex items-center bg-gemini-bg/80 rounded-full border border-gemini-border/40 hover:border-gemini-border smooth-transition flex-1 sm:flex-initial">
-                                <select id="model-selector" class="appearance-none bg-transparent text-indigo-300 text-xs font-semibold py-2 pl-4 pr-9 outline-none cursor-pointer h-10 w-full min-w-[120px]">
-                                    <option value="flash" class="bg-gemini-sidebar text-slate-200">Flash 1</option>
-                                    <option value="thinking" class="bg-gemini-sidebar text-slate-200" selected>Thinking 1</option>
-                                    <option value="pro" class="bg-gemini-sidebar text-slate-200">Pro 1</option>
+                                <select id="model-selector" class="appearance-none bg-transparent text-indigo-300 text-xs font-semibold py-2 pl-4 pr-9 outline-none cursor-pointer h-10 w-full min-w-[150px]">
+                                    <option value="flash" class="bg-gemini-sidebar text-slate-200">⚡ Loma Flash 1</option>
+                                    <option value="thinking" class="bg-gemini-sidebar text-slate-200" selected>🧠 Loma Thinking 1</option>
+                                    <option value="pro" class="bg-gemini-sidebar text-slate-200">💎 Loma Pro 1</option>
                                 </select>
                                 <i class="fa-solid fa-chevron-down absolute right-3.5 text-[10px] text-indigo-400 pointer-events-none"></i>
                             </div>
@@ -703,76 +738,153 @@ model: localStorage.getItem('envizion_model') || 'llama3.2',
             if (!isHistorical) stream.scrollTop = stream.scrollHeight;
         }
 
-        async function triggerInference() {
-            appendChatBubble('assistant', '...'); 
-            const stream = document.getElementById('chat-stream');
-            const lastBubble = stream.querySelector('div:last-child .output-response-zone');
-            const session = chatDatabase.sessions[currentSessionId];
+        // Per-model speed config: Flash is near-instant, Thinking is normal, Pro is thorough/slower
+        const MODEL_PROFILES = {
+            flash: {
+                systemPrompt: "You are Loma Flash 1. You are fast and concise. Never use <think> tags or show reasoning. Answer directly and briefly.",
+                // Flash: no thinking, streams at native speed — fastest
+                options: { temperature: 0.6, num_predict: 512 }
+            },
+            thinking: {
+                systemPrompt: "You are Loma 1 Thinking. Show step-by-step reasoning inside <think>...</think> tags before your final answer. Be thorough but not excessive.",
+                // Thinking: shows <think> blocks as they stream, medium depth
+                options: { temperature: 0.7, num_predict: 2048 }
+            },
+            pro: {
+                systemPrompt: "You are Loma Pro 1 — the most capable model. You rival Gemini Pro in depth. Always show extended <think> reasoning, produce comprehensive structured answers, production-ready code, and deep analysis. Never truncate.",
+                // Pro: deep thinking, longer outputs — highest quality
+                options: { temperature: 0.8, num_predict: 4096 }
+            }
+        };
 
+        async function triggerInference() {
+            // Show the bubble immediately — no waiting
+            appendChatBubble('assistant', '');
+            const chatStream = document.getElementById('chat-stream');
+            const lastBubble = chatStream.querySelector('div:last-child .output-response-zone');
+            const session = chatDatabase.sessions[currentSessionId];
             const selectedModelMode = document.getElementById('model-selector')?.value || 'thinking';
+            const profile = MODEL_PROFILES[selectedModelMode] || MODEL_PROFILES.thinking;
+
+            // Show a "connecting" pulse immediately so user sees activity
+            lastBubble.innerHTML = `<span class="streaming-cursor inline-block w-2 h-4 bg-indigo-400 rounded-sm animate-pulse align-middle"></span>`;
 
             try {
                 const cleanHost = systemConfig.host.replace(/\/$/, "");
-                
-                // Let's dynamically configure parameters depending on whether user selects "Flash", "Thinking", or "Pro"
-                let targetModel = systemConfig.model;
-                let finalMessages = [...session.messages];
 
-                // Adapt model prompts and constraints based on selection
-                if (selectedModelMode === 'flash') {
-                    // Suppress excessive structural logic / shorten output
-                    if (finalMessages[0] && finalMessages[0].role === 'system') {
-                        finalMessages[0].content = "You are Loma Flash 1. Respond quickly, concisely, and omit all thinking steps or <think> tags.";
-                    }
-                } else if (selectedModelMode === 'pro') {
-                    if (finalMessages[0] && finalMessages[0].role === 'system') {
-                        finalMessages[0].content = "You are Loma Pro 1. Provide incredibly comprehensive, structured, production-ready code blocks and deep analysis.";
-                    }
+                // Build message array with per-model system prompt injected fresh
+                let finalMessages = [...session.messages];
+                if (finalMessages[0] && finalMessages[0].role === 'system') {
+                    finalMessages = [{ role: 'system', content: profile.systemPrompt }, ...finalMessages.slice(1)];
+                } else {
+                    finalMessages = [{ role: 'system', content: profile.systemPrompt }, ...finalMessages];
                 }
 
+                // Fire the fetch — stream: true means Ollama sends NDJSON lines as they're generated
                 const response = await fetch(`${cleanHost}/api/chat`, {
                     mode: 'cors',
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        model: targetModel,
+                        model: systemConfig.model,
                         messages: finalMessages,
-                        stream: true 
+                        stream: true,
+                        options: profile.options
                     })
                 });
-                
-                if (!response.ok) throw new Error();
-                const data = await response.json();
-                let reply = data.message.content;
 
-                // Client-side sanitize logic if Flash was used and model outputted thinking tags anyway
-                if (selectedModelMode === 'flash') {
-                    reply = reply.replace(/<think>[\s\S]*?<\/think>/gi, '');
-                    reply = reply.replace(/&lt;think&gt;[\s\S]*?&lt;\/think&gt;/gi, '');
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+                // ── REAL STREAMING: read the body as it arrives ──
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let rawAccumulated = '';   // raw text from model (may include <think> tags)
+                let buffer = '';           // leftover partial JSON line
+
+                // Clear the cursor — first token is about to arrive
+                lastBubble.innerHTML = '';
+
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop(); // last item may be incomplete
+
+                    for (const line of lines) {
+                        const trimmed = line.trim();
+                        if (!trimmed) continue;
+                        try {
+                            const chunk = JSON.parse(trimmed);
+                            const token = chunk?.message?.content || '';
+                            if (token) {
+                                rawAccumulated += token;
+
+                                // Flash: strip any think tags live as tokens arrive
+                                let displayText = rawAccumulated;
+                                if (selectedModelMode === 'flash') {
+                                    displayText = displayText.replace(/<think>[\s\S]*?<\/think>/gi, '');
+                                }
+
+                                // Live render — re-parse markdown on each chunk so user sees formatted output as it streams
+                                lastBubble.innerHTML = parseMarkdownResponse(displayText) +
+                                    `<span class="streaming-cursor inline-block w-1.5 h-4 bg-indigo-400/80 rounded-sm animate-pulse align-middle ml-0.5"></span>`;
+                                chatStream.scrollTop = chatStream.scrollHeight;
+                            }
+                        } catch (_) { /* malformed partial JSON — skip */ }
+                    }
                 }
 
-                session.messages.push({ role: 'assistant', content: reply });
+                // ── DONE STREAMING: finalize ──
+                let finalReply = rawAccumulated;
+                if (selectedModelMode === 'flash') {
+                    finalReply = finalReply.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+                }
+
+                // Remove cursor, show final rendered output
+                lastBubble.innerHTML = parseMarkdownResponse(finalReply);
+                chatStream.scrollTop = chatStream.scrollHeight;
+
+                session.messages.push({ role: 'assistant', content: finalReply });
                 session.updated = Date.now();
-                
-                lastBubble.innerHTML = parseMarkdownResponse(reply);
-                stream.scrollTop = stream.scrollHeight;
-                
+
                 syncDatabaseToDrive();
-                analyzeOutputForCanvasExecution(reply);
+                analyzeOutputForCanvasExecution(finalReply);
 
             } catch (err) {
-                lastBubble.innerHTML = `<span class="text-red-400 font-semibold"><i class="fa-solid fa-triangle-exclamation mr-2"></i>Failed to reach engine. Ensure Colab tunnel is active.</span>`;
+                lastBubble.innerHTML = `<span class="text-red-400 font-semibold"><i class="fa-solid fa-triangle-exclamation mr-2"></i>Failed to reach engine. Ensure the Ollama/HF tunnel is active and CORS is allowed.</span>`;
             }
         }
 
         function parseMarkdownResponse(text) {
-            let formatted = escapeHtmlString(text);
-            
-            // Render <think> tags gracefully without dropdowns
-            formatted = formatted.replace(/&lt;think&gt;([\s\S]*?)&lt;\/think&gt;/gi, function(match, content) {
+            // Handle REAL (un-escaped) <think> tags BEFORE escaping so we can render them live
+            let formatted = text;
+
+            // Complete <think>...</think> blocks — finished thinking card
+            formatted = formatted.replace(/<think>([\s\S]*?)<\/think>/gi, function(match, content) {
+                return `\x02THINK_DONE\x02${content.trim()}\x02END_THINK_DONE\x02`;
+            });
+            // Open <think> block with no closing tag yet (still streaming mid-thought)
+            formatted = formatted.replace(/<think>([\s\S]*)$/i, function(match, content) {
+                return `\x02THINK_LIVE\x02${content}\x02END_THINK_LIVE\x02`;
+            });
+
+            // Now safely escape everything else
+            formatted = escapeHtmlString(formatted);
+
+            // Restore complete thinking blocks
+            formatted = formatted.replace(/\x02THINK_DONE\x02([\s\S]*?)\x02END_THINK_DONE\x02/g, function(match, content) {
                 return `<div class="thinking-block">
-                            <div class="thinking-block-header"><i class="fa-solid fa-microchip"></i> Engine Thinking Process</div>
-                            ${content.trim()}
+                            <div class="thinking-block-header"><i class="fa-solid fa-brain"></i> Loma Thinking</div>
+                            <div>${content}</div>
+                        </div>`;
+            });
+            // Restore live/partial thinking blocks (still streaming)
+            formatted = formatted.replace(/\x02THINK_LIVE\x02([\s\S]*?)\x02END_THINK_LIVE\x02/g, function(match, content) {
+                return `<div class="thinking-block thinking-block-live">
+                            <div class="thinking-block-header"><i class="fa-solid fa-brain fa-beat-fade"></i> Thinking<span class="thinking-dots">...</span></div>
+                            <div>${content}</div>
                         </div>`;
             });
 
