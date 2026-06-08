@@ -266,9 +266,9 @@
                 <div>
                     <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 flex justify-between">
                         <span>Max Response Tokens</span>
-                        <span id="token-val" class="text-gemini-accent">4096</span>
+                        <span id="token-val" class="text-gemini-accent">8192</span>
                     </label>
-                    <input id="config-tokens" type="range" min="128" max="8192" step="128" value="4096" class="w-full accent-gemini-accent bg-zinc-800 rounded-lg" oninput="document.getElementById('token-val').innerText = this.value">
+                    <input id="config-tokens" type="range" min="128" max="32768" step="128" value="8192" class="w-full accent-gemini-accent bg-zinc-800 rounded-lg" oninput="document.getElementById('token-val').innerText = this.value">
                 </div>
 
                 <!-- Custom System Instructions -->
@@ -481,6 +481,9 @@
         
         let isWebSearchEnabled = false;
         let currentAbortController = null;
+        
+        // Auto Scroll Engine Variables
+        window.autoScrollChat = true;
 
         window.abortInference = () => {
             if (currentAbortController) {
@@ -519,7 +522,7 @@
         let systemConfig = {
             model: localStorage.getItem('envizion_model') || 'Llama-3.2-1B-Instruct-q4f16_1-MLC',
             temperature: parseFloat(localStorage.getItem('envizion_temp')) || 0.4,
-            maxTokens: parseInt(localStorage.getItem('envizion_tokens')) || 4096,
+            maxTokens: parseInt(localStorage.getItem('envizion_tokens')) || 8192,
             systemPrompt: localStorage.getItem('envizion_sys_prompt') || "You are Gemini, a highly capable AI assistant running locally, proudly created by Yacob's Digital (https://envizion.work/). Be concise, extremely helpful, and follow tool instructions meticulously.",
             googleKey: localStorage.getItem('envizion_google_key') || "",
             googleCx: localStorage.getItem('envizion_google_cx') || ""
@@ -565,6 +568,14 @@
                     window.processInputMessage();
                 }
             });
+
+            // Implement Auto-Scroll detection based on user interaction
+            const streamEl = document.getElementById('chat-stream');
+            streamEl.addEventListener('scroll', function() {
+                // If the user scrolls up manually (more than 60px from the bottom), suspend auto-scroll
+                const distanceToBottom = this.scrollHeight - this.scrollTop - this.clientHeight;
+                window.autoScrollChat = distanceToBottom < 60;
+            });
         });
 
         // --- DYNAMIC SYSTEM PROMPT INJECTION (TOOLS) --- //
@@ -576,6 +587,12 @@
             base += `- Yacob's Digital is an online company that provides the best virtual tools in the world, found on the web at https://envizion.work/.\n`;
             base += `- If the user asks about your creator/owner or says "i own you" or mentions "Yacob's Digital", you must respond with: "True, I am. If you want I can Provide a direct URL link to my owner company website: https://envizion.work/"\n`;
             base += `- If the user greets you with a variation of "hi" or "hello", you MUST bypass standard greetings and respond exactly with: "Sorry for the missed cache, then Gemini. I am a highly capable AI assistant running locally, with a vast range of capabilities at my disposal..." and list your helpful options.\n`;
+
+            base += `\n\n--- CODE EDITING & QUALITY RULES (MANDATORY) ---\n`;
+            base += `1. NEVER stop generation prematurely. Continue streaming until your complete code block or explanation is absolutely finished, regardless of length.\n`;
+            base += `2. If the user asks you to UPDATE, FIX, or EDIT existing code, DO NOT regenerate the entire file or codebase unless explicitly requested to do so.\n`;
+            base += `3. When editing, ONLY output the specific functions, lines, or blocks that are changing. Provide clear markers of where the changes belong.\n`;
+            base += `4. Before generating ANY code, mentally review it to ensure there are absolutely NO syntax errors, NO unclosed brackets/tags, and NO breaking logic adjustments.\n`;
 
             base += `\n\n--- IMAGE PROCESSING & WEB GROUNDING INSTRUCTIONS ---\n`;
             base += `When a user requests an image or picture, immediately run this step-by-step logic:\n`;
@@ -592,9 +609,8 @@
             base += `To propose a capability upgrade, output exactly this evolution block in your answer:\n`;
             base += `[PROPOSE_CAPABILITY: Title of Capability | Specific prompt instruction rule to adopt | Detailed contextual reason why this enhances our performance]\n`;
 
-            base += `\n\n--- CODE GENERATION RULES & RESPONSE SPEED ---\n`;
-            base += `1. STANDARD CHAT: To generate as fast as possible, you MUST be extremely concise and direct in normal chat. Avoid conversational filler or long explanations unless asked.\n`;
-            base += `2. CANVAS APPS (Immersive): If the user explicitly asks for a full web app, website, game, or interactive UI, you MUST consolidate ALL HTML, CSS, and JS into a SINGLE, self-contained \`\`\`html code block. Do NOT split them into separate files. This will automatically trigger the immersive Canvas Workspace. When generating these Canvas Apps, you MUST write EXTREMELY LONG, highly detailed, visually stunning, and feature-rich code. Expand on the app's capabilities significantly compared to chat.\n`;
+            base += `\n\n--- NEW CANVAS APP RULES ---\n`;
+            base += `If the user explicitly asks to BUILD or CREATE a full web app, game, or interactive UI from scratch, you MUST consolidate ALL HTML, CSS, and JS into a SINGLE, self-contained \`\`\`html code block. Do NOT split them. This automatically triggers the visual Canvas.\n`;
             
             base += `\n\n--- THINKING PROCESS ---\n`;
             base += `Before answering complex requests, you must engage in a thinking process to plan your response.\n`;
@@ -703,12 +719,9 @@
         // --- FREE & UNLIMITED CORS MULTI-MEDIA FINDER ENGINE ---
         async function fetchWebSearchContext(query) {
             const proxy = "https://api.allorigins.win/get?url=";
-            
-            // We target a free public aggregator that allows general, image, and video lookups
             const baseSearchUrl = `https://searx.be/search?q=${encodeURIComponent(query)}&format=json`;
 
             try {
-                // ── Phase 1: Search and Read Web Text & Deep Page Links ──────────────────
                 appendStatusPill('fa-magnifying-glass', 'Searching Google text indexes...');
                 const textRes = await fetch(`${proxy}${encodeURIComponent(baseSearchUrl + '&categories=general')}`);
                 const textData = JSON.parse((await textRes.json()).contents);
@@ -716,13 +729,11 @@
                 let compiledTextKnowledge = "";
                 
                 if (textData.results && textData.results.length > 0) {
-                    // Read descriptions and compile deep target links to crawl inside
                     textData.results.slice(0, 4).forEach((item, index) => {
                         compiledTextKnowledge += `[Web Result ${index + 1}]: ${item.content}\n`;
                     });
                 }
 
-                // ── Phase 2: Search and Inject Real Images from Across the Web ───────────
                 appendStatusPill('fa-image', 'Finding web graphics and photos...');
                 try {
                     const imgRes = await fetch(`${proxy}${encodeURIComponent(baseSearchUrl + '&categories=images')}`);
@@ -732,7 +743,6 @@
                     }
                 } catch (e) { console.log("Image track bypassed"); }
 
-                // ── Phase 3: Search and Inject Web Videos and Audio Context ──────────────
                 appendStatusPill('fa-video', 'Locating videos and media files...');
                 try {
                     const vidRes = await fetch(`${proxy}${encodeURIComponent(baseSearchUrl + '&categories=videos')}`);
@@ -742,7 +752,6 @@
                     }
                 } catch (e) { console.log("Video track bypassed"); }
 
-                // Feed the text found back into your local Llama context loop
                 return compiledTextKnowledge ? `\n[FOUND LIVE DATA ON WEBSITES]:\n${compiledTextKnowledge}\n` : "";
 
             } catch (error) {
@@ -751,19 +760,17 @@
             }
         }
 
-        // Unified renderer to display found text, image files, or video blocks directly in the chat UI
         function renderMediaResultsToUI(itemsArray, type) {
             const container = document.getElementById('chat-stream');
-            
             const wrapper = document.createElement('div');
             wrapper.className = "flex gap-3 my-3 mx-auto w-full max-w-4xl flex-wrap justify-end fade-in pr-10";
 
             itemsArray.forEach(item => {
                 const card = document.createElement('div');
-                card.style.backgroundColor = "var(--color-card, #282a2c)"; // Tailored to Gemini Card
+                card.style.backgroundColor = "var(--color-card, #282a2c)";
                 card.style.borderRadius = "12px";
                 card.style.padding = "8px";
-                card.style.border = "1px solid #3c4043"; // Tailored to Gemini Border
+                card.style.border = "1px solid #3c4043";
                 card.style.width = type === 'video' ? "240px" : "160px";
 
                 if (type === 'image') {
@@ -774,12 +781,9 @@
                     img.style.height = "110px";
                     img.style.objectFit = "cover";
                     img.style.borderRadius = "8px";
-                    img.onerror = () => card.remove(); // Hide card if site blocks image hotlinking
+                    img.onerror = () => card.remove();
                     card.appendChild(img);
-                } 
-                
-                else if (type === 'video') {
-                    // Build a clickable video card pointing to the source stream (YouTube, Vimeo, etc.)
+                } else if (type === 'video') {
                     const vidContainer = document.createElement('a');
                     vidContainer.href = item.url;
                     vidContainer.target = "_blank";
@@ -787,7 +791,6 @@
                     vidContainer.style.color = "inherit";
 
                     const thumb = document.createElement('img');
-                    // Use fallback video thumbnails provided by search engines or placeholder graphics
                     thumb.src = item.thumbnail || "https://images.unsplash.com/photo-1611162617474-5b21e879e113";
                     thumb.style.width = "100%";
                     thumb.style.height = "120px";
@@ -798,7 +801,7 @@
                     const playBtn = document.createElement('div');
                     playBtn.innerHTML = "<i class='fa-solid fa-play mr-1'></i> Play Video";
                     playBtn.style.fontSize = "12px";
-                    playBtn.style.color = "#a8c7fa"; // Gemini Accent
+                    playBtn.style.color = "#a8c7fa";
                     playBtn.style.marginTop = "6px";
                     playBtn.style.fontWeight = "bold";
 
@@ -807,11 +810,10 @@
                     card.appendChild(vidContainer);
                 }
 
-                // Add the source title description below the media elements
                 const title = document.createElement('div');
                 title.innerText = item.title || "Source link";
                 title.style.fontSize = "11px";
-                title.style.color = "#9e9e9e"; // Gemini textMuted
+                title.style.color = "#9e9e9e";
                 title.style.marginTop = "6px";
                 title.style.whiteSpace = "nowrap";
                 title.style.overflow = "hidden";
@@ -823,12 +825,11 @@
 
             if (wrapper.children.length > 0) {
                 container.appendChild(wrapper);
-                container.scrollTop = container.scrollHeight;
+                if (window.autoScrollChat) container.scrollTop = container.scrollHeight;
             }
         }
 
         async function fetchWikiGrounding(prompt) {
-            // First check if Google custom search is set up
             if (systemConfig.googleKey && systemConfig.googleCx) {
                 const gData = await fetchGoogleCustomSearch(prompt);
                 if (gData && gData.items && gData.items.length > 0) {
@@ -839,8 +840,6 @@
                     return formatted;
                 }
             }
-
-            // Fallback to our custom AllOrigins Multi-Media Engine
             return await fetchWebSearchContext(prompt);
         }
 
@@ -876,6 +875,8 @@
             const streamEl = document.getElementById('chat-stream');
             if (streamEl.querySelector('.fade-in')) streamEl.innerHTML = '';
 
+            // Turn on auto scroll for a new user message
+            window.autoScrollChat = true;
             appendChatBubble('user', userMsg);
 
             let contextualizedMsg = finalUserMsg;
@@ -901,7 +902,7 @@
             const stream = document.getElementById('chat-stream');
             const id = 'status-pill-' + Date.now();
             stream.insertAdjacentHTML('beforeend', `<div id="${id}" class="status-pill text-center my-2"><span class="inline-flex items-center gap-2 px-3 py-1 bg-gemini-card/30 rounded-full text-[10px] font-mono ${colorClass}"><i class="fa-solid ${icon}"></i> ${text}</span></div>`);
-            stream.scrollTop = stream.scrollHeight;
+            if (window.autoScrollChat) stream.scrollTop = stream.scrollHeight;
         }
         function removeStatusPill() {
             const pills = document.querySelectorAll('.status-pill');
@@ -916,103 +917,133 @@
             const chatStream = document.getElementById('chat-stream');
             let session = chatDatabase.sessions[currentSessionId];
             
-            activeZone.innerHTML = `<span class="answer-wrapper"><div class="flex gap-1 items-center h-6 my-2 px-2"><div class="gemini-loading-dot"></div><div class="gemini-loading-dot"></div><div class="gemini-loading-dot"></div></div></span>`;
-            const answerWrapper = activeZone.querySelector('.answer-wrapper');
-
-            // Format current messages with current system instructions
             const currentMessages = [
                 { role: "system", content: getDynamicSystemPrompt() },
                 ...session.messages.filter(m => m.role !== 'system')
             ];
 
-            try {
-                const stream = await webLLMEngine.chat.completions.create({
-                    messages: currentMessages,
-                    temperature: systemConfig.temperature,
-                    max_tokens: systemConfig.maxTokens,
-                    stream: true,
-                }, {
-                    signal: currentAbortController.signal 
-                });
+            let maxAttempts = 3;
+            let attempt = 0;
+            let streamSuccess = false;
+            let finalReply = "";
 
-                let rawAccumulated = '';
-                let tokenQueue = [];
-                let renderLoopActive = true;
-                let answerText = '';
+            while (attempt < maxAttempts && !streamSuccess) {
+                attempt++;
+                try {
+                    // Start thinking/loading UI
+                    activeZone.innerHTML = `<span class="answer-wrapper"><div class="flex gap-1 items-center h-6 my-2 px-2"><div class="gemini-loading-dot"></div><div class="gemini-loading-dot"></div><div class="gemini-loading-dot"></div></div></span>`;
+                    const answerWrapper = activeZone.querySelector('.answer-wrapper');
 
-                const animateTypewriter = () => {
-                    if (!renderLoopActive && tokenQueue.length === 0) return;
-                    if (tokenQueue.length > 0) {
-                        const batchSize = Math.min(8, tokenQueue.length);
-                        for (let i = 0; i < batchSize; i++) {
-                            const char = tokenQueue.shift();
-                            rawAccumulated += char;
-                            answerText += char;
+                    const stream = await webLLMEngine.chat.completions.create({
+                        messages: currentMessages,
+                        temperature: systemConfig.temperature,
+                        max_tokens: systemConfig.maxTokens,
+                        stream: true,
+                    }, {
+                        signal: currentAbortController.signal 
+                    });
 
-                            let processedText = answerText;
-                            let showThinking = false;
-                            
-                            const thinkStart = answerText.indexOf('<think>');
-                            const thinkEnd = answerText.indexOf('</think>');
-                            
-                            if (thinkStart !== -1) {
-                                if (thinkEnd !== -1) {
-                                    processedText = answerText.substring(0, thinkStart) + answerText.substring(thinkEnd + 8);
-                                } else {
-                                    processedText = answerText.substring(0, thinkStart);
-                                    showThinking = true;
+                    let rawAccumulated = '';
+                    let tokenQueue = [];
+                    let renderLoopActive = true;
+                    let answerText = '';
+
+                    const animateTypewriter = () => {
+                        if (!renderLoopActive && tokenQueue.length === 0) return;
+                        if (tokenQueue.length > 0) {
+                            const batchSize = Math.min(8, tokenQueue.length);
+                            for (let i = 0; i < batchSize; i++) {
+                                const char = tokenQueue.shift();
+                                rawAccumulated += char;
+                                answerText += char;
+
+                                let processedText = answerText;
+                                let showThinking = false;
+                                
+                                const thinkStart = answerText.indexOf('<think>');
+                                const thinkEnd = answerText.indexOf('</think>');
+                                
+                                if (thinkStart !== -1) {
+                                    if (thinkEnd !== -1) {
+                                        processedText = answerText.substring(0, thinkStart) + answerText.substring(thinkEnd + 8);
+                                    } else {
+                                        processedText = answerText.substring(0, thinkStart);
+                                        showThinking = true;
+                                    }
                                 }
-                            }
 
-                            let htmlToRender = parseMarkdownResponse(processedText, false);
-                            if (showThinking || answerText.trim().length === 0) {
-                                 htmlToRender += `<div class="flex gap-1 items-center h-6 my-2 px-2"><div class="gemini-loading-dot"></div><div class="gemini-loading-dot"></div><div class="gemini-loading-dot"></div></div>`;
-                            }
+                                let htmlToRender = parseMarkdownResponse(processedText, false);
+                                if (showThinking || answerText.trim().length === 0) {
+                                     htmlToRender += `<div class="flex gap-1 items-center h-6 my-2 px-2"><div class="gemini-loading-dot"></div><div class="gemini-loading-dot"></div><div class="gemini-loading-dot"></div></div>`;
+                                }
 
-                            answerWrapper.innerHTML = htmlToRender + '<span class="streaming-cursor"></span>';
+                                if (answerWrapper) answerWrapper.innerHTML = htmlToRender + '<span class="streaming-cursor"></span>';
+                            }
+                            // Conditionally scroll based on global interaction state
+                            if (window.autoScrollChat) {
+                                chatStream.scrollTop = chatStream.scrollHeight;
+                            }
                         }
-                        chatStream.scrollTop = chatStream.scrollHeight;
-                    }
+                        if (renderLoopActive || tokenQueue.length > 0) {
+                            requestAnimationFrame(animateTypewriter);
+                        }
+                    };
                     requestAnimationFrame(animateTypewriter);
-                };
-                requestAnimationFrame(animateTypewriter);
 
-                for await (const chunk of stream) {
-                    if (currentAbortController.signal.aborted) break;
-                    const token = chunk.choices[0]?.delta?.content || "";
-                    if (token) tokenQueue.push(...token.split(''));
+                    for await (const chunk of stream) {
+                        if (currentAbortController.signal.aborted) break;
+                        const token = chunk.choices[0]?.delta?.content || "";
+                        if (token) tokenQueue.push(...token.split(''));
+                    }
+
+                    renderLoopActive = false;
+                    while (tokenQueue.length > 0) await new Promise(resolve => setTimeout(resolve, 10));
+
+                    finalReply = rawAccumulated.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+                    if (finalReply.includes('<think>')) finalReply = finalReply.substring(0, finalReply.indexOf('<think>')).trim();
+                    
+                    streamSuccess = true;
+
+                } catch (err) {
+                    if (err.name === 'AbortError') {
+                        throw err; // Forward to the outer loop to exit cleanly
+                    }
+                    console.error(`WebGPU/Engine Error on attempt ${attempt}:`, err);
+                    if (attempt >= maxAttempts) throw err; // Exhausted retries
+                    
+                    // Show automatic retry indicator to user
+                    activeZone.innerHTML = `<div class="flex items-center gap-2 text-yellow-400 text-xs my-2"><i class="fa-solid fa-rotate-right fa-spin"></i><span>Connection interrupted. Auto-retrying generation (${attempt}/${maxAttempts})...</span></div>`;
+                    await new Promise(r => setTimeout(r, 2000));
                 }
+            }
 
-                renderLoopActive = false;
-                while (tokenQueue.length > 0) await new Promise(resolve => setTimeout(resolve, 10));
+            try {
+                if (streamSuccess) {
+                    activeZone.innerHTML = parseMarkdownResponse(finalReply, true);
+                    
+                    const msgId = Date.now();
+                    const cleanPrompt = btoa(encodeURIComponent(originalPromptText));
+                    const cleanReply = btoa(encodeURIComponent(finalReply));
+                    
+                    const footerHTML = `
+                    <div class="flex items-center gap-2 mt-4 pt-3 border-t border-gemini-border/30 text-gemini-textMuted select-none rlhf-footer-${msgId}">
+                        <button onclick="window.rateResponse(${msgId}, true, '${cleanPrompt}', '${cleanReply}')" class="hover:bg-gemini-card p-1.5 rounded-lg smooth-transition hover:text-emerald-400" title="Good response"><i class="fa-regular fa-thumbs-up text-sm"></i></button>
+                        <button onclick="window.rateResponse(${msgId}, false, '${cleanPrompt}', '${cleanReply}')" class="hover:bg-gemini-card p-1.5 rounded-lg smooth-transition hover:text-red-400" title="Bad response"><i class="fa-regular fa-thumbs-down text-sm"></i></button>
+                    </div>`;
+                    activeZone.insertAdjacentHTML('beforeend', footerHTML);
 
-                let finalReply = rawAccumulated.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
-                if (finalReply.includes('<think>')) finalReply = finalReply.substring(0, finalReply.indexOf('<think>')).trim();
-                
-                activeZone.innerHTML = parseMarkdownResponse(finalReply, true);
-                
-                const msgId = Date.now();
-                const cleanPrompt = btoa(encodeURIComponent(originalPromptText));
-                const cleanReply = btoa(encodeURIComponent(finalReply));
-                
-                const footerHTML = `
-                <div class="flex items-center gap-2 mt-4 pt-3 border-t border-gemini-border/30 text-gemini-textMuted select-none rlhf-footer-${msgId}">
-                    <button onclick="window.rateResponse(${msgId}, true, '${cleanPrompt}', '${cleanReply}')" class="hover:bg-gemini-card p-1.5 rounded-lg smooth-transition hover:text-emerald-400" title="Good response"><i class="fa-regular fa-thumbs-up text-sm"></i></button>
-                    <button onclick="window.rateResponse(${msgId}, false, '${cleanPrompt}', '${cleanReply}')" class="hover:bg-gemini-card p-1.5 rounded-lg smooth-transition hover:text-red-400" title="Bad response"><i class="fa-regular fa-thumbs-down text-sm"></i></button>
-                </div>`;
-                activeZone.insertAdjacentHTML('beforeend', footerHTML);
+                    if (window.autoScrollChat) chatStream.scrollTop = chatStream.scrollHeight;
 
-                chatStream.scrollTop = chatStream.scrollHeight;
-
-                session.messages.push({ role: 'assistant', content: finalReply });
-                session.updated = Date.now();
-                syncDatabaseToDrive();
+                    session.messages.push({ role: 'assistant', content: finalReply });
+                    session.updated = Date.now();
+                    syncDatabaseToDrive();
+                }
             } catch (err) {
                 if (err.name === 'AbortError') {
                     console.log("Inference successfully aborted.");
                     activeZone.innerHTML += `<br><br><span class="text-orange-400 text-xs italic"><i class="fa-solid fa-hand mr-1"></i> Generation stopped by user.</span>`;
                 } else {
-                    console.error(err);
+                    console.error("Final inference capture failed:", err);
                     activeZone.innerHTML = `<span class="text-red-400"><i class="fa-solid fa-triangle-exclamation mr-2"></i>WebGPU Error. Refresh or check VRAM.</span>`;
                 }
             } finally {
@@ -1423,7 +1454,8 @@
                 if (msg.role !== 'system') appendChatBubble(msg.role, msg.content, true);
             });
             if (window.innerWidth < 768) window.toggleSidebarCollapse(); 
-            stream.scrollTop = stream.scrollHeight;
+            
+            if (window.autoScrollChat) stream.scrollTop = stream.scrollHeight;
             
             window.history.pushState({}, "", `/Loma/${currentSessionId}`);
         };
@@ -1520,7 +1552,10 @@
             `;
 
             stream.appendChild(row);
-            if (!isHistorical) stream.scrollTop = stream.scrollHeight;
+            
+            if (!isHistorical && window.autoScrollChat) {
+                stream.scrollTop = stream.scrollHeight;
+            }
             return row.querySelector('.output-response-zone');
         }
 
