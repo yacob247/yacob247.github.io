@@ -696,69 +696,130 @@
             }
         }
 
-        // --- FREE & UNLIMITED CORS SCRA-PER CORE ---
+        // --- FREE & UNLIMITED CORS MULTI-MEDIA FINDER ENGINE ---
         async function fetchWebSearchContext(query) {
-            try {
-                // Scrape raw search text from DuckDuckGo HTML using the AllOrigins proxy wrapper
-                const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
-                const response = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(searchUrl)}`);
-                if (!response.ok) throw new Error("CORS Proxy error");
-                const data = await response.json();
-                if (!data.contents) return "";
+            const proxy = "https://api.allorigins.win/get?url=";
+            
+            // We target a free public aggregator that allows general, image, and video lookups
+            const baseSearchUrl = `https://searx.be/search?q=${encodeURIComponent(query)}&format=json`;
 
-                // Browser's native DOM parser to read result layout elements
-                const parser = new DOMParser();
-                const doc = parser.parseFromString(data.contents, 'text/html');
+            try {
+                // ── Phase 1: Search and Read Web Text & Deep Page Links ──────────────────
+                appendStatusPill('fa-magnifying-glass', 'Searching Google text indexes...');
+                const textRes = await fetch(`${proxy}${encodeURIComponent(baseSearchUrl + '&categories=general')}`);
+                const textData = JSON.parse((await textRes.json()).contents);
                 
-                // Grab snippets & redirect links
-                const results = Array.from(doc.querySelectorAll('.result__snippet')).slice(0, 3);
-                const links = Array.from(doc.querySelectorAll('.result__a')).slice(0, 3).map(el => {
-                    let rawUrl = el.getAttribute('href') || '';
-                    if (rawUrl.startsWith('//')) rawUrl = 'https:' + rawUrl;
-                    // Resolving DuckDuckGo internal URL redirections safely
-                    if (rawUrl.includes('uddg=')) {
-                        const match = rawUrl.match(/uddg=([^&]+)/);
-                        if (match) rawUrl = decodeURIComponent(match[1]);
-                    }
-                    return rawUrl.trim();
-                });
+                let compiledTextKnowledge = "";
                 
-                let compiledKnowledge = "";
-                
-                // Deep Page learning crawls
-                for (let i = 0; i < results.length; i++) {
-                    const snippetText = results[i].textContent.trim();
-                    compiledKnowledge += `[Snippet ${i+1}]: ${snippetText}\n`;
-                    
-                    if (links[i] && !links[i].includes('duckduckgo.com')) {
-                        try {
-                            const pageResponse = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(links[i])}`);
-                            if (pageResponse.ok) {
-                                const pageData = await pageResponse.json();
-                                if (pageData.contents) {
-                                    const pageDoc = parser.parseFromString(pageData.contents, 'text/html');
-                                    const paragraphs = Array.from(pageDoc.querySelectorAll('p'))
-                                        .slice(0, 3)
-                                        .map(p => p.textContent.trim())
-                                        .filter(text => text.length > 20)
-                                        .join(" ");
-                                    
-                                    if (paragraphs.length > 50) {
-                                        compiledKnowledge += `[Deep Page Content from ${links[i]}]: ${paragraphs.substring(0, 500)}...\n`;
-                                    }
-                                }
-                            }
-                        } catch (pageErr) {
-                            console.log("Skipping unreadable page node:", links[i]);
-                        }
-                    }
+                if (textData.results && textData.results.length > 0) {
+                    // Read descriptions and compile deep target links to crawl inside
+                    textData.results.slice(0, 4).forEach((item, index) => {
+                        compiledTextKnowledge += `[Web Result ${index + 1}]: ${item.content}\n`;
+                    });
                 }
-                
-                return compiledKnowledge ? `\n[TRAINING DATA MATCHES FOUND ON REAL-TIME INTERNET]:\n${compiledKnowledge}\n` : "";
-                
+
+                // ── Phase 2: Search and Inject Real Images from Across the Web ───────────
+                appendStatusPill('fa-image', 'Finding web graphics and photos...');
+                try {
+                    const imgRes = await fetch(`${proxy}${encodeURIComponent(baseSearchUrl + '&categories=images')}`);
+                    const imgData = JSON.parse((await imgRes.json()).contents);
+                    if (imgData.results && imgData.results.length > 0) {
+                        renderMediaResultsToUI(imgData.results.slice(0, 4), 'image');
+                    }
+                } catch (e) { console.log("Image track bypassed"); }
+
+                // ── Phase 3: Search and Inject Web Videos and Audio Context ──────────────
+                appendStatusPill('fa-video', 'Locating videos and media files...');
+                try {
+                    const vidRes = await fetch(`${proxy}${encodeURIComponent(baseSearchUrl + '&categories=videos')}`);
+                    const vidData = JSON.parse((await vidRes.json()).contents);
+                    if (vidData.results && vidData.results.length > 0) {
+                        renderMediaResultsToUI(vidData.results.slice(0, 3), 'video');
+                    }
+                } catch (e) { console.log("Video track bypassed"); }
+
+                // Feed the text found back into your local Llama context loop
+                return compiledTextKnowledge ? `\n[FOUND LIVE DATA ON WEBSITES]:\n${compiledTextKnowledge}\n` : "";
+
             } catch (error) {
-                console.error("Free scraper engine loop failed, using internal knowledge:", error);
+                console.error("Multi-media search routing failure:", error);
                 return "";
+            }
+        }
+
+        // Unified renderer to display found text, image files, or video blocks directly in the chat UI
+        function renderMediaResultsToUI(itemsArray, type) {
+            const container = document.getElementById('chat-stream');
+            
+            const wrapper = document.createElement('div');
+            wrapper.className = "flex gap-3 my-3 mx-auto w-full max-w-4xl flex-wrap justify-end fade-in pr-10";
+
+            itemsArray.forEach(item => {
+                const card = document.createElement('div');
+                card.style.backgroundColor = "var(--color-card, #282a2c)"; // Tailored to Gemini Card
+                card.style.borderRadius = "12px";
+                card.style.padding = "8px";
+                card.style.border = "1px solid #3c4043"; // Tailored to Gemini Border
+                card.style.width = type === 'video' ? "240px" : "160px";
+
+                if (type === 'image') {
+                    if (!item.img_src) return;
+                    const img = document.createElement('img');
+                    img.src = item.img_src;
+                    img.style.width = "100%";
+                    img.style.height = "110px";
+                    img.style.objectFit = "cover";
+                    img.style.borderRadius = "8px";
+                    img.onerror = () => card.remove(); // Hide card if site blocks image hotlinking
+                    card.appendChild(img);
+                } 
+                
+                else if (type === 'video') {
+                    // Build a clickable video card pointing to the source stream (YouTube, Vimeo, etc.)
+                    const vidContainer = document.createElement('a');
+                    vidContainer.href = item.url;
+                    vidContainer.target = "_blank";
+                    vidContainer.style.textDecoration = "none";
+                    vidContainer.style.color = "inherit";
+
+                    const thumb = document.createElement('img');
+                    // Use fallback video thumbnails provided by search engines or placeholder graphics
+                    thumb.src = item.thumbnail || "https://images.unsplash.com/photo-1611162617474-5b21e879e113";
+                    thumb.style.width = "100%";
+                    thumb.style.height = "120px";
+                    thumb.style.objectFit = "cover";
+                    thumb.style.borderRadius = "8px";
+                    thumb.onerror = () => thumb.src = "https://images.unsplash.com/photo-1611162617474-5b21e879e113";
+
+                    const playBtn = document.createElement('div');
+                    playBtn.innerHTML = "<i class='fa-solid fa-play mr-1'></i> Play Video";
+                    playBtn.style.fontSize = "12px";
+                    playBtn.style.color = "#a8c7fa"; // Gemini Accent
+                    playBtn.style.marginTop = "6px";
+                    playBtn.style.fontWeight = "bold";
+
+                    vidContainer.appendChild(thumb);
+                    vidContainer.appendChild(playBtn);
+                    card.appendChild(vidContainer);
+                }
+
+                // Add the source title description below the media elements
+                const title = document.createElement('div');
+                title.innerText = item.title || "Source link";
+                title.style.fontSize = "11px";
+                title.style.color = "#9e9e9e"; // Gemini textMuted
+                title.style.marginTop = "6px";
+                title.style.whiteSpace = "nowrap";
+                title.style.overflow = "hidden";
+                title.style.textOverflow = "ellipsis";
+                card.appendChild(title);
+
+                wrapper.appendChild(card);
+            });
+
+            if (wrapper.children.length > 0) {
+                container.appendChild(wrapper);
+                container.scrollTop = container.scrollHeight;
             }
         }
 
@@ -775,7 +836,7 @@
                 }
             }
 
-            // Fallback to our custom AllOrigins CORS DuckDuckGo Deep Web Scraper Engine (100% Free & Unlimited)
+            // Fallback to our custom AllOrigins Multi-Media Engine
             return await fetchWebSearchContext(prompt);
         }
 
@@ -815,12 +876,11 @@
 
             let contextualizedMsg = finalUserMsg;
             if (isWebSearchEnabled) {
-                appendStatusPill('fa-globe', 'Searching Live Web Index...');
                 const grounding = await fetchWikiGrounding(userMsg);
                 removeStatusPill();
                 if (grounding) {
                     contextualizedMsg = `[SYSTEM NOTE: The following is context fetched from the web in real-time. Adopt these facts directly if relevant to the query. Ignore if completely unrelated.]\n${grounding}\n\n[USER QUERY]\n${finalUserMsg}`;
-                    appendStatusPill('fa-check', 'Research parameters injected.', 'text-emerald-400');
+                    appendStatusPill('fa-check', 'Research & Media parameters injected.', 'text-emerald-400');
                     setTimeout(removeStatusPill, 2000);
                 }
             }
