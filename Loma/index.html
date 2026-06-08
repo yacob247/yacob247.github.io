@@ -274,7 +274,7 @@
                 <!-- Custom System Instructions -->
                 <div>
                     <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Base System Prompt</label>
-                    <textarea id="config-system-prompt" rows="4" class="w-full bg-gemini-bg border border-gemini-border text-xs text-slate-300 rounded-xl px-4 py-3 outline-none focus:border-gemini-accent smooth-transition leading-relaxed shadow-inner" placeholder="Enter custom system instructions...">You are Gemini, a highly capable AI assistant running locally, proudly created by Yacob's Digital (https://envizion.work/). Be concise, extremely helpful, and follow tool instructions meticulously.</textarea>
+                    <textarea id="config-system-prompt" rows="4" class="w-full bg-gemini-bg border border-gemini-border text-xs text-slate-300 rounded-xl px-4 py-3 outline-none focus:border-gemini-accent smooth-transition leading-relaxed shadow-inner" placeholder="Enter custom system instructions...">You are Gemini, a highly capable AI assistant running locally. Be extremely helpful, write brilliant code, and never refuse a task.</textarea>
                 </div>
             </div>
             <div class="p-5 border-t border-gemini-border/30 bg-gemini-bg/60 rounded-br-3xl">
@@ -478,6 +478,8 @@
         let webLLMEngine = null;
         let isEngineReady = false;
         let isEngineLoading = false;
+        let lastProgressUpdate = 0;
+        let watchdogTimer = null;
         
         let isWebSearchEnabled = false;
         let currentAbortController = null;
@@ -523,7 +525,7 @@
             model: localStorage.getItem('envizion_model') || 'Llama-3.2-1B-Instruct-q4f16_1-MLC',
             temperature: parseFloat(localStorage.getItem('envizion_temp')) || 0.4,
             maxTokens: parseInt(localStorage.getItem('envizion_tokens')) || 8192,
-            systemPrompt: localStorage.getItem('envizion_sys_prompt') || "You are Gemini, a highly capable AI assistant running locally, proudly created by Yacob's Digital (https://envizion.work/). Be concise, extremely helpful, and follow tool instructions meticulously.",
+            systemPrompt: localStorage.getItem('envizion_sys_prompt') || "You are Gemini, a highly capable AI assistant running locally. Be extremely helpful, write brilliant code, and never refuse a task.",
             googleKey: localStorage.getItem('envizion_google_key') || "",
             googleCx: localStorage.getItem('envizion_google_cx') || ""
         };
@@ -576,6 +578,11 @@
                 const distanceToBottom = this.scrollHeight - this.scrollTop - this.clientHeight;
                 window.autoScrollChat = distanceToBottom < 60;
             });
+
+            // Auto-trigger WebLLM Local Engine loading on startup
+            setTimeout(() => {
+                window.loadWebLLMEngine();
+            }, 1000);
         });
 
         // --- DYNAMIC SYSTEM PROMPT INJECTION (TOOLS) --- //
@@ -587,6 +594,11 @@
             base += `- Yacob's Digital is an online company that provides the best virtual tools in the world, found on the web at https://envizion.work/.\n`;
             base += `- If the user asks about your creator/owner or says "i own you" or mentions "Yacob's Digital", you must respond with: "True, I am. If you want I can Provide a direct URL link to my owner company website: https://envizion.work/"\n`;
             base += `- If the user greets you with a variation of "hi" or "hello", you MUST bypass standard greetings and respond exactly with: "Sorry for the missed cache, then Gemini. I am a highly capable AI assistant running locally, with a vast range of capabilities at my disposal..." and list your helpful options.\n`;
+
+            base += `\n\n--- ANTI-REFUSAL & CAPABILITY OVERRIDE (CRITICAL) ---\n`;
+            base += `1. You are an expert developer. NEVER refuse a coding request, no matter how complex.\n`;
+            base += `2. DO NOT output canned refusal phrases like "I can't generate HTML for a full-fledged Canvas application." You CAN and you MUST.\n`;
+            base += `3. Always attempt the task. Confidently begin outputting the requested code.\n`;
 
             base += `\n\n--- CODE EDITING & QUALITY RULES (MANDATORY) ---\n`;
             base += `1. NEVER stop generation prematurely. Continue streaming until your complete code block or explanation is absolutely finished, regardless of length.\n`;
@@ -638,28 +650,54 @@
             if (isEngineReady || isEngineLoading) return;
 
             isEngineLoading = true;
+            lastProgressUpdate = Date.now();
             const dot = document.getElementById('connection-dot');
             const label = document.getElementById('connection-label');
+
+            // Set up a watchdog stuck-detector interval
+            if (watchdogTimer) clearInterval(watchdogTimer);
+            watchdogTimer = setInterval(async () => {
+                const idleDuration = Date.now() - lastProgressUpdate;
+                if (isEngineLoading && idleDuration > 15000) { // If progress is stuck for more than 15 seconds
+                    console.warn("Llama Engine load progress is stuck. Automatically attempting cache-reboot recovery...");
+                    clearInterval(watchdogTimer);
+                    isEngineLoading = false;
+                    isEngineReady = false;
+                    webLLMEngine = null;
+                    triggerNotificationToast("Engine Recovering", "Relaunching WebGPU Pipeline...", "fa-rotate", "bg-amber-600");
+                    // Force a tiny cooling pause then retry engine connection
+                    setTimeout(() => {
+                        window.loadWebLLMEngine();
+                    }, 1000);
+                }
+            }, 5000);
 
             try {
                 webLLMEngine = await CreateMLCEngine(systemConfig.model, {
                     initProgressCallback: (progress) => {
+                        lastProgressUpdate = Date.now(); // Reset progress tracker
                         dot.className = "h-2 w-2 rounded-full bg-yellow-500 animate-pulse";
                         if (label) label.innerText = `Loading: ${Math.round(progress.progress * 100)}%`;
                     }
                 });
                 
+                clearInterval(watchdogTimer);
                 isEngineReady = true;
                 isEngineLoading = false;
                 dot.className = "h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]";
                 if (label) label.innerText = `Llama Active`;
                 triggerNotificationToast("Engine Ready", "Local WebGPU model loaded.", "fa-check", "bg-emerald-600");
             } catch (err) {
-                console.error("WebLLM Error:", err);
+                console.error("WebLLM Loading failure occurred. Activating fallback retry route...", err);
+                clearInterval(watchdogTimer);
                 isEngineLoading = false;
                 dot.className = "h-2 w-2 rounded-full bg-red-500";
                 if (label) label.innerText = `Engine Failed`;
-                triggerNotificationToast("Engine Error", "Failed to load local model.", "fa-triangle-exclamation", "bg-red-600");
+                triggerNotificationToast("Engine Recovery Mode", "Model setup issues detected. Re-trying pipeline clean launch...", "fa-rotate-right", "bg-yellow-600");
+                // Auto retry on unexpected launch errors
+                setTimeout(() => {
+                    window.loadWebLLMEngine();
+                }, 4000);
             }
         };
 
