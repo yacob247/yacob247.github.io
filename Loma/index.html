@@ -449,6 +449,19 @@
         
         let isWebSearchEnabled = false;
 
+        let currentAbortController = null;
+
+window.abortInference = () => {
+    if (currentAbortController) {
+        currentAbortController.abort();
+        currentAbortController = null;
+        
+        // Hide the stop button immediately
+        document.getElementById('generation-controls').classList.add('hidden');
+        triggerNotificationToast("Generation Stopped", "Inference was aborted by user.", "fa-stop", "bg-yellow-600");
+    }
+};
+
         // --- URL ROUTING & STRING CODES ---
         const generateStringCode = () => Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
 
@@ -610,33 +623,32 @@
         };
 
 
-        // --- WEB SEARCH GROUNDING --- //
-        window.toggleWebSearch = () => {
-            const cb = document.getElementById('web-search-toggle');
-            cb.checked = !cb.checked;
-            isWebSearchEnabled = cb.checked;
-            triggerNotificationToast("Web Search", isWebSearchEnabled ? "Live Wikipedia grounding enabled." : "Grounding disabled.", "fa-globe", "bg-indigo-600");
-        };
+       window.toggleWebSearch = () => {
+    const cb = document.getElementById('web-search-toggle');
+    cb.checked = !cb.checked;
+    isWebSearchEnabled = cb.checked;
+    triggerNotificationToast("Web Search", isWebSearchEnabled ? "Live Wikipedia grounding enabled." : "Grounding disabled.", "fa-globe", "bg-indigo-600");
+};
 
-        async function fetchWikiGrounding(prompt) {
-            const stopWords = ['generating', 'generate', 'training', 'trained', 'create', 'creating', 'building', 'making', 'writing', 'coding', 'always', 'separately', 'divide', 'exactly'];
-            const words = prompt.replace(/[^\w\s]/gi, '').split(' ')
-                .filter(w => w.length > 5 && !stopWords.includes(w.toLowerCase()));
-            
-            if (words.length === 0) return null;
-            
-            let summaries = [];
-            for (let i=0; i < Math.min(2, words.length); i++) {
-                try {
-                    const res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(words[i])}`);
-                    if (res.ok) {
-                        const data = await res.json();
-                        if (data.extract) summaries.push(`- ${data.title}: ${data.extract}`);
-                    }
-                } catch(e) {}
-            }
-            return summaries.length > 0 ? summaries.join('\n') : null;
-        }
+window.processInputMessage = async () => {
+    // Your prompt sending logic goes here...
+};
+
+       async function fetchWikiGrounding(prompt) {
+    const stopWords = ['generating', 'generate', 'training', 'trained', 'create', 'creating', 'building', 'making', 'writing', 'coding', 'always', 'separately', 'divide', 'exactly'];
+    const words = prompt.split(' ').filter(w => !stopWords.includes(w.toLowerCase()));
+    if (words.length === 0) return "";
+    
+    try {
+        const query = encodeURIComponent(words.slice(0, 3).join(' '));
+        const res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${query}`);
+        if (!res.ok) return "";
+        const data = await res.json();
+        return data.extract ? `\n\n[Wikipedia Context]: ${data.extract}` : "";
+    } catch (e) {
+        return "";
+    }
+}
 
         // --- CHAT INTERACTION LOGIC --- //
         window.processInputMessage = async () => {
@@ -713,16 +725,19 @@
             activeZone.innerHTML = `<span class="answer-wrapper"><div class="flex gap-1 items-center h-6 my-2 px-2"><div class="gemini-loading-dot"></div><div class="gemini-loading-dot"></div><div class="gemini-loading-dot"></div></div></span>`;
             const answerWrapper = activeZone.querySelector('.answer-wrapper');
 
-            try {
-                let finalMessages = [...session.messages];
-                finalMessages[0] = { role: 'system', content: getDynamicSystemPrompt() };
+           currentAbortController = new AbortController();
+document.getElementById('generation-controls').classList.remove('hidden');
 
-                const stream = await webLLMEngine.chat.completions.create({
-                    messages: finalMessages,
-                    temperature: systemConfig.temperature,
-                    max_tokens: systemConfig.maxTokens,
-                    stream: true
-                }, { signal: abortController.signal });
+try {
+    const reply = await webLLMEngine.chat.completions.create({
+        messages: currentMessages,
+        temperature: systemConfig.temperature,
+        max_tokens: systemConfig.maxTokens,
+        stream: true,
+    }, {
+        // Pass the controller's abort signal to WebLLM
+        signal: currentAbortController.signal 
+    });
                     
     
 
@@ -799,17 +814,16 @@
                 session.messages.push({ role: 'assistant', content: finalReply });
                 session.updated = Date.now();
                 syncDatabaseToDrive();
-
-  } catch (err) {
-    // --- UPDATE YOUR CATCH BLOCK ---
-    document.getElementById('generation-controls').classList.add('hidden');
-    if (err.name === 'AbortError' || isStopped) {
-        activeZone.innerHTML += `<br><br><span class="text-orange-400 text-xs italic"><i class="fa-solid fa-hand mr-1"></i> Generation stopped.</span>`;
+} catch (err) {
+    if (err.name === 'AbortError') {
+        console.log("Inference successfully aborted.");
     } else {
         console.error(err);
-        activeZone.innerHTML = `<span class="text-red-400"><i class="fa-solid fa-triangle-exclamation mr-2"></i>WebGPU Error. Refresh or check VRAM.</span>`;
     }
-    // --------------------------------
+} finally {
+    // Hide the button once completed or stopped
+    document.getElementById('generation-controls').classList.add('hidden');
+    currentAbortController = null;
 }
         }
 
