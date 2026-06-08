@@ -4,12 +4,11 @@ import http from 'http';
 
 const app = express();
 
-// ── Allow requests from your site ────────────────────────────────────────────
-// ── Allow requests from your site ────────────────────────────────────────────
+// ── Allow requests from your site and Cloudflare Tunnel ───────────────────────
 app.use(cors({
     origin: [
         'https://envizion.work',
-        'https://envizion.work', // explicitly added your sub-route
+        'https://api.envizion.work', // 👈 CRITICAL: Added your Cloudflare Tunnel URL
         'http://localhost:3000',
         'http://127.0.0.1:5500',
         'http://localhost:5500'
@@ -19,11 +18,13 @@ app.use(cors({
     credentials: true
 }));
 
-
 app.use(express.json({ limit: '2mb' }));
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/api/health', (_, res) => res.json({ ok: true, model: 'llama3.2' }));
+
+// ── Root Path (Fixes "Cannot GET /" with a helpful check) ─────────────────────
+app.get('/', (_, res) => res.json({ status: "online", service: "Loma Proxy Server", apiHealth: "https://envizion.work" }));
 
 // ── Passthrough: browser → Ollama → browser ───────────────────────────────────
 app.post('/api/chat', (req, res) => {
@@ -51,7 +52,10 @@ app.post('/api/chat', (req, res) => {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no');
-    res.flushHeaders();
+    
+    // Support CORS preflight on SSE streams
+    res.setHeader('Access-Control-Allow-Origin', req.headers.origin || 'https://envizion.work');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
 
     // Forward to local Ollama
     const ollamaReq = http.request({
