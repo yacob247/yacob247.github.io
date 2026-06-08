@@ -967,6 +967,16 @@
 
             while (attempt < maxAttempts && !streamSuccess) {
                 attempt++;
+                const streamAbortController = new AbortController();
+                const combinedSignal = streamAbortController.signal;
+                
+                const onUserAbort = () => {
+                    streamAbortController.abort();
+                };
+                currentAbortController.signal.addEventListener('abort', onUserAbort);
+
+                let streamInterval = null;
+
                 try {
                     // Start thinking/loading UI
                     activeZone.innerHTML = `<span class="answer-wrapper"><div class="flex gap-1 items-center h-6 my-2 px-2"><div class="gemini-loading-dot"></div><div class="gemini-loading-dot"></div><div class="gemini-loading-dot"></div></div></span>`;
@@ -978,7 +988,7 @@
                         max_tokens: systemConfig.maxTokens,
                         stream: true,
                     }, {
-                        signal: currentAbortController.signal 
+                        signal: combinedSignal
                     });
 
                     let rawAccumulated = '';
@@ -1028,14 +1038,48 @@
                     };
                     requestAnimationFrame(animateTypewriter);
 
+                    // Set up local token watch to prevent silent model hangs mid-inference
+                    let lastTokenTime = Date.now();
+                    streamInterval = setInterval(() => {
+                        if (streamSuccess || combinedSignal.aborted) {
+                            clearInterval(streamInterval);
+                            return;
+                        }
+                        // If model stops streaming tokens mid-generation for > 8 seconds, trigger rethink inside process
+                        if (Date.now() - lastTokenTime > 8000) {
+                            clearInterval(streamInterval);
+                            console.warn("Inference stream stalled mid-generation. Invoking in-process rethink...");
+                            streamAbortController.abort();
+                        }
+                    }, 1000);
+
                     for await (const chunk of stream) {
-                        if (currentAbortController.signal.aborted) break;
+                        if (combinedSignal.aborted) {
+                            break;
+                        }
                         const token = chunk.choices[0]?.delta?.content || "";
-                        if (token) tokenQueue.push(...token.split(''));
+                        if (token) {
+                            lastTokenTime = Date.now(); // Reset stream timer on token arrival
+                            tokenQueue.push(...token.split(''));
+                        }
                     }
 
+                    clearInterval(streamInterval);
                     renderLoopActive = false;
-                    while (tokenQueue.length > 0) await new Promise(resolve => setTimeout(resolve, 10));
+
+                    // Ensure all queued characters render fully
+                    while (tokenQueue.length > 0) {
+                        await new Promise(resolve => setTimeout(resolve, 5));
+                    }
+
+                    if (currentAbortController.signal.aborted) {
+                        throw new DOMException("User aborted", "AbortError");
+                    }
+
+                    // Fail-safe check if stream was aborted by the watchdog
+                    if (combinedSignal.aborted) {
+                        throw new Error("Stream connection drop detected.");
+                    }
 
                     finalReply = rawAccumulated.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
                     if (finalReply.includes('<think>')) finalReply = finalReply.substring(0, finalReply.indexOf('<think>')).trim();
@@ -1043,15 +1087,19 @@
                     streamSuccess = true;
 
                 } catch (err) {
-                    if (err.name === 'AbortError') {
-                        throw err; // Forward to the outer loop to exit cleanly
+                    if (streamInterval) clearInterval(streamInterval);
+                    currentAbortController.signal.removeEventListener('abort', onUserAbort);
+
+                    if (err.name === 'AbortError' && currentAbortController.signal.aborted) {
+                        throw err; // exit instantly on manual user aborts
                     }
-                    console.error(`WebGPU/Engine Error on attempt ${attempt}:`, err);
-                    if (attempt >= maxAttempts) throw err; // Exhausted retries
-                    
-                    // Show automatic retry indicator to user
-                    activeZone.innerHTML = `<div class="flex items-center gap-2 text-yellow-400 text-xs my-2"><i class="fa-solid fa-rotate-right fa-spin"></i><span>Connection interrupted. Auto-retrying generation (${attempt}/${maxAttempts})...</span></div>`;
+                    console.error(`Inference error or stream stall (Attempt ${attempt}):`, err);
+                    if (attempt >= maxAttempts) throw err;
+
+                    activeZone.innerHTML = `<div class="flex items-center gap-2 text-yellow-400 text-xs my-2"><i class="fa-solid fa-rotate-right fa-spin"></i><span>Response stalled. Rethinking inside the process (Attempt ${attempt}/${maxAttempts})...</span></div>`;
                     await new Promise(r => setTimeout(r, 2000));
+                } finally {
+                    currentAbortController.signal.removeEventListener('abort', onUserAbort);
                 }
             }
 
