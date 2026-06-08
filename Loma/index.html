@@ -595,8 +595,11 @@
         };
 
         async function fetchWikiGrounding(prompt) {
-            // Very naive entity extraction: longest words over 5 chars
-            const words = prompt.replace(/[^\w\s]/gi, '').split(' ').filter(w => w.length > 5);
+            // Smarter entity extraction: ignore common verbs that ruin search context
+            const stopWords = ['generating', 'generate', 'training', 'trained', 'create', 'creating', 'building', 'making', 'writing', 'coding', 'always', 'separately', 'divide', 'exactly'];
+            const words = prompt.replace(/[^\w\s]/gi, '').split(' ')
+                .filter(w => w.length > 5 && !stopWords.includes(w.toLowerCase()));
+            
             if (words.length === 0) return null;
             
             let summaries = [];
@@ -655,7 +658,7 @@
                 const grounding = await fetchWikiGrounding(userMsg);
                 removeStatusPill();
                 if (grounding) {
-                    contextualizedMsg = `[SYSTEM GROUNDING DATA RECOVERED FROM WEB SEARCH]\n${grounding}\n\n[USER QUERY]\n${finalUserMsg}`;
+                    contextualizedMsg = `[SYSTEM NOTE: The following is context from the web. Only use it if relevant to the user's prompt. Ignore if irrelevant.]\n${grounding}\n\n[USER QUERY]\n${finalUserMsg}`;
                     appendStatusPill('fa-check', 'Web context injected.', 'text-emerald-400');
                     setTimeout(removeStatusPill, 2000);
                 }
@@ -1053,7 +1056,7 @@
             let contentHTML = isUser ? escapeHtmlString(msg) : parseMarkdownResponse(msg);
 
             // Clean up messy raw DB tags for UI display
-            if (isUser) contentHTML = contentHTML.replace(/\[SYSTEM GROUNDING DATA RECOVERED FROM WEB SEARCH\][\s\S]*?\[USER QUERY\]\n/gi, '');
+            if (isUser) contentHTML = contentHTML.replace(/\[SYSTEM NOTE: The following is context from the web[\s\S]*?\[USER QUERY\]\n/gi, '');
 
             const bubbleClass = isUser ? 
                 'bg-gemini-sidebar text-slate-200 px-5 py-3 rounded-3xl rounded-tr-sm border border-gemini-border/30 max-w-[85%]' : 
