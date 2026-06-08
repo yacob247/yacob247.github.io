@@ -4,15 +4,15 @@ import http from 'http';
 
 const app = express();
 
-// ── Allow requests from your site and Cloudflare Tunnel ───────────────────────
+// ── Whitelist origins for local network testing and production routing ────────
 const ALLOWED_ORIGINS = [
     'http://localhost:3000',
-    'http://localhost:8080', // <-- This must match your frontend port exactly!
+    'http://localhost:8080',
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1:8080',
     'https://envizion.work',
-    'https://envizion.work'
+    'https://api.envizion.work' // <-- Replaced duplicate with your explicit API endpoint
 ];
-
-
 
 app.use(cors({
     origin: function(origin, callback) {
@@ -33,14 +33,13 @@ app.use(cors({
     credentials: true
 }));
 
-
 // Handle OPTIONS preflight explicitly for all routes
 app.options('*', cors());
 
 app.use(express.json({ limit: '2mb' }));
 
 // ── Health check ──────────────────────────────────────────────────────────────
-app.get('/api/health', (_, res) => res.json({ ok: true, model: 'llama3.2' }));
+app.get('/api/health', (_, res) => res.json({ ok: true, model: 'llama3.2:latest' }));
 
 // ── Root Path (Fixes "Cannot GET /" with a helpful check) ─────────────────────
 app.get('/', (_, res) => res.json({ status: "online", service: "Loma Proxy Server", apiHealth: "https://envizion.work" }));
@@ -53,9 +52,9 @@ app.post('/api/chat', (req, res) => {
         return res.status(400).json({ error: 'messages array required' });
     }
 
-    // Build the payload Ollama expects
+    // Build the payload Ollama expects — using explicit 'llama3.2:latest' tag matching
     const ollamaBody = JSON.stringify({
-        model: 'llama3.2',
+        model: 'llama3.2:latest', 
         messages: messages
             .filter(m => m.role && typeof m.content === 'string' && m.content.trim())
             .map(m => ({ role: m.role, content: m.content.trim() })),
@@ -72,13 +71,13 @@ app.post('/api/chat', (req, res) => {
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no');
     
-    // Support CORS preflight on SSE streams
+    // Support CORS preflight on SSE streams dynamically
     const reqOrigin = req.headers.origin || '';
-    const safeOrigin = ALLOWED_ORIGINS.includes(reqOrigin) ? reqOrigin : 'https://envizion.work';
+    const safeOrigin = ALLOWED_ORIGINS.includes(reqOrigin.replace(/\/$/, "")) ? reqOrigin : 'https://envizion.work';
     res.setHeader('Access-Control-Allow-Origin', safeOrigin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
 
-    // Forward to local Ollama
+    // Forward to local Ollama via raw IPv4 address
     const ollamaReq = http.request({
         hostname: '127.0.0.1',
         port: 11434,
@@ -102,7 +101,7 @@ app.post('/api/chat', (req, res) => {
                     const parsed = JSON.parse(line);
                     const token = parsed.message?.content;
                     if (token) {
-                        // Send in OpenAI-compatible SSE format — client already parses this
+                        // Send in OpenAI-compatible SSE format
                         res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: token } }] })}\n\n`);
                     }
                     if (parsed.done) {
@@ -123,7 +122,7 @@ app.post('/api/chat', (req, res) => {
 
     ollamaReq.on('error', (err) => {
         console.error('[Ollama error]', err.message);
-        res.write(`data: ${JSON.stringify({ error: 'Ollama not reachable. Is it running?' })}\n\n`);
+        res.write(`data: ${JSON.stringify({ error: 'Ollama connection refused. Check background execution status.' })}\n\n`);
         res.end();
     });
 
@@ -137,6 +136,6 @@ app.post('/api/chat', (req, res) => {
 // ── Start ─────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`✅ Loma proxy server on port ${PORT}`);
-    console.log(`   Forwarding to Ollama at localhost:11434`);
+    console.log(`✅ Loma proxy server online on port ${PORT}`);
+    console.log(`   Configured Target: Ollama engine via 127.0.0.1:11434`);
 });
