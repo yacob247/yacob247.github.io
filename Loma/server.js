@@ -14,8 +14,10 @@ const ALLOWED_ORIGINS = [
     'https://api.envizion.work'
 ];
 
-app.use(cors({
+// Centralized CORS configuration to share between standard routes and preflight checks
+const corsOptions = {
     origin: function(origin, callback) {
+        // Allow server-to-server or curl requests (no origin)
         if (!origin) return callback(null, true);
         
         const sanitizedOrigin = origin.replace(/\/$/, "");
@@ -24,15 +26,21 @@ app.use(cors({
             return callback(null, true);
         }
         
-        return callback(new Error('Not allowed by CORS'));
+        // Pass false instead of throwing a hard Error. This blocks CORS cleanly 
+        // without crashing Express or sending ugly 500 HTML stacks.
+        return callback(null, false);
     },
     methods: ['GET', 'POST', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
-    credentials: true
-}));
+    credentials: true,
+    optionsSuccessStatus: 200 // Some legacy browsers choke on 204 for OPTIONS
+};
 
-// Handle OPTIONS preflight explicitly for all routes
-app.options('*', cors());
+// Apply shared CORS configuration globally
+app.use(cors(corsOptions));
+
+// Explicitly handle all preflight OPTIONS requests using the EXACT same rules
+app.options('*', cors(corsOptions));
 
 app.use(express.json({ limit: '2mb' }));
 
@@ -52,7 +60,7 @@ app.post('/api/chat', (req, res) => {
 
     // Build the payload Ollama expects — Explicitly optimized for llama3.2:1b on CPU
     const ollamaBody = JSON.stringify({
-        model: 'llama3.2:1b', // <-- Updated to target your downloaded 1B model variant
+        model: 'llama3.2:1b', 
         messages: messages
             .filter(m => m.role && typeof m.content === 'string' && m.content.trim())
             .map(m => ({ role: m.role, content: m.content.trim() })),
@@ -70,7 +78,7 @@ app.post('/api/chat', (req, res) => {
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no');
     
-    // Support CORS preflight on SSE streams dynamically
+    // Support CORS headers on SSE streams dynamically
     const reqOrigin = req.headers.origin || '';
     const safeOrigin = ALLOWED_ORIGINS.includes(reqOrigin.replace(/\/$/, "")) ? reqOrigin : 'https://envizion.work';
     res.setHeader('Access-Control-Allow-Origin', safeOrigin);
