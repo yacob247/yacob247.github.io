@@ -12,9 +12,9 @@ from pathlib import Path
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from peft import PeftModel
 
-BASE_MODEL_NAME   = "Qwen/Qwen2.5-Coder-7B-Instruct"
-ADAPTER_DIR       = "./trained_rlhf_model"
-OUTPUT_MERGED_DIR = "./merged_rlhf_model"
+BASE_MODEL_NAME   = "unsloth/Llama-3.2-1B"   # must match train_capabilities.py
+ADAPTER_DIR       = "./lora_tool_model"       # output dir from train_capabilities.py
+OUTPUT_MERGED_DIR = "./merged_loma_model"
 
 
 def merge_adapter_weights():
@@ -84,9 +84,9 @@ def merge_adapter_weights():
     print("║  Next steps:".ljust(61) + "║")
     print("║  1. Convert to GGUF:".ljust(61) + "║")
     print("║     python llama.cpp/convert_hf_to_gguf.py \\".ljust(61) + "║")
-    print(f"║       {OUTPUT_MERGED_DIR} --outfile model.gguf".ljust(61) + "║")
+    print("║       ./merged_loma_model --outfile loma.gguf".ljust(61) + "║")
     print("║  2. Quantise (optional Q4_K_M):".ljust(61) + "║")
-    print("║     ./llama.cpp/llama-quantize model.gguf q4_k_m.gguf Q4_K_M".ljust(61) + "║")
+    print("║     ./llama.cpp/llama-quantize loma.gguf loma-q4.gguf Q4_K_M".ljust(61) + "║")
     print("║  3. Run colab_setup.py to host via Ollama + ngrok".ljust(61) + "║")
     print("╚" + "═" * 60 + "╝\n")
 

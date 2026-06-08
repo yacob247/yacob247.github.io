@@ -788,10 +788,8 @@ You must generate a short, ultra-condensed reasoning process under <think> and <
 
         // --- WEBLLM ENGINE LOGIC --- //
 
-        // ── Your custom trained Loma model hosted on Hugging Face ─────────────
-        // Updated pointing to new repo: Yacob-OKour14342/loma-html-expert-mlc
-      // Standard Llama-3.2-1B-Instruct from MLC — no custom HF repo needed
-const MODEL_ID = "Llama-3.2-1B-Instruct-q4f16_1-MLC";
+        // ── Standard Llama-3.2-1B-Instruct via MLC (prebuilt, no custom HF needed) ──
+        const MODEL_ID = "Llama-3.2-1B-Instruct-q4f16_1-MLC";
 
         window.loadWebLLMEngine = async () => {
             if (!navigator.gpu) {
@@ -808,13 +806,9 @@ const MODEL_ID = "Llama-3.2-1B-Instruct-q4f16_1-MLC";
             if (label) label.innerText = `Igniting...`;
 
             try {
-                // Pass appConfig so WebLLM knows about your custom HF model
                 webLLMEngine = await CreateMLCEngine(
-                    "loma-html-expert",
+                    MODEL_ID,
                     {
-                        appConfig: {
-                            model_list: [LOMA_MODEL_CONFIG],
-                        },
                         initProgressCallback: (progress) => {
                             const pct = Math.round(progress.progress * 100);
                             dot.className = "h-2 w-2 rounded-full bg-yellow-400 animate-pulse";
@@ -1564,13 +1558,43 @@ const MODEL_ID = "Llama-3.2-1B-Instruct-q4f16_1-MLC";
                     }
                 }
 
-                // Small edits, scripts, non-HTML blocks render in-line in chat
-                const copyId = 'copy-' + Math.random().toString(36).substring(2, 8);
+                // ALL non-HTML code blocks — Canvas + New Tab + Copy buttons
+                if (isFinal && typeof window.lomaLearnFromCode === 'function') {
+                    window.lomaLearnFromCode(code, language || 'code');
+                }
+                const copyId  = 'copy-' + Math.random().toString(36).substring(2, 8);
+                const b64Code = btoa(unescape(encodeURIComponent(code)));
+                const langLabel = language || 'code';
+                const langIcon  = {
+                    python: 'fa-brands fa-python text-yellow-400',
+                    javascript: 'fa-brands fa-js text-yellow-300',
+                    js: 'fa-brands fa-js text-yellow-300',
+                    typescript: 'fa-brands fa-js text-blue-400',
+                    ts: 'fa-brands fa-js text-blue-400',
+                    css: 'fa-brands fa-css3-alt text-blue-500',
+                    sql: 'fa-solid fa-database text-green-400',
+                    cpp: 'fa-solid fa-code text-purple-400',
+                    c: 'fa-solid fa-code text-purple-400',
+                    rust: 'fa-solid fa-gear text-orange-400',
+                    bash: 'fa-solid fa-terminal text-green-400',
+                    sh: 'fa-solid fa-terminal text-green-400',
+                }[langLabel.toLowerCase()] || 'fa-solid fa-code text-gemini-accent';
                 return `
                 <div class="my-4 rounded-2xl overflow-hidden border border-gemini-border/40 shadow-md max-w-3xl text-left">
-                    <div class="bg-[#1a1b1d] px-4 py-2 text-[10px] text-slate-400 font-mono uppercase tracking-widest flex justify-between items-center">
-                        <span>${language || 'code'}</span>
-                        <button id="${copyId}" onclick="(function(){navigator.clipboard.writeText(document.getElementById('${copyId}-pre').innerText);document.getElementById('${copyId}').innerHTML='<i class=\\'fa-solid fa-check\\'></i> Copied';setTimeout(()=>document.getElementById('${copyId}').innerHTML='<i class=\\'fa-regular fa-copy\\'></i> Copy',2000)})()" class="flex items-center gap-1.5 px-2 py-1 rounded-md hover:bg-gemini-card/80 text-slate-400 hover:text-white smooth-transition text-[10px] font-sans normal-case tracking-normal"><i class="fa-regular fa-copy"></i> Copy</button>
+                    <div class="bg-[#1a1b1d] px-4 py-2 text-[10px] text-slate-400 font-mono uppercase tracking-widest flex justify-between items-center gap-2 flex-wrap">
+                        <span class="flex items-center gap-2"><i class="${langIcon}"></i> <span>${langLabel}</span></span>
+                        <span class="flex items-center gap-1.5">
+                            ${isFinal ? `
+                            <button onclick="window.lomaOpenCodeInCanvas(decodeURIComponent(escape(atob('${b64Code}'))),'${langLabel}')"
+                                class="flex items-center gap-1 px-2 py-1 rounded-md hover:bg-emerald-500/20 text-emerald-400 hover:text-emerald-300 smooth-transition text-[10px] font-sans normal-case tracking-normal">
+                                <i class="fa-solid fa-play text-[9px]"></i> Canvas
+                            </button>
+                            <button onclick="window.lomaOpenInNewTab(decodeURIComponent(escape(atob('${b64Code}'))),'${langLabel}')"
+                                class="flex items-center gap-1 px-2 py-1 rounded-md hover:bg-blue-500/20 text-blue-400 hover:text-blue-300 smooth-transition text-[10px] font-sans normal-case tracking-normal">
+                                <i class="fa-solid fa-arrow-up-right-from-square text-[9px]"></i> New Tab
+                            </button>` : ''}
+                            <button id="${copyId}" onclick="(function(){navigator.clipboard.writeText(document.getElementById('${copyId}-pre').innerText);document.getElementById('${copyId}').innerHTML='<i class=\\'fa-solid fa-check\\'></i> Copied';setTimeout(()=>document.getElementById('${copyId}').innerHTML='<i class=\\'fa-regular fa-copy\\'></i> Copy',2000)})()" class="flex items-center gap-1.5 px-2 py-1 rounded-md hover:bg-gemini-card/80 text-slate-400 hover:text-white smooth-transition text-[10px] font-sans normal-case tracking-normal"><i class="fa-regular fa-copy"></i> Copy</button>
+                        </span>
                     </div>
                     <pre id="${copyId}-pre" class="bg-[#131314] p-4 text-[13px] font-mono text-blue-100 overflow-x-auto leading-relaxed"><code>${escapeHtmlString(code)}</code></pre>
                 </div>`;
@@ -2336,6 +2360,292 @@ You can use these tools mid-response. Think first (what should the music/image b
 })();
 
 console.log('[LOMA Tools] Bridge loaded — music-gen + image-gen ready.');
+
+// ════════════════════════════════════════════════════════════════════════════
+//  LOMA SELF-LEARNING BRAIN
+//  Every generation → analysed → compared → improved automatically
+//  Works for: HTML, CSS, JS, Python, C++, SQL, images, music
+// ════════════════════════════════════════════════════════════════════════════
+
+const LOMA_CODE_MEM_KEY   = 'loma_code_patterns';
+const LOMA_IMAGE_MEM_KEY  = 'loma_image_memory';
+const LOMA_MUSIC_MEM_KEY  = 'loma_music_memory';
+const LOMA_CRAWL_KEY      = 'loma_crawl_cache';
+const LOMA_IMPROVE_KEY    = 'loma_improve_log';
+
+function lomaLoad(key)       { try { return JSON.parse(localStorage.getItem(key) || 'null') || []; } catch(e){ return []; } }
+function lomaSave(key, data) { try { localStorage.setItem(key, JSON.stringify(data)); } catch(e){} }
+
+let lomaCodeMem   = lomaLoad(LOMA_CODE_MEM_KEY);
+let lomaImageMem  = lomaLoad(LOMA_IMAGE_MEM_KEY);
+let lomaMusicMem  = lomaLoad(LOMA_MUSIC_MEM_KEY);
+let lomaCrawlCache= lomaLoad(LOMA_CRAWL_KEY);
+let lomaImproveLog= lomaLoad(LOMA_IMPROVE_KEY);
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function _detectLang(code) {
+    if (/<(html|div|nav|section|header|button|canvas|svg)/i.test(code)) return 'html';
+    if (/\{[^}]*:[^}]*\}/s.test(code) && !code.includes('function')) return 'css';
+    if (/#include|std::|cout|int main|void |class \w+\s*\{/.test(code)) return 'cpp';
+    if (/def |import |print\(|class \w+:/.test(code)) return 'python';
+    if (/SELECT|INSERT|UPDATE|DELETE|FROM|WHERE/i.test(code)) return 'sql';
+    if (/function |const |let |=>|async |await |\.then/.test(code)) return 'javascript';
+    return 'text';
+}
+
+function _scoreCode(code, lang) {
+    let s = 0.4;
+    const len = code.length;
+    if (len > 200)  s += 0.1;
+    if (len > 600)  s += 0.1;
+    if (len > 1200) s += 0.1;
+    if (/function|class|def |const /.test(code)) s += 0.1;
+    if (code.includes('return')) s += 0.05;
+    if (/\/\/|\/\*|#/.test(code))  s += 0.05;
+    if (/TODO|placeholder|lorem ipsum/i.test(code)) s -= 0.2;
+    if (code.split('\n').length < 3) s -= 0.1;
+    return Math.min(1, Math.max(0, s));
+}
+
+function _countTok(text) { return Math.round(text.split(/\s+/).length * 1.3); }
+
+// ── 1. WEB CRAWLER — reads HTML pages, extracts code patterns ────────────────
+window.lomaCrawlPage = async function(url) {
+    const cached = lomaCrawlCache.find(c => c.url === url && Date.now() - c.ts < 3_600_000);
+    if (cached) return cached.patterns;
+    try {
+        const proxy = 'https://api.allorigins.win/raw?url=';
+        const res   = await fetch(proxy + encodeURIComponent(url), { signal: AbortSignal.timeout(15000) });
+        const html  = await res.text();
+        const parser = new DOMParser();
+        const doc   = parser.parseFromString(html, 'text/html');
+        const patterns = [];
+        doc.querySelectorAll('pre, code, script[type="text/plain"]').forEach(el => {
+            const text = el.textContent.trim();
+            if (text.length < 40) return;
+            const lang = _detectLang(text);
+            const quality = _scoreCode(text, lang);
+            if (quality > 0.3) patterns.push({ lang, code: text.slice(0,2000), quality, tokens: _countTok(text), source: url, ts: Date.now() });
+        });
+        doc.querySelectorAll('style').forEach(el => {
+            const text = el.textContent.trim();
+            if (text.length > 40) patterns.push({ lang:'css', code: text.slice(0,2000), quality: 0.6, tokens: _countTok(text), source: url, ts: Date.now() });
+        });
+        lomaCrawlCache.push({ url, patterns, ts: Date.now() });
+        if (lomaCrawlCache.length > 200) lomaCrawlCache = lomaCrawlCache.slice(-200);
+        lomaSave(LOMA_CRAWL_KEY, lomaCrawlCache);
+        return patterns;
+    } catch(e) {
+        console.warn('[Loma Crawler] Failed:', url, e.message);
+        return [];
+    }
+};
+
+window.lomaAutoCrawlSearchResults = async function(urls) {
+    if (!urls || !urls.length) return;
+    for (const url of urls.slice(0, 3)) {
+        const patterns = await window.lomaCrawlPage(url);
+        if (patterns.length > 0) {
+            lomaCodeMem.push(...patterns);
+            if (lomaCodeMem.length > 1000) lomaCodeMem = lomaCodeMem.slice(-1000);
+            lomaSave(LOMA_CODE_MEM_KEY, lomaCodeMem);
+            console.log(`[Loma Crawler] +${patterns.length} patterns from ${url}`);
+        }
+    }
+};
+
+// ── 2. CODE LEARNER ──────────────────────────────────────────────────────────
+window.lomaLearnFromCode = function(code, lang) {
+    if (!code || code.length < 30) return;
+    const myQ   = _scoreCode(code, lang);
+    const myTok = _countTok(code);
+    const better = lomaCodeMem.filter(p => p.lang === lang && (p.quality > myQ + 0.1 || p.tokens < myTok * 0.7)).slice(0,3);
+    if (better.length > 0) {
+        const note = `[LOMA LEARNING] Found ${better.length} better ${lang} patterns: ${
+            better.map(p => p.tokens < myTok * 0.7 ? `${Math.round((1-p.tokens/myTok)*100)}% fewer tokens` : 'higher quality').join(', ')
+        }. Apply next time.`;
+        lomaImproveLog.push({ ts: Date.now(), lang, note, myQ, bestQ: Math.max(...better.map(p=>p.quality)) });
+        if (lomaImproveLog.length > 500) lomaImproveLog = lomaImproveLog.slice(-500);
+        lomaSave(LOMA_IMPROVE_KEY, lomaImproveLog);
+        console.log('[Loma Learner]', note);
+    }
+    lomaCodeMem.push({ lang, code: code.slice(0,2000), quality: myQ, tokens: myTok, source: 'self-generated', ts: Date.now() });
+    if (lomaCodeMem.length > 1000) lomaCodeMem = lomaCodeMem.slice(-1000);
+    lomaSave(LOMA_CODE_MEM_KEY, lomaCodeMem);
+};
+
+// ── 3. IMAGE LEARNER ─────────────────────────────────────────────────────────
+window.lomaLearnFromImage = function(imgData) {
+    if (!imgData || !imgData.prompt) return;
+    const prompt = imgData.prompt;
+    let q = 0.4;
+    if (prompt.length > 50)  q += 0.1;
+    if (prompt.length > 100) q += 0.1;
+    if (/photorealistic|detailed|8k|cinematic|lighting|depth/.test(prompt)) q += 0.15;
+    if (/no blur|sharp|high resolution/.test(prompt)) q += 0.1;
+    if (prompt.split(',').length > 4) q += 0.1;
+    lomaImageMem.push({ prompt, style: imgData.style||'flux', quality: q, ts: Date.now() });
+    if (lomaImageMem.length > 300) lomaImageMem = lomaImageMem.slice(-300);
+    lomaSave(LOMA_IMAGE_MEM_KEY, lomaImageMem);
+};
+
+window.lomaBuildEnhancedImagePrompt = function(raw) {
+    if (lomaImageMem.length < 5) return raw;
+    const top  = [...lomaImageMem].sort((a,b)=>b.quality-a.quality).slice(0,5);
+    const terms= ['photorealistic','cinematic','detailed','8k','high resolution','sharp focus','professional lighting','depth of field'];
+    const allW = top.map(p=>p.prompt).join(' ');
+    const found= terms.filter(t => allW.toLowerCase().includes(t) && !raw.toLowerCase().includes(t));
+    return found.length > 0 ? `${raw}, ${found.slice(0,2).join(', ')}` : raw;
+};
+
+// ── 4. MUSIC LEARNER ─────────────────────────────────────────────────────────
+window.lomaLearnFromMusic = function(data) {
+    if (!data || !data.prompt) return;
+    let q = 0.4;
+    if (data.bpm)    q += 0.1;
+    if (data.key)    q += 0.1;
+    if (data.style)  q += 0.1;
+    if (data.prompt.length > 30) q += 0.1;
+    if (/melody|bass|reverb|delay/.test(data.prompt)) q += 0.1;
+    lomaMusicMem.push({ ...data, quality: q, ts: Date.now() });
+    if (lomaMusicMem.length > 200) lomaMusicMem = lomaMusicMem.slice(-200);
+    lomaSave(LOMA_MUSIC_MEM_KEY, lomaMusicMem);
+};
+
+window.lomaBuildEnhancedMusicPrompt = function(raw, style) {
+    if (lomaMusicMem.length < 3) return raw;
+    const similar = lomaMusicMem.filter(m => !style || m.style===style).sort((a,b)=>b.quality-a.quality).slice(0,3);
+    if (!similar.length) return raw;
+    const richTerms = ['reverb','warm','layered','deep bass','high fidelity','melodic','harmonic','stereo','spacious','punchy'];
+    const allBest   = similar.map(m=>m.prompt).join(' ').toLowerCase();
+    const found     = richTerms.filter(t => allBest.includes(t) && !raw.toLowerCase().includes(t));
+    return found.length > 0 ? `${raw}, ${found.slice(0,2).join(', ')}` : raw;
+};
+
+// ── 5. LEARNING CONTEXT INJECTOR ─────────────────────────────────────────────
+window.lomaGetLearningContext = function() {
+    let ctx = '';
+    if (lomaImproveLog.length > 0) {
+        ctx += '\n\n--- LOMA SELF-LEARNING NOTES (apply these improvements) ---\n';
+        lomaImproveLog.slice(-5).forEach(l => { ctx += `• ${l.note}\n`; });
+    }
+    const langCounts = {};
+    lomaCodeMem.forEach(p => { langCounts[p.lang] = (langCounts[p.lang]||0)+1; });
+    const topLangs = Object.entries(langCounts).sort((a,b)=>b[1]-a[1]).slice(0,4).map(([l])=>l);
+    if (topLangs.length > 0) ctx += `\n• Studied ${lomaCodeMem.length} code patterns from web (${topLangs.join(', ')}). Use most efficient patterns.`;
+    if (lomaImageMem.length > 0) {
+        const best = [...lomaImageMem].sort((a,b)=>b.quality-a.quality)[0];
+        if (best) ctx += `\n• Best image prompt: "${best.prompt.slice(0,80)}"`;
+    }
+    if (lomaMusicMem.length > 0) {
+        const best = [...lomaMusicMem].sort((a,b)=>b.quality-a.quality)[0];
+        if (best) ctx += `\n• Best music: "${best.prompt.slice(0,60)}", ${best.bpm}bpm, ${best.key}`;
+    }
+    return ctx;
+};
+
+// ── 6. CANVAS OPENER — opens ALL code types in live canvas ──────────────────
+window.lomaOpenCodeInCanvas = function(code, lang) {
+    const isHtml = (lang === 'html' || lang === 'html5') &&
+        (code.includes('<html') || code.includes('<div') || code.includes('<body') || code.includes('<canvas'));
+
+    let renderable = code;
+    if (!isHtml) {
+        const escaped = code.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        const canRun  = lang === 'javascript' || lang === 'js';
+        const canRunPy= lang === 'python';
+        renderable = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<title>Loma · ${lang}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#0d0e10;color:#e2e8f0;font-family:'Courier New',monospace;display:flex;flex-direction:column;height:100vh}
+  .hdr{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:#16181c;border-bottom:1px solid #2a2d33;font-size:11px;color:#6b7280;letter-spacing:.08em;flex-shrink:0}
+  .badge{background:#a8c7fa22;color:#a8c7fa;border:1px solid #a8c7fa44;padding:2px 8px;border-radius:99px;font-weight:700;text-transform:uppercase;font-size:10px}
+  .run-btn{background:#4ade8022;color:#4ade80;border:1px solid #4ade8044;padding:4px 14px;border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit;transition:.2s}
+  .run-btn:hover{background:#4ade8044}
+  pre{margin:0;padding:20px;font-size:13px;line-height:1.75;overflow:auto;flex:1;white-space:pre-wrap;word-break:break-word}
+  .out-zone{border-top:1px solid #2a2d33;padding:14px;background:#0a0b0d;font-size:12px;color:#4ade80;min-height:64px;display:none;flex-shrink:0}
+  .out-zone.on{display:block}
+  .out-label{font-size:10px;color:#6b7280;text-transform:uppercase;margin-bottom:6px}
+</style></head>
+<body>
+<div class="hdr">
+  <span>loma / canvas · <span class="badge">${lang}</span></span>
+  ${canRun || canRunPy ? '<button class="run-btn" onclick="runCode()">▶ Run</button>' : '<span style="color:#4b5563">read-only</span>'}
+</div>
+<pre id="code-el">${escaped}</pre>
+<div class="out-zone" id="out-zone"><div class="out-label">Output</div><div id="out-content"></div></div>
+<script>
+function runCode(){
+  const oz=document.getElementById('out-zone');
+  const oc=document.getElementById('out-content');
+  oz.className='out-zone on';
+  ${canRun ? `
+  try{
+    const logs=[];
+    const ol=console.log;
+    console.log=(...a)=>{logs.push(a.map(x=>typeof x==='object'?JSON.stringify(x,null,2):String(x)).join(' '));ol(...a)};
+    eval(document.getElementById('code-el').textContent);
+    console.log=ol;
+    oc.textContent=logs.join('\\n')||'(no console output)';
+  }catch(e){oc.textContent='Error: '+e.message;oc.style.color='#f87171';}` : `oc.textContent='Python executes server-side — copy and run in your environment.';`}
+}
+<\/script>
+</body></html>`;
+    }
+    window.updateCanvasLive(renderable, true);
+    window.toggleCanvasVisibility(true);
+};
+
+// ── 7. OPEN IN NEW TAB ───────────────────────────────────────────────────────
+window.lomaOpenInNewTab = function(code, lang) {
+    const isHtml = (lang === 'html' || lang === 'html5') &&
+        (code.includes('<html') || code.includes('<div') || code.includes('<body'));
+    let content = code;
+    if (!isHtml) {
+        const escaped = code.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        content = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Loma · ${lang}</title>
+<style>*{box-sizing:border-box;margin:0;padding:0}body{background:#0d0e10;color:#e2e8f0;font-family:'Courier New',monospace}
+.hdr{padding:12px 16px;background:#16181c;border-bottom:1px solid #2a2d33;font-size:11px;color:#6b7280;letter-spacing:.08em}
+pre{padding:20px;font-size:13px;line-height:1.75;white-space:pre-wrap;word-break:break-word}</style></head>
+<body><div class="hdr">loma / ${lang}</div><pre>${escaped}</pre></body></html>`;
+    }
+    const blob = new Blob([content], { type:'text/html' });
+    window.open(URL.createObjectURL(blob), '_blank');
+};
+
+// ── 8. INTERCEPT IMAGE/MUSIC RESULTS FOR LEARNING ───────────────────────────
+window.addEventListener('message', (e) => {
+    const msg = e.data;
+    if (!msg) return;
+    if (msg.type === 'LOMA_IMAGE_RESULT' && msg.prompt) {
+        window.lomaLearnFromImage({ prompt: msg.prompt, style: msg.style });
+    }
+    if (msg.type === 'LOMA_MUSIC_RESULT' && msg.prompt) {
+        window.lomaLearnFromMusic({ prompt: msg.prompt, style: msg.style, bpm: msg.bpm, key: msg.key });
+    }
+});
+
+// ── 9. PATCH getDynamicSystemPrompt to inject learning context ───────────────
+(function patchDynamicPrompt(){
+    const _orig = window.getDynamicSystemPrompt || (typeof getDynamicSystemPrompt !== 'undefined' ? getDynamicSystemPrompt : null);
+    if (_orig) {
+        window.getDynamicSystemPrompt = function() {
+            return _orig() + window.lomaGetLearningContext();
+        };
+    }
+})();
+
+// ── STATS ─────────────────────────────────────────────────────────────────────
+window.lomaGetStats = function() {
+    const lc = {};
+    lomaCodeMem.forEach(p => { lc[p.lang]=(lc[p.lang]||0)+1; });
+    return { codePatterns: lomaCodeMem.length, imageMemory: lomaImageMem.length, musicMemory: lomaMusicMem.length, improvements: lomaImproveLog.length, byLang: lc };
+};
+
+console.log('[Loma Brain] ✅ Self-learning system online.');
+console.log('[Loma Brain] Code patterns:', lomaCodeMem.length, '| Images:', lomaImageMem.length, '| Music:', lomaMusicMem.length);
     </script>
 </body>
 </html>

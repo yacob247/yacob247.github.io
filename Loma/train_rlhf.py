@@ -1,7 +1,7 @@
 """
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║         GEMINI-STYLE RLHF TRAINING PIPELINE — WebGPU/CUDA HYBRID           ║
-║  Constitutional AI + PPO Reward Modeling + LoRA Fine-Tuning on Qwen2.5     ║
+║  Constitutional AI + PPO Reward Modeling + LoRA Fine-Tuning on Llama 3.2 1B║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 
 Architecture mirrors Google DeepMind's RLHF approach:
@@ -65,13 +65,13 @@ log = logging.getLogger("RLHF")
 @dataclass
 class RLHFConfig:
     # Model
-    base_model: str             = "Qwen/Qwen2.5-Coder-7B-Instruct"
+    base_model: str             = "unsloth/Llama-3.2-1B"
     dataset_path: str           = "my_rlhf_dataset.json"
-    output_dir: str             = "./trained_rlhf_model"
+    output_dir: str             = "./lora_tool_model"
     reward_model_dir: str       = "./reward_model"
 
     # Hardware — auto-detect WebGPU/CUDA/CPU
-    use_4bit: bool              = True      # QLoRA — fits in 15 GB VRAM
+    use_4bit: bool              = True      # QLoRA — fits in free Colab T4 (15 GB)
     use_flash_attention: bool   = False     # Set True if flash-attn installed
 
     # LoRA — matches Gemini's PEFT approach
@@ -87,7 +87,7 @@ class RLHFConfig:
     sft_epochs: int             = 2
     sft_batch_size: int         = 2
     sft_lr: float               = 2e-4
-    sft_max_seq_len: int        = 1024
+    sft_max_seq_len: int        = 2048
     sft_grad_accum: int         = 4
 
     # Reward model stage
@@ -232,8 +232,8 @@ def run_sft(dataset: Dataset, tokenizer: AutoTokenizer) -> str:
     def format_chat(example):
         return {
             "text": (
-                f"<|im_start|>user\n{example['prompt']}<|im_end|>\n"
-                f"<|im_start|>assistant\n{example['chosen']}<|im_end|>"
+                f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n{example['prompt']}<|eot_id|>\n"
+                f"<|start_header_id|>assistant<|end_header_id|>\n{example['chosen']}<|eot_id|>"
             )
         }
 
@@ -304,12 +304,12 @@ def run_reward_model(dataset: Dataset, tokenizer: AutoTokenizer) -> str:
     # Build paired dataset in TRL RewardTrainer format
     def build_reward_pairs(examples):
         chosen_inputs = tokenizer(
-            [f"<|im_start|>user\n{p}<|im_end|>\n<|im_start|>assistant\n{c}<|im_end|>"
+            [f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n{p}<|eot_id|>\n<|start_header_id|>assistant<|end_header_id|>\n{c}<|eot_id|>"
              for p, c in zip(examples["prompt"], examples["chosen"])],
             truncation=True, max_length=512, padding="max_length"
         )
         rejected_inputs = tokenizer(
-            [f"<|im_start|>user\n{p}<|im_end|>\n<|im_start|>assistant\n{r}<|im_end|>"
+            [f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n{p}<|eot_id|>\n<|start_header_id|>assistant<|end_header_id|>\n{r}<|eot_id|>"
              for p, r in zip(examples["prompt"], examples["rejected"])],
             truncation=True, max_length=512, padding="max_length"
         )
@@ -428,7 +428,7 @@ def run_ppo(sft_dir: str, reward_dir: str, dataset: Dataset, tokenizer: AutoToke
         # Tokenize queries
         queries = [
             tokenizer.encode(
-                f"<|im_start|>user\n{p}<|im_end|>\n<|im_start|>assistant\n",
+                f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n{p}<|eot_id|>\n<|start_header_id|>assistant<|end_header_id|>\n",
                 return_tensors="pt"
             ).squeeze()
             for p in batch_prompts
@@ -518,7 +518,7 @@ def constitutional_ai_score(response_text: str, base_score: float) -> float:
 # ═══════════════════════════════════════════════════════════════════════════════
 def main():
     print("\n" + "╔" + "═" * 68 + "╗")
-    print("║" + "  GEMINI-STYLE RLHF PIPELINE — Qwen2.5-Coder-7B".center(68) + "║")
+    print("║" + "  RLHF PIPELINE — Llama 3.2 1B (100% free)".center(68) + "║")
     print("╚" + "═" * 68 + "╝\n")
 
     log.info(f"Config: {CFG}\n")
