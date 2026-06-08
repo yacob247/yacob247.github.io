@@ -10,6 +10,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Marked.js for full Markdown parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
     
     <script>
         tailwind.config = {
@@ -289,13 +291,13 @@
                     </div>
                     <h1 class="text-2xl font-semibold text-white mb-3">How can I help you today?</h1>
                     <p class="text-sm text-gemini-textMuted max-w-md leading-relaxed mb-8">
-                        I am running locally in your browser using WebGPU. I can generate images, create interactive web apps in Canvas, and learn facts about you.
+                        I am running locally in your browser using WebGPU. I can generate images, create interactive web apps in Canvas, format beautiful tables, and learn facts about you.
                     </p>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-3 w-full max-w-lg">
-                        <button onclick="document.getElementById('user-prompt').value='Generate an image of a futuristic cyberpunk city'; window.processInputMessage();" class="p-4 bg-gemini-card hover:bg-[#323639] border border-gemini-border/50 rounded-2xl text-left smooth-transition">
-                            <i class="fa-solid fa-image text-emerald-400 mb-2 block text-lg"></i>
-                            <span class="text-sm text-slate-200 font-medium block">Generate an Image</span>
-                            <span class="text-[11px] text-slate-400">Uses zero-auth API integration</span>
+                        <button onclick="document.getElementById('user-prompt').value='Generate a comparison table of the top 3 programming languages with features, pros, and cons'; window.processInputMessage();" class="p-4 bg-gemini-card hover:bg-[#323639] border border-gemini-border/50 rounded-2xl text-left smooth-transition">
+                            <i class="fa-solid fa-table text-emerald-400 mb-2 block text-lg"></i>
+                            <span class="text-sm text-slate-200 font-medium block">Create a Table</span>
+                            <span class="text-[11px] text-slate-400">Renders rich markdown tables</span>
                         </button>
                         <button onclick="document.getElementById('user-prompt').value='Build a playable Tic-Tac-Toe web game'; window.processInputMessage();" class="p-4 bg-gemini-card hover:bg-[#323639] border border-gemini-border/50 rounded-2xl text-left smooth-transition">
                             <i class="fa-brands fa-html5 text-orange-400 mb-2 block text-lg"></i>
@@ -460,7 +462,6 @@
             } catch (e) { console.error("DB corrupt", e); }
         }
 
-        // Check if URL contains a custom sharing string code (e.g. /Loma/ab12cd34)
         const lomaMatch = window.location.href.match(/\/Loma\/([a-zA-Z0-9]+)/);
         if(lomaMatch && lomaMatch[1]) {
             currentSessionId = lomaMatch[1];
@@ -482,7 +483,6 @@
             document.getElementById('token-val').innerText = systemConfig.maxTokens;
             document.getElementById('config-system-prompt').value = systemConfig.systemPrompt;
 
-            // Route handler: if the session exists, load it, otherwise init new
             if (chatDatabase.sessions[currentSessionId]) {
                 window.loadHistoricalSession(currentSessionId);
             } else {
@@ -595,7 +595,6 @@
         };
 
         async function fetchWikiGrounding(prompt) {
-            // Smarter entity extraction: ignore common verbs that ruin search context
             const stopWords = ['generating', 'generate', 'training', 'trained', 'create', 'creating', 'building', 'making', 'writing', 'coding', 'always', 'separately', 'divide', 'exactly'];
             const words = prompt.replace(/[^\w\s]/gi, '').split(' ')
                 .filter(w => w.length > 5 && !stopWords.includes(w.toLowerCase()));
@@ -628,7 +627,7 @@
 
             input.value = '';
             input.style.height = 'auto';
-            input.dispatchEvent(new Event('input')); // reset button styling
+            input.dispatchEvent(new Event('input'));
 
             let finalUserMsg = userMsg;
             if (attachedFileContent) {
@@ -639,19 +638,16 @@
             let session = chatDatabase.sessions[currentSessionId];
             if (!session) { initNewSessionInDB(); session = chatDatabase.sessions[currentSessionId]; }
 
-            // Title generation
             if (session.messages.length <= 1) {
                 session.title = userMsg.length > 30 ? userMsg.substring(0, 30) + "..." : userMsg;
                 document.getElementById('current-chat-title').innerText = session.title;
             }
 
-            // Remove initial placeholder screen if exists
             const stream = document.getElementById('chat-stream');
             if(stream.querySelector('.fade-in')) stream.innerHTML = '';
 
-            appendChatBubble('user', userMsg); // visually append pure text
+            appendChatBubble('user', userMsg);
 
-            // Search Grounding Logic
             let contextualizedMsg = finalUserMsg;
             if (isWebSearchEnabled) {
                 appendStatusPill('fa-globe', 'Searching web context...');
@@ -669,7 +665,7 @@
             syncDatabaseToDrive();
             renderSidebarChats();
 
-            await triggerInference(finalUserMsg); // pass pure msg for RLHF tracking
+            await triggerInference(finalUserMsg);
         };
 
         function appendStatusPill(icon, text, colorClass = 'text-gemini-textMuted') {
@@ -692,7 +688,6 @@
             const answerWrapper = activeZone.querySelector('.answer-wrapper');
 
             try {
-                // Ensure dynamic system prompt is injected
                 let finalMessages = [...session.messages];
                 finalMessages[0] = { role: 'system', content: getDynamicSystemPrompt() };
 
@@ -716,8 +711,8 @@
                             const char = tokenQueue.shift();
                             rawAccumulated += char;
                             answerText += char;
-                            // Fast, rough render during stream (escaped)
-                            answerWrapper.innerHTML = escapeHtmlString(answerText) + '<span class="streaming-cursor"></span>';
+                            // Parse markdown instantly during stream but don't auto-open Canvas apps yet
+                            answerWrapper.innerHTML = parseMarkdownResponse(answerText, false) + '<span class="streaming-cursor"></span>';
                         }
                         chatStream.scrollTop = chatStream.scrollHeight;
                     }
@@ -734,10 +729,9 @@
 
                 let finalReply = rawAccumulated;
                 
-                // Final full parse to trigger Tools (Images, Memories, Canvas)
-                activeZone.innerHTML = parseMarkdownResponse(finalReply);
+                // Final fully parsed response (opens Canvas, sets local memory, etc)
+                activeZone.innerHTML = parseMarkdownResponse(finalReply, true);
                 
-                // Add RLHF Footer
                 const msgId = Date.now();
                 const cleanPrompt = btoa(encodeURIComponent(originalPromptText));
                 const cleanReply = btoa(encodeURIComponent(finalReply));
@@ -761,69 +755,140 @@
             }
         }
 
-        // --- UI FORMATTING & TOOLS PARSER --- //
+        // --- MARKDOWN & TOOLS PARSER --- //
         let currentCanvasHTML = "";
 
-        function parseMarkdownResponse(text) {
-            let formatted = escapeHtmlString(text);
+        // Core parsing engine relying on Marked.js with custom Tailwind overrides
+        function parseMarkdownResponse(text, isFinal = false) {
+            let preprocessed = text;
 
-            // Tool: Image Generation proxy
-            formatted = formatted.replace(/\[IMAGE:\s*(.*?)\]/gi, (match, prompt) => {
-                const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt.trim())}?nologo=true`;
-                return `
-                <div class="my-4 rounded-2xl overflow-hidden border border-gemini-border/60 shadow-lg max-w-sm bg-gemini-card">
-                   <div class="relative w-full aspect-square bg-gemini-sidebar flex items-center justify-center">
-                       <i class="fa-solid fa-spinner fa-spin text-gemini-accent absolute z-0 text-2xl"></i>
-                       <img src="${url}" alt="${prompt}" class="relative z-10 w-full h-full object-cover rounded-t-2xl" onload="this.previousElementSibling.remove()"/>
-                   </div>
-                   <div class="px-4 py-3 text-[11px] text-slate-300 font-mono bg-gemini-card border-t border-gemini-border/30 flex items-center gap-2">
-                       <i class="fa-solid fa-wand-magic-sparkles text-gemini-accent"></i> <span>Generated image</span>
-                   </div>
-                </div>`;
-            });
-
-            // Tool: Personal Intelligence Memory
-            formatted = formatted.replace(/\[REMEMBER:\s*(.*?)\]/gi, (match, fact) => {
-                const cleanFact = fact.trim();
-                if (!personalMemories.includes(cleanFact)) {
-                    personalMemories.push(cleanFact);
-                    localStorage.setItem('envizion_memories', JSON.stringify(personalMemories));
+            // 1. Tool: Image Generation Preprocessing
+            preprocessed = preprocessed.replace(/\[IMAGE:\s*(.*?)\]/gi, (match, prompt) => {
+                if (!isFinal) {
+                    return `\n<div class="my-4 rounded-2xl border border-gemini-border/60 shadow-lg max-w-sm bg-gemini-card p-4 flex items-center gap-3 text-slate-300 text-sm"><i class="fa-solid fa-spinner fa-spin text-gemini-accent"></i> Generating Image...</div>\n`;
                 }
-                return `
-                <div class="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-900/20 border border-blue-700/30 rounded-full text-[11px] text-blue-300 font-medium my-2">
-                   <i class="fa-solid fa-brain text-blue-400"></i> Local Memory Updated
-                </div>\n`;
+                const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt.trim())}?nologo=true`;
+                return `\n<div class="my-4 rounded-2xl overflow-hidden border border-gemini-border/60 shadow-lg max-w-sm bg-gemini-card"><div class="relative w-full aspect-square bg-gemini-sidebar flex items-center justify-center"><i class="fa-solid fa-spinner fa-spin text-gemini-accent absolute z-0 text-2xl"></i><img src="${url}" alt="${prompt}" class="relative z-10 w-full h-full object-cover rounded-t-2xl" onload="this.previousElementSibling.remove()"/></div><div class="px-4 py-3 text-[11px] text-slate-300 font-mono bg-gemini-card border-t border-gemini-border/30 flex items-center gap-2"><i class="fa-solid fa-wand-magic-sparkles text-gemini-accent"></i> <span>Generated image</span></div></div>\n`;
             });
 
-            // Tool: Canvas HTML
-            formatted = formatted.replace(/```html([\s\S]*?)```/gi, (match, content) => {
-                // Auto-trigger Canvas logic
-                setTimeout(() => window.renderToCanvas(btoa(encodeURIComponent(content.trim()))), 100);
-                
-                return `
-                <div class="relative group my-4 shadow-lg rounded-2xl overflow-hidden max-w-md border border-gemini-border/40">
-                    <div class="flex items-center justify-between bg-gemini-sidebar px-4 py-3 text-xs font-sans text-slate-200">
-                        <span class="font-semibold flex items-center gap-2"><i class="fa-brands fa-html5 text-orange-400 text-lg"></i> Interactive Web App</span>
-                        <button onclick="window.renderToCanvas(\`${btoa(encodeURIComponent(content.trim()))}\`)" class="bg-gemini-card hover:bg-[#3c4043] text-white px-3 py-1.5 rounded-full smooth-transition font-medium text-[11px] border border-gemini-border/50">
-                            <i class="fa-solid fa-play mr-1.5 text-emerald-400"></i> Open Canvas
-                        </button>
-                    </div>
-                </div>`;
+            // 2. Tool: Personal Intelligence Memory Preprocessing
+            preprocessed = preprocessed.replace(/\[REMEMBER:\s*(.*?)\]/gi, (match, fact) => {
+                if (isFinal) {
+                    const cleanFact = fact.trim();
+                    if (!personalMemories.includes(cleanFact)) {
+                        personalMemories.push(cleanFact);
+                        localStorage.setItem('envizion_memories', JSON.stringify(personalMemories));
+                    }
+                }
+                return `\n<div class="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-900/20 border border-blue-700/30 rounded-full text-[11px] text-blue-300 font-medium my-2"><i class="fa-solid fa-brain text-blue-400"></i> ${isFinal ? 'Local Memory Updated' : 'Updating Memory...'}</div>\n`;
             });
 
-            // Standard code blocks
-            formatted = formatted.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, content) => `
+            // 3. Custom Marked Renderers to style HTML output with Tailwind
+            const renderer = new marked.Renderer();
+
+            renderer.code = function(code, language) {
+                if ((language === 'html' || language === 'html5') && (code.includes('<html') || code.includes('<div') || code.includes('<body') || code.includes('<canvas'))) {
+                    const base64Content = btoa(encodeURIComponent(code.trim()));
+                    
+                    if (isFinal) setTimeout(() => window.renderToCanvas(base64Content), 100);
+                    
+                    return `
+                    <div class="relative group my-4 shadow-lg rounded-2xl overflow-hidden max-w-md border border-gemini-border/40">
+                        <div class="flex items-center justify-between bg-gemini-sidebar px-4 py-3 text-xs font-sans text-slate-200">
+                            <span class="font-semibold flex items-center gap-2"><i class="fa-brands fa-html5 text-orange-400 text-lg"></i> ${isFinal ? 'Interactive Web App' : 'Generating App...'}</span>
+                            <button onclick="window.renderToCanvas('${base64Content}')" class="bg-gemini-card hover:bg-[#3c4043] text-white px-3 py-1.5 rounded-full smooth-transition font-medium text-[11px] border border-gemini-border/50" ${!isFinal ? 'disabled' : ''}>
+                                <i class="fa-solid fa-play mr-1.5 text-emerald-400"></i> Open Canvas
+                            </button>
+                        </div>
+                    </div>`;
+                }
+
+                return `
                 <div class="my-4 rounded-2xl overflow-hidden border border-gemini-border/40 shadow-md max-w-3xl">
                     <div class="bg-[#1a1b1d] px-4 py-2 text-[10px] text-slate-400 font-mono uppercase tracking-widest flex justify-between">
-                        <span>${lang || 'code'}</span>
+                        <span>${language || 'code'}</span>
                     </div>
-                    <pre class="bg-[#131314] p-4 text-[13px] font-mono text-blue-100 overflow-x-auto leading-relaxed">${content}</pre>
-                </div>`);
+                    <pre class="bg-[#131314] p-4 text-[13px] font-mono text-blue-100 overflow-x-auto leading-relaxed"><code>${escapeHtmlString(code)}</code></pre>
+                </div>`;
+            };
 
-            // Bold
-            formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-white">$1</strong>');
+            renderer.table = function(header, body) {
+                return `
+                <div class="overflow-x-auto my-5 border border-gemini-border/40 rounded-xl shadow-sm bg-gemini-card/10">
+                    <table class="w-full text-sm text-left text-slate-300">
+                        <thead class="text-xs uppercase bg-gemini-card/60 text-slate-300 border-b border-gemini-border/50">
+                            ${header}
+                        </thead>
+                        <tbody class="divide-y divide-gemini-border/30">
+                            ${body}
+                        </tbody>
+                    </table>
+                </div>`;
+            };
+            
+            renderer.tablerow = function(content) {
+                return `<tr class="hover:bg-gemini-card/40 smooth-transition">${content}</tr>`;
+            };
+            
+            renderer.tablecell = function(content, flags) {
+                const tag = flags.header ? 'th' : 'td';
+                const padding = flags.header ? 'px-4 py-3 font-semibold text-gemini-accent' : 'px-4 py-3';
+                return `<${tag} class="${padding}">${content}</${tag}>`;
+            };
 
-            return formatted;
+            renderer.list = function(body, ordered) {
+                const type = ordered ? 'ol' : 'ul';
+                const listClass = ordered ? 'list-decimal list-outside ml-6 space-y-1.5 my-4 text-slate-200' : 'list-disc list-outside ml-6 space-y-1.5 my-4 text-slate-200 marker:text-gemini-textMuted';
+                return `<${type} class="${listClass}">${body}</${type}>`;
+            };
+
+            renderer.listitem = function(text) {
+                return `<li class="pl-1 leading-relaxed">${text}</li>`;
+            };
+
+            renderer.paragraph = function(text) {
+                return `<p class="mb-4 leading-relaxed text-slate-200 whitespace-pre-wrap">${text}</p>`;
+            };
+
+            renderer.heading = function(text, level) {
+                const sizes = {
+                    1: 'text-2xl font-bold mt-8 mb-4 text-white',
+                    2: 'text-xl font-bold mt-7 mb-3 text-white border-b border-gemini-border/30 pb-2',
+                    3: 'text-lg font-semibold mt-6 mb-2 text-white',
+                    4: 'text-base font-semibold mt-5 mb-2 text-white',
+                    5: 'text-sm font-semibold mt-4 mb-1 text-slate-200',
+                    6: 'text-sm font-medium mt-4 mb-1 text-slate-300 uppercase tracking-wider'
+                };
+                return `<h${level} class="${sizes[level]}">${text}</h${level}>`;
+            };
+
+            renderer.strong = function(text) {
+                return `<strong class="font-semibold text-white">${text}</strong>`;
+            };
+            
+            renderer.em = function(text) {
+                return `<em class="italic text-slate-300">${text}</em>`;
+            };
+            
+            renderer.blockquote = function(quote) {
+                return `<blockquote class="border-l-4 border-gemini-accent/50 pl-4 py-1.5 my-5 bg-gemini-accent/5 rounded-r-lg text-slate-300 italic">${quote}</blockquote>`;
+            };
+
+            renderer.codespan = function(text) {
+                return `<code class="bg-gemini-card border border-gemini-border/50 px-1.5 py-0.5 rounded-md text-emerald-300 font-mono text-[13px]">${text}</code>`;
+            };
+
+            renderer.link = function(href, title, text) {
+                return `<a href="${href}" title="${title || ''}" target="_blank" rel="noopener noreferrer" class="text-gemini-accent hover:text-blue-400 hover:underline underline-offset-2 smooth-transition">${text}</a>`;
+            };
+
+            marked.setOptions({
+                renderer: renderer,
+                gfm: true,
+                breaks: true
+            });
+
+            return marked.parse(preprocessed);
         }
 
         window.renderToCanvas = (base64Content) => {
@@ -860,7 +925,7 @@
 
         // --- NEW CHAT UTILITIES (Delete, Share, Export History) --- //
         window.deleteHistoricalSession = (e, sessionId) => {
-            e.stopPropagation(); // prevent chat load
+            e.stopPropagation();
             if (confirm("Are you sure you want to delete this conversation?")) {
                 delete chatDatabase.sessions[sessionId];
                 if (currentSessionId === sessionId) window.startNewChatSession();
@@ -874,7 +939,6 @@
             navigator.clipboard.writeText(shareUrl).then(() => {
                 triggerNotificationToast("Link Copied", "Shareable chat URL copied to clipboard.", "fa-link", "bg-blue-600");
             }).catch(err => {
-                console.error("Clipboard fail", err);
                 prompt("Copy this link:", shareUrl);
             });
         };
@@ -897,7 +961,6 @@
             document.body.appendChild(a); a.click(); document.body.removeChild(a);
             triggerNotificationToast("Chat Downloaded", "Console messages saved as text.", "fa-file-lines", "bg-emerald-600");
         };
-
 
         // --- RLHF FEEDBACK LOGIC --- //
         window.rateResponse = (msgId, isUpvote, b64Prompt, b64Reply) => {
@@ -930,7 +993,6 @@
             triggerNotificationToast("Export Complete", "Dataset ready for Auto-Trainer.", "fa-download", "bg-indigo-600");
         };
 
-
         // --- DOM / UI HELPERS ---
         function escapeHtmlString(text) { return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
 
@@ -953,7 +1015,6 @@
                     <h1 class="text-2xl font-semibold text-white mb-3">How can I help you today?</h1>
                 </div>`;
             if(window.innerWidth < 768) window.toggleSidebarCollapse(); 
-            // Optional: push state so the URL reflects the new code without reloading
             window.history.pushState({}, "", `/Loma/${currentSessionId}`);
         };
 
@@ -972,7 +1033,6 @@
             if(window.innerWidth < 768) window.toggleSidebarCollapse(); 
             stream.scrollTop = stream.scrollHeight;
             
-            // Push state so URL matches loaded chat
             window.history.pushState({}, "", `/Loma/${currentSessionId}`);
         };
 
@@ -1030,7 +1090,7 @@
             } else {
                 canvasColumn.style.width = '0px'; 
                 canvasColumn.style.borderLeftWidth = '0px';
-                document.getElementById('live-canvas-frame').srcdoc = ''; // wipe memory
+                document.getElementById('live-canvas-frame').srcdoc = '';
             }
         };
 
@@ -1053,9 +1113,8 @@
                 `<div class="h-8 w-8 rounded-full bg-gemini-sidebar flex items-center justify-center shrink-0 border border-gemini-border/40 text-slate-300 text-xs"><i class="fa-solid fa-user"></i></div>` : 
                 `<div class="h-8 w-8 rounded-full bg-gemini-card flex items-center justify-center shrink-0 border border-gemini-border text-gemini-accent shadow-sm"><i class="fa-solid fa-sparkles"></i></div>`;
 
-            let contentHTML = isUser ? escapeHtmlString(msg) : parseMarkdownResponse(msg);
+            let contentHTML = isUser ? escapeHtmlString(msg) : parseMarkdownResponse(msg, true);
 
-            // Clean up messy raw DB tags for UI display
             if (isUser) contentHTML = contentHTML.replace(/\[SYSTEM NOTE: The following is context from the web[\s\S]*?\[USER QUERY\]\n/gi, '');
 
             const bubbleClass = isUser ? 
