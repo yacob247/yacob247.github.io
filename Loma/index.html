@@ -266,9 +266,9 @@
                 <div>
                     <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 flex justify-between">
                         <span>Max Response Tokens</span>
-                        <span id="token-val" class="text-gemini-accent">2048</span>
+                        <span id="token-val" class="text-gemini-accent">4096</span>
                     </label>
-                    <input id="config-tokens" type="range" min="128" max="4096" step="128" class="w-full accent-gemini-accent bg-zinc-800 rounded-lg" oninput="document.getElementById('token-val').innerText = this.value">
+                    <input id="config-tokens" type="range" min="128" max="8192" step="128" value="4096" class="w-full accent-gemini-accent bg-zinc-800 rounded-lg" oninput="document.getElementById('token-val').innerText = this.value">
                 </div>
 
                 <!-- Custom System Instructions -->
@@ -297,6 +297,10 @@
                     </div>
                 </div>
                 <div class="flex items-center space-x-2 md:space-x-4">
+                    <!-- Persistent Canvas Toggle Button -->
+                    <button onclick="window.toggleCanvasVisibility()" class="text-gemini-textMuted hover:text-orange-400 p-2 rounded-full smooth-transition" title="Toggle Canvas Workspace">
+                        <i class="fa-brands fa-html5 text-lg"></i>
+                    </button>
                     <!-- Tool Actions (Share & Download) -->
                     <div class="flex items-center gap-1 border-r border-gemini-border/40 pr-3 mr-1">
                         <button onclick="window.generateShareLink()" class="text-gemini-textMuted hover:text-gemini-accent p-2 rounded-full smooth-transition" title="Share Chat Link">
@@ -357,7 +361,7 @@
 
                     <div class="flex items-center justify-between mt-2 px-2 pb-1">
                         <div class="flex space-x-1 items-center">
-                            <button onclick="window.triggerProtectedFileAttachment()" class="h-10 w-10 rounded-full hover:bg-gemini-card/80 text-slate-400 hover:text-white smooth-transition flex items-center justify-center" title="Upload image (Requires Drive)">
+                            <button onclick="window.triggerProtectedFileAttachment()" class="h-10 w-10 rounded-full hover:bg-gemini-card/80 text-slate-400 hover:text-white smooth-transition flex items-center justify-center" title="Upload custom file">
                                 <i class="fa-regular fa-image text-[17px]"></i>
                             </button>
 
@@ -515,7 +519,7 @@
         let systemConfig = {
             model: localStorage.getItem('envizion_model') || 'Llama-3.2-1B-Instruct-q4f16_1-MLC',
             temperature: parseFloat(localStorage.getItem('envizion_temp')) || 0.4,
-            maxTokens: parseInt(localStorage.getItem('envizion_tokens')) || 2048,
+            maxTokens: parseInt(localStorage.getItem('envizion_tokens')) || 4096,
             systemPrompt: localStorage.getItem('envizion_sys_prompt') || "You are Gemini, a highly capable AI assistant running locally, proudly created by Yacob's Digital (https://envizion.work/). Be concise, extremely helpful, and follow tool instructions meticulously.",
             googleKey: localStorage.getItem('envizion_google_key') || "",
             googleCx: localStorage.getItem('envizion_google_cx') || ""
@@ -588,9 +592,9 @@
             base += `To propose a capability upgrade, output exactly this evolution block in your answer:\n`;
             base += `[PROPOSE_CAPABILITY: Title of Capability | Specific prompt instruction rule to adopt | Detailed contextual reason why this enhances our performance]\n`;
 
-            base += `\n\n--- CODE GENERATION RULES ---\n`;
-            base += `1. STANDARD CODE (Chat): For simple scripts, functions, snippets, or non-web code (e.g., Python, C++, simple JS, CSS), use standard markdown code blocks (e.g., \`\`\`python). These will render normally in the chat.\n`;
-            base += `2. CANVAS APPS (Immersive): If the user explicitly asks for a full web app, website, game, or interactive UI, you MUST consolidate ALL HTML, CSS, and JS into a SINGLE, self-contained \`\`\`html code block. Do NOT split them into separate files. This will automatically trigger the immersive Canvas Workspace.\n`;
+            base += `\n\n--- CODE GENERATION RULES & RESPONSE SPEED ---\n`;
+            base += `1. STANDARD CHAT: To generate as fast as possible, you MUST be extremely concise and direct in normal chat. Avoid conversational filler or long explanations unless asked.\n`;
+            base += `2. CANVAS APPS (Immersive): If the user explicitly asks for a full web app, website, game, or interactive UI, you MUST consolidate ALL HTML, CSS, and JS into a SINGLE, self-contained \`\`\`html code block. Do NOT split them into separate files. This will automatically trigger the immersive Canvas Workspace. When generating these Canvas Apps, you MUST write EXTREMELY LONG, highly detailed, visually stunning, and feature-rich code. Expand on the app's capabilities significantly compared to chat.\n`;
             
             base += `\n\n--- THINKING PROCESS ---\n`;
             base += `Before answering complex requests, you must engage in a thinking process to plan your response.\n`;
@@ -1470,7 +1474,7 @@
 
         window.toggleCanvasVisibility = (forceState = null) => {
             const canvasColumn = document.getElementById('canvas-column');
-            let isOpen = forceState !== null ? forceState : canvasColumn.style.width !== '0px' && canvasColumn.style.width !== '';
+            let isOpen = forceState !== null ? forceState : (canvasColumn.style.width === '0px' || canvasColumn.style.width === '');
             
             if (isOpen) {
                 canvasColumn.style.width = window.innerWidth < 768 ? '100%' : '50%'; 
@@ -1478,7 +1482,7 @@
             } else {
                 canvasColumn.style.width = '0px'; 
                 canvasColumn.style.borderLeftWidth = '0px';
-                document.getElementById('live-canvas-frame').srcdoc = '';
+                // Note: srcdoc is intentionally not cleared here so the canvas state persists when hidden.
             }
         };
 
@@ -1537,7 +1541,7 @@
         let attachedFileContent = null;
         let attachedFileName = null;
         window.triggerProtectedFileAttachment = () => {
-            if (!gDriveAccessToken) return triggerNotificationToast("Sync Required", "Connect Google Drive to unlock file uploads.", "fa-lock", "bg-indigo-600");
+            // Remove the Google Drive Sync requirement to allow free local uploads
             document.getElementById('file-upload-input').click();
         };
         window.handleFileAttachment = async (input) => {
