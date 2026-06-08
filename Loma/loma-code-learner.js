@@ -1,20 +1,3 @@
-// ════════════════════════════════════════════════════════════════════════════
-//  LOMA CODE LEARNER — Browser-Side Self-Training Hook
-//
-//  DROP THIS ENTIRE FILE as loma-code-learner.js
-//  Include it in index.html just before </body>:
-//    <script src="loma-code-learner.js"></script>
-//
-//  WHAT IT DOES:
-//  1. Every time a code block is rendered in chat → captures it
-//  2. Analyzes the code: language, patterns, quality score
-//  3. Builds RLHF training pairs from actual user conversations
-//  4. Stores pairs in localStorage → available for Export Auto-Train Data
-//  5. Discovers "improvement suggestions" by re-analyzing generated code
-//  6. Posts [PROPOSE_CAPABILITY] tags when a new pattern is detected
-//
-// ════════════════════════════════════════════════════════════════════════════
-
 (function() {
 'use strict';
 

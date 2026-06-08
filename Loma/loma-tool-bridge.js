@@ -1,28 +1,6 @@
-// ════════════════════════════════════════════════════════════════════════════
-//  LOMA EXTERNAL TOOL BRIDGE  —  music-gen.html + image-gen.html
-//
-//  DROP THIS ENTIRE BLOCK into index.html just before the closing </script>
-//
-//  HOW IT WORKS:
-//  1. LOMA's AI response is scanned for special tags:
-//       [GENERATE_MUSIC: prompt="..." style="..." bpm=90 duration=30]
-//       [GENERATE_IMAGE: prompt="..." style="flux" ratio="1024x1024"]
-//
-//  2. When a tag is detected, a hidden iframe on your domain loads the
-//     corresponding tool page and posts a request to it.
-//
-//  3. The tool page does the work (Pollinations API), then postMessages
-//     the result (audio blob URL or image data URI) back here.
-//
-//  4. LOMA's chat displays the result inline — audio player or <img>.
-//
-//  DEPLOY:
-//    • music-gen.html  → https://yourdomain.com/tools/music-gen.html
-//    • image-gen.html  → https://yourdomain.com/tools/image-gen.html
-//    • Update TOOL_BASE_URL below to match your domain.
-// ════════════════════════════════════════════════════════════════════════════
 
-const TOOL_BASE_URL = 'https://yourdomain.com/tools'; // ← CHANGE THIS
+
+const TOOL_BASE_URL = 'https://envizion.work/Loma'; // ← CHANGE THIS
 
 // ── Hidden iframe pool ───────────────────────────────────────────────────────
 const _toolIframes = {};
