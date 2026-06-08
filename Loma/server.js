@@ -11,15 +11,13 @@ const ALLOWED_ORIGINS = [
     'http://127.0.0.1:3000',
     'http://127.0.0.1:8080',
     'https://envizion.work',
-    'https://api.envizion.work' // <-- Replaced duplicate with your explicit API endpoint
+    'https://api.envizion.work'
 ];
 
 app.use(cors({
     origin: function(origin, callback) {
-        // Allow requests with no origin (like mobile apps, curl, or local files)
         if (!origin) return callback(null, true);
         
-        // Remove trailing slashes if the browser sends them
         const sanitizedOrigin = origin.replace(/\/$/, "");
         
         if (ALLOWED_ORIGINS.includes(sanitizedOrigin)) {
@@ -39,7 +37,7 @@ app.options('*', cors());
 app.use(express.json({ limit: '2mb' }));
 
 // ── Health check ──────────────────────────────────────────────────────────────
-app.get('/api/health', (_, res) => res.json({ ok: true, model: 'llama3.2:latest' }));
+app.get('/api/health', (_, res) => res.json({ ok: true, model: 'llama3.2:1b' }));
 
 // ── Root Path (Fixes "Cannot GET /" with a helpful check) ─────────────────────
 app.get('/', (_, res) => res.json({ status: "online", service: "Loma Proxy Server", apiHealth: "https://envizion.work" }));
@@ -52,15 +50,16 @@ app.post('/api/chat', (req, res) => {
         return res.status(400).json({ error: 'messages array required' });
     }
 
-    // Build the payload Ollama expects — using explicit 'llama3.2:latest' tag matching
+    // Build the payload Ollama expects — Explicitly optimized for llama3.2:1b on CPU
     const ollamaBody = JSON.stringify({
-        model: 'llama3.2:latest', 
+        model: 'llama3.2:1b', // <-- Updated to target your downloaded 1B model variant
         messages: messages
             .filter(m => m.role && typeof m.content === 'string' && m.content.trim())
             .map(m => ({ role: m.role, content: m.content.trim() })),
         options: {
             temperature: Math.min(Math.max(parseFloat(temperature), 0.1), 1.0),
-            num_predict: Math.min(parseInt(max_tokens) || 8192, 32768)
+            num_ctx: 2048,      // Caps context allocation window to prevent memory drops
+            num_predict: 1024   // Caps output prediction length to eliminate socket timeouts
         },
         stream: true
     });
@@ -122,7 +121,7 @@ app.post('/api/chat', (req, res) => {
 
     ollamaReq.on('error', (err) => {
         console.error('[Ollama error]', err.message);
-        res.write(`data: ${JSON.stringify({ error: 'Ollama connection refused. Check background execution status.' })}\n\n`);
+        res.write(`data: ${JSON.stringify({ error: 'Ollama connection refused or model timed out.' })}\n\n`);
         res.end();
     });
 
@@ -137,5 +136,5 @@ app.post('/api/chat', (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`✅ Loma proxy server online on port ${PORT}`);
-    console.log(`   Configured Target: Ollama engine via 127.0.0.1:11434`);
+    console.log(`   Configured Target: Ollama engine via 127.0.0.1:11434 (Model: llama3.2:1b)`);
 });
