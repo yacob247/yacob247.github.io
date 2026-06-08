@@ -5,16 +5,20 @@ import http from 'http';
 const app = express();
 
 // ── Allow requests from your site ────────────────────────────────────────────
+// ── Allow requests from your site ────────────────────────────────────────────
 app.use(cors({
     origin: [
         'https://envizion.work',
+        'https://envizion.work', // explicitly added your sub-route
         'http://localhost:3000',
         'http://127.0.0.1:5500',
         'http://localhost:5500'
     ],
     methods: ['GET', 'POST', 'OPTIONS'],
-    allowedHeaders: ['Content-Type']
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true
 }));
+
 
 app.use(express.json({ limit: '2mb' }));
 
