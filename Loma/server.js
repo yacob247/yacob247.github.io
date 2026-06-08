@@ -5,18 +5,29 @@ import http from 'http';
 const app = express();
 
 // ── Allow requests from your site and Cloudflare Tunnel ───────────────────────
+const ALLOWED_ORIGINS = [
+    'https://envizion.work',
+    'https://www.envizion.work',
+    'https://api.envizion.work',
+    'http://localhost:3000',
+    'http://127.0.0.1:5500',
+    'http://localhost:5500'
+];
+
 app.use(cors({
-    origin: [
-        'https://envizion.work',
-        'https://api.envizion.work', // 👈 CRITICAL: Added your Cloudflare Tunnel URL
-        'http://localhost:3000',
-        'http://127.0.0.1:5500',
-        'http://localhost:5500'
-    ],
+    origin: function(origin, callback) {
+        // Allow requests with no origin (curl, Postman, server-to-server)
+        if (!origin) return callback(null, true);
+        if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+        return callback(new Error('Not allowed by CORS'));
+    },
     methods: ['GET', 'POST', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true
 }));
+
+// Handle OPTIONS preflight explicitly for all routes
+app.options('*', cors());
 
 app.use(express.json({ limit: '2mb' }));
 
@@ -54,7 +65,9 @@ app.post('/api/chat', (req, res) => {
     res.setHeader('X-Accel-Buffering', 'no');
     
     // Support CORS preflight on SSE streams
-    res.setHeader('Access-Control-Allow-Origin', req.headers.origin || 'https://envizion.work');
+    const reqOrigin = req.headers.origin || '';
+    const safeOrigin = ALLOWED_ORIGINS.includes(reqOrigin) ? reqOrigin : 'https://envizion.work';
+    res.setHeader('Access-Control-Allow-Origin', safeOrigin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
 
     // Forward to local Ollama

@@ -223,7 +223,7 @@ def launch_console():
 
     endpoint = input("Ollama endpoint [Enter = localhost]: ").strip()
     if not endpoint:
-        endpoint = "http://localhost:11434"
+        endpoint = "https://api.envizion.work"
 
     print(f"\n🌐  Endpoint : {endpoint}")
     print(f"🤖  Model    : {MODEL_NAME}")
