@@ -9,8 +9,9 @@ const ALLOWED_ORIGINS = [
     'http://localhost:3000',
     'http://localhost:8080',
     'https://envizion.work',
-    'https://envizion.work'
+    'https://api.envizion.work'
 ];
+
 
 app.use(cors({
     origin: function(origin, callback) {
