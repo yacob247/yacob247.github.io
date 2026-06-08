@@ -262,10 +262,20 @@
                         <span id="current-chat-title" class="truncate max-w-[150px] md:max-w-md font-sans">New chat</span>
                     </div>
                 </div>
-                <div class="flex items-center space-x-3">
+                <div class="flex items-center space-x-2 md:space-x-4">
+                    <!-- Tool Actions (Share & Download) -->
+                    <div class="flex items-center gap-1 border-r border-gemini-border/40 pr-3 mr-1">
+                        <button onclick="window.generateShareLink()" class="text-gemini-textMuted hover:text-gemini-accent p-2 rounded-full smooth-transition" title="Share Chat Link">
+                            <i class="fa-solid fa-share-nodes"></i>
+                        </button>
+                        <button onclick="window.downloadChatHistory()" class="text-gemini-textMuted hover:text-gemini-accent p-2 rounded-full smooth-transition" title="Download Console Messages">
+                            <i class="fa-solid fa-file-arrow-down"></i>
+                        </button>
+                    </div>
+                    <!-- WebLLM Initialization -->
                     <div class="flex items-center gap-2 px-4 py-1.5 bg-gemini-card/60 hover:bg-gemini-card border border-gemini-border/40 rounded-full cursor-pointer smooth-transition" onclick="window.loadWebLLMEngine()" title="Initialize WebGPU Local Engine">
                         <div id="connection-dot" class="h-2 w-2 rounded-full bg-slate-500"></div>
-                        <span id="connection-label" class="text-xs font-medium text-slate-300">Start Llama</span>
+                        <span id="connection-label" class="text-xs font-medium text-slate-300 hidden md:inline-block">Start Llama</span>
                     </div>
                 </div>
             </header>
@@ -353,14 +363,24 @@
                     <div class="h-8 w-8 rounded-full bg-orange-500/10 flex items-center justify-center text-orange-400"><i class="fa-brands fa-html5 text-lg"></i></div>
                     <span class="text-sm font-semibold text-white tracking-wide">Canvas Workspace</span>
                 </div>
+                <!-- Controls for Canvas (Tabs + Download + Close) -->
                 <div class="flex items-center space-x-2">
+                    <div class="flex bg-gemini-bg rounded-lg border border-gemini-border/50 p-0.5">
+                        <button onclick="window.switchCanvasTab('preview')" id="tab-preview" class="px-3 py-1 bg-gemini-card text-white text-xs rounded-md border border-gemini-border/50 shadow-sm">Preview</button>
+                        <button onclick="window.switchCanvasTab('code')" id="tab-code" class="px-3 py-1 text-gemini-textMuted hover:text-white text-xs rounded-md smooth-transition">Code</button>
+                    </div>
+                    <div class="w-px h-5 bg-gemini-border/60 mx-1"></div>
+                    <button onclick="window.downloadCanvasCode()" class="text-gemini-textMuted hover:text-emerald-400 p-2 rounded-full hover:bg-gemini-card/80 smooth-transition" title="Download Canvas Code">
+                        <i class="fa-solid fa-download text-sm"></i>
+                    </button>
                     <button onclick="window.toggleCanvasVisibility(false)" class="text-gemini-textMuted hover:text-white p-2 rounded-full hover:bg-gemini-card/80 smooth-transition" title="Close Canvas">
                         <i class="fa-solid fa-xmark text-lg"></i>
                     </button>
                 </div>
             </div>
-            <div class="flex-1 relative bg-white overflow-hidden m-4 rounded-2xl border border-gemini-border/30 shadow-inner">
-                <iframe id="live-canvas-frame" class="w-full h-full border-none" sandbox="allow-scripts allow-forms allow-modals" srcdoc="
+            <div class="flex-1 relative bg-white overflow-hidden m-4 rounded-2xl border border-gemini-border/30 shadow-inner flex flex-col">
+                <!-- Preview Iframe -->
+                <iframe id="live-canvas-frame" class="w-full h-full border-none flex-1 bg-slate-50" sandbox="allow-scripts allow-forms allow-modals" srcdoc="
                     <html class='h-full bg-slate-50 flex items-center justify-center font-sans'>
                         <head><script src='https://cdn.tailwindcss.com'></script></head>
                         <body class='text-center p-8 text-slate-800'>
@@ -372,13 +392,15 @@
                         </body>
                     </html>
                 "></iframe>
+                <!-- Raw Code View -->
+                <pre id="live-canvas-code" class="hidden w-full h-full bg-[#131314] text-slate-300 font-mono text-xs p-6 overflow-auto flex-1 whitespace-pre-wrap selection:bg-gemini-accent/30"></pre>
             </div>
         </section>
 
     </main>
 
     <!-- Active dynamic alerts toast -->
-    <div id="alert-toast" class="fixed bottom-8 right-8 z-50 transform translate-y-20 opacity-0 smooth-transition glass-menu px-5 py-4 rounded-2xl shadow-2xl flex items-center space-x-4 border border-white/10">
+    <div id="alert-toast" class="fixed bottom-8 right-8 z-50 transform translate-y-20 opacity-0 smooth-transition glass-menu px-5 py-4 rounded-2xl shadow-2xl flex items-center space-x-4 border border-white/10 pointer-events-none">
         <div id="alert-icon-wrapper" class="h-10 w-10 rounded-full bg-gemini-accent/20 flex items-center justify-center text-gemini-accent text-lg">
             <i id="alert-icon" class="fa-solid fa-bell"></i>
         </div>
@@ -421,9 +443,12 @@
         
         let isWebSearchEnabled = false;
 
+        // --- URL ROUTING & STRING CODES ---
+        const generateStringCode = () => Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
+
         // --- LOCAL STORAGE STATE ---
         let chatDatabase = { sessions: {} };
-        let currentSessionId = Date.now().toString();
+        let currentSessionId = generateStringCode(); 
         let personalMemories = JSON.parse(localStorage.getItem('envizion_memories') || '[]');
         let rlhfDataset = JSON.parse(localStorage.getItem('envizion_rlhf') || '[]');
 
@@ -433,6 +458,12 @@
                 chatDatabase = JSON.parse(localDB);
                 if (!chatDatabase.sessions) chatDatabase.sessions = {};
             } catch (e) { console.error("DB corrupt", e); }
+        }
+
+        // Check if URL contains a custom sharing string code (e.g. /Loma/ab12cd34)
+        const lomaMatch = window.location.href.match(/\/Loma\/([a-zA-Z0-9]+)/);
+        if(lomaMatch && lomaMatch[1]) {
+            currentSessionId = lomaMatch[1];
         }
         
         let systemConfig = {
@@ -451,8 +482,13 @@
             document.getElementById('token-val').innerText = systemConfig.maxTokens;
             document.getElementById('config-system-prompt').value = systemConfig.systemPrompt;
 
-            initNewSessionInDB();
-            renderSidebarChats();
+            // Route handler: if the session exists, load it, otherwise init new
+            if (chatDatabase.sessions[currentSessionId]) {
+                window.loadHistoricalSession(currentSessionId);
+            } else {
+                initNewSessionInDB();
+                renderSidebarChats();
+            }
 
             const promptArea = document.getElementById('user-prompt');
             promptArea.addEventListener('input', function() {
@@ -508,20 +544,20 @@
                 webLLMEngine = await CreateMLCEngine(systemConfig.model, {
                     initProgressCallback: (progress) => {
                         dot.className = "h-2 w-2 rounded-full bg-yellow-500 animate-pulse";
-                        label.innerText = `Loading: ${Math.round(progress.progress * 100)}%`;
+                        if(label) label.innerText = `Loading: ${Math.round(progress.progress * 100)}%`;
                     }
                 });
                 
                 isEngineReady = true;
                 isEngineLoading = false;
                 dot.className = "h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]";
-                label.innerText = `Llama Active`;
+                if(label) label.innerText = `Llama Active`;
                 triggerNotificationToast("Engine Ready", "Local WebGPU model loaded.", "fa-check", "bg-emerald-600");
             } catch (err) {
                 console.error("WebLLM Error:", err);
                 isEngineLoading = false;
                 dot.className = "h-2 w-2 rounded-full bg-red-500";
-                label.innerText = `Engine Failed`;
+                if(label) label.innerText = `Engine Failed`;
                 triggerNotificationToast("Engine Error", "Failed to load local model.", "fa-triangle-exclamation", "bg-red-600");
             }
         };
@@ -723,6 +759,8 @@
         }
 
         // --- UI FORMATTING & TOOLS PARSER --- //
+        let currentCanvasHTML = "";
+
         function parseMarkdownResponse(text) {
             let formatted = escapeHtmlString(text);
 
@@ -786,10 +824,77 @@
         }
 
         window.renderToCanvas = (base64Content) => {
-            const html = decodeURIComponent(atob(base64Content));
-            document.getElementById('live-canvas-frame').srcdoc = html;
+            currentCanvasHTML = decodeURIComponent(atob(base64Content));
+            document.getElementById('live-canvas-frame').srcdoc = currentCanvasHTML;
+            document.getElementById('live-canvas-code').innerText = currentCanvasHTML;
             window.toggleCanvasVisibility(true);
+            window.switchCanvasTab('preview');
         };
+
+        window.switchCanvasTab = (tab) => {
+            if(tab === 'preview') {
+                document.getElementById('live-canvas-frame').classList.remove('hidden');
+                document.getElementById('live-canvas-code').classList.add('hidden');
+                document.getElementById('tab-preview').className = "px-3 py-1 bg-gemini-card text-white text-xs rounded-md border border-gemini-border/50 shadow-sm";
+                document.getElementById('tab-code').className = "px-3 py-1 text-gemini-textMuted hover:text-white text-xs rounded-md smooth-transition";
+            } else {
+                document.getElementById('live-canvas-frame').classList.add('hidden');
+                document.getElementById('live-canvas-code').classList.remove('hidden');
+                document.getElementById('tab-code').className = "px-3 py-1 bg-gemini-card text-white text-xs rounded-md border border-gemini-border/50 shadow-sm";
+                document.getElementById('tab-preview').className = "px-3 py-1 text-gemini-textMuted hover:text-white text-xs rounded-md smooth-transition";
+            }
+        };
+
+        window.downloadCanvasCode = () => {
+            if(!currentCanvasHTML) return triggerNotificationToast("Empty Canvas", "Generate an app first.", "fa-xmark", "bg-red-600");
+            const blob = new Blob([currentCanvasHTML], {type: 'text/html'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = 'canvas_app.html';
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            triggerNotificationToast("Download Complete", "Code saved to device.", "fa-download", "bg-emerald-600");
+        };
+
+        // --- NEW CHAT UTILITIES (Delete, Share, Export History) --- //
+        window.deleteHistoricalSession = (e, sessionId) => {
+            e.stopPropagation(); // prevent chat load
+            if (confirm("Are you sure you want to delete this conversation?")) {
+                delete chatDatabase.sessions[sessionId];
+                if (currentSessionId === sessionId) window.startNewChatSession();
+                syncDatabaseToDrive();
+                renderSidebarChats();
+            }
+        };
+
+        window.generateShareLink = () => {
+            const shareUrl = `https://envizion.work/Loma/${currentSessionId}`;
+            navigator.clipboard.writeText(shareUrl).then(() => {
+                triggerNotificationToast("Link Copied", "Shareable chat URL copied to clipboard.", "fa-link", "bg-blue-600");
+            }).catch(err => {
+                console.error("Clipboard fail", err);
+                prompt("Copy this link:", shareUrl);
+            });
+        };
+
+        window.downloadChatHistory = () => {
+            const session = chatDatabase.sessions[currentSessionId];
+            if(!session || session.messages.length <= 1) return triggerNotificationToast("Empty Chat", "Nothing to download yet.", "fa-xmark", "bg-red-600");
+            
+            let exportText = `Chat Title: ${session.title}\nSession ID: ${currentSessionId}\nExported: ${new Date().toLocaleString()}\n\n`;
+            session.messages.forEach(m => {
+                if(m.role !== 'system') {
+                    exportText += `--- ${m.role.toUpperCase()} ---\n${m.content}\n\n`;
+                }
+            });
+
+            const blob = new Blob([exportText], {type: 'text/plain'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = `chat_log_${currentSessionId}.txt`;
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            triggerNotificationToast("Chat Downloaded", "Console messages saved as text.", "fa-file-lines", "bg-emerald-600");
+        };
+
 
         // --- RLHF FEEDBACK LOGIC --- //
         window.rateResponse = (msgId, isUpvote, b64Prompt, b64Reply) => {
@@ -834,7 +939,8 @@
         }
 
         window.startNewChatSession = () => {
-            currentSessionId = Date.now().toString(); initNewSessionInDB();
+            currentSessionId = generateStringCode(); 
+            initNewSessionInDB();
             document.getElementById('current-chat-title').innerText = "New chat";
             document.getElementById('chat-stream').innerHTML = `
                 <div class="flex flex-col items-center justify-center h-full text-center px-4 fade-in">
@@ -844,6 +950,8 @@
                     <h1 class="text-2xl font-semibold text-white mb-3">How can I help you today?</h1>
                 </div>`;
             if(window.innerWidth < 768) window.toggleSidebarCollapse(); 
+            // Optional: push state so the URL reflects the new code without reloading
+            window.history.pushState({}, "", `/Loma/${currentSessionId}`);
         };
 
         window.loadHistoricalSession = (sessionId) => {
@@ -860,6 +968,9 @@
             });
             if(window.innerWidth < 768) window.toggleSidebarCollapse(); 
             stream.scrollTop = stream.scrollHeight;
+            
+            // Push state so URL matches loaded chat
+            window.history.pushState({}, "", `/Loma/${currentSessionId}`);
         };
 
         window.clearPersonalMemory = () => {
@@ -880,9 +991,14 @@
             }
 
             list.innerHTML = sessions.map(([id, data]) => `
-                <button onclick="window.loadHistoricalSession('${id}')" class="w-full text-left px-3 py-2.5 rounded-full hover:bg-gemini-card/80 text-slate-300 hover:text-white text-sm font-medium smooth-transition truncate border border-transparent">
-                    <i class="fa-regular fa-message mr-2 text-slate-500"></i> ${data.title}
-                </button>
+                <div class="group flex items-center justify-between w-full px-3 py-2.5 rounded-full hover:bg-gemini-card/80 smooth-transition border border-transparent cursor-pointer" onclick="window.loadHistoricalSession('${id}')">
+                    <div class="flex items-center text-slate-300 group-hover:text-white text-sm font-medium truncate">
+                        <i class="fa-regular fa-message mr-2 text-slate-500"></i> <span class="truncate ml-1">${escapeHtmlString(data.title)}</span>
+                    </div>
+                    <button onclick="window.deleteHistoricalSession(event, '${id}')" class="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-red-400 p-1.5 rounded-md smooth-transition" title="Delete Chat">
+                        <i class="fa-solid fa-trash text-xs"></i>
+                    </button>
+                </div>
             `).join('');
         }
 
