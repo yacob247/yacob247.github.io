@@ -7,10 +7,11 @@ const app = express();
 // ── Allow requests from your site and Cloudflare Tunnel ───────────────────────
 const ALLOWED_ORIGINS = [
     'http://localhost:3000',
-    'http://localhost:8080',
+    'http://localhost:8080', // <-- This must match your frontend port exactly!
     'https://envizion.work',
-    'https://api.envizion.work'
+    'https://envizion.work'
 ];
+
 
 
 app.use(cors({
