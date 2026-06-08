@@ -1079,12 +1079,11 @@ const activeZone = appendChatBubble('assistant', null);
                 const animateTypewriter = () => {
                     if (!renderLoopActive && tokenQueue.length === 0) return;
                     if (tokenQueue.length > 0) {
-                        const batchSize = Math.min(32, tokenQueue.length);
-                        for (let i = 0; i < batchSize; i++) {
-                            const tok = tokenQueue.shift();
-                            rawAccumulated += tok;
-                            answerText += tok;
-                        }
+                        // Render exactly 1 token per frame so text streams in
+                        // word-by-word as the server pushes it (like Claude/Gemini)
+                        const tok = tokenQueue.shift();
+                        rawAccumulated += tok;
+                        answerText += tok;
 
                         let processedText = answerText;
                         let thinkingText = "";
@@ -1156,9 +1155,14 @@ const activeZone = appendChatBubble('assistant', null);
                 }
 
                 renderLoopActive = false;
-                while (tokenQueue.length > 0) {
-                    await new Promise(resolve => setTimeout(resolve, 5));
-                }
+                // Wait for animateTypewriter to drain the remaining queue
+                await new Promise(resolve => {
+                    const checkDone = () => {
+                        if (tokenQueue.length === 0) return resolve();
+                        requestAnimationFrame(checkDone);
+                    };
+                    requestAnimationFrame(checkDone);
+                });
 
                 if (currentAbortController.signal.aborted) {
                     throw new DOMException("User aborted", "AbortError");
