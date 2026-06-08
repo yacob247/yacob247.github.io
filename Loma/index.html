@@ -291,7 +291,7 @@
                     <div>
                         <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 flex justify-between">
                             <span>Temperature</span>
-                            <span id="temp-val" class="text-gemini-accent">0.4</span>
+                            <span id="temp-val" class="text-gemini-accent">0.9</span>
                         </label>
                         <input id="config-temp" type="range" min="0.1" max="1.0" step="0.05" class="w-full accent-gemini-accent bg-zinc-800 rounded-lg" oninput="document.getElementById('temp-val').innerText = this.value">
                     </div>
@@ -536,11 +536,10 @@
         let webLLMEngine = null;
         let isEngineReady = false;
         let isEngineLoading = false;
-        let lastProgressUpdate = 0;
-        let watchdogTimer = null;
         
         let isWebSearchEnabled = false;
         let currentAbortController = null;
+        let liveCanvasTimeout = null;
         
         // Auto Scroll Engine Variables
         window.autoScrollChat = true;
@@ -581,7 +580,7 @@
         
         let systemConfig = {
             model: localStorage.getItem('envizion_model') || 'Llama-3.2-1B-Instruct-q4f16_1-MLC',
-            temperature: parseFloat(localStorage.getItem('envizion_temp')) || 0.4,
+            temperature: parseFloat(localStorage.getItem('envizion_temp')) || 0.9,
             maxTokens: parseInt(localStorage.getItem('envizion_tokens')) || 8192,
             reasoningDepth: parseInt(localStorage.getItem('envizion_reasoning_depth')) || 1024,
             reasoningProfile: localStorage.getItem('envizion_reasoning_profile') || 'gemini-3.5-thinking',
@@ -781,54 +780,28 @@ You must generate a short, ultra-condensed reasoning process under <think> and <
             if (isEngineReady || isEngineLoading) return;
 
             isEngineLoading = true;
-            lastProgressUpdate = Date.now();
             const dot = document.getElementById('connection-dot');
             const label = document.getElementById('connection-label');
-
-            // Set up a watchdog stuck-detector interval
-            if (watchdogTimer) clearInterval(watchdogTimer);
-            watchdogTimer = setInterval(async () => {
-                const idleDuration = Date.now() - lastProgressUpdate;
-                if (isEngineLoading && idleDuration > 15000) { // If progress is stuck for more than 15 seconds
-                    console.warn("Llama Engine load progress is stuck. Automatically attempting cache-reboot recovery...");
-                    clearInterval(watchdogTimer);
-                    isEngineLoading = false;
-                    isEngineReady = false;
-                    webLLMEngine = null;
-                    triggerNotificationToast("Engine Recovering", "Relaunching WebGPU Pipeline...", "fa-rotate", "bg-amber-600");
-                    // Force a tiny cooling pause then retry engine connection
-                    setTimeout(() => {
-                        window.loadWebLLMEngine();
-                    }, 1000);
-                }
-            }, 5000);
 
             try {
                 webLLMEngine = await CreateMLCEngine(systemConfig.model, {
                     initProgressCallback: (progress) => {
-                        lastProgressUpdate = Date.now(); // Reset progress tracker
                         dot.className = "h-2 w-2 rounded-full bg-yellow-500 animate-pulse";
                         if (label) label.innerText = `Loading: ${Math.round(progress.progress * 100)}%`;
                     }
                 });
                 
-                clearInterval(watchdogTimer);
                 isEngineReady = true;
                 isEngineLoading = false;
                 dot.className = "h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]";
                 if (label) label.innerText = `Llama Active`;
                 triggerNotificationToast("Engine Ready", "Local WebGPU model loaded.", "fa-check", "bg-emerald-600");
             } catch (err) {
-                console.error("WebLLM Loading failure occurred. Activating fallback retry route...", err);
-                clearInterval(watchdogTimer);
+                console.error("WebLLM Loading failure occurred.", err);
                 isEngineLoading = false;
                 dot.className = "h-2 w-2 rounded-full bg-red-500";
                 if (label) label.innerText = `Engine Failed`;
-                triggerNotificationToast("Engine Recovery Mode", "Model setup issues detected. Re-trying pipeline clean launch...", "fa-rotate-right", "bg-yellow-600");
-                // Auto retry on unexpected launch errors
-                setTimeout(() => {
-                    window.loadWebLLMEngine();
-                }, 4000);
+                triggerNotificationToast("Engine Error", "Model setup issues detected.", "fa-triangle-exclamation", "bg-red-600");
             }
         };
 
@@ -1093,207 +1066,149 @@ You must generate a short, ultra-condensed reasoning process under <think> and <
                 ...session.messages.filter(m => m.role !== 'system')
             ];
 
-            let maxAttempts = 3;
-            let attempt = 0;
-            let streamSuccess = false;
-            let finalReply = "";
-
-            while (attempt < maxAttempts && !streamSuccess) {
-                attempt++;
-                const streamAbortController = new AbortController();
-                const combinedSignal = streamAbortController.signal;
-                
-                const onUserAbort = () => {
-                    streamAbortController.abort();
-                };
-                currentAbortController.signal.addEventListener('abort', onUserAbort);
-
-                let streamInterval = null;
-
-                try {
-                    // Start thinking/loading UI
-                    activeZone.innerHTML = `<span class="answer-wrapper"><div class="flex gap-1 items-center h-6 my-2 px-2"><div class="gemini-loading-dot"></div><div class="gemini-loading-dot"></div><div class="gemini-loading-dot"></div></div></span>`;
-                    const answerWrapper = activeZone.querySelector('.answer-wrapper');
-
-                    const stream = await webLLMEngine.chat.completions.create({
-                        messages: currentMessages,
-                        temperature: systemConfig.temperature,
-                        max_tokens: systemConfig.maxTokens,
-                        stream: true,
-                    }, {
-                        signal: combinedSignal
-                    });
-
-                    let rawAccumulated = '';
-                    let tokenQueue = [];
-                    let renderLoopActive = true;
-                    let answerText = '';
-
-                    const animateTypewriter = () => {
-                        if (!renderLoopActive && tokenQueue.length === 0) return;
-                        if (tokenQueue.length > 0) {
-                            const batchSize = Math.min(8, tokenQueue.length);
-                            for (let i = 0; i < batchSize; i++) {
-                                const char = tokenQueue.shift();
-                                rawAccumulated += char;
-                                answerText += char;
-
-                                let processedText = answerText;
-                                let thinkingText = "";
-                                let showThinking = false;
-                                
-                                const thinkStart = answerText.indexOf('<think>');
-                                const thinkEnd = answerText.indexOf('</think>');
-                                
-                                if (thinkStart !== -1) {
-                                    if (thinkEnd !== -1) {
-                                        thinkingText = answerText.substring(thinkStart + 7, thinkEnd);
-                                        processedText = answerText.substring(0, thinkStart) + answerText.substring(thinkEnd + 8);
-                                    } else {
-                                        thinkingText = answerText.substring(thinkStart + 7);
-                                        processedText = answerText.substring(0, thinkStart);
-                                        showThinking = true;
-                                    }
-                                }
-
-                                let htmlToRender = "";
-                                if (thinkingText.trim().length > 0 || showThinking) {
-                                    htmlToRender += renderReasoningAccordion(thinkingText, showThinking);
-                                }
-                                htmlToRender += parseMarkdownResponse(processedText, false);
-
-                                if (answerText.trim().length === 0) {
-                                     htmlToRender += `<div class="flex gap-1 items-center h-6 my-2 px-2"><div class="gemini-loading-dot"></div><div class="gemini-loading-dot"></div><div class="gemini-loading-dot"></div></div>`;
-                                }
-
-                                if (answerWrapper) answerWrapper.innerHTML = htmlToRender + '<span class="streaming-cursor"></span>';
-                            }
-                            // Conditionally scroll based on global interaction state
-                            if (window.autoScrollChat) {
-                                chatStream.scrollTop = chatStream.scrollHeight;
-                            }
-                        }
-                        if (renderLoopActive || tokenQueue.length > 0) {
-                            requestAnimationFrame(animateTypewriter);
-                        }
-                    };
-                    requestAnimationFrame(animateTypewriter);
-
-                    // Set up local token watch to prevent silent model hangs mid-inference
-                    let lastTokenTime = Date.now();
-                    streamInterval = setInterval(() => {
-                        if (streamSuccess || combinedSignal.aborted) {
-                            clearInterval(streamInterval);
-                            return;
-                        }
-                        if (Date.now() - lastTokenTime > 8000) {
-                            clearInterval(streamInterval);
-                            console.warn("Inference stream stalled mid-generation. Invoking in-process rethink...");
-                            streamAbortController.abort();
-                        }
-                    }, 1000);
-
-                    for await (const chunk of stream) {
-                        if (combinedSignal.aborted) {
-                            break;
-                        }
-                        const token = chunk.choices[0]?.delta?.content || "";
-                        if (token) {
-                            lastTokenTime = Date.now(); 
-                            tokenQueue.push(...token.split(''));
-                        }
-                    }
-
-                    clearInterval(streamInterval);
-                    renderLoopActive = false;
-
-                    // Ensure all queued characters render fully
-                    while (tokenQueue.length > 0) {
-                        await new Promise(resolve => setTimeout(resolve, 5));
-                    }
-
-                    if (currentAbortController.signal.aborted) {
-                        throw new DOMException("User aborted", "AbortError");
-                    }
-
-                    if (combinedSignal.aborted) {
-                        throw new Error("Stream connection drop detected.");
-                    }
-
-                    // Extract actual text replies and thinking sequences cleanly
-                    let cleanParsedReply = rawAccumulated;
-                    if (rawAccumulated.includes('<think>')) {
-                        const sIdx = rawAccumulated.indexOf('<think>');
-                        const eIdx = rawAccumulated.indexOf('</think>');
-                        if (eIdx !== -1) {
-                            cleanParsedReply = rawAccumulated.substring(0, sIdx) + rawAccumulated.substring(eIdx + 8);
-                        } else {
-                            cleanParsedReply = rawAccumulated.substring(0, sIdx);
-                        }
-                    }
-                    finalReply = cleanParsedReply.trim();
-                    streamSuccess = true;
-
-                } catch (err) {
-                    if (streamInterval) clearInterval(streamInterval);
-                    currentAbortController.signal.removeEventListener('abort', onUserAbort);
-
-                    if (err.name === 'AbortError' && currentAbortController.signal.aborted) {
-                        throw err; 
-                    }
-                    console.error(`Inference error or stream stall (Attempt ${attempt}):`, err);
-                    if (attempt >= maxAttempts) throw err;
-
-                    activeZone.innerHTML = `<div class="flex items-center gap-2 text-yellow-400 text-xs my-2"><i class="fa-solid fa-rotate-right fa-spin"></i><span>Response stalled. Rethinking inside the process (Attempt ${attempt}/${maxAttempts})...</span></div>`;
-                    await new Promise(r => setTimeout(r, 2000));
-                } finally {
-                    currentAbortController.signal.removeEventListener('abort', onUserAbort);
-                }
-            }
-
             try {
-                if (streamSuccess) {
-                    // Update full text
-                    let finalThinking = "";
-                    let finalBodyText = finalReply;
+                // Start thinking/loading UI
+                activeZone.innerHTML = `<span class="answer-wrapper"><div class="flex gap-1 items-center h-6 my-2 px-2"><div class="gemini-loading-dot"></div><div class="gemini-loading-dot"></div><div class="gemini-loading-dot"></div></div></span>`;
+                const answerWrapper = activeZone.querySelector('.answer-wrapper');
+
+                const stream = await webLLMEngine.chat.completions.create({
+                    messages: currentMessages,
+                    temperature: systemConfig.temperature,
+                    max_tokens: systemConfig.maxTokens,
+                    stream: true,
+                }, {
+                    signal: currentAbortController.signal
+                });
+
+                let rawAccumulated = '';
+                let tokenQueue = [];
+                let renderLoopActive = true;
+                let answerText = '';
+
+                const animateTypewriter = () => {
+                    if (!renderLoopActive && tokenQueue.length === 0) return;
+                    if (tokenQueue.length > 0) {
+                        const batchSize = Math.min(8, tokenQueue.length);
+                        for (let i = 0; i < batchSize; i++) {
+                            const char = tokenQueue.shift();
+                            rawAccumulated += char;
+                            answerText += char;
+
+                            let processedText = answerText;
+                            let thinkingText = "";
+                            let showThinking = false;
+                            
+                            const thinkStart = answerText.indexOf('<think>');
+                            const thinkEnd = answerText.indexOf('</think>');
+                            
+                            if (thinkStart !== -1) {
+                                if (thinkEnd !== -1) {
+                                    thinkingText = answerText.substring(thinkStart + 7, thinkEnd);
+                                    processedText = answerText.substring(0, thinkStart) + answerText.substring(thinkEnd + 8);
+                                } else {
+                                    thinkingText = answerText.substring(thinkStart + 7);
+                                    processedText = answerText.substring(0, thinkStart);
+                                    showThinking = true;
+                                }
+                            }
+
+                            let htmlToRender = "";
+                            if (thinkingText.trim().length > 0 || showThinking) {
+                                htmlToRender += renderReasoningAccordion(thinkingText, showThinking);
+                            }
+                            htmlToRender += parseMarkdownResponse(processedText, false);
+
+                            if (answerText.trim().length === 0) {
+                                 htmlToRender += `<div class="flex gap-1 items-center h-6 my-2 px-2"><div class="gemini-loading-dot"></div><div class="gemini-loading-dot"></div><div class="gemini-loading-dot"></div></div>`;
+                            }
+
+                            if (answerWrapper) answerWrapper.innerHTML = htmlToRender + '<span class="streaming-cursor"></span>';
+                        }
+                        // Conditionally scroll based on global interaction state
+                        if (window.autoScrollChat) {
+                            chatStream.scrollTop = chatStream.scrollHeight;
+                        }
+                    }
+                    if (renderLoopActive || tokenQueue.length > 0) {
+                        requestAnimationFrame(animateTypewriter);
+                    }
+                };
+                requestAnimationFrame(animateTypewriter);
+
+                for await (const chunk of stream) {
+                    if (currentAbortController.signal.aborted) {
+                        break;
+                    }
+                    const token = chunk.choices[0]?.delta?.content || "";
+                    if (token) {
+                        tokenQueue.push(...token.split(''));
+                    }
+                }
+
+                renderLoopActive = false;
+
+                // Ensure all queued characters render fully
+                while (tokenQueue.length > 0) {
+                    await new Promise(resolve => setTimeout(resolve, 5));
+                }
+
+                if (currentAbortController.signal.aborted) {
+                    throw new DOMException("User aborted", "AbortError");
+                }
+
+                // Extract actual text replies and thinking sequences cleanly
+                let cleanParsedReply = rawAccumulated;
+                if (rawAccumulated.includes('<think>')) {
                     const sIdx = rawAccumulated.indexOf('<think>');
                     const eIdx = rawAccumulated.indexOf('</think>');
-                    if (sIdx !== -1 && eIdx !== -1) {
-                        finalThinking = rawAccumulated.substring(sIdx + 7, eIdx);
+                    if (eIdx !== -1) {
+                        cleanParsedReply = rawAccumulated.substring(0, sIdx) + rawAccumulated.substring(eIdx + 8);
+                    } else {
+                        cleanParsedReply = rawAccumulated.substring(0, sIdx);
                     }
-
-                    let compiledHTML = "";
-                    if (finalThinking.trim().length > 0) {
-                        compiledHTML += renderReasoningAccordion(finalThinking, false);
-                    }
-                    compiledHTML += parseMarkdownResponse(finalBodyText, true);
-
-                    activeZone.innerHTML = compiledHTML;
-                    
-                    const msgId = Date.now();
-                    const cleanPrompt = btoa(encodeURIComponent(originalPromptText));
-                    const cleanReply = btoa(encodeURIComponent(finalReply));
-                    
-                    const footerHTML = `
-                    <div class="flex items-center gap-2 mt-4 pt-3 border-t border-gemini-border/30 text-gemini-textMuted select-none rlhf-footer-${msgId}">
-                        <button onclick="window.rateResponse(${msgId}, true, '${cleanPrompt}', '${cleanReply}')" class="hover:bg-gemini-card p-1.5 rounded-lg smooth-transition hover:text-emerald-400" title="Good response"><i class="fa-regular fa-thumbs-up text-sm"></i></button>
-                        <button onclick="window.rateResponse(${msgId}, false, '${cleanPrompt}', '${cleanReply}')" class="hover:bg-gemini-card p-1.5 rounded-lg smooth-transition hover:text-red-400" title="Bad response"><i class="fa-regular fa-thumbs-down text-sm"></i></button>
-                    </div>`;
-                    activeZone.insertAdjacentHTML('beforeend', footerHTML);
-
-                    if (window.autoScrollChat) chatStream.scrollTop = chatStream.scrollHeight;
-
-                    session.messages.push({ role: 'assistant', content: rawAccumulated });
-                    session.updated = Date.now();
-                    syncDatabaseToDrive();
                 }
+                const finalReply = cleanParsedReply.trim();
+
+                // Build Final Display View
+                let finalThinking = "";
+                const fsIdx = rawAccumulated.indexOf('<think>');
+                const feIdx = rawAccumulated.indexOf('</think>');
+                if (fsIdx !== -1 && feIdx !== -1) {
+                    finalThinking = rawAccumulated.substring(fsIdx + 7, feIdx);
+                }
+
+                let compiledHTML = "";
+                if (finalThinking.trim().length > 0) {
+                    compiledHTML += renderReasoningAccordion(finalThinking, false);
+                }
+                compiledHTML += parseMarkdownResponse(finalReply, true);
+
+                activeZone.innerHTML = compiledHTML;
+                
+                const msgId = Date.now();
+                const cleanPrompt = btoa(encodeURIComponent(originalPromptText));
+                const cleanReply = btoa(encodeURIComponent(finalReply));
+                
+                const footerHTML = `
+                <div class="flex items-center gap-2 mt-4 pt-3 border-t border-gemini-border/30 text-gemini-textMuted select-none rlhf-footer-${msgId}">
+                    <button onclick="window.rateResponse(${msgId}, true, '${cleanPrompt}', '${cleanReply}')" class="hover:bg-gemini-card p-1.5 rounded-lg smooth-transition hover:text-emerald-400" title="Good response"><i class="fa-regular fa-thumbs-up text-sm"></i></button>
+                    <button onclick="window.rateResponse(${msgId}, false, '${cleanPrompt}', '${cleanReply}')" class="hover:bg-gemini-card p-1.5 rounded-lg smooth-transition hover:text-red-400" title="Bad response"><i class="fa-regular fa-thumbs-down text-sm"></i></button>
+                </div>`;
+                activeZone.insertAdjacentHTML('beforeend', footerHTML);
+
+                if (window.autoScrollChat) chatStream.scrollTop = chatStream.scrollHeight;
+
+                session.messages.push({ role: 'assistant', content: rawAccumulated });
+                session.updated = Date.now();
+                syncDatabaseToDrive();
+
             } catch (err) {
                 if (err.name === 'AbortError') {
                     console.log("Inference successfully aborted.");
                     activeZone.innerHTML += `<br><br><span class="text-orange-400 text-xs italic"><i class="fa-solid fa-hand mr-1"></i> Generation stopped by user.</span>`;
                 } else {
                     console.error("Final inference capture failed:", err);
-                    activeZone.innerHTML = `<span class="text-red-400"><i class="fa-solid fa-triangle-exclamation mr-2"></i>WebGPU Error. Refresh or check VRAM.</span>`;
+                    activeZone.innerHTML = `<span class="text-red-400"><i class="fa-solid fa-triangle-exclamation mr-2"></i>WebGPU Error. Check console logs.</span>`;
                 }
             } finally {
                 document.getElementById('generation-controls').classList.add('hidden');
@@ -1454,6 +1369,32 @@ You must generate a short, ultra-condensed reasoning process under <think> and <
             `).join('');
         }
 
+        // --- LIVE CANVAS RENDER UPDATE FUNCTION --- //
+        window.updateCanvasLive = (code, isFinal) => {
+            const encoded = btoa(encodeURIComponent(code));
+            
+            // Auto open canvas side panel if generating web app
+            if (!isFinal) {
+                const canvasCol = document.getElementById('canvas-column');
+                if (canvasCol.style.width === '0px' || canvasCol.style.width === '') {
+                    window.toggleCanvasVisibility(true);
+                }
+            }
+            
+            // Instantly sync live typing code to the canvas 'Code' tab
+            document.getElementById('live-canvas-code').innerText = code;
+            
+            // Debounce iframe srcdoc updating to prevent constant layout thrashing while typing
+            clearTimeout(liveCanvasTimeout);
+            if (isFinal) {
+                window.renderToCanvas(encoded);
+            } else {
+                liveCanvasTimeout = setTimeout(() => {
+                    document.getElementById('live-canvas-frame').srcdoc = code;
+                }, 800); // Wait 800ms between live iframe renders
+            }
+        };
+
         // --- MARKDOWN & TOOLS PARSER --- //
         let currentCanvasHTML = "";
 
@@ -1541,22 +1482,28 @@ You must generate a short, ultra-condensed reasoning process under <think> and <
             const renderer = new marked.Renderer();
 
             renderer.code = function(code, language) {
-                if ((language === 'html' || language === 'html5') && (code.includes('<html') || code.includes('<div') || code.includes('<body') || code.includes('<canvas'))) {
+                const isWebTemplate = (language === 'html' || language === 'html5') && (code.includes('<html') || code.includes('<div') || code.includes('<body') || code.includes('<canvas'));
+
+                if (isWebTemplate) {
                     const base64Content = btoa(encodeURIComponent(code.trim()));
                     
-                    if (isFinal) setTimeout(() => window.renderToCanvas(base64Content), 100);
+                    // Simultaneously stream HTML to Canvas workspace
+                    window.updateCanvasLive(code.trim(), isFinal);
                     
-                    return `
-                    <div class="relative group my-4 shadow-lg rounded-2xl overflow-hidden max-w-md border border-gemini-border/40 text-left">
-                        <div class="flex items-center justify-between bg-gemini-sidebar px-4 py-3 text-xs font-sans text-slate-200">
-                            <span class="font-semibold flex items-center gap-2"><i class="fa-brands fa-html5 text-orange-400 text-lg"></i> ${isFinal ? 'Interactive Web App' : 'Generating App...'}</span>
-                            <button onclick="window.renderToCanvas('${base64Content}')" class="bg-gemini-card hover:bg-[#3c4043] text-white px-3 py-1.5 rounded-full smooth-transition font-medium text-[11px] border border-gemini-border/50" ${!isFinal ? 'disabled' : ''}>
-                                <i class="fa-solid fa-play mr-1.5 text-emerald-400"></i> Open Canvas
-                            </button>
-                        </div>
-                    </div>`;
+                    if (isFinal) {
+                        return `
+                        <div class="relative group my-4 shadow-lg rounded-2xl overflow-hidden max-w-md border border-gemini-border/40 text-left">
+                            <div class="flex items-center justify-between bg-gemini-sidebar px-4 py-3 text-xs font-sans text-slate-200">
+                                <span class="font-semibold flex items-center gap-2"><i class="fa-brands fa-html5 text-orange-400 text-lg"></i> Interactive Web App</span>
+                                <button onclick="window.renderToCanvas('${base64Content}')" class="bg-gemini-card hover:bg-[#3c4043] text-white px-3 py-1.5 rounded-full smooth-transition font-medium text-[11px] border border-gemini-border/50">
+                                    <i class="fa-solid fa-play mr-1.5 text-emerald-400"></i> Open Canvas
+                                </button>
+                            </div>
+                        </div>`;
+                    }
                 }
 
+                // Generates the live-typing code block during stream or for non-HTML code
                 return `
                 <div class="my-4 rounded-2xl overflow-hidden border border-gemini-border/40 shadow-md max-w-3xl text-left">
                     <div class="bg-[#1a1b1d] px-4 py-2 text-[10px] text-slate-400 font-mono uppercase tracking-widest flex justify-between">
