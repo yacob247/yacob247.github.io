@@ -281,10 +281,9 @@
                 <div>
                     <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Local Llama Engine</label>
                     <select id="config-model" class="w-full bg-gemini-bg border border-gemini-border text-xs text-slate-200 rounded-xl px-4 py-3 outline-none focus:border-gemini-accent smooth-transition shadow-inner cursor-pointer">
-                        <option value="Llama-3.2-1B-Instruct-q4f16_1-MLC" selected>Loma HTML Expert 1B — Custom Trained ✦</option>
-                        <option value="Llama-3.2-3B-Instruct-q4f16_1-MLC">Llama 3.2 3B (Fallback — Higher Reasoning)</option>
+                        <option value="llama3.2:1b" selected>Loma Expert 1B (llama3.2:1b) ✦</option>
                     </select>
-                    <p class="text-[9px] text-gemini-textMuted mt-1.5 ml-1">Powered by your fine-tuned <span class="text-gemini-accent font-mono">loma_html_expert</span> Q4_K_M model</p>
+                    <p class="text-[9px] text-gemini-textMuted mt-1.5 ml-1">Powered by your local Ollama engine with the <span class="text-gemini-accent font-mono">llama3.2:1b</span> model</p>
                 </div>
 
                 <!-- Advanced Reasoning Tuning Parameters -->
@@ -513,12 +512,11 @@
         import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
         
         // --- SERVER PROXY ENGINE (no local download required) ---
-// Change this line:
         // --- URL ROUTING & STRING CODES ---                                                                                                                      
         // --- URL ROUTING & STRING CODES ---
         const ENVIZION_API = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
             ? 'http://localhost:3000/api/chat'
-            : 'https://envizion.work';
+            : 'https://api.envizion.work/api/chat';
 
         const firebaseConfig = {
             apiKey: "AIzaSyDLeM4MrsA1Q8zq7_QcQfTJKk049vOVOO4",
@@ -583,11 +581,9 @@
             currentSessionId = lomaMatch[1];
         }
         
-               let systemConfig = {
-            // Checks localStorage, but ignores it and defaults to llama3.2 if it contains the old MLC tag
-            model: (localStorage.getItem('envizion_model') && !localStorage.getItem('envizion_model').includes('MLC'))
-                ? localStorage.getItem('envizion_model')
-                : 'llama3.2',
+        let systemConfig = {
+            // Strictly target 'llama3.2:1b' and ignore legacy MLC properties
+            model: 'llama3.2:1b',
             temperature: parseFloat(localStorage.getItem('envizion_temp')) || 0.9,
             maxTokens: parseInt(localStorage.getItem('envizion_tokens')) || 16384,
             reasoningDepth: parseInt(localStorage.getItem('envizion_reasoning_depth')) || 1024,
@@ -1048,7 +1044,7 @@ You must generate a short, ultra-condensed reasoning process under <think> and <
             currentAbortController = new AbortController();
             document.getElementById('generation-controls').classList.remove('hidden');
 
-const activeZone = appendChatBubble('assistant', null);
+            const activeZone = appendChatBubble('assistant', null);
             const chatStream = document.getElementById('chat-stream');
             let session = chatDatabase.sessions[currentSessionId];
             
@@ -1065,15 +1061,14 @@ const activeZone = appendChatBubble('assistant', null);
                 const response = await fetch(ENVIZION_API, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                        model: 'llama3.2',
+                    body: JSON.stringify({
+                        model: 'llama3.2:1b', // target the exact 1B parameters model
                         messages: currentMessages,
                         temperature: systemConfig.temperature,
                         max_tokens: systemConfig.maxTokens,
                         stream: true,
                         user: auth.currentUser?.email || 'unknown'
                     }),
-
                     signal: currentAbortController.signal
                 });
 
@@ -1906,7 +1901,7 @@ const activeZone = appendChatBubble('assistant', null);
                 contentHTML = escapeHtmlString(msg).replace(/\[SYSTEM NOTE: The following is context from the web[\s\S]*?\[USER QUERY\]\n/gi, '');
             } else {
                 // Parse think sequence
-let rawAccumulated = msg || '';
+                let rawAccumulated = msg || '';
                 let cleanParsedReply = rawAccumulated;
                 let thinkingText = "";
                 let hasThinking = false;
