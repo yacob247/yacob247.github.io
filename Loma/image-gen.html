@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LOMA Image Tool</title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --bg: #0d0e10; --surface: #16181c; --border: #2a2d33;
+            --accent: #a8c7fa; --text: #e0e0e0; --muted: #6b7280;
+            --green: #4ade80; --red: #f87171;
+        }
+        body {
+            font-family: 'Courier New', monospace;
+            background: var(--bg); color: var(--text);
+            min-height: 100vh; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; padding: 24px;
+        }
+        .shell { width: 100%; max-width: 600px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+        .titlebar { display: flex; align-items: center; gap: 8px; padding: 12px 16px; background: #1a1c20; border-bottom: 1px solid var(--border); font-size: 11px; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; }
+        .dot { width: 10px; height: 10px; border-radius: 50%; }
+        .dot-r { background: #f87171; } .dot-y { background: #fbbf24; } .dot-g { background: #4ade80; }
+        .body { padding: 20px; }
+        label { display: block; font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 6px; margin-top: 14px; }
+        label:first-of-type { margin-top: 0; }
+        input, select, textarea { width: 100%; background: #0d0e10; border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 9px 12px; font-family: inherit; font-size: 13px; outline: none; resize: none; transition: border-color 0.2s; }
+        input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+        .row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 14px; }
+        .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+        button { margin-top: 16px; width: 100%; padding: 11px; background: var(--accent); color: #000; border: none; border-radius: 6px; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer; letter-spacing: 0.04em; transition: opacity 0.2s; }
+        button:disabled { opacity: 0.4; cursor: not-allowed; }
+        button:not(:disabled):hover { opacity: 0.85; }
+        #status-line { margin-top: 14px; font-size: 11px; color: var(--muted); min-height: 16px; letter-spacing: 0.05em; }
+        #status-line.ok  { color: var(--green); }
+        #status-line.err { color: var(--red);   }
+        #result-zone { margin-top: 14px; display: none; flex-direction: column; gap: 10px; padding: 14px; background: #0d0e10; border: 1px solid var(--border); border-radius: 8px; }
+        #result-img { width: 100%; border-radius: 6px; display: block; }
+        .meta { font-size: 10px; color: var(--muted); word-break: break-all; }
+        .action-row { display: flex; gap: 8px; margin-top: 0; }
+        .action-row button { margin-top: 0; padding: 7px 12px; font-size: 11px; background: #1a1c20; color: var(--accent); border: 1px solid var(--border); border-radius: 6px; width: auto; flex: 1; }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+        .loading { animation: pulse 1.2s ease-in-out infinite; }
+        /* Spinner skeleton while image loads */
+        .img-skeleton { width: 100%; aspect-ratio: 1; background: linear-gradient(90deg, #1a1c20 25%, #2a2d33 50%, #1a1c20 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: 6px; }
+        @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+    </style>
+</head>
+<body>
+<div class="shell">
+    <div class="titlebar">
+        <div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div>
+        <span style="margin-left:6px;">loma / image-gen.tool</span>
+    </div>
+    <div class="body">
+        <label>Prompt</label>
+        <textarea id="prompt" rows="3" placeholder="e.g. cyberpunk city at night, neon reflections, rain, photorealistic"></textarea>
+
+        <div class="row-2">
+            <div>
+                <label>Style / Model</label>
+                <select id="style">
+                    <option value="flux">Flux (photorealistic)</option>
+                    <option value="turbo">Flux Turbo (fast)</option>
+                    <option value="gptimage1">OpenAI Image (GPT Image)</option>
+                    <option value="flux-anime">Flux Anime</option>
+                    <option value="flux-3d">Flux 3D Render</option>
+                    <option value="flux-realism">Flux Realism</option>
+                    <option value="flux-cablyai">Flux Cablyai</option>
+                </select>
+            </div>
+            <div>
+                <label>Aspect Ratio</label>
+                <select id="ratio">
+                    <option value="1024x1024">1:1 Square</option>
+                    <option value="1280x720">16:9 Landscape</option>
+                    <option value="720x1280">9:16 Portrait</option>
+                    <option value="1024x768">4:3 Classic</option>
+                    <option value="1920x1080">1920×1080 HD</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="row">
+            <div>
+                <label>Seed</label>
+                <input type="number" id="seed" placeholder="Random" min="0">
+            </div>
+            <div>
+                <label>Enhance</label>
+                <select id="enhance">
+                    <option value="true">Yes (recommended)</option>
+                    <option value="false">No (exact prompt)</option>
+                </select>
+            </div>
+            <div>
+                <label>Nologo</label>
+                <select id="nologo">
+                    <option value="true">Hide watermark</option>
+                    <option value="false">Show</option>
+                </select>
+            </div>
+        </div>
+
+        <label>Negative Prompt (optional)</label>
+        <input type="text" id="negative" placeholder="e.g. blurry, low quality, watermark, text">
+
+        <button id="gen-btn" onclick="generateImage()">▶ Generate</button>
+        <div id="status-line">Ready — waiting for prompt.</div>
+
+        <div id="result-zone">
+            <div id="img-skeleton" class="img-skeleton" style="display:none;"></div>
+            <img id="result-img" alt="Generated image" style="display:none;">
+            <div class="meta" id="result-meta"></div>
+            <div class="action-row">
+                <button onclick="copyUrl()">Copy URL</button>
+                <button onclick="downloadImg()">Download PNG</button>
+                <button onclick="regenImg()">Regenerate</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════
+//  LOMA IMAGE-GEN TOOL
+//  Uses Pollinations.ai (free, no API key needed)
+//  Posts result back to parent LOMA window
+// ════════════════════════════════════════════════════════
+
+const setStatus = (msg, cls='') => {
+    const el = document.getElementById('status-line');
+    el.textContent = msg;
+    el.className = cls;
+};
+
+let currentImageUrl = null;
+let lastPayload     = null;
+
+function buildImageUrl(payload) {
+    const prompt    = encodeURIComponent(payload.prompt);
+    const model     = payload.style    || 'flux';
+    const [w, h]    = (payload.ratio   || '1024x1024').split('x');
+    const seed      = payload.seed     != null ? `&seed=${payload.seed}`     : `&seed=${Math.floor(Math.random()*99999)}`;
+    const enhance   = `&enhance=${payload.enhance !== false}`;
+    const nologo    = `&nologo=${payload.nologo   !== false}`;
+    const negative  = payload.negative ? `&negative=${encodeURIComponent(payload.negative)}` : '';
+
+    return `https://image.pollinations.ai/prompt/${prompt}?model=${model}&width=${w}&height=${h}${seed}${enhance}${nologo}${negative}&nofeed=true`;
+}
+
+async function generateImage(overridePayload) {
+    const btn = document.getElementById('gen-btn');
+    btn.disabled = true;
+
+    let payload = {};
+
+    if (overridePayload) {
+        if (overridePayload.prompt)   document.getElementById('prompt').value    = overridePayload.prompt;
+        if (overridePayload.style)    document.getElementById('style').value     = overridePayload.style;
+        if (overridePayload.ratio)    document.getElementById('ratio').value     = overridePayload.ratio;
+        if (overridePayload.seed)     document.getElementById('seed').value      = overridePayload.seed;
+        if (overridePayload.negative) document.getElementById('negative').value  = overridePayload.negative;
+        payload = overridePayload;
+    } else {
+        payload = {
+            prompt:   document.getElementById('prompt').value.trim(),
+            style:    document.getElementById('style').value,
+            ratio:    document.getElementById('ratio').value,
+            seed:     document.getElementById('seed').value || null,
+            enhance:  document.getElementById('enhance').value === 'true',
+            nologo:   document.getElementById('nologo').value  === 'true',
+            negative: document.getElementById('negative').value.trim()
+        };
+    }
+
+    lastPayload = payload;
+
+    if (!payload.prompt) {
+        setStatus('⚠  Enter a prompt first.', 'err');
+        btn.disabled = false;
+        return;
+    }
+
+    setStatus('⏳  Requesting image from Pollinations…', 'loading');
+
+    const resultZone = document.getElementById('result-zone');
+    const img        = document.getElementById('result-img');
+    const skeleton   = document.getElementById('img-skeleton');
+
+    resultZone.style.display = 'flex';
+    img.style.display        = 'none';
+    skeleton.style.display   = 'block';
+    currentImageUrl          = null;
+
+    const url = buildImageUrl(payload);
+
+    try {
+        // Fetch as blob to get actual image data (not just a URL)
+        const res = await fetch(url, { signal: AbortSignal.timeout(90_000) });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+        const blob = await res.blob();
+        if (!blob.size) throw new Error('Empty response from Pollinations');
+
+        const objectUrl = URL.createObjectURL(blob);
+        currentImageUrl = objectUrl;
+        img.src = objectUrl;
+        img.style.display   = 'block';
+        skeleton.style.display = 'none';
+        document.getElementById('result-meta').textContent = `model: ${payload.style||'flux'} · ${payload.ratio||'1024x1024'} · prompt: "${payload.prompt.slice(0,80)}…"`;
+        setStatus('✓  Image generated.', 'ok');
+
+        // ── Post result back to LOMA ────────────────────────────────────────
+        // Convert blob to base64 so it can cross the message boundary
+        const reader = new FileReader();
+        reader.onload = () => {
+            const result = {
+                type:       'LOMA_IMAGE_RESULT',
+                imageUrl:   objectUrl,        // object URL (same tab only)
+                imageData:  reader.result,    // base64 data URI (cross-frame safe)
+                prompt:     payload.prompt,
+                style:      payload.style,
+                timestamp:  Date.now()
+            };
+            window.lomaLastResult = result;
+            window.parent?.postMessage(result, '*');
+            window.opener?.postMessage(result, '*');
+        };
+        reader.readAsDataURL(blob);
+
+    } catch (err) {
+        skeleton.style.display = 'none';
+        setStatus(`✗  Failed: ${err.message}`, 'err');
+        const errResult = { type: 'LOMA_IMAGE_RESULT', error: err.message, prompt: payload.prompt };
+        window.lomaLastResult = errResult;
+        window.parent?.postMessage(errResult, '*');
+        window.opener?.postMessage(errResult, '*');
+    }
+
+    btn.disabled = false;
+}
+
+function copyUrl() {
+    if (!currentImageUrl) return;
+    navigator.clipboard.writeText(currentImageUrl)
+        .then(() => setStatus('URL copied.', 'ok'))
+        .catch(() => setStatus('Copy failed.', 'err'));
+}
+
+function downloadImg() {
+    if (!currentImageUrl) return;
+    const a = document.createElement('a');
+    a.href = currentImageUrl;
+    a.download = `loma-image-${Date.now()}.png`;
+    a.click();
+}
+
+function regenImg() {
+    if (!lastPayload) return;
+    lastPayload.seed = Math.floor(Math.random() * 99999);
+    document.getElementById('seed').value = lastPayload.seed;
+    generateImage(lastPayload);
+}
+
+// ── Listen for requests from LOMA ────────────────────────────────────────────
+window.addEventListener('message', (e) => {
+    if (e.data?.type === 'LOMA_IMAGE_REQUEST') {
+        generateImage(e.data.payload);
+    }
+});
+
+// ── Auto-trigger from URL params ─────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+    const params = new URLSearchParams(window.location.search);
+    const autoPrompt = params.get('prompt');
+    if (autoPrompt) {
+        generateImage({
+            prompt:   autoPrompt,
+            style:    params.get('style')    || 'flux',
+            ratio:    params.get('ratio')    || '1024x1024',
+            seed:     params.get('seed')     || null,
+            negative: params.get('negative') || '',
+            enhance:  params.get('enhance') !== 'false',
+            nologo:   params.get('nologo')  !== 'false',
+        });
+    }
+});
+</script>
+</body>
+</html>

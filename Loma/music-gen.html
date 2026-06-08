@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LOMA Music Tool</title>
+    <style>
+        /* ── Minimal dark shell — this page is a tool, not a UI ── */
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --bg: #0d0e10;
+            --surface: #16181c;
+            --border: #2a2d33;
+            --accent: #a8c7fa;
+            --text: #e0e0e0;
+            --muted: #6b7280;
+            --green: #4ade80;
+            --red: #f87171;
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
+
+        .shell {
+            width: 100%;
+            max-width: 560px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .titlebar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 16px;
+            background: #1a1c20;
+            border-bottom: 1px solid var(--border);
+            font-size: 11px;
+            color: var(--muted);
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .dot { width: 10px; height: 10px; border-radius: 50%; }
+        .dot-r { background: #f87171; } .dot-y { background: #fbbf24; } .dot-g { background: #4ade80; }
+
+        .body { padding: 20px; }
+
+        label { display: block; font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 6px; margin-top: 14px; }
+        label:first-of-type { margin-top: 0; }
+
+        input, select, textarea {
+            width: 100%;
+            background: #0d0e10;
+            border: 1px solid var(--border);
+            color: var(--text);
+            border-radius: 6px;
+            padding: 9px 12px;
+            font-family: inherit;
+            font-size: 13px;
+            outline: none;
+            resize: none;
+            transition: border-color 0.2s;
+        }
+        input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+
+        .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+
+        button {
+            margin-top: 16px;
+            width: 100%;
+            padding: 11px;
+            background: var(--accent);
+            color: #000;
+            border: none;
+            border-radius: 6px;
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            letter-spacing: 0.04em;
+            transition: opacity 0.2s;
+        }
+        button:disabled { opacity: 0.4; cursor: not-allowed; }
+        button:not(:disabled):hover { opacity: 0.85; }
+
+        #status-line {
+            margin-top: 14px;
+            font-size: 11px;
+            color: var(--muted);
+            min-height: 16px;
+            letter-spacing: 0.05em;
+        }
+        #status-line.ok  { color: var(--green); }
+        #status-line.err { color: var(--red);   }
+
+        #result-zone {
+            margin-top: 14px;
+            display: none;
+            flex-direction: column;
+            gap: 10px;
+            padding: 14px;
+            background: #0d0e10;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+
+        audio { width: 100%; outline: none; }
+
+        .meta { font-size: 10px; color: var(--muted); word-break: break-all; }
+
+        .copy-btn {
+            margin: 0;
+            padding: 7px 12px;
+            font-size: 11px;
+            background: #1a1c20;
+            color: var(--accent);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            width: auto;
+        }
+
+        /* ── Pulse animation while loading ── */
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+        .loading { animation: pulse 1.2s ease-in-out infinite; }
+    </style>
+</head>
+<body>
+
+<div class="shell">
+    <div class="titlebar">
+        <div class="dot dot-r"></div>
+        <div class="dot dot-y"></div>
+        <div class="dot dot-g"></div>
+        <span style="margin-left:6px;">loma / music-gen.tool</span>
+    </div>
+    <div class="body">
+        <label>Prompt</label>
+        <textarea id="prompt" rows="3" placeholder="e.g. lo-fi hip hop, warm piano, 90bpm, melancholic"></textarea>
+
+        <div class="row">
+            <div>
+                <label>Style</label>
+                <select id="style">
+                    <option value="">Auto-detect</option>
+                    <option value="lo-fi hip hop">Lo-fi Hip Hop</option>
+                    <option value="ambient electronic">Ambient Electronic</option>
+                    <option value="cinematic orchestral">Cinematic Orchestral</option>
+                    <option value="acoustic folk">Acoustic Folk</option>
+                    <option value="synthwave retro">Synthwave</option>
+                    <option value="jazz piano trio">Jazz Piano</option>
+                    <option value="classical piano">Classical Piano</option>
+                    <option value="dark techno">Dark Techno</option>
+                    <option value="upbeat pop">Upbeat Pop</option>
+                    <option value="chillout beats">Chillout Beats</option>
+                </select>
+            </div>
+            <div>
+                <label>Duration (s)</label>
+                <input type="number" id="duration" value="30" min="5" max="120" step="5">
+            </div>
+        </div>
+
+        <div class="row">
+            <div>
+                <label>BPM</label>
+                <input type="number" id="bpm" value="90" min="40" max="200">
+            </div>
+            <div>
+                <label>Key / Mode</label>
+                <input type="text" id="key" placeholder="e.g. C minor">
+            </div>
+        </div>
+
+        <button id="gen-btn" onclick="generateMusic()">▶ Generate</button>
+        <div id="status-line">Ready — waiting for prompt.</div>
+        <div id="result-zone">
+            <audio id="audio-player" controls></audio>
+            <div class="meta" id="result-meta"></div>
+            <button class="copy-btn" onclick="copyUrl()">Copy audio URL</button>
+        </div>
+    </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════
+//  LOMA MUSIC-GEN TOOL
+//  Renders a browser audio page;  posts results back to
+//  the parent LOMA window (or a waiting poll from index.html)
+//
+//  External call API (from index.html):
+//    1.  postMessage({ type:'LOMA_MUSIC_REQUEST', payload:{...} }, '*')
+//    2.  Poll result at window.lomaLastResult (if in same tab)
+//    3.  On completion fires: postMessage({ type:'LOMA_MUSIC_RESULT', ... })
+// ════════════════════════════════════════════════════════
+
+const setStatus = (msg, cls='') => {
+    const el = document.getElementById('status-line');
+    el.textContent = msg;
+    el.className = cls;
+};
+
+function buildPromptString() {
+    const base     = document.getElementById('prompt').value.trim();
+    const style    = document.getElementById('style').value;
+    const bpm      = document.getElementById('bpm').value;
+    const key      = document.getElementById('key').value.trim();
+    const duration = document.getElementById('duration').value;
+
+    let parts = [base];
+    if (style) parts.unshift(style);
+    if (bpm)   parts.push(`${bpm}bpm`);
+    if (key)   parts.push(key);
+
+    return { full: parts.join(', '), duration: parseInt(duration) };
+}
+
+// ── PRIMARY ENGINE: Pollinations Audio (free, no key needed) ────────────────
+// Pollinations exposes a /audio endpoint that accepts a text prompt
+// and streams back an mp3. This is the default free path.
+async function tryPollinations(promptStr, duration) {
+    // Pollinations music endpoint (text-to-audio, free tier)
+    const encoded = encodeURIComponent(promptStr);
+    const url = `https://audio.pollinations.ai/${encoded}`;
+    setStatus('⏳  Requesting audio from Pollinations…', 'loading');
+
+    const res = await fetch(url, { signal: AbortSignal.timeout(90_000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const blob = await res.blob();
+    if (!blob.size) throw new Error('Empty response');
+    return URL.createObjectURL(blob);
+}
+
+// ── FALLBACK: Web Audio API procedural synth (always works offline) ──────────
+// Generates a simple atmospheric generative piece client-side.
+async function tryWebAudioSynth(promptStr, duration) {
+    setStatus('🎹  Synthesising locally via Web Audio API…', 'loading');
+    return new Promise((resolve, reject) => {
+        try {
+            const ctx    = new (window.AudioContext || window.webkitAudioContext)();
+            const sampleRate = ctx.sampleRate;
+            const frames = sampleRate * duration;
+
+            // Determine rough tonality from prompt keywords
+            const isMelancholic = /melancholic|sad|minor|dark|moody/i.test(promptStr);
+            const isUpbeat      = /upbeat|happy|major|bright|energetic/i.test(promptStr);
+            const basePitch     = isMelancholic ? 220 : isUpbeat ? 330 : 261.63; // A3 / E4 / C4
+
+            // Build a simple multi-layer buffer
+            const offlineCtx = new OfflineAudioContext(2, frames, sampleRate);
+
+            const minorPentatonic = [0, 3, 5, 7, 10]; // semitone intervals
+            const majorPentatonic = [0, 2, 4, 7, 9];
+            const scale = isMelancholic ? minorPentatonic : majorPentatonic;
+
+            // ── Pad layer ──────────────────────────────────────────────────
+            for (let i = 0; i < 4; i++) {
+                const osc = offlineCtx.createOscillator();
+                const gain = offlineCtx.createGain();
+                const filter = offlineCtx.createBiquadFilter();
+
+                const semitone = scale[i % scale.length];
+                osc.frequency.value = basePitch * Math.pow(2, semitone / 12) * (i < 2 ? 1 : 2);
+                osc.type = ['sine','triangle','sine','triangle'][i];
+
+                filter.type = 'lowpass';
+                filter.frequency.value = 800 + i * 200;
+                filter.Q.value = 0.7;
+
+                gain.gain.setValueAtTime(0, 0);
+                gain.gain.linearRampToValueAtTime(0.08, 2.5);
+                gain.gain.setValueAtTime(0.08, duration - 2.5);
+                gain.gain.linearRampToValueAtTime(0, duration);
+
+                osc.connect(filter);
+                filter.connect(gain);
+                gain.connect(offlineCtx.destination);
+                osc.start(0);
+                osc.stop(duration);
+            }
+
+            // ── Simple arpeggio layer ──────────────────────────────────────
+            const bpmVal = parseInt(document.getElementById('bpm').value) || 90;
+            const stepDuration = 60 / bpmVal;
+            let t = 0.5;
+            let noteIdx = 0;
+
+            while (t < duration - 1) {
+                const osc   = offlineCtx.createOscillator();
+                const gain  = offlineCtx.createGain();
+                const semi  = scale[noteIdx % scale.length];
+                const octave = noteIdx % (scale.length * 2) >= scale.length ? 2 : 1;
+
+                osc.frequency.value = basePitch * Math.pow(2, semi / 12) * octave;
+                osc.type = 'sine';
+
+                gain.gain.setValueAtTime(0, t);
+                gain.gain.linearRampToValueAtTime(0.04, t + 0.05);
+                gain.gain.linearRampToValueAtTime(0, t + stepDuration * 0.8);
+
+                osc.connect(gain);
+                gain.connect(offlineCtx.destination);
+                osc.start(t);
+                osc.stop(t + stepDuration);
+
+                t += stepDuration;
+                noteIdx++;
+            }
+
+            offlineCtx.startRendering().then(buffer => {
+                // Encode to WAV
+                const wav = audioBufferToWav(buffer);
+                const blob = new Blob([wav], { type: 'audio/wav' });
+                resolve(URL.createObjectURL(blob));
+            }).catch(reject);
+
+        } catch(e) { reject(e); }
+    });
+}
+
+// Minimal WAV encoder
+function audioBufferToWav(buffer) {
+    const numCh   = buffer.numberOfChannels;
+    const sampleRate = buffer.sampleRate;
+    const format  = 3; // IEEE float
+    const bitsPS  = 32;
+    const bytesPS = bitsPS / 8;
+    const blockAlign = numCh * bytesPS;
+    const byteRate = sampleRate * blockAlign;
+    const dataLen = buffer.length * blockAlign;
+    const ab = new ArrayBuffer(44 + dataLen);
+    const dv = new DataView(ab);
+    let pos = 0;
+
+    const write = (str) => { for(let i=0;i<str.length;i++) dv.setUint8(pos++,str.charCodeAt(i)); };
+    const u16 = (v) => { dv.setUint16(pos,v,true); pos+=2; };
+    const u32 = (v) => { dv.setUint32(pos,v,true); pos+=4; };
+
+    write('RIFF'); u32(36+dataLen); write('WAVE');
+    write('fmt '); u32(16); u16(format); u16(numCh);
+    u32(sampleRate); u32(byteRate); u16(blockAlign); u16(bitsPS);
+    write('data'); u32(dataLen);
+
+    const channels = [];
+    for(let c=0;c<numCh;c++) channels.push(buffer.getChannelData(c));
+
+    for(let i=0;i<buffer.length;i++) {
+        for(let c=0;c<numCh;c++) {
+            dv.setFloat32(pos, channels[c][i], true);
+            pos += 4;
+        }
+    }
+    return ab;
+}
+
+// ── Main generate orchestrator ───────────────────────────────────────────────
+let currentAudioUrl = null;
+
+async function generateMusic(overridePayload) {
+    const btn = document.getElementById('gen-btn');
+    btn.disabled = true;
+
+    let promptStr, duration;
+
+    if (overridePayload) {
+        // Called programmatically by LOMA
+        document.getElementById('prompt').value   = overridePayload.prompt   || '';
+        document.getElementById('style').value    = overridePayload.style    || '';
+        document.getElementById('bpm').value      = overridePayload.bpm      || 90;
+        document.getElementById('key').value      = overridePayload.key      || '';
+        document.getElementById('duration').value = overridePayload.duration || 30;
+        const built = buildPromptString();
+        promptStr = built.full;
+        duration  = built.duration;
+    } else {
+        const built = buildPromptString();
+        promptStr = built.full;
+        duration  = built.duration;
+    }
+
+    if (!promptStr.trim()) {
+        setStatus('⚠  Enter a prompt first.', 'err');
+        btn.disabled = false;
+        return;
+    }
+
+    const resultZone = document.getElementById('result-zone');
+    resultZone.style.display = 'none';
+    currentAudioUrl = null;
+
+    try {
+        let audioUrl;
+
+        // Try Pollinations first; fall back to Web Audio synth
+        try {
+            audioUrl = await tryPollinations(promptStr, duration);
+            setStatus('✓  Audio received from Pollinations.', 'ok');
+        } catch (e) {
+            console.warn('Pollinations failed:', e);
+            setStatus('Pollinations unavailable — switching to local synthesis…');
+            audioUrl = await tryWebAudioSynth(promptStr, duration);
+            setStatus('✓  Synthesised locally.', 'ok');
+        }
+
+        currentAudioUrl = audioUrl;
+        document.getElementById('audio-player').src = audioUrl;
+        document.getElementById('result-meta').textContent = `prompt: "${promptStr}" · ${duration}s`;
+        resultZone.style.display = 'flex';
+
+        // ── Post result back to parent (LOMA's index.html) ──────────────────
+        const result = {
+            type:      'LOMA_MUSIC_RESULT',
+            audioUrl:  audioUrl,
+            prompt:    promptStr,
+            duration:  duration,
+            timestamp: Date.now()
+        };
+        window.lomaLastResult = result;          // polling fallback
+        window.parent?.postMessage(result, '*'); // iframe path
+        window.opener?.postMessage(result, '*'); // popup path
+
+    } catch (err) {
+        setStatus(`✗  Failed: ${err.message}`, 'err');
+        const errResult = { type: 'LOMA_MUSIC_RESULT', error: err.message };
+        window.lomaLastResult = errResult;
+        window.parent?.postMessage(errResult, '*');
+        window.opener?.postMessage(errResult, '*');
+    }
+
+    btn.disabled = false;
+}
+
+function copyUrl() {
+    if (!currentAudioUrl) return;
+    navigator.clipboard.writeText(currentAudioUrl)
+        .then(() => setStatus('URL copied to clipboard.', 'ok'))
+        .catch(() => setStatus('Copy failed — select manually.', 'err'));
+}
+
+// ── Listen for incoming requests from LOMA ───────────────────────────────────
+window.addEventListener('message', (e) => {
+    if (e.data?.type === 'LOMA_MUSIC_REQUEST') {
+        generateMusic(e.data.payload);
+    }
+});
+
+// ── Auto-trigger if URL has ?prompt= param (direct LOMA iframe call) ─────────
+window.addEventListener('DOMContentLoaded', () => {
+    const params = new URLSearchParams(window.location.search);
+    const autoPrompt = params.get('prompt');
+    if (autoPrompt) {
+        document.getElementById('prompt').value   = autoPrompt;
+        document.getElementById('style').value    = params.get('style')    || '';
+        document.getElementById('bpm').value      = params.get('bpm')      || 90;
+        document.getElementById('key').value      = params.get('key')      || '';
+        document.getElementById('duration').value = params.get('duration') || 30;
+        generateMusic();
+    }
+});
+</script>
+</body>
+</html>
