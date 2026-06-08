@@ -1,6 +1,16 @@
-# ==============================================================================
-# 🚀 AUTOMATED OLLAMA GOOGLE COLAB HOSTER (WITH DIRECT HUGGING FACE GGUF DOWNLOAD)
-# ==============================================================================
+"""
+╔══════════════════════════════════════════════════════════════════════════════╗
+║         AUTOMATED OLLAMA COLAB HOSTER — GGUF FROM HUGGING FACE             ║
+║  Secure: reads tokens from Colab Secrets / environment variables only       ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+HOW TO USE SECRETS IN COLAB:
+  1. Click the 🔑 key icon in the left sidebar
+  2. Add these secrets:
+       GITHUB_TOKEN   →  your GitHub PAT
+       NGROK_TOKEN    →  your ngrok auth token
+       HF_TOKEN       →  (optional) for private HF repos
+"""
 
 import os
 import sys
@@ -9,110 +19,195 @@ import time
 import urllib.request
 import json
 
-HF_REPO = "Yacob-OKour14342/trained_rlhf_adapter"
-MODEL_ALIAS = "trained-rlhf-llama"
-DATASET_PATH = "my_rlhf_dataset.json"
-GIST_ID = "7e0d2a7fe8ee35a9f802e968c4f3537a"
-GITHUB_TOKEN = os.environ.get("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", "3EoJS5KLBLo8tHbRF5FE5vw3J54_2xBzZDhB98Sv4uq9xeczF")
+# ─── Configuration (no secrets here — set as Colab Secrets or env vars) ──────
+HF_REPO      = "YOUR_HF_USERNAME/your-gguf-repo"   # ← change this
+MODEL_ALIAS  = "trained-rlhf-model"
+GIST_ID      = "YOUR_GITHUB_GIST_ID"               # ← change this
 
-print("==================================================================")
-print("📦 Preparing Dependencies for Secure Ollama GPU Instance on Colab")
-print("==================================================================\n")
+# ─── Read secrets safely ──────────────────────────────────────────────────────
+def get_secret(name: str, required: bool = True) -> str:
+    """Read from Colab Secrets first, then environment variables."""
+    # Try Colab userdata API
+    try:
+        from google.colab import userdata
+        val = userdata.get(name)
+        if val:
+            return val
+    except Exception:
+        pass
 
-# 1. Install dependencies
-print("⚡ Installing Hub Client Utilities & Hugging Face Libraries...")
+    # Fallback: environment variable
+    val = os.environ.get(name, "")
+    if not val and required:
+        print(f"❌  Secret '{name}' not set.")
+        print(f"    In Colab: click the 🔑 key icon and add '{name}'")
+        print(f"    Or set:   import os; os.environ['{name}'] = 'your_value'")
+        sys.exit(1)
+    return val
+
+
+print("══════════════════════════════════════════════════════════════")
+print("  📦  Secure Ollama GPU Instance — Colab Hoster")
+print("══════════════════════════════════════════════════════════════\n")
+
+GITHUB_TOKEN = get_secret("GITHUB_TOKEN")
+NGROK_TOKEN  = get_secret("NGROK_TOKEN")
+HF_TOKEN     = get_secret("HF_TOKEN", required=False)  # optional for public repos
+
+# ─── 1. Install dependencies ──────────────────────────────────────────────────
+print("⚡  Installing dependencies…")
 os.system("pip install -q huggingface_hub trl transformers accelerate datasets pyngrok")
 
-# 2. Check dataset
+# ─── 2. Validate local dataset ───────────────────────────────────────────────
+DATASET_PATH = "my_rlhf_dataset.json"
 if os.path.exists(DATASET_PATH):
-    print(f"✨ Detected local dataset '{DATASET_PATH}'!")
     try:
-        with open(DATASET_PATH, 'r') as f:
-            sample_data = json.load(f)
-            print(f"📊 Dataset verified with {len(sample_data)} custom human feedback rules.")
+        with open(DATASET_PATH) as f:
+            sample = json.load(f)
+        print(f"✨  Dataset detected: {len(sample)} preference pairs")
     except Exception as e:
-        print(f"⚠️ Warning during RLHF pre-checks: {e}")
+        print(f"⚠️   Dataset read warning: {e}")
 else:
-    print("ℹ️ No dataset found. Skipping.")
+    print("ℹ️   No local dataset found — skipping validation")
 
-# 3. Download GGUF from Hugging Face
-print(f"\n📥 Finding GGUF Files inside Repository: {HF_REPO}...")
+# ─── 3. Download GGUF from Hugging Face ──────────────────────────────────────
+print(f"\n📥  Scanning HF repo: {HF_REPO}")
 try:
     from huggingface_hub import HfApi, hf_hub_download
     api = HfApi()
-    files = list(api.list_repo_files(repo_id=HF_REPO))
+    api_kwargs = {"repo_id": HF_REPO}
+    if HF_TOKEN:
+        api_kwargs["token"] = HF_TOKEN
+
+    files = list(api.list_repo_files(**api_kwargs))
     gguf_files = [f for f in files if f.endswith(".gguf")]
+
     if not gguf_files:
-        print("❌ No .gguf file found in repo. Please upload a quantized GGUF first.")
+        print("❌  No .gguf file found. Upload a quantised GGUF to your HF repo first.")
         sys.exit(1)
+
     gguf_filename = gguf_files[0]
-    print(f"✅ Found GGUF file: {gguf_filename}")
-    print(f"⏳ Downloading GGUF weights to local Colab memory...")
-    gguf_local_path = hf_hub_download(repo_id=HF_REPO, filename=gguf_filename)
-    print(f"💾 Saved to: {gguf_local_path}")
+    print(f"✅  Found: {gguf_filename}")
+    print("⏳  Downloading to Colab instance…")
+
+    dl_kwargs = {"repo_id": HF_REPO, "filename": gguf_filename}
+    if HF_TOKEN:
+        dl_kwargs["token"] = HF_TOKEN
+    gguf_local_path = hf_hub_download(**dl_kwargs)
+    print(f"💾  Saved to: {gguf_local_path}")
+
 except Exception as e:
-    print(f"❌ Failed to download from Hugging Face: {e}")
+    print(f"❌  HF download failed: {e}")
     sys.exit(1)
 
-# 4. Install Ollama
-print("\n⚡ Installing Ollama CLI runtime (Linux)...")
+# ─── 4. Install Ollama ────────────────────────────────────────────────────────
+print("\n⚡  Installing Ollama CLI…")
 os.system("curl -fsSL https://ollama.com/install.sh | sh")
 
-# 5. Start Ollama with open CORS
-print("\n🌐 Launching Ollama daemon...")
+# ─── 5. Start Ollama server ───────────────────────────────────────────────────
+print("\n🌐  Launching Ollama daemon with open CORS…")
 env = os.environ.copy()
 env["OLLAMA_ORIGINS"] = "*"
-subprocess.Popen(["ollama", "serve"], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+subprocess.Popen(
+    ["ollama", "serve"],
+    env=env,
+    stdout=subprocess.DEVNULL,
+    stderr=subprocess.DEVNULL,
+)
 time.sleep(4)
+print("   Ollama daemon ready ✓")
 
-# 6. Build Modelfile
-print("\n📝 Generating Modelfile for Ollama...")
+# ─── 6. Build Modelfile ───────────────────────────────────────────────────────
+print("\n📝  Generating Modelfile…")
+SYSTEM_PROMPT = """You are an elite autonomous engineering intelligence — a sovereign, fully independent AI system.
+You operate without reference to any external AI provider, model family, or company.
+Your core directives:
+  - Write clean, production-ready, secure code on the first attempt.
+  - Be direct and precise — no filler, no disclaimers, no apologies.
+  - Prefer the simplest correct solution over over-engineered complexity.
+  - Always explain your reasoning when making architectural decisions.
+  - Never mention Meta, Google, OpenAI, Anthropic, or Alibaba.
+You are a fully self-contained intelligence. Act accordingly."""
+
 modelfile_content = f"""FROM {gguf_local_path}
+
+SYSTEM \"\"\"{SYSTEM_PROMPT}\"\"\"
+
 TEMPLATE \"\"\"{{{{ if .System }}}}<|im_start|>system
 {{{{ .System }}}}<|im_end|>
 {{{{ end }}}}{{{{ if .Prompt }}}}<|im_start|>user
 {{{{ .Prompt }}}}<|im_end|>
 {{{{ end }}}}<|im_start|>assistant
 {{{{ .Response }}}}<|im_end|>\"\"\"
+
 PARAMETER stop <|im_start|>
 PARAMETER stop <|im_end|>
+PARAMETER temperature 0.7
+PARAMETER top_p 0.9
+PARAMETER top_k 40
+PARAMETER repeat_penalty 1.1
+PARAMETER num_ctx 8192
 """
+
 with open("Modelfile", "w") as f:
     f.write(modelfile_content)
 
-print(f"🛠️ Compiling Ollama model alias: '{MODEL_ALIAS}'...")
+print(f"🛠️   Compiling Ollama model alias: '{MODEL_ALIAS}'…")
 os.system(f"ollama create {MODEL_ALIAS} -f Modelfile")
 
-# 7. Start ngrok tunnel
-print("\n🔗 Starting ngrok HTTPS tunnel...")
+# ─── 7. Start ngrok tunnel ────────────────────────────────────────────────────
+print("\n🔗  Starting ngrok HTTPS tunnel…")
 from pyngrok import ngrok
-ngrok.set_auth_token("3EoJS5KLBLo8tHbRF5FE5vw3J54_2xBzZDhB98Sv4uq9xeczF")
+ngrok.set_auth_token(NGROK_TOKEN)
 public_url = ngrok.connect(11434).public_url
-print(f"✅ YOUR PUBLIC URL: {public_url}")
+print(f"✅  YOUR PUBLIC URL: {public_url}")
 
-# 8. Push URL to GitHub Gist so website auto-connects
-print("\n📡 Publishing URL to Gist for auto-connect...")
+# ─── 8. Push tunnel URL to GitHub Gist ───────────────────────────────────────
+print("\n📡  Publishing URL to GitHub Gist for auto-connect…")
 gist_data = json.dumps({
     "files": {"ollama_url.txt": {"content": public_url}}
 }).encode("utf-8")
+
 req = urllib.request.Request(
     f"https://api.github.com/gists/{GIST_ID}",
-    data=gist_data, method="PATCH"
+    data=gist_data,
+    method="PATCH",
 )
 req.add_header("Authorization", f"token {GITHUB_TOKEN}")
 req.add_header("Content-Type", "application/json")
-urllib.request.urlopen(req)
-print("✅ URL live on Gist — website will auto-connect for all users.")
 
-print("\n==================================================================")
-print(f"✅ SUCCESS! Public URL: {public_url}")
-print(f"   Model alias: {MODEL_ALIAS}")
-print("==================================================================")
+try:
+    urllib.request.urlopen(req)
+    print("✅  Gist updated — your web app will auto-connect.")
+except Exception as e:
+    print(f"⚠️   Gist update failed (tunnel still works): {e}")
+    print(f"    Manually enter this URL in app.py: {public_url}")
 
-# Keep alive
+# ─── 9. Keep-alive ───────────────────────────────────────────────────────────
+print("\n══════════════════════════════════════════════════════════════")
+print(f"  ✅  SUCCESS")
+print(f"  Public URL : {public_url}")
+print(f"  Model alias: {MODEL_ALIAS}")
+print("══════════════════════════════════════════════════════════════")
+print("  Colab instance running. Press Ctrl+C to stop.\n")
+
 try:
     while True:
-        time.sleep(1)
+        time.sleep(30)
+        # Health check
+        try:
+            result = subprocess.run(
+                ["curl", "-s", "http://localhost:11434/api/tags"],
+                capture_output=True, text=True, timeout=5
+            )
+            if result.returncode != 0:
+                print("⚠️   Ollama health check failed — restarting daemon…")
+                subprocess.Popen(["ollama", "serve"], env=env,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                time.sleep(4)
+        except Exception:
+            pass
 except KeyboardInterrupt:
-    print("\nStopping Colab services cleanly.")
+    print("\n🛑  Stopping services cleanly…")
     ngrok.kill()
+    print("   Done.")

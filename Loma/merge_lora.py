@@ -1,74 +1,95 @@
+"""
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                    LoRA WEIGHT MERGER — RLHF → GGUF PIPELINE               ║
+║  Merges PEFT adapter into base weights, exports for Ollama / llama.cpp      ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+"""
+
 import os
+import sys
 import torch
+from pathlib import Path
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from peft import PeftModel
 
-# Target configuration matching standard Colab memory limits
-BASE_MODEL_NAME = "Qwen/Qwen2.5-Coder-7B-Instruct"
-ADAPTER_DIR = "./trained_rlhf_model"
+BASE_MODEL_NAME   = "Qwen/Qwen2.5-Coder-7B-Instruct"
+ADAPTER_DIR       = "./trained_rlhf_model"
 OUTPUT_MERGED_DIR = "./merged_rlhf_model"
 
+
 def merge_adapter_weights():
-    print("====================================================")
-    print("🔄 Starting Headless LoRA Weight Merger Pipeline")
-    print("====================================================\n")
+    print("╔" + "═" * 60 + "╗")
+    print("║" + "  🔄  LoRA Weight Merger Pipeline".center(60) + "║")
+    print("╚" + "═" * 60 + "╝\n")
 
-    if not os.path.exists(ADAPTER_DIR):
-        print(f"❌ ERROR: Adapter directory '{ADAPTER_DIR}' not found.")
-        print("Please ensure your RLHF training script ran successfully and saved its output.")
-        return
+    if not Path(ADAPTER_DIR).exists():
+        print(f"❌  Adapter directory not found: '{ADAPTER_DIR}'")
+        print("    Run train_rlhf.py first to generate the adapter weights.")
+        sys.exit(1)
 
-    # Determine execution platform device parameters
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"🤖 Processing merge calculations on: {device.upper()}")
+    print(f"⚙️   Merge device: {device.upper()}")
 
-    print(f"📥 Loading base model weights: {BASE_MODEL_NAME}...")
-    torch_dtype = torch.float16 # Uses 16-bit to prevent memory footprint crashes on free tier Colab GPUs
-    
+    # ── Load base model on CPU to avoid VRAM spikes ───────────────────────────
+    print(f"\n📥  Loading base model: {BASE_MODEL_NAME}")
+    print("    (Loading to CPU first — avoids VRAM OOM during merge)")
     try:
         base_model = AutoModelForCausalLM.from_pretrained(
             BASE_MODEL_NAME,
-            torch_dtype=torch_dtype,
-            device_map="cpu", # Keeps initial load on RAM to prevent GPU VRAM OOM error spikes
-            low_cpu_mem_usage=True
+            torch_dtype=torch.float16,
+            device_map="cpu",
+            low_cpu_mem_usage=True,
+            trust_remote_code=True,
         )
-        tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_NAME)
+        tokenizer = AutoTokenizer.from_pretrained(
+            BASE_MODEL_NAME, trust_remote_code=True
+        )
     except Exception as e:
-        print(f"❌ Failed to load base model structure: {e}")
-        return
+        print(f"❌  Failed to load base model: {e}")
+        sys.exit(1)
 
-    print(f"⚡ Merging adapters found in: {ADAPTER_DIR}...")
+    # ── Attach PEFT adapter ───────────────────────────────────────────────────
+    print(f"\n⚡  Attaching adapter: {ADAPTER_DIR}")
     try:
-        # Wrap the preloaded base model inside adapter structures
         model = PeftModel.from_pretrained(
             base_model,
             ADAPTER_DIR,
             device_map="cpu",
-            low_cpu_mem_usage=True
+            low_cpu_mem_usage=True,
         )
-        
-        print("🔗 Baking PEFT layer parameters directly into base network...")
+        print("🔗  Baking LoRA weights into base parameters…")
         merged_model = model.merge_and_unload()
-        
     except Exception as e:
-        print(f"❌ Failed to construct PEFT merge mapping: {e}")
-        return
+        print(f"❌  Merge failed: {e}")
+        sys.exit(1)
 
-    print(f"💾 Exporting unified serializations folder: {OUTPUT_MERGED_DIR}...")
+    # ── Export ────────────────────────────────────────────────────────────────
+    print(f"\n💾  Saving merged model → {OUTPUT_MERGED_DIR}")
     try:
-        os.makedirs(OUTPUT_MERGED_DIR, exist_ok=True)
-        merged_model.save_pretrained(OUTPUT_MERGED_DIR, safe_serialization=True)
+        Path(OUTPUT_MERGED_DIR).mkdir(parents=True, exist_ok=True)
+        merged_model.save_pretrained(
+            OUTPUT_MERGED_DIR,
+            safe_serialization=True,
+            max_shard_size="4GB",
+        )
         tokenizer.save_pretrained(OUTPUT_MERGED_DIR)
-        
-        print("\n====================================================")
-        print("✅ SUCCESS: Weights merged cleanly!")
-        print(f"Model saved in: {OUTPUT_MERGED_DIR}")
-        print("====================================================\n")
-        print("🚀 Next steps to import into Ollama:")
-        print("1. Convert output folder to GGUF format using llama.cpp scripts.")
-        
     except Exception as e:
-        print(f"❌ Failed to output merged folder files: {e}")
+        print(f"❌  Export failed: {e}")
+        sys.exit(1)
+
+    print("\n" + "╔" + "═" * 60 + "╗")
+    print("║" + "  ✅  Merge complete!".center(60) + "║")
+    print(f"║  Output: {OUTPUT_MERGED_DIR}".ljust(61) + "║")
+    print("╠" + "═" * 60 + "╣")
+    print("║  Next steps:".ljust(61) + "║")
+    print("║  1. Convert to GGUF:".ljust(61) + "║")
+    print("║     python llama.cpp/convert_hf_to_gguf.py \\".ljust(61) + "║")
+    print(f"║       {OUTPUT_MERGED_DIR} --outfile model.gguf".ljust(61) + "║")
+    print("║  2. Quantise (optional Q4_K_M):".ljust(61) + "║")
+    print("║     ./llama.cpp/llama-quantize model.gguf q4_k_m.gguf Q4_K_M".ljust(61) + "║")
+    print("║  3. Run colab_setup.py to host via Ollama + ngrok".ljust(61) + "║")
+    print("╚" + "═" * 60 + "╝\n")
+
 
 if __name__ == "__main__":
     merge_adapter_weights()
