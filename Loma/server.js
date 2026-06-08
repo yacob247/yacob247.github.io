@@ -6,25 +6,31 @@ const app = express();
 
 // ── Allow requests from your site and Cloudflare Tunnel ───────────────────────
 const ALLOWED_ORIGINS = [
-    'https://envizion.work',
-    'https://www.envizion.work',
-    'https://api.envizion.work',
     'http://localhost:3000',
-    'http://127.0.0.1:5500',
-    'http://localhost:5500'
+    'http://localhost:8080',
+    'https://envizion.work',
+    'https://envizion.work'
 ];
 
 app.use(cors({
     origin: function(origin, callback) {
-        // Allow requests with no origin (curl, Postman, server-to-server)
+        // Allow requests with no origin (like mobile apps, curl, or local files)
         if (!origin) return callback(null, true);
-        if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+        
+        // Remove trailing slashes if the browser sends them
+        const sanitizedOrigin = origin.replace(/\/$/, "");
+        
+        if (ALLOWED_ORIGINS.includes(sanitizedOrigin)) {
+            return callback(null, true);
+        }
+        
         return callback(new Error('Not allowed by CORS'));
     },
     methods: ['GET', 'POST', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true
 }));
+
 
 // Handle OPTIONS preflight explicitly for all routes
 app.options('*', cors());
