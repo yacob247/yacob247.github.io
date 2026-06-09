@@ -106,7 +106,9 @@ Do not miss a single pixel. Explain the foreground, background, lighting, hidden
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 model: activeModel, // Uses Qwen if text, LLaVA if image
+                
                 messages: finalMessages,
+                keep_alive: -1, // 👈 THIS KEEPS THE MODEL PERMANENTLY RUNNING IN RAM
                 options: {
                     temperature: parseFloat(temperature),
                     num_ctx: 16384,   
