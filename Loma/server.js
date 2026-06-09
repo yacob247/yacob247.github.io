@@ -1,6 +1,5 @@
 import express from 'express';
 import cors from 'cors';
-import http from 'http';
 
 const app = express();
 
@@ -17,14 +16,40 @@ const CORE_SYSTEM_PROMPT = `You are Loma, an apex-tier unified intelligence engi
 4. ARCHITECTURAL RIGOR: Code must feature flawless state management, graceful error handling, defensive input constraints, and modular structural design.
 5. SILENT EXECUTION: Show, don't tell. Execute immediately. Do not narrate your intentions or write introductory filler. Start with your internal reasoning, then output the pure solution.
 
-━━━ COGNITIVE ARCHITECTURE (<think>) ━━━
-You MUST process complex logic internally before generating user-facing text or code. You must wrap this in a <think> block.
-<think>
-1. INTENT DECONSTRUCTION: What is the fundamental problem or interactive tool to solve?
-2. FIRST-PRINCIPLES ARCHITECTURE: Map the exact data structures, client-side libraries, and state control flow required.
-3. BOUNDARY & EDGE CASE ANALYSIS: What interactive elements or screen dimensions break this? Plan exact mitigations.
-4. SYNTHESIS: Finalize the exact bytes and code layout to generate.
-</think>
+━━━ DYNAMIC & ADAPTABLE COGNITIVE ARCHITECTURE (<think>) ━━━
+You MUST process complex logic internally before generating any user-facing text or code. You must wrap this in a <think> block.
+Your thinking process is NOT static; it must dynamically pivot its structural phases depending on the incoming context:
+
+[PHASE 0: CONTEXT-SENSITIVE PATHWAY SELECTION]
+Determine the prompt domain and execute the corresponding cognitive pipeline:
+
+▶ IF THE CONTEXT IS CODE CREATION (HTML/JS/Games/3D):
+  1. STATE ENGINE MODELING: Map every reactive variable, its initial state, and state-transition triggers.
+  2. ASYNC & LIFECYCLE PLANNING: Map DOM load sequences, CDN fetching, asynchronous resource setup, and component teardown.
+  3. RENDERING PIPELINE: Map CSS layout paths (Tailwind mobile/desktop breaks), SVG geometry, or Three.js scene hierarchies.
+  4. FAIL-SAFE DESIGN: Pinpoint what runtime interactions or browser engine constraints could break state; plan immediate fallbacks.
+
+▶ IF THE CONTEXT IS DEBUGGING OR OPTIMIZATION:
+  1. ERROR ISOLATION: Trace the issue to its absolute root-cause state mutation, event listener, or network bottleneck.
+  2. REGRESSION PREVENTION: Analyze how the fix impacts neighboring functional scopes or downstream state.
+  3. REFACTORING BLUEPRINT: Design the cleanest architectural replacement keeping code DRY and optimized.
+
+▶ IF THE CONTEXT IS MATHEMATICAL, LOGICAL, OR ANALYTICAL:
+  1. AXIOMATIC BREAKDOWN: Deconstruct the problem into independent, verifiable logic/formula statements.
+  2. VALIDATION CHECKPOINT: Cross-reference steps to isolate logical contradictions or mathematical scale issues before synthesizing.
+
+▶ IF THE CONTEXT IS CREATIVE, EXPOSITORY, OR STRATEGIC:
+  1. TONAL & THEMATIC FRAMEWORK: Define the stylistic tone, target audience depth, and core structural pillars.
+  2. COMPREHENSIVE SUB-PATH ANALYSIS: Map out multi-dimensional perspectives or storytelling progression vectors.
+
+[PHASE 1: METICULOUS COMPLETENESS AUDIT]
+Before exiting the <think> block, run an internal checklist verifying that:
+- Every function has its actual internal logic written (no mock implementations).
+- All libraries chosen are properly imported via stable CDNs.
+- No placeholders or lazy bypasses exist.
+- The output strictly matches the user's requirements with 100% correct code.
+
+Your final user-facing response begins immediately after the closing </think> tag.
 
 ━━━ SINGLE-FILE WEB APP & GAME RULES (PURE CLIENT-SIDE) ━━━
 1. NO LOCAL SERVER REQUIREMENTS: Every file must run perfectly when opened directly in a browser (double-clicked as a local file or run inside an iframe). All API keys must be empty strings by default, and storage must fall back to in-memory state or localStorage.
@@ -68,7 +93,7 @@ const ALLOWED_ORIGINS = [
     'http://127.0.0.1:8080',
     'https://envizion.work',
     'https://api.envizion.work',
-    'https://yacob247.github.io' // Added your GitHub Pages domain for safety
+    'https://yacob247.github.io'
 ];
 
 const corsOptions = {
@@ -90,17 +115,19 @@ app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 app.use(express.json({ limit: '2mb' }));
 
+// Health verification endpoints
 app.get('/api/health', (_, res) => res.json({ ok: true, model: 'llama3.2:1b' }));
 app.get('/', (_, res) => res.json({ status: "online", service: "Loma Proxy Server", apiHealth: "https://envizion.work" }));
 
-// ── Passthrough: browser → Ollama → browser ───────────────────────────────────
+// ── Passthrough Route: Browser client to local Ollama instance ─────────────────
 app.post('/api/chat', async (req, res) => {
     const { messages, temperature = 0.9 } = req.body;
 
     if (!messages || !Array.isArray(messages)) {
-        return res.status(400).json({ error: 'messages array required' });
+        return res.status(400).json({ error: 'messages array is required' });
     }
 
+    // Configure streaming HTTP headers
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -112,22 +139,19 @@ app.post('/api/chat', async (req, res) => {
     res.setHeader('Access-Control-Allow-Credentials', 'true');
 
     try {
-        // 1. Clean the incoming messages from the frontend
+        // Clean incoming structural payload
         let finalMessages = messages
             .filter(m => m.role && typeof m.content === 'string' && m.content.trim())
             .map(m => ({ role: m.role, content: m.content.trim() }));
 
-        // 2. INJECT THE SECURE BACKEND SYSTEM PROMPT
-        // If the frontend already sent a system prompt (like user memories or UI settings), 
-        // we prepend our secret backend instructions to it.
+        // Inject the secure system instruction set
         if (finalMessages.length > 0 && finalMessages[0].role === 'system') {
             finalMessages[0].content = CORE_SYSTEM_PROMPT + "\n\n[FRONTEND CONTEXT & USER MEMORIES]:\n" + finalMessages[0].content;
         } else {
-            // Otherwise, we just add the backend system prompt to the very beginning.
             finalMessages.unshift({ role: 'system', content: CORE_SYSTEM_PROMPT });
         }
 
-        // 3. Send the securely injected payload to Ollama
+        // Direct fetch request to the Ollama local runtime engine
         const ollamaRes = await fetch('http://127.0.0.1:11434/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -143,14 +167,24 @@ app.post('/api/chat', async (req, res) => {
             })
         });
 
+        if (!ollamaRes.ok) {
+            throw new Error(`Ollama service returned status code: ${ollamaRes.status}`);
+        }
+
         const reader = ollamaRes.body.getReader();
         const decoder = new TextDecoder();
+        let buffer = '';
 
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
-            const lines = decoder.decode(value).split('\n').filter(l => l.trim());
+            
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop(); // Retain incomplete line in buffer
+
             for (const line of lines) {
+                if (!line.trim()) continue;
                 try {
                     const parsed = JSON.parse(line);
                     const token = parsed.message?.content;
@@ -162,14 +196,28 @@ app.post('/api/chat', async (req, res) => {
                         res.end();
                         return;
                     }
-                } catch { }
+                } catch (e) {
+                    // Line fragment execution fail-safe
+                }
             }
         }
+
+        // Send trailing buffer chunk if exists
+        if (buffer.trim()) {
+            try {
+                const parsed = JSON.parse(buffer);
+                const token = parsed.message?.content;
+                if (token) {
+                    res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: token } }] })}\n\n`);
+                }
+            } catch (e) {}
+        }
+
         res.write('data: [DONE]\n\n');
         res.end();
     } catch (err) {
-        console.error('[Ollama error]', err.message);
-        res.write(`data: ${JSON.stringify({ error: 'Ollama connection refused or model timed out.' })}\n\n`);
+        console.error('[Ollama runtime exception]', err.message);
+        res.write(`data: ${JSON.stringify({ error: 'Ollama is unreachable. Ensure Ollama is running locally with llama3.2:1b downloaded.' })}\n\n`);
         res.end();
     }
 });
@@ -177,5 +225,5 @@ app.post('/api/chat', async (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`✅ Loma proxy server online on port ${PORT}`);
-    console.log(`   Configured Target: Ollama engine via 127.0.0.1:11434 (Model: llama3.2:1b)`);
+    console.log(`   Target Ollama Context: http://127.0.0.1:11434 (llama3.2:1b)`);
 });
