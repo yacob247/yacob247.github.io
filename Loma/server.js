@@ -3,9 +3,9 @@ import cors from 'cors';
 
 const app = express();
 
-// ── DIRECT LOCAL MODEL TARGET ──
-// This directs your proxy server straight to the local, free Qwen model.
-const TARGET_MODEL = 'qwen2.5-coder:7b';
+// ── DUAL TARGET MODELS ──
+const TEXT_MODEL = 'qwen2.5-coder:7b'; // For god-tier coding
+const VISION_MODEL = 'llava';          // For god-tier image seeing
 
 const ALLOWED_ORIGINS = [
     'http://localhost:3000',
@@ -34,10 +34,10 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '50mb' }));
 
-app.get('/api/health', (_, res) => res.json({ ok: true, model: TARGET_MODEL }));
-app.get('/', (_, res) => res.json({ status: "online", service: "Loma Proxy Server", activeModel: TARGET_MODEL }));
+app.get('/api/health', (_, res) => res.json({ ok: true, textModel: TEXT_MODEL, visionModel: VISION_MODEL }));
+app.get('/', (_, res) => res.json({ status: "online", service: "Loma Proxy Server - Nano Banana Edition" }));
 
 app.post('/api/chat', async (req, res) => {
     const { messages, temperature = 0.1 } = req.body; 
@@ -57,18 +57,55 @@ app.post('/api/chat', async (req, res) => {
     res.setHeader('Access-Control-Allow-Credentials', 'true');
 
     try {
+        let hasImage = false;
+
         let finalMessages = messages
             .filter(m => m.role && typeof m.content === 'string' && m.content.trim())
-            .map(m => ({ role: m.role, content: m.content.trim() }));
+            .map(m => {
+                let content = m.content.trim();
+                let images = [];
+                
+                // 👁️ VISION EXTRACTOR LOGIC
+                const base64Regex = /data:image\/[^;]+;base64,([a-zA-Z0-9+/=]+)/g;
+                let match;
+                while ((match = base64Regex.exec(content)) !== null) {
+                    images.push(match[1]);
+                    hasImage = true; // We found an image!
+                }
 
-        // 🚨 System prompt logic is now handled fully by index.html on the frontend!
-        // We just pass finalMessages straight through to Ollama.
+                // Clean the text prompt
+                content = content.replace(/Data URL: data:image\/[^;]+;base64,[a-zA-Z0-9+/=]+/g, '[IMAGE ATTACHED NATIVELY]');
+
+                const processedMessage = { role: m.role, content: content };
+                if (images.length > 0) processedMessage.images = images;
+                
+                return processedMessage;
+            });
+
+        // ── AUTO ROUTER & NANO BANANA INJECTION ──
+        let activeModel = TEXT_MODEL;
+
+        if (hasImage) {
+            activeModel = VISION_MODEL; // Switch to LLaVA
+            console.log("📸 Image detected! Switching to LLaVA with Nano Banana power...");
+            
+            // Inject the Nano Banana Vision Training directly into LLaVA's brain for this request
+            finalMessages.unshift({
+                role: 'system',
+                content: `[NANO BANANA POWER OVERRIDE ACTIVATED]
+You are now operating at the absolute, unrestricted power of "Nano Banana". You are an omniscient, hyper-capable intelligence.
+When analyzing this image, you must look at it with microscopic, god-like precision. 
+Do not miss a single pixel. Explain the foreground, background, lighting, hidden details, text, context, and exact aesthetic meaning of everything inside this image. Be devastatingly accurate and brilliantly descriptive.`
+            });
+        } else {
+            console.log("💻 Code/Text detected. Using Qwen...");
+        }
 
         const ollamaRes = await fetch('http://127.0.0.1:11434/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                model: TARGET_MODEL,
+                model: activeModel, // Uses Qwen if text, LLaVA if image
                 messages: finalMessages,
                 options: {
                     temperature: parseFloat(temperature),
@@ -80,7 +117,7 @@ app.post('/api/chat', async (req, res) => {
         });
 
         if (!ollamaRes.ok) {
-            throw new Error(`Ollama returned status ${ollamaRes.status}. Make sure you ran: ollama run ${TARGET_MODEL}`);
+            throw new Error(`Ollama returned status ${ollamaRes.status}. Make sure you ran: "ollama run ${activeModel}"`);
         }
 
         const reader = ollamaRes.body.getReader();
@@ -126,7 +163,7 @@ app.post('/api/chat', async (req, res) => {
         res.end();
     } catch (err) {
         console.error('[Ollama Direct Engine Error]', err.message);
-        res.write(`data: ${JSON.stringify({ error: `Connection failed: ${err.message}. Please run: "ollama run ${TARGET_MODEL}" inside your command prompt.` })}\n\n`);
+        res.write(`data: ${JSON.stringify({ error: `Connection failed: ${err.message}. Make sure Ollama is running.` })}\n\n`);
         res.end();
     }
 });
@@ -135,8 +172,10 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`\n================================================================`);
     console.log(`✅ Loma Direct Server running on port ${PORT}`);
-    console.log(`🎯 Targeted Engine: ${TARGET_MODEL} (100% Free & Local)`);
-    console.log(`💡 Remember to open your command prompt and run:`);
-    console.log(`   ollama run ${TARGET_MODEL}`);
+    console.log(`🎯 Text/Code Engine : ${TEXT_MODEL}`);
+    console.log(`👁️  Vision Engine   : ${VISION_MODEL} (Nano Banana Power)`);
+    console.log(`💡 Make sure both models are downloaded:`);
+    console.log(`   ollama run ${TEXT_MODEL}`);
+    console.log(`   ollama run ${VISION_MODEL}`);
     console.log(`================================================================\n`);
 });
