@@ -604,7 +604,7 @@
             document.getElementById('temp-val').innerText = systemConfig.temperature;
             document.getElementById('config-tokens').value = systemConfig.maxTokens;
             document.getElementById('token-val').innerText = systemConfig.maxTokens || 16384;
-            document.getElementById('config-system-prompt').value = systemConfig.systemPrompt;
+            document.getElementById('config-system-prompt').value = getDynamicSystemPrompt();
             document.getElementById('google-search-api-key').value = systemConfig.googleKey;
             document.getElementById('google-search-cx').value = systemConfig.googleCx;
             
@@ -748,7 +748,6 @@ When a user teaches you a rule or style they always want, use PROPOSE_CAPABILITY
             systemConfig.temperature = parseFloat(document.getElementById('config-temp').value);
             systemConfig.maxTokens = parseInt(document.getElementById('config-tokens').value);
             systemConfig.reasoningDepth = parseInt(document.getElementById('config-reasoning-depth').value);
-            systemConfig.systemPrompt = document.getElementById('config-system-prompt').value;
             systemConfig.googleKey = document.getElementById('google-search-api-key').value.trim();
             systemConfig.googleCx = document.getElementById('google-search-cx').value.trim();
 
@@ -756,7 +755,6 @@ When a user teaches you a rule or style they always want, use PROPOSE_CAPABILITY
             localStorage.setItem('envizion_temp', systemConfig.temperature);
             localStorage.setItem('envizion_tokens', systemConfig.maxTokens);
             localStorage.setItem('envizion_reasoning_depth', systemConfig.reasoningDepth);
-            localStorage.setItem('envizion_sys_prompt', systemConfig.systemPrompt);
             localStorage.setItem('envizion_google_key', systemConfig.googleKey);
             localStorage.setItem('envizion_google_cx', systemConfig.googleCx);
 
@@ -2056,7 +2054,7 @@ const response = await fetch(ENVIZION_API, {
         function initNewSessionInDB() {
             if (!chatDatabase.sessions) chatDatabase.sessions = {};
             chatDatabase.sessions[currentSessionId] = {
-                title: "New Session", updated: Date.now(), messages: [{ role: "system", content: systemConfig.systemPrompt }]
+                title: "New Session", updated: Date.now(), messages: [{ role: "system", content: getDynamicSystemPrompt() }]
             };
         }
 
@@ -2676,37 +2674,7 @@ window.lomaProcessToolTags = async function(replyText, outputElement) {
     document.head.appendChild(s);
 })();
 
-// ── Update system prompt to teach LOMA the tool tags ────────────────────────
-//  Call this once after the page loads to append the tool instructions.
-(function patchSystemPrompt() {
-    const TOOL_ADDON = `
 
-You have two external tools available. Use them when the user asks for music or images.
-
-To generate music, output EXACTLY (nothing else on that line):
-[GENERATE_MUSIC: prompt="<descriptive prompt>" style="<style>" bpm=<number> duration=<seconds>]
-
-To generate an image, output EXACTLY:
-[GENERATE_IMAGE: prompt="<descriptive prompt>" style="flux" ratio="1024x1024"]
-
-Available music styles: lo-fi hip hop, ambient electronic, cinematic orchestral, acoustic folk, synthwave retro, jazz piano trio, classical piano, dark techno, upbeat pop, chillout beats
-Available image styles: flux, turbo, flux-anime, flux-3d, flux-realism
-
-You can use these tools mid-response. Think first (what should the music/image be?), then emit the tag, then continue your text. The system will replace the tag with the actual media automatically.`;
-
-    // Patch the live config if it's already loaded
-    if (typeof systemConfig !== 'undefined' && systemConfig.systemPrompt) {
-        if (!systemConfig.systemPrompt.includes('GENERATE_MUSIC')) {
-            systemConfig.systemPrompt += TOOL_ADDON;
-        }
-    }
-
-    // Also patch the textarea in the settings panel so it persists on save
-    const ta = document.getElementById('config-system-prompt');
-    if (ta && !ta.value.includes('GENERATE_MUSIC')) {
-        ta.value += TOOL_ADDON;
-    }
-})();
 
 console.log('[LOMA Tools] Bridge loaded — music-gen + image-gen ready.');
 
