@@ -559,8 +559,8 @@
         const provider = new GoogleAuthProvider();
         provider.addScope('https://www.googleapis.com/auth/drive.file');
         
-        let gDriveAccessToken = null;
-        let driveFileId = null;
+       let gDriveAccessToken = sessionStorage.getItem('loma_drive_token') || null;
+let driveFileId = sessionStorage.getItem('loma_drive_file_id') || null;
         
         // --- ENGINE FLAGS (server-side, always ready after auth) ---
         let isEngineReady = false;
@@ -2607,19 +2607,22 @@ const response = await fetch(ENVIZION_API, {
         }
 
         async function syncDatabaseToDrive() {
-            // Build full workspace payload
-            const workspacePayload = {
-                chatDatabase,
-                personalMemories,
-                evolvedCapabilities,
-                rlhfDataset,
-                lomaCodeMem: window._lomaCodeMem || [],
-                lomaImageMem: window._lomaImageMem || [],
-                lomaMusicMem: window._lomaMusicMem || [],
-                savedAt: Date.now()
-            };
-            localStorage.setItem('envizion_local_db', JSON.stringify(chatDatabase));
-            if (!gDriveAccessToken) return;
+    const workspacePayload = {
+        chatDatabase,
+        personalMemories,
+        evolvedCapabilities,
+        rlhfDataset,
+        lomaCodeMem: window._lomaCodeMem || [],
+        lomaImageMem: window._lomaImageMem || [],
+        lomaMusicMem: window._lomaMusicMem || [],
+        savedAt: Date.now()
+    };
+    localStorage.setItem('envizion_local_db', JSON.stringify(chatDatabase));
+    
+    // Always save to localStorage as backup — Drive is bonus
+    localStorage.setItem('envizion_full_backup', JSON.stringify(workspacePayload));
+    
+    if (!gDriveAccessToken) return; // silently skip, localStorage has it
             try {
                 const body = JSON.stringify(workspacePayload);
                 if (driveFileId) {
@@ -2636,8 +2639,8 @@ const response = await fetch(ENVIZION_API, {
                     const res = await fetch('https://upload.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
                         method: 'POST', headers: { 'Authorization': `Bearer ${gDriveAccessToken}` }, body: form
                     });
-                    driveFileId = (await res.json()).id;
-                }
+driveFileId = (await res.json()).id;
+sessionStorage.setItem('loma_drive_file_id', driveFileId);                }
             } catch (err) { console.warn('Drive sync error', err); }
         }
 
@@ -2654,8 +2657,9 @@ const response = await fetch(ENVIZION_API, {
                 // Access token for Drive comes from the credential
                 const credential = GoogleAuthProvider.credentialFromResult(result);
                 if (credential && credential.accessToken) {
-                    gDriveAccessToken = credential.accessToken;
-                }
+    gDriveAccessToken = credential.accessToken;
+    sessionStorage.setItem('loma_drive_token', credential.accessToken);
+}
             } catch (err) {
                 console.error('Google sign-in failed', err);
                 btn.innerHTML = `<img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" class="w-5 h-5"> Sign in with Google`;
@@ -2699,13 +2703,35 @@ const response = await fetch(ENVIZION_API, {
             }
 
             // If no Drive token yet (silent re-auth), try to get one
-            if (!gDriveAccessToken) {
-                try {
-                    const result = await signInWithPopup(auth, provider);
-                    const credential = GoogleAuthProvider.credentialFromResult(result);
-                    if (credential?.accessToken) gDriveAccessToken = credential.accessToken;
-                } catch { /* already signed in, token unavailable silently */ }
+       // Get Drive token silently without popup
+if (!gDriveAccessToken) {
+    try {
+        const { getRedirectResult, signInWithCredential, OAuthProvider } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js');
+        // Use gapi to get token silently
+        const tokenResponse = await fetch(`https://oauth2.googleapis.com/token`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+                grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+                assertion: await user.getIdToken()
+            })
+        });
+        // Fallback — force a silent re-auth with no popup
+        if (!tokenResponse.ok) {
+            await auth.currentUser.getIdToken(true); // refresh firebase token
+            // Drive token comes only from OAuth popup — request it once quietly
+            provider.setCustomParameters({ prompt: 'none' }); // no UI shown
+            const result = await signInWithPopup(auth, provider).catch(() => null);
+            if (result) {
+                const cred = GoogleAuthProvider.credentialFromResult(result);
+                if (cred?.accessToken) gDriveAccessToken = cred.accessToken;
             }
+        }
+    } catch(e) { console.warn('Silent token refresh failed', e); }
+}
+
+// Load user's own Drive workspace
+await loadDatabaseFromDrive();
 
             // Load user's own Drive workspace
             await loadDatabaseFromDrive();

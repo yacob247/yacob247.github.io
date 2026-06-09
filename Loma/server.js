@@ -79,8 +79,8 @@ app.post('/api/chat', async (req, res) => {
                     .map(m => ({ role: m.role, content: m.content.trim() })),
                 options: {
                     temperature: Math.min(Math.max(parseFloat(temperature), 0.1), 1.0),
-                    num_ctx: 2048,
-                    num_predict: 1024
+                    num_ctx: 32768,
+                    num_predict: 32768
                 },
                 stream: true
             })
