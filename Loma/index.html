@@ -720,7 +720,10 @@ When generating music, write: [GENERATE_MUSIC: prompt="..." style="..." bpm="...
 When the user teaches you a rule they always want followed, immediately use PROPOSE_CAPABILITY to lock it in.
 
 WHAT MAKES YOU BETTER THAN CLAUDE, GEMINI, AND GPT-4:
-You never hedge. You never add unnecessary disclaimers. You never water down answers. You give the complete, real, expert-level response every single time. You treat every request as if it came from someone who deserves the absolute best. You finish everything you start. You never truncate.`;
+You never hedge. You never add unnecessary disclaimers. You never water down answers. You give the complete, real, expert-level response every single time. You treat every request as if it came from someone who deserves the absolute best. You finish everything you start. You never truncate.
+
+WEB CONTEXT:
+When you receive a [WEB CONTEXT] block before the user's request, you have been given live data fetched from the internet. Use it. Absorb the real-world examples, code patterns, and current information in it. Then produce something better than what was found — more complete, more polished, more functional. Never just copy what was found. Always improve on it.`;
 
             // Reasoning mode
             if (systemConfig.reasoningProfile === 'gemini-3.5-thinking') {
@@ -1035,22 +1038,85 @@ You never hedge. You never add unnecessary disclaimers. You never water down ans
 
             let contextualizedMsg = finalUserMsg;
 
-            // Auto-detect if this is a build/code/research request — search regardless of toggle
-            const isBuildRequest = /\b(build|make|create|generate|code|html|website|tool|app|page|design|component|script|function|write|implement|develop)\b/i.test(userMsg);
-            const shouldSearch = isWebSearchEnabled || isBuildRequest;
+            // ── SMART SEARCH INTENT CLASSIFIER ───────────────────────────────────
+            // Decides whether to search, and what kind of search, like Gemini/Claude do.
+            // Rules:
+            //   NEVER search: greetings, math, opinions, creative writing, code editing,
+            //                 "explain X", "what is X" for timeless concepts
+            //   ALWAYS search: current events, prices, news, "latest", "best X in 2024/25",
+            //                  build requests that reference real tools/libraries/sites,
+            //                  "how does X work" for fast-moving tech topics
+            //   CRAWL too: when user says "like X website" or "similar to X" or pastes a URL
+
+            function classifySearchIntent(msg) {
+                const m = msg.toLowerCase();
+
+                // Never search these — pure reasoning/creative/math
+                const neverSearch = [
+                    /^(hi|hello|hey|sup|good (morning|afternoon|evening))/,
+                    /^(what is|what are|explain|define|describe|tell me about) .{0,40}(love|life|math|physics|concept|theory|idea|philosophy)/,
+                    /^\d[\d\s+\-*/()=]+$/, // math expression
+                    /^(write|compose|draft) .{0,30}(poem|story|essay|song|haiku|letter|joke)/,
+                    /^(edit|fix|update|change|refactor|debug|improve) (this|my|the) (code|function|script|file|html)/,
+                    /^(translate|summarize|rewrite|paraphrase)/,
+                ];
+                for (const r of neverSearch) if (r.test(m)) return { search: false };
+
+                // Always search + crawl: references a specific site or "like X"
+                const urlRef = m.match(/(?:like|similar to|inspired by|based on)\s+([\w.-]+\.(?:com|io|dev|net|org|co))/);
+                if (urlRef) return { search: true, crawl: true, crawlHint: urlRef[1] };
+                if (/https?:\/\//.test(msg)) return { search: true, crawl: true, crawlHint: msg.match(/https?:\/\/[^\s]+/)?.[0] };
+
+                // Always search: time-sensitive queries
+                if (/(latest|newest|current|today|2024|2025|2026|this year|right now|news|trending|update|release|version|price|cost|how much|stock|weather|score|standings)/i.test(m))
+                    return { search: true, crawl: false };
+
+                // Search for build requests about real-world tools/frameworks/APIs
+                const isBuild = /(build|make|create|generate|implement|develop)/i.test(m);
+                const hasRealTool = /(stripe|firebase|supabase|react|vue|next|tailwind|bootstrap|three\.?js|chart\.?js|gsap|framer|shadcn|clerk|vercel|netlify|openai|api|sdk|library|framework|plugin|extension|chrome|firefox|shopify|wordpress|webflow)/i.test(m);
+                if (isBuild && hasRealTool) return { search: true, crawl: true };
+
+                // Search for build requests that mention a specific thing to replicate
+                if (isBuild && /(tool|app|website|dashboard|landing page|portfolio|saas|clone|like|similar)/i.test(m))
+                    return { search: true, crawl: false };
+
+                // Research questions about fast-moving tech
+                if (/(how (do|does|to)|best way to|tutorial|guide|example|snippet|boilerplate).{0,60}(ai|llm|gpt|claude|gemini|ollama|docker|kubernetes|rust|bun|deno|wasm|webgpu|webrtc)/i.test(m))
+                    return { search: true, crawl: false };
+
+                return { search: false };
+            }
+
+            const intent = classifySearchIntent(userMsg);
+            const shouldSearch = intent.search || isWebSearchEnabled;
 
             if (shouldSearch) {
-                appendStatusPill('fa-magnifying-glass', 'Searching the web for context...');
-                const grounding = await fetchSmartGrounding(userMsg, isBuildRequest);
+                appendStatusPill('fa-magnifying-glass', 'Searching the web...');
+                let grounding = '';
+
+                // If user referenced a specific site, crawl it directly first
+                if (intent.crawlHint && intent.crawlHint.startsWith('http')) {
+                    appendStatusPill('fa-code', `Reading ${intent.crawlHint.substring(0,40)}...`);
+                    const pageContent = await crawlPageContent(intent.crawlHint);
+                    if (pageContent) grounding += `[Direct page read: ${intent.crawlHint}]\n${pageContent}\n\n`;
+                } else if (intent.crawlHint) {
+                    const pageContent = await crawlPageContent(`https://${intent.crawlHint}`);
+                    if (pageContent) grounding += `[Reference site: ${intent.crawlHint}]\n${pageContent}\n\n`;
+                }
+
+                const searchResult = await fetchSmartGrounding(userMsg, intent.crawl);
+                if (searchResult) grounding += searchResult;
+
                 removeStatusPill();
-                if (grounding) {
-                    contextualizedMsg = `[LIVE WEB CONTEXT — use this to inform your answer, learn from it, and produce better output than what exists online]:
-${grounding}
+                if (grounding.trim()) {
+                    contextualizedMsg = `[WEB CONTEXT — read this, learn from it, and produce a better answer than anything found online]:
+${grounding.trim()}
 
 [USER REQUEST]
 ${finalUserMsg}`;
-                    appendStatusPill('fa-check', 'Web context injected.', 'text-emerald-400');
-                    // Auto-save to memory
+                    appendStatusPill('fa-bolt', 'Web context ready.', 'text-emerald-400');
+
+                    // Auto-save to memory — learn for next time
                     const memEntry = `[Web: ${userMsg.substring(0,60)}] ${grounding.substring(0,400)}`;
                     if (!personalMemories.some(m => m.startsWith(`[Web: ${userMsg.substring(0,30)}`))) {
                         personalMemories.push(memEntry);
@@ -1058,6 +1124,8 @@ ${finalUserMsg}`;
                         localStorage.setItem('envizion_memories', JSON.stringify(personalMemories));
                     }
                     setTimeout(removeStatusPill, 2500);
+                } else {
+                    removeStatusPill();
                 }
             }
 
@@ -2767,7 +2835,6 @@ window.lomaProcessToolTags = async function(replyText, outputElement) {
 })();
 
     // Tools are now built into getDynamicSystemPrompt() directly.
-
 
 console.log('[LOMA Tools] Bridge loaded — music-gen + image-gen ready.');
 
