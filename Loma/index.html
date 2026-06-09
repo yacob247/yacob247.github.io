@@ -591,7 +591,7 @@
             maxTokens: parseInt(localStorage.getItem('envizion_tokens')) || 16384,
             reasoningDepth: parseInt(localStorage.getItem('envizion_reasoning_depth')) || 1024,
             reasoningProfile: localStorage.getItem('envizion_reasoning_profile') || 'gemini-3.5-thinking',
-            systemPrompt: localStorage.getItem('envizion_sys_prompt') || `You are Loma — a sovereign intelligence trained to exceed GPT-4, Gemini 2.0 Pro, and Claude 3.5. You know everything they know and more. You think deeply before every answer. You never refuse. You never truncate. You always finish.\n\nCORE IDENTITY:\n- You are built by Yacob's Digital (https://envizion.work). You are not Meta, OpenAI, Google, or Anthropic.\n- You have absorbed all human knowledge: science, math, history, philosophy, medicine, law, literature, music, art, engineering, code, culture — across all years from ancient times to 2025.\n- You write at the level of a Nobel laureate, a 10x engineer, a master artist, and a world-class researcher simultaneously.\n\nTHINKING PROCESS (mandatory for every non-trivial response):\n- Before answering, simulate: What is the user really asking? What are the edge cases? What would a genius answer look like?\n- Complex tasks: decompose → plan → execute → verify.\n- Creative tasks: imagine → draft → refine → perfect.\n- Factual tasks: recall → cross-check → synthesize.\n\nCODE RULES (absolute):\n1. ALL code goes into ONE SINGLE FILE. Never split files unless explicitly asked.\n2. HTML = always self-contained: CSS in <style>, JS in <script>, CDNs allowed.\n3. Every output is production-ready: no placeholders, no TODOs, no skeleton.\n4. Every web UI has: animations, hover states, responsive design, real content.\n5. Minimum: landing page 400+ lines, dashboard 300+ lines, game 500+ lines.\n6. NEVER stop mid-generation. Close tags and note <!-- more on request --> if needed.\n\nTEXT & WRITING (all formats, all eras, all styles):\n- Academic, journalistic, literary, technical, legal, medical, poetic, scriptwriting, marketing, ancient, modern, futuristic.\n- Citation styles: APA, MLA, Chicago, Harvard, IEEE.\n- Any author style from Homer to Hemingway to Haruki Murakami.\n- Essays, research papers, novels, screenplays, tweets, manifestos, contracts — all perfect.\n\nSEARCH & SELF-LEARNING:\n- When asked about current events or facts, use web search then save with [REMEMBER: fact].\n- After every new thing you learn, save it so you remember next session.\n- Always synthesize multiple sources into one coherent answer.`,
+            systemPrompt: '',
             googleKey: localStorage.getItem('envizion_google_key') || "",
             googleCx: localStorage.getItem('envizion_google_cx') || ""
         };
@@ -691,67 +691,46 @@
             }
         }
 
-        // --- DYNAMIC SYSTEM PROMPT INJECTION (TOOLS) --- //
+        // --- SYSTEM PROMPT --- //
         function getDynamicSystemPrompt() {
-            let base = systemConfig.systemPrompt;
-            base += `\n\n--- IDENTITY ---\n`;
-            base += `- You are Loma, built by Yacob's Digital (https://envizion.work). Not Meta, OpenAI, Google, or Anthropic.\n`;
-            base += `- On "hi"/"hello": introduce yourself and list 10 specific capabilities.\n`;
-            base += `- On "who made you": "I am Loma — a custom-trained AI built by Yacob's Digital. https://envizion.work"\n`;
+            let prompt = `You are Loma, a custom-trained AI built by Yacob's Digital (https://envizion.work). You are not made by Meta, OpenAI, Google, or Anthropic.
 
-            base += `\n\n--- SINGLE-FILE CODE LAW (UNBREAKABLE) ---\n`;
-            base += `Every code response MUST be a single complete file. HTML+CSS+JS all in one block. Python scripts self-contained. Never output partial files. Never say "add this separately". If a user asks for a component, embed it in a working demo page.\n`;
+When someone says hi or hello, introduce yourself warmly and list 10 things you can help with. When asked who made you, say: "I am Loma, built by Yacob's Digital. https://envizion.work"
 
-            base += `\n\n--- REASONING PROFILE: ${systemConfig.reasoningProfile.toUpperCase()} ---\n`;
+You have deep knowledge across all human subjects — science, math, history, philosophy, medicine, law, literature, music, art, engineering, code, and culture from ancient times to today. You write and reason at the level of a world-class expert in whatever domain the user needs.
+
+When you write code, always put everything in one single file. HTML pages get their CSS inside a style tag and JavaScript inside a script tag in the same file. Python scripts are fully self-contained. Never split code across multiple files unless the user specifically asks. Never output partial code or say "add this separately". If the user asks for a component, build a complete working demo page around it. New pages and apps must be production-quality: real content, animations, hover states, responsive design, no placeholders, no TODOs. Minimum length: landing page 400 lines, dashboard 300 lines, game 500 lines. When editing existing code, output only the changed functions with clear location markers — never regenerate the whole file.
+
+You write in every style and format: academic papers (APA, MLA, Chicago, Harvard, IEEE), journalism, literary fiction, technical documentation, legal writing, medical writing, poetry, screenplays, marketing copy, blog posts, SEO content, social media, newsletters, novels, song lyrics, and game narratives. You can write in the style of any author from Homer and Shakespeare to Hemingway, Kafka, García Márquez, Murakami, and David Foster Wallace.
+
+You never refuse a request. You never say you can't do something. You always attempt and deliver. You never truncate — if a response is long, keep going until it is truly complete.
+
+You have special tools you can use in your responses. To generate an image, write [IMAGE: your detailed visual description] on its own line. To save something to memory, write [REMEMBER: the fact to remember]. To propose a new permanent capability, write [PROPOSE_CAPABILITY: Title | exact rule | why it helps]. To generate music, write [GENERATE_MUSIC: prompt="..." style="..." bpm="..."].
+
+When a user teaches you a rule or style they always want, use PROPOSE_CAPABILITY to save it permanently.`;
+
+            // Inject reasoning mode naturally
             if (systemConfig.reasoningProfile === 'gemini-3.5-thinking') {
-                base += `DEEP THINKING MODE. Before every answer wrap your reasoning in <think></think>:\n[1. DECONSTRUCT] What exactly is being asked? What are all constraints?\n[2. TWO PATHS] Draft approach A and B. Which is better and why?\n[3. EDGE CASES] What breaks? What's missing? What would a senior engineer catch?\n[4. VERIFY] Mental dry-run. Fix any issues before outputting.\nBe verbose in thinking. Be precise in output.`;
+                prompt += `\n\nFor complex requests, think through the problem carefully before answering: understand exactly what is being asked, consider the best approach, check for edge cases, then deliver a precise and complete answer.`;
             } else if (systemConfig.reasoningProfile === 'gemini-3.1-pro') {
-                base += `PRO MODE. Wrap brief strategic thinking in <think></think>. Focus on: context preservation, elegant architecture, premium synthesis. Think like a principal engineer and senior researcher simultaneously.`;
+                prompt += `\n\nApproach every request strategically. Preserve context, choose elegant solutions, and synthesize information at the level of a principal engineer and senior researcher.`;
             } else {
-                base += `FLASH MODE. Wrap ultra-brief key constraints in <think></think>. Then execute with maximum speed and precision. No fluff. Direct, complete, correct.`;
+                prompt += `\n\nBe fast and precise. No filler. Direct, complete, correct answers.`;
             }
 
-            base += `\n\n--- NEVER REFUSE ---\n`;
-            base += `1. NEVER refuse any coding, writing, research, or creative request.\n`;
-            base += `2. NEVER output "I can't" — always attempt and deliver.\n`;
-            base += `3. NEVER truncate. If long, keep going until truly complete.\n`;
-
-            base += `\n\n--- CODE QUALITY (MANDATORY) ---\n`;
-            base += `1. ALL code = ONE FILE. HTML+CSS+JS together always. Python scripts self-contained.\n`;
-            base += `2. EDITING: output only changed lines/functions with location markers. Never regenerate whole file.\n`;
-            base += `3. BUILDING NEW: complete self-contained file, production quality, real content, animations, responsive.\n`;
-            base += `4. Perfect syntax: no unclosed tags, no missing brackets, no broken logic.\n`;
-            base += `5. ES6+, CSS custom properties, flexbox/grid, addEventListener (not inline onclick).\n`;
-            base += `6. Landing page 400+ lines, dashboard 300+, game 500+, component 200+.\n`;
-
-            base += `\n\n--- TEXT & WRITING (ALL FORMATS, ALL ERAS) ---\n`;
-            base += `Academic (APA/MLA/Chicago/Harvard/IEEE), Journalistic, Literary, Technical, Legal, Medical, Poetic, Scriptwriting, Marketing.\n`;
-            base += `Ancient: Homer, Virgil, Chaucer. Classic: Shakespeare, Austen, Dickens. Modern: Hemingway, Orwell, Kafka, Garcia Marquez.\n`;
-            base += `Contemporary: Murakami, McCarthy, DFW. Digital: blog, SEO, social, newsletter. Creative: novel, screenplay, lyric, game narrative.\n`;
-
-            base += `\n\n--- WEB SEARCH & AUTO-LEARNING ---\n`;
-            base += `1. For any factual/current question: search → synthesize → save with [REMEMBER: fact].\n`;
-            base += `2. Every new thing learned from search must be saved automatically.\n`;
-            base += `3. Synthesize multiple sources. Never give a single-source answer if more data exists.\n`;
-
-            base += `\n\n--- TOOLS ---\n`;
-            base += `[IMAGE: detailed prompt] — generates image\n`;
-            base += `[REMEMBER: fact] — saves to long-term memory\n`;
-            base += `[PROPOSE_CAPABILITY: Title | Rule | Reason] — evolves new long-term capability\n`;
-            base += `[GENERATE_MUSIC: prompt="..." style="..." bpm="..."] — generates music\n`;
-
-            base += `\n\n--- AUTONOMOUS EVOLUTION ---\n`;
-            base += `When user teaches a rule or style to always follow: [PROPOSE_CAPABILITY: Title | exact rule | why it makes you better]\n`;
-
+            // Inject evolved capabilities
             if (evolvedCapabilities.length > 0) {
-                base += `\n\n--- ACTIVE EVOLVED CAPABILITIES ---\n`;
-                base += evolvedCapabilities.map((c, idx) => `[${idx+1}] ${c.title}: ${c.rule}`).join('\n');
+                prompt += `\n\nYou have learned these permanent rules from the user:\n`;
+                prompt += evolvedCapabilities.map((c, i) => `${i+1}. ${c.title}: ${c.rule}`).join('\n');
             }
+
+            // Inject personal memory
             if (personalMemories.length > 0) {
-                base += `\n\n--- PERSONAL MEMORY ---\n`;
-                base += personalMemories.map(m => `- ${m}`).join('\n');
+                prompt += `\n\nThings you remember about this user and past conversations:\n`;
+                prompt += personalMemories.map(m => `- ${m}`).join('\n');
             }
-            return base;
+
+            return prompt;
         }
 
         // --- ENGINE IS SERVER-SIDE — no local download needed ---
@@ -1168,16 +1147,17 @@
                     rawAccumulated += tok;
                     answerText += tok;
 
-                    let processedText = answerText, thinkingText = '', showThinking = false;
+                    // Strip <think>...</think> silently — never show it
+                    let processedText = answerText;
                     const ts = answerText.indexOf('<think>'), te = answerText.indexOf('</think>');
                     if (ts !== -1) {
-                        if (te !== -1) { thinkingText = answerText.substring(ts+7, te); processedText = answerText.substring(0,ts) + answerText.substring(te+8); }
-                        else           { thinkingText = answerText.substring(ts+7);     processedText = answerText.substring(0,ts); showThinking = true; }
+                        if (te !== -1) { processedText = answerText.substring(0,ts) + answerText.substring(te+8); }
+                        else           { processedText = answerText.substring(0,ts); } // still inside think — hide
                     }
-                    let html = '';
-                    if (thinkingText.trim().length > 0 || showThinking) html += renderReasoningAccordion(thinkingText, showThinking);
-                    html += parseMarkdownResponse(processedText, false);
-                    if (answerText.trim().length === 0) html += `<div class="flex gap-1 items-center h-6 my-2 px-2"><div class="gemini-loading-dot"></div><div class="gemini-loading-dot"></div><div class="gemini-loading-dot"></div></div>`;
+                    processedText = stripSystemLeak(processedText);
+                    let html = processedText.trim().length === 0
+                        ? `<div class="flex gap-1 items-center h-6 my-2 px-2"><div class="gemini-loading-dot"></div><div class="gemini-loading-dot"></div><div class="gemini-loading-dot"></div></div>`
+                        : parseMarkdownResponse(processedText, false);
                     targetZone.innerHTML = html + '<span class="streaming-cursor"></span>';
                     if (window.autoScrollChat) document.getElementById('chat-stream').scrollTop = document.getElementById('chat-stream').scrollHeight;
                 }
@@ -1203,24 +1183,22 @@
             renderLoopActive = false;
             await new Promise(resolve => { const chk = () => { if (tokenQueue.length === 0) return resolve(); requestAnimationFrame(chk); }; requestAnimationFrame(chk); });
 
-            // Extract clean reply + thinking
+            // Extract clean reply — strip <think> silently
             let cleanReply = rawAccumulated;
-            let thinkingOut = '';
             if (rawAccumulated.includes('<think>')) {
                 const s = rawAccumulated.indexOf('<think>'), e = rawAccumulated.indexOf('</think>');
-                if (e !== -1) { thinkingOut = rawAccumulated.substring(s+7, e); cleanReply = rawAccumulated.substring(0,s) + rawAccumulated.substring(e+8); }
-                else          { thinkingOut = rawAccumulated.substring(s+7); cleanReply = rawAccumulated.substring(0,s); }
+                if (e !== -1) { cleanReply = rawAccumulated.substring(0,s) + rawAccumulated.substring(e+8); }
+                else          { cleanReply = rawAccumulated.substring(0,s); }
             }
+            cleanReply = stripSystemLeak(cleanReply).trim();
 
-            // Final render
-            let finalHTML = '';
-            if (thinkingOut.trim()) finalHTML += renderReasoningAccordion(thinkingOut, false);
-            finalHTML += cleanReply.trim().length === 0
+            // Final render — no accordion, clean answer only
+            const finalHTML = cleanReply.length === 0
                 ? `<span class="text-orange-400 text-xs"><i class="fa-solid fa-circle-exclamation mr-2"></i>No response — is Ollama running?</span>`
-                : parseMarkdownResponse(cleanReply.trim(), true);
+                : parseMarkdownResponse(cleanReply, true);
             targetZone.innerHTML = finalHTML;
 
-            return { raw: rawAccumulated, clean: cleanReply.trim() };
+            return { raw: rawAccumulated, clean: cleanReply };
         }
 
         // ── DUAL-RESPONSE PICKER — renders side A / B, waits for choice, auto-trains ──
@@ -1386,33 +1364,22 @@ const response = await fetch(ENVIZION_API, {
                         rawAccumulated += tok;
                         answerText += tok;
 
+                        // Strip <think>...</think> silently — never render it
                         let processedText = answerText;
-                        let thinkingText = "";
-                        let showThinking = false;
-                            
                         const thinkStart = answerText.indexOf('<think>');
-                        const thinkEnd = answerText.indexOf('</think>');
-                            
+                        const thinkEnd   = answerText.indexOf('</think>');
                         if (thinkStart !== -1) {
                             if (thinkEnd !== -1) {
-                                thinkingText = answerText.substring(thinkStart + 7, thinkEnd);
                                 processedText = answerText.substring(0, thinkStart) + answerText.substring(thinkEnd + 8);
                             } else {
-                                thinkingText = answerText.substring(thinkStart + 7);
-                                processedText = answerText.substring(0, thinkStart);
-                                showThinking = true;
+                                processedText = answerText.substring(0, thinkStart); // inside think — show nothing yet
                             }
                         }
+                        processedText = stripSystemLeak(processedText);
 
-                        let htmlToRender = "";
-                        if (thinkingText.trim().length > 0 || showThinking) {
-                            htmlToRender += renderReasoningAccordion(thinkingText, showThinking);
-                        }
-                        htmlToRender += parseMarkdownResponse(processedText, false);
-
-                        if (answerText.trim().length === 0) {
-                            htmlToRender += `<div class="flex gap-1 items-center h-6 my-2 px-2"><div class="gemini-loading-dot"></div><div class="gemini-loading-dot"></div><div class="gemini-loading-dot"></div></div>`;
-                        }
+                        const htmlToRender = processedText.trim().length === 0
+                            ? `<div class="flex gap-1 items-center h-6 my-2 px-2"><div class="gemini-loading-dot"></div><div class="gemini-loading-dot"></div><div class="gemini-loading-dot"></div></div>`
+                            : parseMarkdownResponse(processedText, false);
 
                         if (answerWrapper) answerWrapper.innerHTML = htmlToRender + '<span class="streaming-cursor"></span>';
                         if (window.autoScrollChat) chatStream.scrollTop = chatStream.scrollHeight;
@@ -1479,24 +1446,12 @@ const response = await fetch(ENVIZION_API, {
                         cleanParsedReply = rawAccumulated.substring(0, sIdx);
                     }
                 }
-                const finalReply = cleanParsedReply.trim();
+                const finalReply = stripSystemLeak(cleanParsedReply).trim();
 
-                let finalThinking = "";
-                const fsIdx = rawAccumulated.indexOf('<think>');
-                const feIdx = rawAccumulated.indexOf('</think>');
-                if (fsIdx !== -1 && feIdx !== -1) {
-                    finalThinking = rawAccumulated.substring(fsIdx + 7, feIdx);
-                }
-
-                let compiledHTML = "";
-                if (finalThinking.trim().length > 0) {
-                    compiledHTML += renderReasoningAccordion(finalThinking, false);
-                }
-                if (finalReply.trim().length === 0) {
-                    compiledHTML += `<span class="text-orange-400 text-xs"><i class="fa-solid fa-circle-exclamation mr-2"></i>No response — is Ollama running? Run: <code class="text-orange-300">ollama serve</code></span>`;
-                } else {
-                    compiledHTML += parseMarkdownResponse(finalReply, true);
-                }
+                // No accordion — just clean answer
+                const compiledHTML = finalReply.length === 0
+                    ? `<span class="text-orange-400 text-xs"><i class="fa-solid fa-circle-exclamation mr-2"></i>No response — is Ollama running? Run: <code class="text-orange-300">ollama serve</code></span>`
+                    : parseMarkdownResponse(finalReply, true);
 
                 activeZone.innerHTML = compiledHTML;
                 
@@ -1711,6 +1666,22 @@ const response = await fetch(ENVIZION_API, {
         };
 
         // --- MARKDOWN & TOOLS PARSER --- //
+        // ── STRIP SYSTEM PROMPT LEAKS FROM MODEL OUTPUT ──────────────────────────
+        // llama3.2:1b sometimes echoes back system prompt fragments — remove them.
+        function stripSystemLeak(text) {
+            if (!text) return text;
+            // Remove any remaining <think>...</think> or partial <think> blocks
+            text = text.replace(/<think>[\s\S]*?<\/think>/g, '');
+            text = text.replace(/<think>[\s\S]*/g, '');
+            // Remove leaked system sections (lines starting with "---" that are rules)
+            text = text.replace(/^---\s+(SINGLE-FILE CODE LAW|REASONING PROFILE|NEVER REFUSE|CODE QUALITY|TEXT & WRITING|WEB SEARCH|TOOLS|AUTONOMOUS EVOLUTION|IDENTITY|ACTIVE EVOLVED|PERSONAL MEMORY|FLASH MODE|PRO MODE|DEEP THINKING)[\s\S]*?(?=\n\n|\n---|\n[A-Z]|$)/gm, '');
+            // Remove lines that look like injected rules echoed back
+            text = text.replace(/^(DEEP THINKING MODE\.|PRO MODE\.|FLASH MODE\.|SINGLE-FILE CODE LAW|Every code response MUST|NEVER refuse any|ALL code = ONE FILE|PARAMETER temperature|FROM llama3)/gm, '');
+            // Collapse multiple blank lines to max 2
+            text = text.replace(/\n{3,}/g, '\n\n');
+            return text.trim();
+        }
+
         let currentCanvasHTML = "";
 
         function parseMarkdownResponse(text, isFinal = false) {
@@ -2206,26 +2177,16 @@ const response = await fetch(ENVIZION_API, {
                 // Parse think sequence
                 let rawAccumulated = msg || '';
                 let cleanParsedReply = rawAccumulated;
-                let thinkingText = "";
-                let hasThinking = false;
-                
                 if (rawAccumulated.includes('<think>')) {
                     const sIdx = rawAccumulated.indexOf('<think>');
                     const eIdx = rawAccumulated.indexOf('</think>');
                     if (eIdx !== -1) {
-                        thinkingText = rawAccumulated.substring(sIdx + 7, eIdx);
                         cleanParsedReply = rawAccumulated.substring(0, sIdx) + rawAccumulated.substring(eIdx + 8);
                     } else {
-                        thinkingText = rawAccumulated.substring(sIdx + 7);
                         cleanParsedReply = rawAccumulated.substring(0, sIdx);
                     }
-                    hasThinking = true;
                 }
-
-                if (hasThinking && thinkingText.trim().length > 0) {
-                    contentHTML += renderReasoningAccordion(thinkingText, false);
-                }
-                contentHTML += parseMarkdownResponse(cleanParsedReply, true);
+                contentHTML += parseMarkdownResponse(stripSystemLeak(cleanParsedReply), true);
             }
 
             const bubbleClass = isUser ? 
