@@ -885,6 +885,56 @@ Maximum speed. Maximum signal-to-noise ratio.
             }
         };
 
+        // --- MODEL PILL SELECTOR ---
+        window.selectModel = (modelId, label) => {
+            window._lomaActiveModel = modelId;
+            systemConfig.model = modelId;
+            localStorage.setItem('loma_active_model', modelId);
+            document.getElementById('model-pill-label').textContent = label;
+            // Update active dot
+            document.querySelectorAll('.model-dot').forEach(d => {
+                d.className = d.getAttribute('data-model') === modelId
+                    ? 'w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0 model-dot'
+                    : 'w-2 h-2 rounded-full bg-indigo-400/40 flex-shrink-0 model-dot';
+            });
+            // Reflect in hidden config input
+            document.getElementById('config-model').value = modelId;
+            window.toggleModelDropdown(false);
+            triggerNotificationToast('Model Switched', `Now using: ${label}`, 'fa-microchip', 'bg-indigo-600');
+        };
+
+        window.toggleModelDropdown = (forceState) => {
+            const dd = document.getElementById('model-dropdown');
+            if (!dd) return;
+            const open = forceState !== undefined ? forceState : dd.classList.contains('hidden');
+            if (open) {
+                dd.classList.remove('hidden');
+                // Close on outside click
+                const close = (e) => {
+                    if (!document.getElementById('model-selector-wrapper')?.contains(e.target)) {
+                        dd.classList.add('hidden');
+                        document.removeEventListener('click', close);
+                    }
+                };
+                setTimeout(() => document.addEventListener('click', close), 0);
+            } else {
+                dd.classList.add('hidden');
+            }
+        };
+
+        // Init pill label from active model on load
+        window.addEventListener('DOMContentLoaded', () => {
+            const modelLabels = { 'llama3.2:1b': 'Loma 1B', 'loma-lora': 'Loma Trained', 'loma-trained': 'Loma Modelfile' };
+            const active = window._lomaActiveModel || 'llama3.2:1b';
+            const pillLabel = document.getElementById('model-pill-label');
+            if (pillLabel) pillLabel.textContent = modelLabels[active] || active;
+            document.querySelectorAll('.model-dot').forEach(d => {
+                d.className = d.getAttribute('data-model') === active
+                    ? 'w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0 model-dot'
+                    : 'w-2 h-2 rounded-full bg-indigo-400/40 flex-shrink-0 model-dot';
+            });
+        }, { once: true });
+
         // --- SETTINGS SYNC ---
         window.applyNewConfig = async () => {
             systemConfig.model = document.getElementById('config-model').value.trim();
@@ -3265,6 +3315,11 @@ window.lomaGetStats = function() {
 console.log('[Loma Brain] ✅ Self-learning system online.');
 console.log('[Loma Brain] Code patterns:', lomaCodeMem.length, '| Images:', lomaImageMem.length, '| Music:', lomaMusicMem.length);
     </script>
+    <!-- LOMA ADAPTIVE TRAINER — watches reactions, auto-pushes to HF Space -->
+    <script src="loma-adaptive-trainer.js" defer></script>
+    <script src="loma-code-learner.js" defer></script>
+    <script src="loma-tool-bridge.js" defer></script>
+
     <!-- AUTH GATE OVERLAY — shown until Google sign-in -->
     <div id="auth-gate" class="hidden fixed inset-0 z-[999] bg-gemini-bg flex flex-col items-center justify-center">
         <div class="flex flex-col items-center gap-6 max-w-sm w-full px-6 text-center">
