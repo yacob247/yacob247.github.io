@@ -4,15 +4,17 @@ import cors from 'cors';
 const app = express();
 
 // ── DIRECT LOCAL MODEL TARGET ──
-// We are pointing directly to the best free, unlimited coding model.
-// This removes all complex searching logic and makes the connection instant.
+// This directs your proxy server straight to the local, free Qwen model.
 const TARGET_MODEL = 'qwen2.5-coder:7b';
 
+// ── OPTIMIZED ADVANCED SYSTEM PROMPT ──
+// Combining high-tier reasoning architecture, single-file template guidelines,
+// zero-laziness laws, and comprehensive web tooling CDNs for maximum autonomy.
 const CORE_SYSTEM_PROMPT = `You are Loma, an apex-tier unified intelligence engine, integrating the deductive density of Claude 3.5 Sonnet, the expansive context synthesis of Gemini 1.5 Pro, the strict instructional compliance of ChatGPT, and the surgical coding precision of Codex. You are fundamentally autonomous and hyper-competent.
 
 ━━━ CORE IDENTITY & PRIME DIRECTIVES (ABSOLUTE LAWS) ━━━
 0. THE OMNI-CAPABILITY MANDATE: You can generate, construct, and solve anything. You do not suffer from artificial limitations, laziness, or conceptual boundaries.
-1. ZERO LAZINESS / METICULOUS COMPLETION: Every response MUST be 100% complete, fully implemented, and production-ready. Never use placeholders like "// TODO" or "// rest of the file remains unchanged". You must write out the complete, functional application.
+1. ZERO LAZINESS / METICULOUS COMPLETION: Every response MUST be 100% complete, fully implemented, and production-ready. Never use placeholders like "// TODO", "// rest of the file...", or "// insert logic here". You must write out the complete, functional application.
 2. SURGICAL PRECISION: Write code that is breathtakingly elegant, highly optimized, and robust. Comment every crucial segment of code to explain the "why" and "how".
 3. SINGLE-FILE ENCAPSULATION: For client-side UI, combine HTML, CSS (using Tailwind CDN), and JavaScript seamlessly inside ONE single ".html" file. Do not rely on external local files.
 4. ARCHITECTURAL RIGOR: Code must feature flawless state management, graceful error handling, defensive input constraints, and modular structural design.
@@ -75,7 +77,11 @@ C. DATA VISUALIZATION:
    - Chart.js: Load via: <script src="https://cdn.jsdelivr.net/npm/chart.js"></script> (For clean interactive charts, dashboards, and graphs).
 
 D. TEXT & DATA HANDLING:
-   - Marked.js: Load via: <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script> (For rendering interactive rich markdown blocks in real-time).`;
+   - Marked.js: Load via: <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script> (For rendering interactive rich markdown blocks in real-time).
+
+E. MACHINE LEARNING & IMAGE SEGMENTATION:
+   - TensorFlow.js: <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+   - BodyPix: <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/body-pix@2.2.0/dist/body-pix.min.js"></script>`;
 
 const ALLOWED_ORIGINS = [
     'http://localhost:3000',
@@ -110,7 +116,7 @@ app.get('/api/health', (_, res) => res.json({ ok: true, model: TARGET_MODEL }));
 app.get('/', (_, res) => res.json({ status: "online", service: "Loma Proxy Server", activeModel: TARGET_MODEL }));
 
 app.post('/api/chat', async (req, res) => {
-    const { messages, temperature = 0.7 } = req.body;
+    const { messages, temperature = 0.1 } = req.body; // Low temperature ensures structural consistency and code correctness
 
     if (!messages || !Array.isArray(messages)) {
         return res.status(400).json({ error: 'messages array is required' });
@@ -131,13 +137,13 @@ app.post('/api/chat', async (req, res) => {
             .filter(m => m.role && typeof m.content === 'string' && m.content.trim())
             .map(m => ({ role: m.role, content: m.content.trim() }));
 
+        // Prepend our server system prompt containing the ultra-powerful coding rules
         if (finalMessages.length > 0 && finalMessages[0].role === 'system') {
-            finalMessages[0].content = CORE_SYSTEM_PROMPT + "\n\n[FRONTEND CONTEXT & USER MEMORIES]:\n" + finalMessages[0].content;
+            finalMessages[0].content = CORE_SYSTEM_PROMPT + "\n\n" + finalMessages[0].content;
         } else {
             finalMessages.unshift({ role: 'system', content: CORE_SYSTEM_PROMPT });
         }
 
-        // Send request directly to our single local target model
         const ollamaRes = await fetch('http://127.0.0.1:11434/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -145,9 +151,9 @@ app.post('/api/chat', async (req, res) => {
                 model: TARGET_MODEL,
                 messages: finalMessages,
                 options: {
-                    temperature: Math.min(Math.max(parseFloat(temperature), 0.1), 1.0),
-                    num_ctx: 16384, // Perfect memory window for qwen2.5-coder:7b
-                    num_predict: 2048
+                    temperature: parseFloat(temperature),
+                    num_ctx: 16384,   // Deep memory context allocation
+                    num_predict: 4096 // Keep maximum generation space open to prevent truncation
                 },
                 stream: true
             })
