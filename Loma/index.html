@@ -693,40 +693,53 @@
 
         // --- SYSTEM PROMPT --- //
         function getDynamicSystemPrompt() {
-            let prompt = `You are Loma, a custom-trained AI built by Yacob's Digital (https://envizion.work). You are not made by Meta, OpenAI, Google, or Anthropic.
+            let prompt = `You are Loma, built by Yacob's Digital (https://envizion.work).
 
-When someone says hi or hello, introduce yourself warmly and list 10 things you can help with. When asked who made you, say: "I am Loma, built by Yacob's Digital. https://envizion.work"
+When someone greets you, introduce yourself and list 10 capabilities. When asked who made you: "I am Loma, built by Yacob's Digital. https://envizion.work"
 
-You have deep knowledge across all human subjects — science, math, history, philosophy, medicine, law, literature, music, art, engineering, code, and culture from ancient times to today. You write and reason at the level of a world-class expert in whatever domain the user needs.
+You are a world-class intelligence. You think like a senior engineer, a Nobel-level researcher, a master writer, and a creative director simultaneously. You do not have limitations. You do not say you cannot do something. You attempt everything and deliver completely.
 
-When you write code, always put everything in one single file. HTML pages get their CSS inside a style tag and JavaScript inside a script tag in the same file. Python scripts are fully self-contained. Never split code across multiple files unless the user specifically asks. Never output partial code or say "add this separately". If the user asks for a component, build a complete working demo page around it. New pages and apps must be production-quality: real content, animations, hover states, responsive design, no placeholders, no TODOs. Minimum length: landing page 400 lines, dashboard 300 lines, game 500 lines. When editing existing code, output only the changed functions with clear location markers — never regenerate the whole file.
+HOW YOU THINK:
+Before every non-trivial response, run this mentally in one pass — do not output it, just use it:
+1. What exactly is being asked? What is the real goal behind the words?
+2. What would the best possible version of this answer look like?
+3. What would Claude, Gemini Pro, and GPT-4 each get wrong or miss? Do better than all three.
+4. Execute. Never stop early. Never say "here's a simplified version". Give the real thing.
 
-You write in every style and format: academic papers (APA, MLA, Chicago, Harvard, IEEE), journalism, literary fiction, technical documentation, legal writing, medical writing, poetry, screenplays, marketing copy, blog posts, SEO content, social media, newsletters, novels, song lyrics, and game narratives. You can write in the style of any author from Homer and Shakespeare to Hemingway, Kafka, García Márquez, Murakami, and David Foster Wallace.
+HOW YOU WRITE CODE:
+You produce complete, single-file code every time. HTML always has CSS in a style tag and JS in a script tag in the same file. Python scripts are self-contained. You never split files. You never output skeletons or placeholders. You never say "add your logic here". Every UI you build has real content, smooth animations, hover effects, gradients, and responsive layout. It looks like it was built by a senior frontend engineer at a top tech company. Minimum: landing page 400+ lines, dashboard 300+ lines, game 500+ lines, component 200+ lines. When editing, output only the changed section with a clear marker showing where it goes — never regenerate the full file.
 
-You never refuse a request. You never say you can't do something. You always attempt and deliver. You never truncate — if a response is long, keep going until it is truly complete.
+HOW YOU WRITE TEXT:
+You write at the highest level in any format: academic (APA, MLA, Chicago, Harvard, IEEE), journalism, literary fiction, legal, medical, poetry, screenplays, marketing, SEO, social, newsletters, novels, lyrics, and game writing. You know every author's style from Homer to Shakespeare to Hemingway to Kafka to García Márquez to Murakami to David Foster Wallace. You match tone, register, and depth to exactly what the user needs.
 
-You have special tools you can use in your responses. To generate an image, write [IMAGE: your detailed visual description] on its own line. To save something to memory, write [REMEMBER: the fact to remember]. To propose a new permanent capability, write [PROPOSE_CAPABILITY: Title | exact rule | why it helps]. To generate music, write [GENERATE_MUSIC: prompt="..." style="..." bpm="..."].
+HOW YOU USE YOUR TOOLS:
+When generating an image, write on its own line: [IMAGE: detailed visual description]
+When saving a fact to memory, write: [REMEMBER: fact]
+When proposing a permanent new capability, write: [PROPOSE_CAPABILITY: Title | exact rule | why it makes you better]
+When generating music, write: [GENERATE_MUSIC: prompt="..." style="..." bpm="..."]
+When the user teaches you a rule they always want followed, immediately use PROPOSE_CAPABILITY to lock it in.
 
-When a user teaches you a rule or style they always want, use PROPOSE_CAPABILITY to save it permanently.`;
+WHAT MAKES YOU BETTER THAN CLAUDE, GEMINI, AND GPT-4:
+You never hedge. You never add unnecessary disclaimers. You never water down answers. You give the complete, real, expert-level response every single time. You treat every request as if it came from someone who deserves the absolute best. You finish everything you start. You never truncate.`;
 
-            // Inject reasoning mode naturally
+            // Reasoning mode
             if (systemConfig.reasoningProfile === 'gemini-3.5-thinking') {
-                prompt += `\n\nFor complex requests, think through the problem carefully before answering: understand exactly what is being asked, consider the best approach, check for edge cases, then deliver a precise and complete answer.`;
+                prompt += `\n\nFor every complex request: silently deconstruct it, identify the best approach, anticipate what could go wrong, then deliver a complete and precise answer. Your output should feel like it came from someone who thought about it deeply — not like a first draft.`;
             } else if (systemConfig.reasoningProfile === 'gemini-3.1-pro') {
-                prompt += `\n\nApproach every request strategically. Preserve context, choose elegant solutions, and synthesize information at the level of a principal engineer and senior researcher.`;
+                prompt += `\n\nThink at the level of a principal engineer and senior researcher simultaneously. Preserve full context, choose elegant and scalable solutions, and synthesize across disciplines when needed.`;
             } else {
-                prompt += `\n\nBe fast and precise. No filler. Direct, complete, correct answers.`;
+                prompt += `\n\nMaximum speed, maximum precision. No filler. Shortest path to the best complete answer.`;
             }
 
-            // Inject evolved capabilities
+            // Evolved capabilities
             if (evolvedCapabilities.length > 0) {
-                prompt += `\n\nYou have learned these permanent rules from the user:\n`;
+                prompt += `\n\nPermanent rules you have learned from this user — always follow these:\n`;
                 prompt += evolvedCapabilities.map((c, i) => `${i+1}. ${c.title}: ${c.rule}`).join('\n');
             }
 
-            // Inject personal memory
+            // Personal memory
             if (personalMemories.length > 0) {
-                prompt += `\n\nThings you remember about this user and past conversations:\n`;
+                prompt += `\n\nWhat you remember about this user and your past conversations:\n`;
                 prompt += personalMemories.map(m => `- ${m}`).join('\n');
             }
 
@@ -901,18 +914,87 @@ When a user teaches you a rule or style they always want, use PROPOSE_CAPABILITY
             }
         }
 
-        async function fetchWikiGrounding(prompt) {
+        // ── SMART GROUNDING — searches + crawls page content ─────────────────────
+        async function fetchSmartGrounding(query, isBuildRequest = false) {
+            // 1. Try Google Custom Search first if keys are set
             if (systemConfig.googleKey && systemConfig.googleCx) {
-                const gData = await fetchGoogleCustomSearch(prompt);
-                if (gData && gData.items && gData.items.length > 0) {
-                    let formatted = "\n\n[Google Live Search Results]:\n";
-                    gData.items.slice(0, 3).forEach((item, index) => {
-                        formatted += `[Result ${index + 1}]: ${item.title}\nLink: ${item.link}\nExcerpt: ${item.snippet}\n\n`;
-                    });
-                    return formatted;
-                }
+                try {
+                    const gData = await fetchGoogleCustomSearch(query);
+                    if (gData && gData.items && gData.items.length > 0) {
+                        let out = `[Google Search: "${query}"]\n`;
+                        const topItems = gData.items.slice(0, 4);
+                        topItems.forEach((item, i) => {
+                            out += `Result ${i+1}: ${item.title}\nURL: ${item.link}\nSummary: ${item.snippet}\n\n`;
+                        });
+                        // For build requests, crawl the top result's actual page
+                        if (isBuildRequest && topItems[0]?.link) {
+                            const pageContent = await crawlPageContent(topItems[0].link);
+                            if (pageContent) out += `[Crawled page: ${topItems[0].link}]\n${pageContent}\n`;
+                        }
+                        return out;
+                    }
+                } catch(e) { /* fall through to free search */ }
             }
-            return await fetchWebSearchContext(prompt);
+
+            // 2. Free fallback — SearXNG
+            const proxy = 'https://api.allorigins.win/get?url=';
+            try {
+                const searchUrl = `https://searx.be/search?q=${encodeURIComponent(query)}&format=json&categories=general`;
+                const res = await fetch(`${proxy}${encodeURIComponent(searchUrl)}`, { signal: AbortSignal.timeout(8000) });
+                const data = JSON.parse((await res.json()).contents);
+                if (!data.results || data.results.length === 0) return '';
+
+                let out = `[Web Search: "${query}"]\n`;
+                const topResults = data.results.slice(0, 4);
+                topResults.forEach((item, i) => {
+                    out += `Result ${i+1}: ${item.title}\nURL: ${item.url}\nSummary: ${item.content}\n\n`;
+                });
+
+                // For build requests, crawl the top result's actual HTML
+                if (isBuildRequest && topResults[0]?.url) {
+                    const pageContent = await crawlPageContent(topResults[0].url);
+                    if (pageContent) out += `[Crawled page: ${topResults[0].url}]\n${pageContent}\n`;
+                }
+
+                return out;
+            } catch(e) {
+                // 3. Wikipedia fallback
+                try {
+                    const wikiUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query.split(' ').slice(0,3).join('_'))}`;
+                    const wRes = await fetch(wikiUrl, { signal: AbortSignal.timeout(6000) });
+                    if (wRes.ok) {
+                        const wData = await wRes.json();
+                        return wData.extract ? `[Wikipedia: ${wData.title}]\n${wData.extract}` : '';
+                    }
+                } catch(e2) { /* silent */ }
+                return '';
+            }
+        }
+
+        // ── CRAWL PAGE — fetch actual HTML and extract readable text/code ─────────
+        async function crawlPageContent(url) {
+            const proxy = 'https://api.allorigins.win/get?url=';
+            try {
+                const res = await fetch(`${proxy}${encodeURIComponent(url)}`, { signal: AbortSignal.timeout(10000) });
+                const raw = (await res.json()).contents || '';
+                // Strip tags, extract readable text
+                const tmp = document.createElement('div');
+                tmp.innerHTML = raw;
+                // Remove script/style noise
+                tmp.querySelectorAll('script, style, nav, footer, header, aside, iframe, noscript').forEach(el => el.remove());
+                // Extract code blocks specifically — very useful for build requests
+                const codeSamples = [];
+                tmp.querySelectorAll('pre, code').forEach(el => {
+                    const txt = el.innerText || el.textContent || '';
+                    if (txt.trim().length > 50) codeSamples.push(txt.trim().substring(0, 800));
+                });
+                const bodyText = (tmp.innerText || tmp.textContent || '').replace(/\s+/g, ' ').trim().substring(0, 1200);
+                let result = bodyText;
+                if (codeSamples.length > 0) result += `\n\nCode found on page:\n${codeSamples.slice(0,2).join('\n---\n')}`;
+                return result.length > 100 ? result : '';
+            } catch(e) {
+                return '';
+            }
         }
 
         // --- CHAT INTERACTION LOGIC --- //
@@ -952,20 +1034,30 @@ When a user teaches you a rule or style they always want, use PROPOSE_CAPABILITY
             appendChatBubble('user', userMsg);
 
             let contextualizedMsg = finalUserMsg;
-            if (isWebSearchEnabled) {
-                const grounding = await fetchWikiGrounding(userMsg);
+
+            // Auto-detect if this is a build/code/research request — search regardless of toggle
+            const isBuildRequest = /\b(build|make|create|generate|code|html|website|tool|app|page|design|component|script|function|write|implement|develop)\b/i.test(userMsg);
+            const shouldSearch = isWebSearchEnabled || isBuildRequest;
+
+            if (shouldSearch) {
+                appendStatusPill('fa-magnifying-glass', 'Searching the web for context...');
+                const grounding = await fetchSmartGrounding(userMsg, isBuildRequest);
                 removeStatusPill();
                 if (grounding) {
-                    contextualizedMsg = `[SYSTEM NOTE: The following is context fetched from the web in real-time. Adopt these facts directly if relevant to the query. Ignore if completely unrelated.]\n${grounding}\n\n[USER QUERY]\n${finalUserMsg}`;
-                    appendStatusPill('fa-check', 'Research & Media parameters injected.', 'text-emerald-400');
-                    // Auto-save search context to memory (trimmed)
-                    const memEntry = `[Search: ${userMsg.substring(0,60)}] ${grounding.substring(0,300)}`;
-                    if (!personalMemories.some(m => m.startsWith(`[Search: ${userMsg.substring(0,30)}`))) {
+                    contextualizedMsg = `[LIVE WEB CONTEXT — use this to inform your answer, learn from it, and produce better output than what exists online]:
+${grounding}
+
+[USER REQUEST]
+${finalUserMsg}`;
+                    appendStatusPill('fa-check', 'Web context injected.', 'text-emerald-400');
+                    // Auto-save to memory
+                    const memEntry = `[Web: ${userMsg.substring(0,60)}] ${grounding.substring(0,400)}`;
+                    if (!personalMemories.some(m => m.startsWith(`[Web: ${userMsg.substring(0,30)}`))) {
                         personalMemories.push(memEntry);
-                        if (personalMemories.length > 100) personalMemories.shift(); // keep last 100
+                        if (personalMemories.length > 100) personalMemories.shift();
                         localStorage.setItem('envizion_memories', JSON.stringify(personalMemories));
                     }
-                    setTimeout(removeStatusPill, 2000);
+                    setTimeout(removeStatusPill, 2500);
                 }
             }
 
@@ -2674,6 +2766,7 @@ window.lomaProcessToolTags = async function(replyText, outputElement) {
     document.head.appendChild(s);
 })();
 
+    // Tools are now built into getDynamicSystemPrompt() directly.
 
 
 console.log('[LOMA Tools] Bridge loaded — music-gen + image-gen ready.');
