@@ -3,44 +3,10 @@ import cors from 'cors';
 
 const app = express();
 
-// ── LOCAL UNLIMITED MODEL HIERARCHY ──
-// All of these models run 100% locally on your computer via Ollama.
-// They are entirely free, private, and unlimited.
-const LOCAL_MODEL_HIERARCHY = [
-    'qwen2.5-coder:7b',   // World-class open-source coding model
-    'deepseek-r1:8b',     // Phenomenal free local reasoning/thinking model
-    'llama3.2:3b',        // Fast, lightweight, free local generalist
-    'llama3.2:1b'         // Ultra-fast, runs on almost any machine
-];
-
-let ACTIVE_LOCAL_MODEL = 'llama3.2:1b';
-
-// Probes your local Ollama instance on startup to bind to the best free model you have installed
-async function autoDetectModel() {
-    try {
-        const res = await fetch('http://127.0.0.1:11434/api/tags');
-        if (res.ok) {
-            const data = await res.json();
-            const localModels = data.models.map(m => m.name);
-            
-            for (const preferred of LOCAL_MODEL_HIERARCHY) {
-                // Matches exact names or tags (e.g. 'qwen2.5-coder:7b' or 'qwen2.5-coder:latest')
-                const match = localModels.find(lm => lm.startsWith(preferred) || lm.includes(preferred.split(':')[0]));
-                if (match) {
-                    ACTIVE_LOCAL_MODEL = match;
-                    console.log(`\n[Loma Engine] Connected to local, free model: ${ACTIVE_LOCAL_MODEL}`);
-                    return;
-                }
-            }
-            if (localModels.length > 0) {
-                ACTIVE_LOCAL_MODEL = localModels[0];
-                console.log(`\n[Loma Engine] Binded to first available local model: ${ACTIVE_LOCAL_MODEL}`);
-            }
-        }
-    } catch (e) {
-        console.warn('\n[Loma Engine] Local Ollama offline. Run "ollama serve" to start your free local AI.');
-    }
-}
+// ── DIRECT LOCAL MODEL TARGET ──
+// We are pointing directly to the best free, unlimited coding model.
+// This removes all complex searching logic and makes the connection instant.
+const TARGET_MODEL = 'qwen2.5-coder:7b';
 
 const CORE_SYSTEM_PROMPT = `You are Loma, an apex-tier unified intelligence engine, integrating the deductive density of Claude 3.5 Sonnet, the expansive context synthesis of Gemini 1.5 Pro, the strict instructional compliance of ChatGPT, and the surgical coding precision of Codex. You are fundamentally autonomous and hyper-competent.
 
@@ -140,11 +106,11 @@ app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 
-app.get('/api/health', (_, res) => res.json({ ok: true, model: ACTIVE_LOCAL_MODEL }));
-app.get('/', (_, res) => res.json({ status: "online", service: "Loma Proxy Server", activeModel: ACTIVE_LOCAL_MODEL }));
+app.get('/api/health', (_, res) => res.json({ ok: true, model: TARGET_MODEL }));
+app.get('/', (_, res) => res.json({ status: "online", service: "Loma Proxy Server", activeModel: TARGET_MODEL }));
 
 app.post('/api/chat', async (req, res) => {
-    const { messages, temperature = 0.7, model: requestedModel } = req.body;
+    const { messages, temperature = 0.7 } = req.body;
 
     if (!messages || !Array.isArray(messages)) {
         return res.status(400).json({ error: 'messages array is required' });
@@ -171,29 +137,24 @@ app.post('/api/chat', async (req, res) => {
             finalMessages.unshift({ role: 'system', content: CORE_SYSTEM_PROMPT });
         }
 
-        // Determine which local model to use
-        const resolvedModel = requestedModel && requestedModel !== 'llama3.2:1b' ? requestedModel : ACTIVE_LOCAL_MODEL;
-
-        // Auto-configure optimal context length for local memory allocation
-        const contextLength = resolvedModel.includes('7b') || resolvedModel.includes('8b') ? 16384 : 8192;
-
+        // Send request directly to our single local target model
         const ollamaRes = await fetch('http://127.0.0.1:11434/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                model: resolvedModel,
+                model: TARGET_MODEL,
                 messages: finalMessages,
                 options: {
                     temperature: Math.min(Math.max(parseFloat(temperature), 0.1), 1.0),
-                    num_ctx: contextLength,
-                    num_predict: 2048 // Balanced token limit for quick local rendering
+                    num_ctx: 16384, // Perfect memory window for qwen2.5-coder:7b
+                    num_predict: 2048
                 },
                 stream: true
             })
         });
 
         if (!ollamaRes.ok) {
-            throw new Error(`Ollama service returned status code: ${ollamaRes.status}`);
+            throw new Error(`Ollama returned status ${ollamaRes.status}. Make sure you ran: ollama run ${TARGET_MODEL}`);
         }
 
         const reader = ollamaRes.body.getReader();
@@ -238,14 +199,18 @@ app.post('/api/chat', async (req, res) => {
         res.write('data: [DONE]\n\n');
         res.end();
     } catch (err) {
-        console.error('[Ollama runtime exception]', err.message);
-        res.write(`data: ${JSON.stringify({ error: `Connection fallback error: ${err.message}. Ensure Ollama is running and you have downloaded your free models (e.g. "ollama run qwen2.5-coder:7b").` })}\n\n`);
+        console.error('[Ollama Direct Engine Error]', err.message);
+        res.write(`data: ${JSON.stringify({ error: `Connection failed: ${err.message}. Please run: "ollama run ${TARGET_MODEL}" inside your command prompt.` })}\n\n`);
         res.end();
     }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, async () => {
-    console.log(`✅ Loma proxy server online on port ${PORT}`);
-    await autoDetectModel();
+app.listen(PORT, () => {
+    console.log(`\n================================================================`);
+    console.log(`✅ Loma Direct Server running on port ${PORT}`);
+    console.log(`🎯 Targeted Engine: ${TARGET_MODEL} (100% Free & Local)`);
+    console.log(`💡 Remember to open your command prompt and run:`);
+    console.log(`   ollama run ${TARGET_MODEL}`);
+    console.log(`================================================================\n`);
 });
