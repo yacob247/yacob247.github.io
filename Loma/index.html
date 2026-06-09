@@ -1040,11 +1040,217 @@ You must generate a short, ultra-condensed reasoning process under <think> and <
             pills.forEach(p => p.remove());
         }
 
+        // ── AUTO-TRAIN WRITER — saves directly into rlhfDataset, no download needed ──
+        function autoTrainWrite(prompt, chosenReply, rejectedReply) {
+            // Normalise: ensure both sides are never empty strings
+            const chosen   = (chosenReply   || '').trim();
+            const rejected = (rejectedReply || '').trim();
+            if (!chosen) return;
+
+            // Detect domain from content
+            let domain = 'text';
+            if (/```(html|css|js|javascript|python|typescript|ts|bash|sql|cpp|rust)/i.test(chosen)) domain = 'code';
+            else if (/chord|bpm|key:|tempo|melody|music/i.test(prompt))  domain = 'music';
+            else if (/image prompt|negative prompt|cfg:|steps:/i.test(chosen)) domain = 'image_gen';
+
+            rlhfDataset.push({
+                prompt:    prompt,
+                chosen:    chosen,
+                rejected:  rejected || `A weaker alternative to: ${prompt.substring(0,80)}`,
+                score:     0.92,          // user-picked winner scores high
+                domain,
+                source:    'loma_ui_choice',
+                timestamp: Date.now()
+            });
+            localStorage.setItem('envizion_rlhf', JSON.stringify(rlhfDataset));
+            // Mirror into the Capabilities-evolved counts badge
+            updateCapabilitiesVaultUI();
+        }
+
+        // ── SINGLE STREAM HELPER — streams one response into a zone ──────────────
+        async function streamOneResponse(messages, targetZone, tempOverride) {
+            const ctrl = new AbortController();
+            let rawAccumulated = '';
+            let tokenQueue     = [];
+            let renderLoopActive = true;
+            let answerText     = '';
+
+            const res = await fetch(ENVIZION_API, {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({
+                    model:       'llama3.2:1b',
+                    messages,
+                    temperature: tempOverride !== undefined ? tempOverride : systemConfig.temperature,
+                    max_tokens:  systemConfig.maxTokens,
+                    stream:      true,
+                    user:        auth.currentUser?.email || 'unknown'
+                }),
+                signal: ctrl.signal
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+            const reader  = res.body.getReader();
+            const decoder = new TextDecoder();
+
+            const animate = () => {
+                if (!renderLoopActive && tokenQueue.length === 0) return;
+                if (tokenQueue.length > 0) {
+                    const tok = tokenQueue.shift();
+                    rawAccumulated += tok;
+                    answerText += tok;
+
+                    let processedText = answerText, thinkingText = '', showThinking = false;
+                    const ts = answerText.indexOf('<think>'), te = answerText.indexOf('</think>');
+                    if (ts !== -1) {
+                        if (te !== -1) { thinkingText = answerText.substring(ts+7, te); processedText = answerText.substring(0,ts) + answerText.substring(te+8); }
+                        else           { thinkingText = answerText.substring(ts+7);     processedText = answerText.substring(0,ts); showThinking = true; }
+                    }
+                    let html = '';
+                    if (thinkingText.trim().length > 0 || showThinking) html += renderReasoningAccordion(thinkingText, showThinking);
+                    html += parseMarkdownResponse(processedText, false);
+                    if (answerText.trim().length === 0) html += `<div class="flex gap-1 items-center h-6 my-2 px-2"><div class="gemini-loading-dot"></div><div class="gemini-loading-dot"></div><div class="gemini-loading-dot"></div></div>`;
+                    targetZone.innerHTML = html + '<span class="streaming-cursor"></span>';
+                    if (window.autoScrollChat) document.getElementById('chat-stream').scrollTop = document.getElementById('chat-stream').scrollHeight;
+                }
+                if (renderLoopActive || tokenQueue.length > 0) requestAnimationFrame(animate);
+            };
+            requestAnimationFrame(animate);
+
+            let leftover = '';
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                const chunk = leftover + decoder.decode(value, { stream: true });
+                const lines = chunk.split('\n');
+                leftover = lines.pop();
+                for (const line of lines) {
+                    if (!line.trim()) continue;
+                    const text = line.startsWith('data: ') ? line.slice(6) : line;
+                    if (text === '[DONE]') continue;
+                    try { const p = JSON.parse(text); const tok = p.choices?.[0]?.delta?.content || p.choices?.[0]?.text || p.content || p.text || ''; if (tok) tokenQueue.push(tok); }
+                    catch { if (text) tokenQueue.push(text); }
+                }
+            }
+            renderLoopActive = false;
+            await new Promise(resolve => { const chk = () => { if (tokenQueue.length === 0) return resolve(); requestAnimationFrame(chk); }; requestAnimationFrame(chk); });
+
+            // Extract clean reply + thinking
+            let cleanReply = rawAccumulated;
+            let thinkingOut = '';
+            if (rawAccumulated.includes('<think>')) {
+                const s = rawAccumulated.indexOf('<think>'), e = rawAccumulated.indexOf('</think>');
+                if (e !== -1) { thinkingOut = rawAccumulated.substring(s+7, e); cleanReply = rawAccumulated.substring(0,s) + rawAccumulated.substring(e+8); }
+                else          { thinkingOut = rawAccumulated.substring(s+7); cleanReply = rawAccumulated.substring(0,s); }
+            }
+
+            // Final render
+            let finalHTML = '';
+            if (thinkingOut.trim()) finalHTML += renderReasoningAccordion(thinkingOut, false);
+            finalHTML += cleanReply.trim().length === 0
+                ? `<span class="text-orange-400 text-xs"><i class="fa-solid fa-circle-exclamation mr-2"></i>No response — is Ollama running?</span>`
+                : parseMarkdownResponse(cleanReply.trim(), true);
+            targetZone.innerHTML = finalHTML;
+
+            return { raw: rawAccumulated, clean: cleanReply.trim() };
+        }
+
+        // ── DUAL-RESPONSE PICKER — renders side A / B, waits for choice, auto-trains ──
+        async function triggerDualInference(originalPromptText, messages) {
+            // Create a wrapper row for the two columns
+            const stream = document.getElementById('chat-stream');
+            const pickerRow = document.createElement('div');
+            pickerRow.className = 'w-full';
+            pickerRow.innerHTML = `
+                <div class="flex gap-2 items-center mb-3 mt-1 px-1">
+                    <span class="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 rounded-full text-[10px] font-bold uppercase tracking-wider select-none">
+                        <i class="fa-solid fa-code-compare animate-pulse"></i> Dual-Draft Mode — pick the better version
+                    </span>
+                </div>
+                <div id="dual-cols" class="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
+                    <div class="bg-gemini-card/20 border border-gemini-border/30 rounded-2xl overflow-hidden">
+                        <div class="px-4 py-2 bg-[#1a1b1d] border-b border-gemini-border/30 flex items-center gap-2 text-[11px] font-bold text-slate-300 select-none">
+                            <span class="w-5 h-5 rounded-full bg-blue-500/20 border border-blue-500/30 flex items-center justify-center text-blue-300 text-[10px] font-black">A</span> Version A
+                        </div>
+                        <div id="dual-zone-a" class="p-4 text-[15px] leading-relaxed min-h-[60px]">
+                            <div class="flex gap-1 items-center h-6"><div class="gemini-loading-dot"></div><div class="gemini-loading-dot"></div><div class="gemini-loading-dot"></div></div>
+                        </div>
+                    </div>
+                    <div class="bg-gemini-card/20 border border-gemini-border/30 rounded-2xl overflow-hidden">
+                        <div class="px-4 py-2 bg-[#1a1b1d] border-b border-gemini-border/30 flex items-center gap-2 text-[11px] font-bold text-slate-300 select-none">
+                            <span class="w-5 h-5 rounded-full bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-purple-300 text-[10px] font-black">B</span> Version B
+                        </div>
+                        <div id="dual-zone-b" class="p-4 text-[15px] leading-relaxed min-h-[60px]">
+                            <div class="flex gap-1 items-center h-6"><div class="gemini-loading-dot"></div><div class="gemini-loading-dot"></div><div class="gemini-loading-dot"></div></div>
+                        </div>
+                    </div>
+                </div>
+                <div id="dual-picker-bar" class="hidden mt-4 flex flex-col items-center gap-3 pb-2">
+                    <p class="text-xs text-slate-400 select-none">Which version is better? The winner is auto-saved to training data.</p>
+                    <div class="flex gap-3">
+                        <button id="pick-a-btn" class="flex items-center gap-2 px-5 py-2.5 bg-blue-500/10 hover:bg-blue-500/25 border border-blue-500/30 text-blue-300 rounded-xl text-sm font-bold smooth-transition">
+                            <span class="w-5 h-5 rounded-full bg-blue-500/30 flex items-center justify-center font-black text-[10px]">A</span> Version A is better
+                        </button>
+                        <button id="pick-b-btn" class="flex items-center gap-2 px-5 py-2.5 bg-purple-500/10 hover:bg-purple-500/25 border border-purple-500/30 text-purple-300 rounded-xl text-sm font-bold smooth-transition">
+                            <span class="w-5 h-5 rounded-full bg-purple-500/30 flex items-center justify-center font-black text-[10px]">B</span> Version B is better
+                        </button>
+                        <button id="pick-both-btn" class="flex items-center gap-2 px-5 py-2.5 bg-emerald-500/10 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 rounded-xl text-sm font-bold smooth-transition">
+                            <i class="fa-solid fa-equals text-[11px]"></i> Both are equal
+                        </button>
+                    </div>
+                </div>`;
+            stream.appendChild(pickerRow);
+            if (window.autoScrollChat) stream.scrollTop = stream.scrollHeight;
+
+            const zoneA = pickerRow.querySelector('#dual-zone-a');
+            const zoneB = pickerRow.querySelector('#dual-zone-b');
+
+            // Run both in parallel — version B uses slightly higher temp for variety
+            const [resultA, resultB] = await Promise.allSettled([
+                streamOneResponse(messages, zoneA, systemConfig.temperature),
+                streamOneResponse(messages, zoneB, Math.min(systemConfig.temperature + 0.25, 1.4))
+            ]);
+
+            const cleanA = resultA.status === 'fulfilled' ? resultA.value.clean : '';
+            const cleanB = resultB.status === 'fulfilled' ? resultB.value.clean : '';
+
+            // Show picker bar
+            const bar = pickerRow.querySelector('#dual-picker-bar');
+            bar.classList.remove('hidden');
+
+            // Return a promise that resolves when user picks
+            return new Promise(resolve => {
+                const finalize = (winner, loser, label) => {
+                    // Auto-train: winner = chosen, loser = rejected
+                    autoTrainWrite(originalPromptText, winner, loser);
+
+                    bar.innerHTML = `<div class="flex items-center gap-2 text-emerald-400 text-xs font-medium py-1">
+                        <i class="fa-solid fa-brain"></i> Version ${label} chosen — auto-saved to training data (${rlhfDataset.length} total pairs)
+                    </div>`;
+                    triggerNotificationToast("Auto-Trained", `Version ${label} saved as training example.`, "fa-brain", "bg-emerald-600");
+                    resolve(winner);
+                };
+
+                pickerRow.querySelector('#pick-a-btn').onclick = () => finalize(cleanA, cleanB, 'A');
+                pickerRow.querySelector('#pick-b-btn').onclick = () => finalize(cleanB, cleanA, 'B');
+                pickerRow.querySelector('#pick-both-btn').onclick = () => {
+                    // Save both as high-quality examples
+                    autoTrainWrite(originalPromptText, cleanA, '');
+                    autoTrainWrite(originalPromptText, cleanB, '');
+                    bar.innerHTML = `<div class="flex items-center gap-2 text-emerald-400 text-xs font-medium py-1">
+                        <i class="fa-solid fa-brain"></i> Both versions saved as training examples (${rlhfDataset.length} total pairs)
+                    </div>`;
+                    triggerNotificationToast("Auto-Trained", "Both versions saved to training data.", "fa-brain", "bg-emerald-600");
+                    resolve(cleanA);
+                };
+            });
+        }
+
         async function triggerInference(originalPromptText) {
             currentAbortController = new AbortController();
             document.getElementById('generation-controls').classList.remove('hidden');
 
-            const activeZone = appendChatBubble('assistant', null);
             const chatStream = document.getElementById('chat-stream');
             let session = chatDatabase.sessions[currentSessionId];
             
@@ -1054,15 +1260,33 @@ You must generate a short, ultra-condensed reasoning process under <think> and <
             ];
 
             try {
+                // ── Always generate TWO versions ──────────────────────────────
+                const finalReply = await triggerDualInference(originalPromptText, currentMessages);
+
+                // After the user picks, persist the winner into session history
+                session.messages.push({ role: 'assistant', content: finalReply });
+                session.updated = Date.now();
+                syncDatabaseToDrive();
+
+                document.getElementById('generation-controls').classList.add('hidden');
+                currentAbortController = null;
+                return;
+
+            } catch (err) {
+                console.error("Dual inference error:", err);
+                // Fallback to single stream on error
+            }
+
+            // ── Fallback single-stream path (if dual errors) ─────────────────
+            const activeZone = appendChatBubble('assistant', null);
+            try {
                 activeZone.innerHTML = `<span class="answer-wrapper"><div class="flex gap-1 items-center h-6 my-2 px-2"><div class="gemini-loading-dot"></div><div class="gemini-loading-dot"></div><div class="gemini-loading-dot"></div></div></span>`;
                 const answerWrapper = activeZone.querySelector('.answer-wrapper');
 
-                // --- Server streaming via fetch (SSE/chunked) ---
-               // After change:
 const response = await fetch(ENVIZION_API, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    credentials: 'include', // Enables cross-subdomain cookie/session sharing
+    credentials: 'include',
     body: JSON.stringify({
         model: 'llama3.2:1b', 
         messages: currentMessages,
