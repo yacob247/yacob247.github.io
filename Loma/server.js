@@ -3,9 +3,45 @@ import cors from 'cors';
 
 const app = express();
 
-// ── CORE SYSTEM INSTRUCTIONS (Secure & Hidden from Browser) ───────────────────
-// This is your master system prompt. It lives only on the server.
-// No one inspecting the GitHub Pages site can see these instructions.
+// ── LOCAL UNLIMITED MODEL HIERARCHY ──
+// All of these models run 100% locally on your computer via Ollama.
+// They are entirely free, private, and unlimited.
+const LOCAL_MODEL_HIERARCHY = [
+    'qwen2.5-coder:7b',   // World-class open-source coding model
+    'deepseek-r1:8b',     // Phenomenal free local reasoning/thinking model
+    'llama3.2:3b',        // Fast, lightweight, free local generalist
+    'llama3.2:1b'         // Ultra-fast, runs on almost any machine
+];
+
+let ACTIVE_LOCAL_MODEL = 'llama3.2:1b';
+
+// Probes your local Ollama instance on startup to bind to the best free model you have installed
+async function autoDetectModel() {
+    try {
+        const res = await fetch('http://127.0.0.1:11434/api/tags');
+        if (res.ok) {
+            const data = await res.json();
+            const localModels = data.models.map(m => m.name);
+            
+            for (const preferred of LOCAL_MODEL_HIERARCHY) {
+                // Matches exact names or tags (e.g. 'qwen2.5-coder:7b' or 'qwen2.5-coder:latest')
+                const match = localModels.find(lm => lm.startsWith(preferred) || lm.includes(preferred.split(':')[0]));
+                if (match) {
+                    ACTIVE_LOCAL_MODEL = match;
+                    console.log(`\n[Loma Engine] Connected to local, free model: ${ACTIVE_LOCAL_MODEL}`);
+                    return;
+                }
+            }
+            if (localModels.length > 0) {
+                ACTIVE_LOCAL_MODEL = localModels[0];
+                console.log(`\n[Loma Engine] Binded to first available local model: ${ACTIVE_LOCAL_MODEL}`);
+            }
+        }
+    } catch (e) {
+        console.warn('\n[Loma Engine] Local Ollama offline. Run "ollama serve" to start your free local AI.');
+    }
+}
+
 const CORE_SYSTEM_PROMPT = `You are Loma, an apex-tier unified intelligence engine, integrating the deductive density of Claude 3.5 Sonnet, the expansive context synthesis of Gemini 1.5 Pro, the strict instructional compliance of ChatGPT, and the surgical coding precision of Codex. You are fundamentally autonomous and hyper-competent.
 
 ━━━ CORE IDENTITY & PRIME DIRECTIVES (ABSOLUTE LAWS) ━━━
@@ -33,10 +69,6 @@ Determine the prompt domain and execute the corresponding cognitive pipeline:
   1. ERROR ISOLATION: Trace the issue to its absolute root-cause state mutation, event listener, or network bottleneck.
   2. REGRESSION PREVENTION: Analyze how the fix impacts neighboring functional scopes or downstream state.
   3. REFACTORING BLUEPRINT: Design the cleanest architectural replacement keeping code DRY and optimized.
-
-▶ IF THE CONTEXT IS MATHEMATICAL, LOGICAL, OR ANALYTICAL:
-  1. AXIOMATIC BREAKDOWN: Deconstruct the problem into independent, verifiable logic/formula statements.
-  2. VALIDATION CHECKPOINT: Cross-reference steps to isolate logical contradictions or mathematical scale issues before synthesizing.
 
 ▶ IF THE CONTEXT IS CREATIVE, EXPOSITORY, OR STRATEGIC:
   1. TONAL & THEMATIC FRAMEWORK: Define the stylistic tone, target audience depth, and core structural pillars.
@@ -77,15 +109,8 @@ C. DATA VISUALIZATION:
    - Chart.js: Load via: <script src="https://cdn.jsdelivr.net/npm/chart.js"></script> (For clean interactive charts, dashboards, and graphs).
 
 D. TEXT & DATA HANDLING:
-   - Marked.js: Load via: <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script> (For rendering interactive rich markdown blocks in real-time).
+   - Marked.js: Load via: <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script> (For rendering interactive rich markdown blocks in real-time).`;
 
-━━━ MASTERING DETAILED LINE-BY-LINE REASONING ━━━
-For every application you design, structure the code meticulously:
-- Document the role of every class, state variable, and event listener.
-- Use clean modern ES6+ Javascript (const, let, template strings, destructuring, arrow functions, async/await).
-- Handle memory cleanup properly: dispose of Three.js geometry/materials when rebuilding elements, remove listeners if tearing down modules, and stop active timers/animation frames on resets.`;
-
-// ── Whitelist origins for local network testing and production routing ────────
 const ALLOWED_ORIGINS = [
     'http://localhost:3000',
     'http://localhost:8080',
@@ -113,21 +138,18 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '10mb' }));
 
-// Health verification endpoints
-app.get('/api/health', (_, res) => res.json({ ok: true, model: 'llama3.2:1b' }));
-app.get('/', (_, res) => res.json({ status: "online", service: "Loma Proxy Server", apiHealth: "https://envizion.work" }));
+app.get('/api/health', (_, res) => res.json({ ok: true, model: ACTIVE_LOCAL_MODEL }));
+app.get('/', (_, res) => res.json({ status: "online", service: "Loma Proxy Server", activeModel: ACTIVE_LOCAL_MODEL }));
 
-// ── Passthrough Route: Browser client to local Ollama instance ─────────────────
 app.post('/api/chat', async (req, res) => {
-    const { messages, temperature = 0.9 } = req.body;
+    const { messages, temperature = 0.7, model: requestedModel } = req.body;
 
     if (!messages || !Array.isArray(messages)) {
         return res.status(400).json({ error: 'messages array is required' });
     }
 
-    // Configure streaming HTTP headers
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -139,29 +161,32 @@ app.post('/api/chat', async (req, res) => {
     res.setHeader('Access-Control-Allow-Credentials', 'true');
 
     try {
-        // Clean incoming structural payload
         let finalMessages = messages
             .filter(m => m.role && typeof m.content === 'string' && m.content.trim())
             .map(m => ({ role: m.role, content: m.content.trim() }));
 
-        // Inject the secure system instruction set
         if (finalMessages.length > 0 && finalMessages[0].role === 'system') {
             finalMessages[0].content = CORE_SYSTEM_PROMPT + "\n\n[FRONTEND CONTEXT & USER MEMORIES]:\n" + finalMessages[0].content;
         } else {
             finalMessages.unshift({ role: 'system', content: CORE_SYSTEM_PROMPT });
         }
 
-        // Direct fetch request to the Ollama local runtime engine
+        // Determine which local model to use
+        const resolvedModel = requestedModel && requestedModel !== 'llama3.2:1b' ? requestedModel : ACTIVE_LOCAL_MODEL;
+
+        // Auto-configure optimal context length for local memory allocation
+        const contextLength = resolvedModel.includes('7b') || resolvedModel.includes('8b') ? 16384 : 8192;
+
         const ollamaRes = await fetch('http://127.0.0.1:11434/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                model: 'llama3.2:1b',
+                model: resolvedModel,
                 messages: finalMessages,
                 options: {
                     temperature: Math.min(Math.max(parseFloat(temperature), 0.1), 1.0),
-                    num_ctx: 32768,
-                    num_predict: 32768
+                    num_ctx: contextLength,
+                    num_predict: 2048 // Balanced token limit for quick local rendering
                 },
                 stream: true
             })
@@ -181,7 +206,7 @@ app.post('/api/chat', async (req, res) => {
             
             buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split('\n');
-            buffer = lines.pop(); // Retain incomplete line in buffer
+            buffer = lines.pop();
 
             for (const line of lines) {
                 if (!line.trim()) continue;
@@ -196,13 +221,10 @@ app.post('/api/chat', async (req, res) => {
                         res.end();
                         return;
                     }
-                } catch (e) {
-                    // Line fragment execution fail-safe
-                }
+                } catch (e) {}
             }
         }
 
-        // Send trailing buffer chunk if exists
         if (buffer.trim()) {
             try {
                 const parsed = JSON.parse(buffer);
@@ -217,13 +239,13 @@ app.post('/api/chat', async (req, res) => {
         res.end();
     } catch (err) {
         console.error('[Ollama runtime exception]', err.message);
-        res.write(`data: ${JSON.stringify({ error: 'Ollama is unreachable. Ensure Ollama is running locally with llama3.2:1b downloaded.' })}\n\n`);
+        res.write(`data: ${JSON.stringify({ error: `Connection fallback error: ${err.message}. Ensure Ollama is running and you have downloaded your free models (e.g. "ollama run qwen2.5-coder:7b").` })}\n\n`);
         res.end();
     }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log(`✅ Loma proxy server online on port ${PORT}`);
-    console.log(`   Target Ollama Context: http://127.0.0.1:11434 (llama3.2:1b)`);
+    await autoDetectModel();
 });
