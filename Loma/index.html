@@ -581,9 +581,12 @@
             currentSessionId = lomaMatch[1];
         }
         
+        // Active model — upgrades to loma-lora after real LoRA training completes
+        window._lomaActiveModel = localStorage.getItem('loma_active_model') || 'llama3.2:1b';
+
         let systemConfig = {
-            // Strictly target 'llama3.2:1b' and ignore legacy MLC properties
-            model: 'llama3.2:1b',
+            // Uses loma-lora after real LoRA training, falls back to llama3.2:1b
+            model: window._lomaActiveModel,
             temperature: parseFloat(localStorage.getItem('envizion_temp')) || 0.9,
             maxTokens: parseInt(localStorage.getItem('envizion_tokens')) || 16384,
             reasoningDepth: parseInt(localStorage.getItem('envizion_reasoning_depth')) || 1024,
@@ -1050,17 +1053,85 @@
             }
         }
 
-        // ── BACKGROUND SYNC TO HF SPACE ──────────────────────────────────────────
+        // ── BACKGROUND SYNC TO HF SPACE — real LoRA training ────────────────────
+        const HF_SPACE = 'https://yacob-okour14342-llama-engine.hf.space';
+
         async function _autoSyncToHFSpace() {
+            // Don't stack — check if already training
             try {
-                const HF_SPACE = 'https://yacob-okour14342-llama-engine.hf.space';
-                await fetch(`${HF_SPACE}/train`, {
+                const statusRes = await fetch(`${HF_SPACE}/status`, { signal: AbortSignal.timeout(5000) });
+                if (statusRes.ok) {
+                    const s = await statusRes.json();
+                    if (s.status === 'training') {
+                        console.log('[Loma] Training already running on HF Space — skipping push.');
+                        return;
+                    }
+                }
+            } catch(e) { /* space may be sleeping — continue anyway */ }
+
+            try {
+                const payload = rlhfDataset.slice(-50);
+                const res = await fetch(`${HF_SPACE}/train`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ training_data: rlhfDataset.slice(-50) })
+                    body: JSON.stringify({ training_data: payload }),
+                    signal: AbortSignal.timeout(10000)
                 });
-                console.log('[Loma] Auto-synced training data to HF Space.');
-            } catch(e) { /* silent — offline or space asleep */ }
+
+                if (res.status === 202) {
+                    console.log(`[Loma] Training started on HF Space (${payload.length} examples).`);
+                    triggerNotificationToast('Training Started', `Pushing ${payload.length} examples to Loma brain…`, 'fa-brain', 'bg-violet-600');
+                    _pollTrainingStatus();
+                } else if (res.status === 409) {
+                    console.log('[Loma] HF Space: training already in progress.');
+                } else {
+                    console.warn('[Loma] HF Space /train returned:', res.status);
+                }
+            } catch(e) {
+                console.log('[Loma] HF Space offline or sleeping — will retry next sync.');
+            }
+        }
+
+        // ── Poll /status until training finishes ─────────────────────────────────
+        async function _pollTrainingStatus() {
+            let attempts = 0;
+            const maxAttempts = 120; // 120 × 30s = 60 min max
+            const interval = setInterval(async () => {
+                attempts++;
+                if (attempts > maxAttempts) {
+                    clearInterval(interval);
+                    return;
+                }
+                try {
+                    const res = await fetch(`${HF_SPACE}/status`, { signal: AbortSignal.timeout(8000) });
+                    if (!res.ok) return;
+                    const s = await res.json();
+
+                    if (s.status === 'done') {
+                        clearInterval(interval);
+                        const method = s.method === 'lora_gguf' ? 'Real LoRA' : 'Modelfile';
+                        const model  = s.model || 'loma-trained';
+                        triggerNotificationToast(
+                            '✅ Training Complete',
+                            `${method} — model: ${model} (${s.examples || '?'} examples)`,
+                            'fa-bolt',
+                            s.method === 'lora_gguf' ? 'bg-emerald-600' : 'bg-blue-600'
+                        );
+                        console.log(`[Loma] Training done. Method: ${method}, model: ${model}`);
+                        // Upgrade model reference for future chats if real LoRA succeeded
+                        if (s.method === 'lora_gguf' && window.ENVIZION_API) {
+                            window._lomaActiveModel = model;
+                            systemConfig.model = model;
+                            localStorage.setItem('loma_active_model', model);
+                        }
+                    } else if (s.status === 'error') {
+                        clearInterval(interval);
+                        triggerNotificationToast('Training Error', s.error || 'Unknown error', 'fa-xmark', 'bg-red-600');
+                        console.error('[Loma] Training error:', s.error);
+                    }
+                    // status === 'training' → keep polling
+                } catch(e) { /* ignore poll errors */ }
+            }, 30000); // poll every 30 seconds
         }
 
         // ── SINGLE STREAM HELPER — streams one response into a zone ──────────────
@@ -1076,7 +1147,7 @@
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
                 body: JSON.stringify({
-                    model:       'llama3.2:1b',
+                    model:       window._lomaActiveModel || systemConfig.model || 'llama3.2:1b',
                     messages,
                     temperature: tempOverride !== undefined ? tempOverride : systemConfig.temperature,
                     max_tokens:  systemConfig.maxTokens,
@@ -1284,7 +1355,7 @@ const response = await fetch(ENVIZION_API, {
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
     body: JSON.stringify({
-        model: 'llama3.2:1b', 
+        model: window._lomaActiveModel || systemConfig.model || 'llama3.2:1b', 
         messages: currentMessages,
         temperature: systemConfig.temperature,
         max_tokens: systemConfig.maxTokens,
