@@ -444,7 +444,7 @@
                                 <span class="text-xs font-medium text-slate-300 select-none flex items-center gap-1.5"><i class="fa-solid fa-globe text-gemini-accent text-[10px]"></i> Web</span>
                             </div>
                             
-                            <input type="file" id="file-upload-input" accept=".txt,.md,.csv,.json,.js,.py,.html,.css,.ts" class="hidden" onchange="window.handleFileAttachment(this)">
+                            <input type="file" id="file-upload-input" accept="*" class="hidden" onchange="window.handleFileAttachment(this)">
                             <div id="attached-file-pill" class="hidden items-center gap-1.5 px-3 py-1.5 bg-gemini-card border border-gemini-border rounded-full text-[11px] text-slate-200 ml-2">
                                 <i class="fa-solid fa-file-lines text-gemini-textMuted"></i>
                                 <span id="attached-file-name" class="truncate max-w-[120px]"></span>
@@ -2535,9 +2535,21 @@ const response = await fetch(ENVIZION_API, {
         };
         window.handleFileAttachment = async (input) => {
             const file = input.files[0]; if (!file) return; input.value = '';
-            if (file.size > 500 * 1024) return triggerNotificationToast("File too large", "Max 500KB. Try a smaller file.", "fa-triangle-exclamation", "bg-red-600");
+            if (file.size > 10 * 1024 * 1024) return triggerNotificationToast("File too large", "Max 10MB.", "fa-triangle-exclamation", "bg-red-600");
+            const textTypes = /\.(txt|md|csv|json|js|ts|jsx|tsx|py|html|css|xml|yaml|yml|toml|sh|bash|c|cpp|h|java|go|rs|rb|php|sql|log|env|ini|cfg|conf|svg|vue|svelte|r|m|ipynb)$/i;
+            const imageTypes = /\.(png|jpg|jpeg|gif|webp|bmp|ico|tiff)$/i;
             try {
-                attachedFileContent = await file.text(); attachedFileName = file.name;
+                attachedFileName = file.name;
+                if (textTypes.test(file.name) || file.type.startsWith('text/')) {
+                    attachedFileContent = await file.text();
+                } else if (imageTypes.test(file.name) || file.type.startsWith('image/')) {
+                    const b64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
+                    attachedFileContent = `[IMAGE: ${file.name}]\nData URL: ${b64}`;
+                } else {
+                    // Binary/unknown: base64 encode and describe
+                    const b64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result.split(',')[1]); r.onerror = rej; r.readAsDataURL(file); });
+                    attachedFileContent = `[BINARY FILE: ${file.name} (${file.type || 'unknown type'}, ${(file.size/1024).toFixed(1)}KB)]\nBase64: ${b64.substring(0, 2000)}${b64.length > 2000 ? '...(truncated)' : ''}`;
+                }
                 document.getElementById('attached-file-pill').classList.replace('hidden', 'flex');
                 document.getElementById('attached-file-name').innerText = file.name;
                 triggerNotificationToast("File attached", `${file.name} ready.`, "fa-file-lines", "bg-emerald-600");
