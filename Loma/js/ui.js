@@ -1,35 +1,26 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+//  ui.js — Pure rendering, canvas management, markdown, bubble output.
+//  Fixed: canvas sandbox includes allow-same-origin so fetch/localStorage work,
+//         processContent handles vision image blocks,
+//         no event binding (app.js owns that).
+// ═══════════════════════════════════════════════════════════════════════════════
+
 export const UI = {
     canvasCode: '',
 
     init() {
-        const btnSidebar  = document.getElementById('sidebar-toggle');
-        const btnCanvas   = document.getElementById('btn-toggle-canvas');
-        const btnClose    = document.getElementById('btn-close-canvas');
-        const btnDownload = document.getElementById('btn-download-canvas');
-        const btnTabPreview = document.getElementById('tab-preview');
-        const btnTabCode  = document.getElementById('tab-code');
-
-        if (btnSidebar)  btnSidebar.onclick  = () => this.toggleSidebar();
-        if (btnCanvas)   btnCanvas.onclick   = () => this.toggleCanvas();
-        if (btnClose)    btnClose.onclick    = () => this.toggleCanvas(false);
-        if (btnDownload) btnDownload.onclick = () => this.downloadCanvas();
-        if (btnTabPreview) btnTabPreview.onclick = () => this.switchCanvasTab('preview');
-        if (btnTabCode)    btnTabCode.onclick    = () => this.switchCanvasTab('code');
-
         this._setupMarkdown();
         this._setupConsoleListener();
-        
-        // Reset manual canvas close tracking state
         window._userForceClosedCanvas = false;
     },
 
-    // ── Sidebar Toggling ──────────────────────────────────────────────────
+    // ── Sidebar ───────────────────────────────────────────────────────────
     toggleSidebar() {
         const sidebar = document.getElementById('gemini-sidebar');
         if (sidebar) sidebar.classList.toggle('-translate-x-full');
     },
 
-    // ── Premium Smooth Canvas Toggling ────────────────────────────────────
+    // ── Canvas toggling ───────────────────────────────────────────────────
     toggleCanvas(force) {
         const cv = document.getElementById('canvas-column');
         if (!cv) return;
@@ -37,12 +28,8 @@ export const UI = {
         const isCurrentlyOpen = cv.style.width && cv.style.width !== '0px';
         const shouldOpen = force !== undefined ? force : !isCurrentlyOpen;
 
-        // Remember user's preference to prevent automatic popping while stream is active
-        if (force === false) {
-            window._userForceClosedCanvas = true;
-        } else if (force === true) {
-            window._userForceClosedCanvas = false;
-        }
+        if (force === false) window._userForceClosedCanvas = true;
+        else if (force === true) window._userForceClosedCanvas = false;
 
         if (shouldOpen) {
             cv.style.width = window.innerWidth < 768 ? '100%' : '50%';
@@ -55,7 +42,7 @@ export const UI = {
         }
     },
 
-    // ── Modern Tab Switching (Preview vs Raw Code view) ───────────────────
+    // ── Canvas tab switching ──────────────────────────────────────────────
     switchCanvasTab(tab) {
         const frame = document.getElementById('live-canvas-frame');
         const code  = document.getElementById('live-canvas-code');
@@ -74,43 +61,43 @@ export const UI = {
             if (tabC) tabC.className = inactiveClass;
         } else {
             frame.classList.add('hidden');
-            if (code) { 
-                code.classList.remove('hidden'); 
-                code.innerText = this.canvasCode; 
-            }
+            if (code) { code.classList.remove('hidden'); code.innerText = this.canvasCode; }
             if (tabC) tabC.className = activeClass;
             if (tabP) tabP.className = inactiveClass;
         }
     },
 
-    // ── Safe Local Sandbox Code Downloader ────────────────────────────────
     downloadCanvas() {
         if (!this.canvasCode) return;
         const a   = document.createElement('a');
         a.href    = URL.createObjectURL(new Blob([this.canvasCode], { type: 'text/html' }));
-        a.download = `envizion_app_${Date.now()}.html`;
+        a.download = `loma_app_${Date.now()}.html`;
         a.click();
         URL.revokeObjectURL(a.href);
     },
 
-    // ── Update Canvas & Inject Debug Console Gateway ──────────────────────
+    // ── Update canvas — fixed sandbox ─────────────────────────────────────
+    // allow-same-origin is required so fetch(), localStorage, and most APIs
+    // work inside the canvas. The frame still can't access parent DOM.
     updateCanvas(htmlCode) {
         this.canvasCode = htmlCode;
         const frame = document.getElementById('live-canvas-frame');
         if (frame) {
+            // Inject console hijack then set srcdoc
             frame.srcdoc = this._injectConsoleHijack(htmlCode);
+
+            // Ensure correct sandbox: scripts + forms + same-origin + modals
+            frame.sandbox = 'allow-scripts allow-forms allow-same-origin allow-modals';
         }
         const codeView = document.getElementById('live-canvas-code');
         if (codeView) codeView.innerText = htmlCode;
 
-        // Auto-open on fresh deployment ONLY if user has not explicitly minimized it
         if (!window._userForceClosedCanvas) {
             this.toggleCanvas(true);
             this.switchCanvasTab('preview');
         }
     },
 
-    // ── Resizer ───────────────────────────────────────────────────────────
     resizeCanvasFrame(mode) {
         const frame = document.getElementById('live-canvas-frame');
         if (!frame) return;
@@ -119,7 +106,7 @@ export const UI = {
         frame.style.margin = mode === 'desktop' ? '0' : '0 auto';
     },
 
-    // ── Iframe Code Execution Interception (Console Capture) ──────────────
+    // ── Console hijack injection ──────────────────────────────────────────
     _injectConsoleHijack(html) {
         const hijack = `
         <script>
@@ -129,67 +116,71 @@ export const UI = {
                     window.parent.postMessage({
                         type: 'LOMA_CONSOLE_OUT',
                         level: level,
-                        msg: Array.from(args).map(x => typeof x === 'object' ? JSON.stringify(x) : String(x)).join(' ')
+                        msg: Array.from(args).map(x => typeof x === 'object' ? JSON.stringify(x, null, 2) : String(x)).join(' ')
                     }, '*');
                 }
-                console.log = function(...args) { emit('log', args); ol.apply(console, args); };
-                console.error = function(...args) { emit('error', args); oe.apply(console, args); };
-                console.warn = function(...args) { emit('warn', args); ow.apply(console, args); };
-                window.onerror = function(message, source, lineno) {
-                    emit('error', [message + " (line " + lineno + ")"]);
+                console.log   = function(...a) { emit('log',   a); ol.apply(console, a); };
+                console.error = function(...a) { emit('error', a); oe.apply(console, a); };
+                console.warn  = function(...a) { emit('warn',  a); ow.apply(console, a); };
+                window.onerror = function(msg, src, line) {
+                    emit('error', [msg + ' (line ' + line + ')']);
                     return false;
                 };
+                window.addEventListener('unhandledrejection', e => {
+                    emit('error', ['Unhandled promise rejection: ' + (e.reason?.message || e.reason)]);
+                });
             })();
         <\/script>`;
-        if (html.includes('<head>')) {
-            return html.replace('<head>', '<head>' + hijack);
-        }
+        if (html.includes('<head>')) return html.replace('<head>', '<head>' + hijack);
         return hijack + html;
     },
 
-    // ── Setup Parent Window Console Communication ─────────────────────────
+    // ── Console listener ──────────────────────────────────────────────────
     _setupConsoleListener() {
         window.addEventListener('message', (e) => {
-            if (e.data && e.data.type === 'LOMA_CONSOLE_OUT') {
-                const out = document.getElementById('canvas-console-output');
-                if (!out) return;
+            if (!e.data || e.data.type !== 'LOMA_CONSOLE_OUT') return;
+            const out = document.getElementById('canvas-console-output');
+            if (!out) return;
 
-                let colorClass = 'text-slate-300';
-                let icon = 'fa-chevron-right text-slate-500';
-                
-                if (e.data.level === 'error') {
-                    colorClass = 'text-red-400 bg-red-950/20 px-2 py-0.5 rounded';
-                    icon = 'fa-triangle-exclamation text-red-500';
-                } else if (e.data.level === 'warn') {
-                    colorClass = 'text-yellow-400 bg-yellow-950/20 px-2 py-0.5 rounded';
-                    icon = 'fa-circle-exclamation text-yellow-500';
+            let colorClass = 'text-slate-300';
+            let icon = 'fa-chevron-right text-slate-500';
+
+            if (e.data.level === 'error') {
+                colorClass = 'text-red-400 bg-red-950/20 px-2 py-0.5 rounded';
+                icon = 'fa-triangle-exclamation text-red-500';
+                // Auto-open console on errors
+                const panel = document.getElementById('canvas-console-panel');
+                if (panel?.classList.contains('hidden')) {
+                    panel.classList.remove('hidden');
+                    panel.classList.add('flex');
                 }
-
-                out.insertAdjacentHTML('beforeend', `
-                    <div class="flex items-start gap-2 py-1.5 border-b border-[#1f212d]/40 ${colorClass}">
-                        <i class="fa-solid ${icon} mt-0.5 text-[10px] shrink-0"></i>
-                        <span class="font-mono leading-relaxed break-all">${this.escapeHtml(e.data.msg)}</span>
-                    </div>
-                `);
-                out.scrollTop = out.scrollHeight;
+            } else if (e.data.level === 'warn') {
+                colorClass = 'text-yellow-400 bg-yellow-950/20 px-2 py-0.5 rounded';
+                icon = 'fa-circle-exclamation text-yellow-500';
             }
+
+            const line = document.createElement('div');
+            line.className = `flex gap-2 items-start font-mono text-[11px] ${colorClass}`;
+            line.innerHTML = `<i class="fa-solid ${icon} mt-0.5 shrink-0 text-[10px]"></i><span class="whitespace-pre-wrap break-all">${this.escapeHtml(e.data.msg)}</span>`;
+            out.appendChild(line);
+            out.scrollTop = out.scrollHeight;
         });
     },
 
-    // ── High-Fidelity Custom Markdown Renderer ────────────────────────────
+    // ── Markdown setup ────────────────────────────────────────────────────
     _setupMarkdown() {
         if (typeof marked === 'undefined') return;
 
         const renderer = new marked.Renderer();
 
         renderer.code = (code, lang) => {
-            const isHtml = (lang === 'html' || lang === 'html5' || !lang);
-            const looksLikeApp = code.trim().toLowerCase().startsWith('<!doctype')
+            const isHtml = lang === 'html' || lang === 'html5';
+            const looksLikeApp = code.includes('<!DOCTYPE') || code.includes('<html')
+                              || (code.includes('<script') && code.includes('<style') && isHtml)
                               || (code.trim().startsWith('<html') && isHtml);
 
             if (looksLikeApp && isHtml) {
                 this.updateCanvas(code);
-
                 return `
                 <div class="my-4 p-4 bg-[#0a1215] rounded-xl border border-emerald-500/20 flex justify-between items-center shadow-lg">
                     <div class="flex items-center gap-3">
@@ -197,8 +188,8 @@ export const UI = {
                             <i class="fa-solid fa-cloud-arrow-up text-sm"></i>
                         </div>
                         <div>
-                            <span class="text-emerald-400 text-xs font-bold block">Engine Canvas Sync</span>
-                            <span class="text-[10px] text-slate-400 block mt-0.5">Application successfully deployed to sandbox workspace.</span>
+                            <span class="text-emerald-400 text-xs font-bold block">Canvas Deployed</span>
+                            <span class="text-[10px] text-slate-400 block mt-0.5">App running in sandbox workspace.</span>
                         </div>
                     </div>
                     <div class="flex gap-2">
@@ -206,36 +197,41 @@ export const UI = {
                             class="bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500 hover:text-[#070709] px-4 py-2 rounded-lg text-xs font-semibold smooth-transition">
                             View Live
                         </button>
+                        <button onclick="window.lomaOpenCodeInCanvas && window.lomaOpenCodeInCanvas(decodeURIComponent('${encodeURIComponent(code)}'), '${lang || 'html'}')"
+                            class="bg-gemini-card text-slate-400 hover:text-white px-3 py-2 rounded-lg text-xs smooth-transition border border-gemini-border/30">
+                            Edit
+                        </button>
                     </div>
                 </div>`;
             }
 
-            const escaped = code.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            const encoded = encodeURIComponent(code);
+            const escaped     = code.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            const encoded     = encodeURIComponent(code);
             const displayLang = lang || 'code';
 
-            // Distinctive colors matching brand parameters
             const langColors = {
                 javascript: '#f7df1e', typescript: '#3178c6', python: '#3572a5',
-                html: '#ff5a36', css: '#7a82ff', default: '#8a99ff'
+                html: '#ff5a36', css: '#7a82ff', rust: '#ce412b', go: '#00acd7',
+                default: '#8a99ff'
             };
-            const currentAccent = langColors[displayLang.toLowerCase()] || langColors.default;
+            const accent = langColors[displayLang.toLowerCase()] || langColors.default;
+            const canOpen = ['html','html5','javascript','js','css'].includes(displayLang.toLowerCase());
 
             return `
             <div class="my-4 rounded-xl border border-[#1f212d] overflow-hidden text-xs shadow-xl">
                 <div class="bg-[#0c0d12] px-4 py-2 flex justify-between items-center border-b border-[#1f212d]/80">
                     <div class="flex items-center gap-2">
-                        <span class="w-1.5 h-1.5 rounded-full" style="background-color: ${currentAccent}"></span>
+                        <span class="w-1.5 h-1.5 rounded-full" style="background-color:${accent}"></span>
                         <span class="font-bold tracking-wider text-[10px] uppercase text-slate-300">${displayLang}</span>
                     </div>
-                    <div class="flex gap-3">
+                    <div class="flex gap-3 items-center">
+                        ${canOpen ? `<button onclick="window.lomaOpenCodeInCanvas(decodeURIComponent('${encoded}'),'${displayLang}')"
+                            class="text-slate-500 hover:text-blue-400 transition text-[10px] font-semibold">Open in Canvas</button>` : ''}
                         <button onclick="navigator.clipboard.writeText(decodeURIComponent('${encoded}')); this.textContent='Copied!'; setTimeout(()=>this.textContent='Copy',2000)"
-                            class="text-slate-500 hover:text-white transition text-[10px] font-semibold">
-                            Copy
-                        </button>
+                            class="text-slate-500 hover:text-white transition text-[10px] font-semibold">Copy</button>
                     </div>
                 </div>
-                <pre class="p-4 bg-[#070709] overflow-x-auto leading-relaxed"><code class="text-slate-200" style="font-family: 'JetBrains Mono', monospace;">${escaped}</code></pre>
+                <pre class="p-4 bg-[#070709] overflow-x-auto leading-relaxed"><code class="text-slate-200" style="font-family:'JetBrains Mono',monospace;">${escaped}</code></pre>
             </div>`;
         };
 
@@ -261,32 +257,47 @@ export const UI = {
 
         renderer.link = (href, title, text) =>
             `<a href="${href}" title="${title || ''}" target="_blank" rel="noopener noreferrer"
-               class="text-[#8a99ff] hover:text-[#a4b3ff] hover:underline underline-offset-4 font-medium smooth-transition">
-               ${text}</a>`;
+               class="text-[#8a99ff] hover:text-[#a4b3ff] hover:underline underline-offset-4 font-medium smooth-transition">${text}</a>`;
 
         renderer.blockquote = quote =>
-            `<blockquote class="border-l-2 border-[#d09cff] pl-4 my-4 text-slate-400 italic bg-[#0f111a]/40 py-1 pr-2 rounded-r-lg">
-               ${quote}</blockquote>`;
+            `<blockquote class="border-l-2 border-[#d09cff] pl-4 my-4 text-slate-400 italic bg-[#0f111a]/40 py-1 pr-2 rounded-r-lg">${quote}</blockquote>`;
+
+        renderer.heading = (text, level) => {
+            const sizes = ['text-xl font-bold', 'text-lg font-bold', 'text-base font-semibold', 'text-sm font-semibold'];
+            const cls = sizes[level - 1] || 'text-sm font-semibold';
+            return `<h${level} class="${cls} text-white mt-4 mb-2">${text}</h${level}>`;
+        };
+
+        renderer.list = (body, ordered) => {
+            const tag = ordered ? 'ol' : 'ul';
+            const cls = ordered ? 'list-decimal' : 'list-disc';
+            return `<${tag} class="${cls} pl-5 my-2 space-y-1 text-slate-300">${body}</${tag}>`;
+        };
+
+        renderer.listitem = text =>
+            `<li class="text-sm leading-relaxed">${text}</li>`;
 
         marked.setOptions({ renderer, breaks: true, gfm: true });
     },
 
-    // ── Process AI stream replies ───────────────────────────────────────────
+    // ── Process AI stream replies ─────────────────────────────────────────
     processContent(text) {
         let clean = text
             .replace(/<think:[a-z_]+>[\s\S]*?<\/think:[a-z_]+>/gi, '')
             .replace(/<think>[\s\S]*?<\/think>/gi, '')
             .replace(/<think:[a-z_]+>[\s\S]*/gi, '')
             .replace(/<think>[\s\S]*/gi, '')
+            // Strip [REMEMBER: ...] tags from visible output
+            .replace(/\[REMEMBER:[^\]]+\]/gi, '')
             .trim();
 
         if (typeof marked === 'undefined') {
-            return `<div class="prose">${clean}</div>`;
+            return `<div class="prose text-slate-200 text-sm leading-relaxed">${clean}</div>`;
         }
         return `<div class="prose prose-invert prose-sm max-w-none">${marked.parse(clean)}</div>`;
     },
 
-    // ── Post dialogue bubbles ─────────────────────────────────────────────
+    // ── Append chat bubble ────────────────────────────────────────────────
     appendBubble(role, html) {
         const stream = document.getElementById('chat-stream');
         if (!stream) return document.createElement('div');
@@ -321,28 +332,28 @@ export const UI = {
         return bubble;
     },
 
-    // ── Glowing visual indicator ──────────────────────────────────────────
+    // ── Loading dots ──────────────────────────────────────────────────────
     loading() {
-        return `
-        <div class="flex gap-1.5 items-center h-6 my-2 px-2">
+        return `<div class="flex gap-1.5 items-center h-6 my-2 px-2">
             <div class="gemini-loading-dot"></div>
             <div class="gemini-loading-dot"></div>
             <div class="gemini-loading-dot"></div>
         </div>`;
     },
 
-    // ── Helper safely converts entities ───────────────────────────────────
+    // ── Safe HTML escape ──────────────────────────────────────────────────
     escapeHtml(text) {
         return (text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 };
 
-// ── Expose Global Hooks ───────────────────────────────────────────────────
-window.updateCanvasLive      = (html, force) => UI.updateCanvas(html);
-window.toggleCanvasVisibility = (open)       => UI.toggleCanvas(open);
-window.switchCanvasTab        = (tab)        => UI.switchCanvasTab(tab);
-window.downloadCanvasCode     = ()           => UI.downloadCanvas();
-window.resizeCanvasFrame      = (mode)       => UI.resizeCanvasFrame(mode);
+// ── Expose global hooks ───────────────────────────────────────────────────────
+window.UI                     = UI;
+window.updateCanvasLive       = (html) => UI.updateCanvas(html);
+window.toggleCanvasVisibility = (open) => UI.toggleCanvas(open);
+window.switchCanvasTab        = (tab)  => UI.switchCanvasTab(tab);
+window.downloadCanvasCode     = ()     => UI.downloadCanvas();
+window.resizeCanvasFrame      = (mode) => UI.resizeCanvasFrame(mode);
 
 window.toggleCanvasConsole = () => {
     const panel = document.getElementById('canvas-console-panel');
