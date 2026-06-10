@@ -3561,14 +3561,16 @@ async function triggerInference() {
     
   // Send the full system prompt only on the FIRST message of each session.
 // After that Ollama has it in its KV cache — never resend it.
-if (!session._systemPromptSent) {
-    // First message — inject system prompt and mark it as sent
-    if (!session.messages.find(m => m.role === 'system')) {
-        session.messages.unshift({ role: 'system', content: getDynamicSystemPrompt() });
-    }
-    session._systemPromptSent = true;
-    syncDatabaseToDrive();
-}
+// Inject system prompt once per session — persist the flag in localStorage
+  // so a page reload doesn't re-send the huge prompt to Ollama.
+  const _spKey = 'loma_sp_sent_' + currentSessionId;
+  if (!localStorage.getItem(_spKey)) {
+      if (!session.messages.find(m => m.role === 'system')) {
+          session.messages.unshift({ role: 'system', content: getDynamicSystemPrompt() });
+      }
+      localStorage.setItem(_spKey, '1');
+      syncDatabaseToDrive();
+  }
 
 const currentMessages = session.messages; // system is already in there from now on
 
@@ -4674,17 +4676,22 @@ If there were errors, diagnose them and explain what they mean.`;
 
 
 window.toggleSidebarCollapse = () => {
-    const sidebar = document.getElementById('gemini-sidebar') || document.querySelector('[id*="sidebar"]');
-    const overlay = document.getElementById('mobile-overlay') || document.querySelector('[id*="overlay"]');
-    
-    if (!sidebar) return console.error("Sidebar element not found. Check your HTML ID.");
+    const sidebar = document.getElementById('gemini-sidebar');
+    const overlay = document.getElementById('mobile-overlay');
+    if (!sidebar) return;
 
-    if (sidebar.classList.contains('-translate-x-full')) {
-        sidebar.classList.remove('-translate-x-full');
-        if (overlay) overlay.classList.remove('hidden', 'opacity-0');
-    } else {
+    const isHidden = sidebar.classList.contains('-translate-x-full') ||
+                     sidebar.classList.contains('md:-translate-x-full') ||
+                     getComputedStyle(sidebar).transform === 'matrix(1, 0, 0, 1, 0, 0)' && sidebar.style.display === 'none';
+
+    const hiding = !sidebar.classList.contains('-translate-x-full');
+
+    if (hiding) {
         sidebar.classList.add('-translate-x-full');
-        if (overlay) overlay.classList.add('hidden');
+        if (overlay) { overlay.classList.add('hidden'); overlay.classList.remove('opacity-100'); }
+    } else {
+        sidebar.classList.remove('-translate-x-full');
+        if (overlay) { overlay.classList.remove('hidden', 'opacity-0'); }
     }
 };
     </script>
