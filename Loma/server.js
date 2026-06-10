@@ -103,7 +103,7 @@ app.post('/api/chat', async (req, res) => {
 
                     // Forward only the token — client does all rendering
                     if (parsed.message?.content) {
-                        res.write(`data: ${JSON.stringify({ t: parsed.message.content })}\n\n`);
+                        res.write(`data: ${JSON.stringify({ t: parsed.message.content })}\n\n`); if (typeof res.flush === "function") res.flush();
                     }
 
                     // Forward Ollama errors to client
