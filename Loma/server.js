@@ -30,87 +30,59 @@ app.post('/api/chat', async (req, res) => {
     if (!messages || !Array.isArray(messages)) {
         return res.status(400).json({ error: 'messages array required' });
     }
-res.writeHead(200, {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache, no-transform', // no-transform stops cloudflare from compressing/buffering chunks
-        'Connection': 'keep-alive',
-        'X-Accel-Buffering': 'no'                    // Disables buffering on proxy servers like Nginx/Cloudflare
-    });
-    
-    try {
-    // SSE headers
-    res.setHeader('Content-Type',      'text/event-stream');
-    res.setHeader('Cache-Control',     'no-cache, no-transform');
-    res.setHeader('Connection',        'keep-alive');
-    res.setHeader('X-Accel-Buffering', 'no');         // nginx / Cloudflare tunnel
-    res.setHeader('Content-Encoding',  'identity');   // prevent Cloudflare gzip buffering
-    res.setHeader('Transfer-Encoding', 'chunked');    // force chunked stream through CF
-    res.flushHeaders();
 
-    let ollamaRes;
+    // Write SSE Headers with explicit flags preventing Cloudflare/Proxy buffering
+    res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache, no-transform', // "no-transform" prevents Cloudflare from compression/gzipping streaming frames
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no'                    // Disables buffering in reverse proxies (like Cloudflare & Nginx)
+    });
+
+    let onClientClose = () => {};
+
     try {
-        ollamaRes = await fetch('http://127.0.0.1:11434/api/chat', {
-            method:  'POST',
+        const ollamaRes = await fetch('http://127.0.0.1:11434/api/chat', {
+            method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({
-                model:      model || 'qwen2.5-coder:7b',
+            body: JSON.stringify({
+                model,
                 messages,
-                keep_alive: '2h',
-                stream:     true,
-                options: {
-                    temperature:  parseFloat(temperature),
-                    num_ctx:      options.num_ctx || 8192,
-                    num_predict:  options.num_predict || -1,
-                    top_p:        options.top_p    || 0.9,
-                    repeat_penalty: options.repeat_penalty || 1.1,
-                    ...options
-                }
+                options: { temperature, ...options },
+                stream: true
             })
         });
-    } catch (connErr) {
-        res.write(`data: ${JSON.stringify({ error: 'Cannot connect to Ollama. Start it with: ollama serve' })}\n\n`);
-        res.end();
-        return;
-    }
 
-    if (!ollamaRes.ok) {
-        res.write(`data: ${JSON.stringify({
-            error: `Ollama returned HTTP ${ollamaRes.status}. Is the model loaded? Run: ollama run ${model || 'qwen2.5-coder:7b'}`
-        })}\n\n`);
-        res.end();
-        return;
-    }
+        if (!ollamaRes.ok) {
+            const errText = await ollamaRes.text();
+            throw new Error(`Ollama responded with ${ollamaRes.status}: ${errText}`);
+        }
 
-    // ── RAW PIPE — no JSON content parsing, no string ops ────────────────────
-    // We only extract the token field (parsed.message.content) and forward it.
-    // Everything else is left to the client.
-    const reader  = ollamaRes.body.getReader();
-    const decoder = new TextDecoder();
-    let   buf     = '';
+        const reader = ollamaRes.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
 
-    const onClientClose = () => {
-        reader.cancel().catch(() => {});
-    };
-    req.on('close', onClientClose);
+        onClientClose = () => {
+            try { reader.cancel(); } catch {}
+        };
+        req.on('close', onClientClose);
 
-    try {
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
-            if (res.destroyed) break;
 
-            buf += decoder.decode(value, { stream: true });
-            const lines = buf.split('\n');
-            buf = lines.pop(); // keep incomplete line in buffer
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
 
             for (const line of lines) {
                 if (!line.trim()) continue;
                 try {
                     const parsed = JSON.parse(line);
-
-                    // Forward only the token — client does all rendering
-                    if (parsed.message?.content) {
-                        res.write(`data: ${JSON.stringify({ t: parsed.message.content })}\n\n`); if (typeof res.flush === "function") res.flush();
+                    
+                    if (parsed.message && parsed.message.content) {
+                        res.write(`data: ${JSON.stringify({ t: parsed.message.content })}\n\n`); 
+                        if (typeof res.flush === "function") res.flush();
                     }
 
                     // Forward Ollama errors to client
@@ -148,6 +120,5 @@ app.get('*', (req, res) => {
 
 app.listen(PORT, () => {
     console.log(`\n🚀 Loma → http://localhost:${PORT}\n`);
-    console.log('   Models available: qwen2.5-coder:7b (code), llava (vision)');
-    console.log('   Start Ollama:     ollama serve\n');
+    console.log('   Models available: qwen2.5-coder, llama3, etc.');
 });
