@@ -1,82 +1,144 @@
 import express from 'express';
-import cors from 'cors';
-import path from 'path';
+import cors    from 'cors';
+import path    from 'path';
 import { fileURLToPath } from 'url';
 
-const app = express();
-const PORT = 8081;
+const app      = express();
+const PORT     = 8081;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const TEXT_MODEL = 'qwen2.5-coder:7b';
-const VISION_MODEL = 'llava';
+// ── Model routing ─────────────────────────────────────────────────────────────
+// All model selection happens on the CLIENT.
+// Server reads the model field from the request body and forwards it verbatim.
+// Server never selects or overrides the model.
 
-app.use(cors());
+app.use(cors({ origin: '*', credentials: true }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static(__dirname));
 
-// Pure streaming proxy — zero CPU processing on server side.
-// Image extraction, batching, and rendering happen entirely on the client.
+// ─── PURE STREAMING PROXY ─────────────────────────────────────────────────────
+// The server does EXACTLY one thing: receive a request and forward the raw
+// Ollama stream back to the client as SSE.
+// Zero CPU processing on the server.
+// Zero JSON parsing of content on the server.
+// All token rendering, markdown parsing, image tag handling, think-block
+// stripping, and training data writing happen entirely on the CLIENT's CPU.
+// ─────────────────────────────────────────────────────────────────────────────
 app.post('/api/chat', async (req, res) => {
-    const { messages, temperature = 0.5 } = req.body;
+    const { messages, model, temperature = 0.5, stream = true, options = {} } = req.body;
 
-    // Determine if any message contains an image (client already strips base64 to tokens)
-    const hasImage = messages.some(m => m.images && m.images.length > 0);
-    const model = hasImage ? VISION_MODEL : TEXT_MODEL;
+    if (!messages || !Array.isArray(messages)) {
+        return res.status(400).json({ error: 'messages array required' });
+    }
 
-    res.setHeader('Content-Type', 'text/event-stream');
+    // SSE headers
+    res.setHeader('Content-Type',  'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('Connection',    'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering if present
     res.flushHeaders();
 
+    let ollamaRes;
     try {
-        const ollamaRes = await fetch('http://127.0.0.1:11434/api/chat', {
-            method: 'POST',
+        ollamaRes = await fetch('http://127.0.0.1:11434/api/chat', {
+            method:  'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                model,
+            body:    JSON.stringify({
+                model:      model || 'qwen2.5-coder:7b',
                 messages,
-                keep_alive: '1h',
-                options: { temperature: parseFloat(temperature), num_ctx: 8192 },
-                stream: true
+                keep_alive: '2h',
+                stream:     true,
+                options: {
+                    temperature:  parseFloat(temperature),
+                    num_ctx:      options.num_ctx || 8192,
+                    num_predict:  options.num_predict || -1,
+                    top_p:        options.top_p    || 0.9,
+                    repeat_penalty: options.repeat_penalty || 1.1,
+                    ...options
+                }
             })
         });
+    } catch (connErr) {
+        res.write(`data: ${JSON.stringify({ error: 'Cannot connect to Ollama. Start it with: ollama serve' })}\n\n`);
+        res.end();
+        return;
+    }
 
-        if (!ollamaRes.ok) {
-            res.write(`data: ${JSON.stringify({ error: `Model "${model}" not running. Start it with: ollama run ${model}` })}\n\n`);
-            res.end();
-            return;
-        }
+    if (!ollamaRes.ok) {
+        res.write(`data: ${JSON.stringify({
+            error: `Ollama returned HTTP ${ollamaRes.status}. Is the model loaded? Run: ollama run ${model || 'qwen2.5-coder:7b'}`
+        })}\n\n`);
+        res.end();
+        return;
+    }
 
-        // Raw pipe — no JSON parsing, no string ops on the server
-        // Forward each line straight through with zero processing
-        const reader = ollamaRes.body.getReader();
-        const decoder = new TextDecoder();
-        let buf = '';
+    // ── RAW PIPE — no JSON content parsing, no string ops ────────────────────
+    // We only extract the token field (parsed.message.content) and forward it.
+    // Everything else is left to the client.
+    const reader  = ollamaRes.body.getReader();
+    const decoder = new TextDecoder();
+    let   buf     = '';
 
+    const onClientClose = () => {
+        reader.cancel().catch(() => {});
+    };
+    req.on('close', onClientClose);
+
+    try {
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
+            if (res.destroyed) break;
+
             buf += decoder.decode(value, { stream: true });
             const lines = buf.split('\n');
             buf = lines.pop(); // keep incomplete line in buffer
+
             for (const line of lines) {
                 if (!line.trim()) continue;
                 try {
                     const parsed = JSON.parse(line);
+
+                    // Forward only the token — client does all rendering
                     if (parsed.message?.content) {
-                        // Forward token directly — client does all rendering
                         res.write(`data: ${JSON.stringify({ t: parsed.message.content })}\n\n`);
                     }
-                } catch (_) {}
+
+                    // Forward Ollama errors to client
+                    if (parsed.error) {
+                        res.write(`data: ${JSON.stringify({ error: parsed.error })}\n\n`);
+                        res.end();
+                        return;
+                    }
+
+                    // Stream done
+                    if (parsed.done === true) {
+                        res.write('data: [DONE]\n\n');
+                        res.end();
+                        return;
+                    }
+                } catch {
+                    // Malformed line — skip silently
+                }
             }
         }
-
-        res.write('data: [DONE]\n\n');
-        res.end();
-    } catch (err) {
-        res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
-        res.end();
+    } catch (streamErr) {
+        if (!res.destroyed) {
+            res.write(`data: ${JSON.stringify({ error: streamErr.message })}\n\n`);
+        }
+    } finally {
+        req.off('close', onClientClose);
+        if (!res.destroyed) res.end();
     }
 });
 
-app.listen(PORT, () => console.log(`\n🚀 Loma → http://localhost:${PORT}\n`));
+// ── Static fallback ───────────────────────────────────────────────────────────
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+app.listen(PORT, () => {
+    console.log(`\n🚀 Loma → http://localhost:${PORT}\n`);
+    console.log('   Models available: qwen2.5-coder:7b (code), llava (vision)');
+    console.log('   Start Ollama:     ollama serve\n');
+});
