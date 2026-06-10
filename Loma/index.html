@@ -1115,11 +1115,24 @@ window.onResponseComplete = (responseText) => {
 
 
 // ─── 12. SIDEBAR / DRIVE STUBS — prevent errors from missing Firebase ─────────
-window.signInAndConnectDrive = () => {
-    triggerNotificationToast("Local Mode", "Google Drive sync disabled in local mode.", "fa-cloud-slash", "bg-slate-600");
-};
-window.signInWithGoogle = () => {
-    triggerNotificationToast("Local Mode", "Auth not needed for local Ollama.", "fa-circle-info", "bg-slate-600");
+window.signInAndConnectDrive = async () => {
+    const btn = document.getElementById('google-login-btn');
+    if (btn) { btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-1"></i> Connecting...`; btn.disabled = true; }
+    try {
+        const result = await signInWithPopup(auth, provider);
+        const credential = GoogleAuthProvider.credentialFromResult(result);
+        if (credential?.accessToken) {
+            gDriveAccessToken = credential.accessToken;
+            localStorage.setItem('loma_drive_token', gDriveAccessToken);
+        }
+        triggerNotificationToast("Drive Connected", "All chats will auto-save to your Drive.", "fa-google-drive", "bg-emerald-600");
+        _updateDriveStatusUI(true);
+        await syncDatabaseToDrive();
+    } catch (err) {
+        triggerNotificationToast("Sign-in Failed", err.message || "Could not connect Drive.", "fa-triangle-exclamation", "bg-red-600");
+    } finally {
+        if (btn) { btn.innerHTML = `<img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" class="w-3 h-3"> Sync to Drive`; btn.disabled = false; }
+    }
 };
 
 
@@ -3848,15 +3861,36 @@ onAuthStateChanged(auth, async (user) => {
     if (!user) {
         isEngineReady = false;
         document.getElementById('auth-gate')?.classList.remove('hidden');
+        gDriveAccessToken = null;
+        _updateDriveStatusUI(false);
         return;
     }
     document.getElementById('auth-gate')?.classList.add('hidden');
     isEngineReady = true;
 
-    if(document.getElementById('connection-dot')) document.getElementById('connection-dot').className = "h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]";
-    if(document.getElementById('user-display-name')) document.getElementById('user-display-name').innerText = user.displayName || user.email;
+    if (document.getElementById('connection-dot'))
+        document.getElementById('connection-dot').className = "h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]";
+    if (document.getElementById('user-display-name'))
+        document.getElementById('user-display-name').innerText = user.displayName || user.email;
 
-    triggerNotificationToast("Connected", `Signed in as ${user.email}`, "fa-circle-check", "bg-emerald-600");
+    // Silently get a fresh Drive token without showing a popup
+    try {
+        const result = await signInWithPopup(auth, provider);
+        const cred = GoogleAuthProvider.credentialFromResult(result);
+        if (cred?.accessToken) {
+            gDriveAccessToken = cred.accessToken;
+            localStorage.setItem('loma_drive_token', gDriveAccessToken);
+        }
+    } catch {}
+
+    if (gDriveAccessToken) {
+        _updateDriveStatusUI(true);
+        // Pull latest database from Drive on load so all devices are in sync
+        await _loadDatabaseFromDrive();
+        triggerNotificationToast("Drive Synced", `Signed in as ${user.email}`, "fa-circle-check", "bg-emerald-600");
+    } else {
+        triggerNotificationToast("Connected", `Signed in as ${user.email} (no Drive token yet)`, "fa-circle-check", "bg-slate-600");
+    }
 });
 
 function initNewSessionInDB() {
@@ -3919,8 +3953,160 @@ window.loadHistoricalSession = (sessionId) => {
     session.messages.forEach(msg => { if (msg.role !== 'system') appendChatBubble(msg.role, msg.content); });
 };
 
+// ── Drive file IDs stored in localStorage so we always update the same file ──
+const DRIVE_DB_FILENAME      = 'loma_chatdb.json';
+const DRIVE_CANVAS_PREFIX    = 'loma_canvas_';   // one .html file per session
+
+function _updateDriveStatusUI(connected) {
+    const icon  = document.getElementById('drive-status-icon');
+    const label = document.getElementById('drive-status-label');
+    const btn   = document.getElementById('google-login-btn');
+    if (connected) {
+        if (icon)  icon.className  = 'fa-brands fa-google-drive text-emerald-400 text-sm';
+        if (label) label.textContent = 'Drive connected';
+        if (btn)   btn.innerHTML   = `<i class="fa-solid fa-check mr-1 text-emerald-400"></i> Connected`;
+    } else {
+        if (icon)  icon.className  = 'fa-brands fa-google-drive text-slate-500 text-sm';
+        if (label) label.textContent = 'Not synced';
+        if (btn)   btn.innerHTML   = `<img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" class="w-3 h-3"> Sync to Drive`;
+    }
+}
+
+// Core Drive multipart upload — creates or updates a file
+async function _driveUpload(filename, content, mimeType, existingFileId = null) {
+    if (!gDriveAccessToken) return null;
+    const meta     = { name: filename, mimeType };
+    const boundary = 'loma_boundary_' + Date.now();
+    const body     = [
+        `--${boundary}`,
+        'Content-Type: application/json; charset=UTF-8',
+        '',
+        JSON.stringify(meta),
+        `--${boundary}`,
+        `Content-Type: ${mimeType}`,
+        '',
+        content,
+        `--${boundary}--`
+    ].join('\r\n');
+
+    const method = existingFileId ? 'PATCH' : 'POST';
+    const url    = existingFileId
+        ? `https://www.googleapis.com/upload/drive/v3/files/${existingFileId}?uploadType=multipart`
+        : `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart`;
+
+    const res = await fetch(url, {
+        method,
+        headers: {
+            Authorization: `Bearer ${gDriveAccessToken}`,
+            'Content-Type': `multipart/related; boundary="${boundary}"`,
+        },
+        body
+    });
+
+    if (!res.ok) {
+        // Token may have expired — clear it so next save retries after re-auth
+        if (res.status === 401) {
+            gDriveAccessToken = null;
+            localStorage.removeItem('loma_drive_token');
+            _updateDriveStatusUI(false);
+        }
+        return null;
+    }
+    const data = await res.json();
+    return data.id;
+}
+
+// Find an existing Drive file by name and return its ID
+async function _driveFindFile(filename) {
+    if (!gDriveAccessToken) return null;
+    const q   = encodeURIComponent(`name='${filename}' and trashed=false`);
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)`, {
+        headers: { Authorization: `Bearer ${gDriveAccessToken}` }
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.files?.[0]?.id || null;
+}
+
+// Read a file's text content from Drive
+async function _driveReadFile(fileId) {
+    if (!gDriveAccessToken || !fileId) return null;
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+        headers: { Authorization: `Bearer ${gDriveAccessToken}` }
+    });
+    if (!res.ok) return null;
+    return await res.text();
+}
+
+// Debounce handle — prevents spamming Drive on every token
+let _driveSyncTimer = null;
+
 async function syncDatabaseToDrive() {
+    // Always save to localStorage immediately (instant, no lag)
     localStorage.setItem('envizion_local_db', JSON.stringify(chatDatabase));
+
+    // Drive sync is debounced — waits 4s after last change to batch writes
+    if (!gDriveAccessToken) return;
+    clearTimeout(_driveSyncTimer);
+    _driveSyncTimer = setTimeout(async () => {
+        try {
+            const json      = JSON.stringify(chatDatabase, null, 2);
+            const cacheKey  = 'loma_drive_db_id';
+            let   fileId    = localStorage.getItem(cacheKey);
+
+            // First time — search Drive for an existing file before creating
+            if (!fileId) fileId = await _driveFindFile(DRIVE_DB_FILENAME);
+
+            const newId = await _driveUpload(DRIVE_DB_FILENAME, json, 'application/json', fileId);
+            if (newId) {
+                localStorage.setItem(cacheKey, newId);
+                driveFileId = newId;
+                const label = document.getElementById('drive-status-label');
+                if (label) label.textContent = 'Saved ' + new Date().toLocaleTimeString();
+            }
+        } catch {}
+    }, 4000);
+}
+
+// Save a generated canvas HTML file to Drive as its own file
+async function syncCanvasToDrive(sessionId, htmlCode) {
+    if (!gDriveAccessToken || !htmlCode?.trim()) return;
+    const filename = `${DRIVE_CANVAS_PREFIX}${sessionId}.html`;
+    const cacheKey = `loma_drive_canvas_${sessionId}`;
+    let   fileId   = localStorage.getItem(cacheKey);
+    if (!fileId)   fileId = await _driveFindFile(filename);
+    const newId = await _driveUpload(filename, htmlCode, 'text/html', fileId);
+    if (newId) {
+        localStorage.setItem(cacheKey, newId);
+        triggerNotificationToast('Canvas saved', 'App saved to your Drive.', 'fa-google-drive', 'bg-emerald-600');
+    }
+}
+
+// On sign-in: pull the chat database back from Drive so all devices sync
+async function _loadDatabaseFromDrive() {
+    try {
+        const cacheKey = 'loma_drive_db_id';
+        let   fileId   = localStorage.getItem(cacheKey);
+        if (!fileId)   fileId = await _driveFindFile(DRIVE_DB_FILENAME);
+        if (!fileId) return;   // no file yet — first time user
+
+        localStorage.setItem(cacheKey, fileId);
+        const text = await _driveReadFile(fileId);
+        if (!text) return;
+
+        const remote = JSON.parse(text);
+        if (!remote?.sessions) return;
+
+        // Merge: keep whichever version of each session is newer
+        Object.entries(remote.sessions).forEach(([id, data]) => {
+            const local = chatDatabase.sessions[id];
+            if (!local || data.updated > local.updated) {
+                chatDatabase.sessions[id] = data;
+            }
+        });
+        localStorage.setItem('envizion_local_db', JSON.stringify(chatDatabase));
+        renderSidebarChats();
+    } catch {}
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -4019,11 +4205,14 @@ function _loadCodeIntoCanvas(html) {
     const frame = document.getElementById('live-canvas-frame');
     if (frame) frame.srcdoc = html;
 
-    // Make canvas openable via URL hash so it survives refresh/share
+    // Save to localStorage for instant URL restore
     const encoded = btoa(encodeURIComponent(html));
     const shortKey = 'canvas_' + currentSessionId;
     try { localStorage.setItem(shortKey, encoded); } catch {}
     window.history.replaceState({}, '', `/Loma/${currentSessionId}?canvas=1`);
+
+    // Save final HTML to Google Drive (debounced inside syncCanvasToDrive)
+    if (gDriveAccessToken) syncCanvasToDrive(currentSessionId, html);
 }
 
 // ── 6. DOWNLOAD canvas as .html file ─────────────────────────
