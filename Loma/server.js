@@ -32,10 +32,12 @@ app.post('/api/chat', async (req, res) => {
     }
 
     // SSE headers
-    res.setHeader('Content-Type',  'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection',    'keep-alive');
-    res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering if present
+    res.setHeader('Content-Type',      'text/event-stream');
+    res.setHeader('Cache-Control',     'no-cache, no-transform');
+    res.setHeader('Connection',        'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');         // nginx / Cloudflare tunnel
+    res.setHeader('Content-Encoding',  'identity');   // prevent Cloudflare gzip buffering
+    res.setHeader('Transfer-Encoding', 'chunked');    // force chunked stream through CF
     res.flushHeaders();
 
     let ollamaRes;

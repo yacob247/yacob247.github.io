@@ -111,10 +111,14 @@ export const Engine = {
 
             const res = await fetch(this.API_URL, {
                 method:  'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type':      'application/json',
+                    'Cache-Control':     'no-cache',
+                    'X-Accel-Buffering': 'no',
+                },
                 body:    JSON.stringify(payload),
                 signal:  this.abortCtrl.signal,
-                credentials: 'include'
+                credentials: 'omit'
             });
 
             if (!res.ok) throw new Error(`HTTP ${res.status}`);

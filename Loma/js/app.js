@@ -82,9 +82,7 @@ window.processInputMessage = async () => {
     }
 
     // Hand off to Engine — passes final (possibly grounded) message as forcedPrompt
-    if (window.Engine) {
-        window.Engine.submitPrompt(finalMsg);
-    }
+    Engine.submitPrompt(finalMsg);
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
