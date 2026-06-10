@@ -540,6 +540,497 @@ import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged } from
 // --- API ROUTING ---
 // Point directly to your local Node.js server.js endpoint
 const ENVIZION_API = 'https://api.envizion.work/api/chat';
+
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  LOMA — MISSING CAPABILITY FUNCTIONS
+//  Paste this block into index.html right after the ENVIZION_API declaration
+//  (around line 542, after: const ENVIZION_API = '...')
+// ═══════════════════════════════════════════════════════════════════════════════
+
+
+// ─── 1. AUTH BYPASS (removes the Google sign-in gate for local use) ───────────
+// isEngineReady is false by default, blocking all sends. Override it immediately.
+window.addEventListener('DOMContentLoaded', () => {
+    isEngineReady = true;
+    document.getElementById('auth-gate')?.classList.add('hidden');
+    if (document.getElementById('connection-dot')) {
+        document.getElementById('connection-dot').className =
+            "h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]";
+    }
+    if (document.getElementById('user-display-name')) {
+        document.getElementById('user-display-name').innerText = 'Local User';
+    }
+    if (document.getElementById('user-display-status')) {
+        document.getElementById('user-display-status').innerText = 'Ollama Connected';
+    }
+});
+
+
+// ─── 2. VISION / LLaVA — attach image and auto-switch model ──────────────────
+// Already partially exists but missing the actual Ollama images[] injection.
+// This version correctly builds the message object for Ollama's vision API.
+window.buildVisionMessage = (userText, base64ImageData) => {
+    // Ollama vision format: { role, content, images: [base64string] }
+    return {
+        role: 'user',
+        content: userText || 'Describe this image in full detail.',
+        images: [base64ImageData]   // raw base64, no data: prefix
+    };
+};
+
+// Patch handleFileAttachment to use buildVisionMessage correctly
+window.handleFileAttachment = async (input) => {
+    const file = input.files[0];
+    if (!file) return;
+    input.value = '';
+
+    if (file.size > 10 * 1024 * 1024) {
+        return triggerNotificationToast("File too large", "Max 10MB.", "fa-triangle-exclamation", "bg-red-600");
+    }
+
+    const imageTypes = /\.(png|jpg|jpeg|webp|gif)$/i;
+    try {
+        attachedFileName = file.name;
+        if (imageTypes.test(file.name) || file.type.startsWith('image/')) {
+            const b64DataUrl = await new Promise((res, rej) => {
+                const r = new FileReader();
+                r.onload = () => res(r.result);
+                r.onerror = rej;
+                r.readAsDataURL(file);
+            });
+            attachedImageBase64 = b64DataUrl.split(',')[1]; // strip data:image/png;base64,
+            attachedFileContent = `[Image attached: ${file.name}]`;
+            window.selectModel('llava', 'LLaVA Vision');
+            triggerNotificationToast("Vision Active", `${file.name} loaded. Using LLaVA.`, "fa-eye", "bg-indigo-600");
+        } else {
+            // Text/code file — read as text and inject into prompt
+            attachedFileContent = `[File: ${file.name}]\n\`\`\`\n${await file.text()}\n\`\`\``;
+            attachedImageBase64 = null;
+            triggerNotificationToast("File attached", `${file.name} ready.`, "fa-file-lines", "bg-emerald-600");
+        }
+        document.getElementById('attached-file-pill')?.classList.replace('hidden', 'flex');
+        if (document.getElementById('attached-file-name')) {
+            document.getElementById('attached-file-name').innerText = file.name;
+        }
+    } catch (err) {
+        triggerNotificationToast("Read error", "Could not read file.", "fa-triangle-exclamation", "bg-red-600");
+    }
+};
+
+
+// ─── 3. PYTHON EXECUTION (via Pyodide WASM — runs in-browser, no server) ──────
+let pyodideInstance = null;
+let pyodideLoading = false;
+
+window.loadPyodide = async () => {
+    if (pyodideInstance) return pyodideInstance;
+    if (pyodideLoading) {
+        // Wait for existing load
+        while (pyodideLoading) await new Promise(r => setTimeout(r, 100));
+        return pyodideInstance;
+    }
+    pyodideLoading = true;
+    try {
+        if (!window.loadPyodide_lib) {
+            // Dynamically inject Pyodide script
+            await new Promise((resolve, reject) => {
+                const s = document.createElement('script');
+                s.src = 'https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js';
+                s.onload = resolve;
+                s.onerror = reject;
+                document.head.appendChild(s);
+            });
+        }
+        triggerNotificationToast("Python", "Loading Pyodide runtime...", "fa-spinner", "bg-indigo-600");
+        pyodideInstance = await window.loadPyodide({ indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.25.0/full/' });
+        // Redirect Python stdout/stderr to captured output
+        pyodideInstance.runPython(`
+import sys, io
+class CaptureIO(io.StringIO):
+    pass
+sys.stdout = CaptureIO()
+sys.stderr = CaptureIO()
+        `);
+        triggerNotificationToast("Python Ready", "Pyodide loaded.", "fa-check", "bg-emerald-600");
+    } catch (e) {
+        triggerNotificationToast("Python Error", "Failed to load Pyodide.", "fa-triangle-exclamation", "bg-red-600");
+    } finally {
+        pyodideLoading = false;
+    }
+    return pyodideInstance;
+};
+
+window.executePythonCode = async (code) => {
+    const py = await window.loadPyodide();
+    if (!py) return { output: '', error: 'Pyodide failed to load.' };
+    try {
+        // Reset stdout/stderr
+        py.runPython(`sys.stdout = CaptureIO()\nsys.stderr = CaptureIO()`);
+        await py.runPythonAsync(code);
+        const stdout = py.runPython(`sys.stdout.getvalue()`);
+        const stderr = py.runPython(`sys.stderr.getvalue()`);
+        return { output: stdout || '', error: stderr || '' };
+    } catch (e) {
+        return { output: '', error: e.message };
+    }
+};
+
+// Auto-detect and run Python code blocks from AI responses
+window.runPythonFromResponse = async (code, outputEl) => {
+    if (outputEl) {
+        outputEl.innerHTML = `<span class="text-yellow-400 text-xs"><i class="fa-solid fa-spinner fa-spin mr-1"></i>Running Python...</span>`;
+    }
+    const { output, error } = await window.executePythonCode(code);
+    if (outputEl) {
+        const hasError = error && error.trim().length > 0;
+        const text = (output + (hasError ? '\n⚠ ' + error : '')).trim();
+        outputEl.innerHTML = text
+            ? `<pre class="text-xs font-mono text-emerald-300 whitespace-pre-wrap mt-2 bg-black/30 rounded p-2">${escapeHtmlString(text)}</pre>`
+            : `<span class="text-xs text-slate-400 italic">No output.</span>`;
+    }
+    return { output, error };
+};
+
+
+// ─── 4. CONSOLE CAPTURE — intercept browser console, show in UI ───────────────
+const _consoleHistory = [];
+const _origConsole = {
+    log:   console.log.bind(console),
+    warn:  console.warn.bind(console),
+    error: console.error.bind(console),
+    info:  console.info.bind(console),
+};
+
+function _lomaConsoleHook(level, args) {
+    const text = args.map(a => {
+        try { return typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a); }
+        catch { return String(a); }
+    }).join(' ');
+    _consoleHistory.push({ level, text, ts: Date.now() });
+    if (_consoleHistory.length > 200) _consoleHistory.shift();
+    // Update console panel if open
+    window.refreshConsolePanel?.();
+}
+
+console.log   = (...a) => { _origConsole.log(...a);   _lomaConsoleHook('log',   a); };
+console.warn  = (...a) => { _origConsole.warn(...a);  _lomaConsoleHook('warn',  a); };
+console.error = (...a) => { _origConsole.error(...a); _lomaConsoleHook('error', a); };
+console.info  = (...a) => { _origConsole.info(...a);  _lomaConsoleHook('info',  a); };
+
+// Catch unhandled errors too
+window.addEventListener('error', (e) => {
+    _lomaConsoleHook('error', [`Unhandled: ${e.message} (${e.filename}:${e.lineno})`]);
+});
+window.addEventListener('unhandledrejection', (e) => {
+    _lomaConsoleHook('error', [`Unhandled Promise: ${e.reason}`]);
+});
+
+// Render console history into a DOM element
+window.refreshConsolePanel = () => {
+    const panel = document.getElementById('loma-console-panel');
+    if (!panel || panel.classList.contains('hidden')) return;
+    const colorMap = { log: 'text-slate-300', warn: 'text-yellow-400', error: 'text-red-400', info: 'text-blue-300' };
+    panel.innerHTML = _consoleHistory.slice(-50).reverse().map(({ level, text, ts }) => {
+        const t = new Date(ts).toLocaleTimeString();
+        return `<div class="text-[10px] font-mono leading-relaxed border-b border-white/5 py-0.5 ${colorMap[level] || 'text-slate-300'}">
+            <span class="text-slate-500 mr-2">${t}</span>${escapeHtmlString(text)}
+        </div>`;
+    }).join('');
+};
+
+window.toggleConsolePanel = () => {
+    let panel = document.getElementById('loma-console-panel');
+    if (!panel) {
+        // Create it if it doesn't exist in the DOM
+        panel = document.createElement('div');
+        panel.id = 'loma-console-panel';
+        panel.className = 'fixed bottom-16 right-4 w-[420px] max-h-64 overflow-y-auto bg-[#0d0d0f] border border-gemini-border rounded-2xl shadow-2xl z-[100] p-3';
+        const header = document.createElement('div');
+        header.className = 'flex items-center justify-between mb-2';
+        header.innerHTML = `
+            <span class="text-xs font-bold text-slate-300 flex items-center gap-2">
+                <i class="fa-solid fa-terminal text-emerald-400"></i> Console
+            </span>
+            <div class="flex gap-2">
+                <button onclick="window.clearConsolePanel()" class="text-[10px] text-slate-500 hover:text-white">Clear</button>
+                <button onclick="window.toggleConsolePanel()" class="text-[10px] text-slate-500 hover:text-white">✕</button>
+            </div>`;
+        panel.appendChild(header);
+        const content = document.createElement('div');
+        content.id = 'loma-console-panel';  // reuse id for content
+        panel.id = 'loma-console-wrapper';
+        content.className = 'space-y-0.5';
+        panel.appendChild(content);
+        document.body.appendChild(panel);
+        panel = content; // point to content div
+        panel.id = 'loma-console-panel';
+    }
+    const wrapper = document.getElementById('loma-console-wrapper') || panel.parentElement;
+    if (wrapper) {
+        wrapper.classList.toggle('hidden');
+        window.refreshConsolePanel();
+    }
+};
+
+window.clearConsolePanel = () => {
+    _consoleHistory.length = 0;
+    window.refreshConsolePanel();
+};
+
+// Send console errors to AI for diagnosis
+window.diagnoseConsoleErrors = () => {
+    const errors = _consoleHistory.filter(e => e.level === 'error').slice(-10);
+    if (errors.length === 0) {
+        triggerNotificationToast("No errors", "Console is clean.", "fa-check", "bg-emerald-600");
+        return;
+    }
+    const errorText = errors.map(e => e.text).join('\n');
+    const input = document.getElementById('user-prompt');
+    if (input) {
+        input.value = `Fix these console errors:\n\`\`\`\n${errorText}\n\`\`\``;
+        input.dispatchEvent(new Event('input'));
+        window.processInputMessage();
+    }
+};
+
+
+// ─── 5. THINKING / REASONING DISPLAY ─────────────────────────────────────────
+// Renders <think>...</think> blocks as collapsible reasoning panels
+// instead of stripping them entirely.
+window.renderThinkBlock = (thinkContent, targetEl) => {
+    const id = 'think-' + Math.random().toString(36).substring(2, 7);
+    const html = `
+    <div class="gemini-thought-container my-3 cursor-pointer select-none" onclick="
+        const b = document.getElementById('${id}');
+        const i = document.getElementById('${id}-icon');
+        b.classList.toggle('hidden');
+        i.classList.toggle('fa-chevron-down');
+        i.classList.toggle('fa-chevron-right');
+    ">
+        <div class="flex items-center gap-2 text-[10px] font-bold text-gemini-accent uppercase tracking-wider mb-1">
+            <i id="${id}-icon" class="fa-solid fa-chevron-down text-[8px]"></i>
+            <i class="fa-solid fa-brain-circuit"></i> Loma Thinking
+        </div>
+        <div id="${id}" class="text-[11px] text-slate-400 leading-relaxed whitespace-pre-wrap font-mono">
+            ${escapeHtmlString(thinkContent.trim())}
+        </div>
+    </div>`;
+    if (targetEl) targetEl.insertAdjacentHTML('beforebegin', html);
+    return html;
+};
+
+// Patch the token renderer to show think blocks instead of hiding them
+window._patchedParseMarkdown = (text, isFinal) => {
+    let thinkHtml = '';
+    let processedText = text;
+
+    // Extract <think> block
+    const ts = text.indexOf('<think>');
+    const te = text.indexOf('</think>');
+    if (ts !== -1 && te !== -1) {
+        const thinkContent = text.substring(ts + 7, te);
+        thinkHtml = window.renderThinkBlock(thinkContent, null);
+        processedText = text.substring(0, ts) + text.substring(te + 8);
+    } else if (ts !== -1) {
+        // Still streaming — hide partial think block
+        processedText = text.substring(0, ts);
+    }
+
+    return thinkHtml + parseMarkdownResponse(processedText, isFinal);
+};
+
+
+// ─── 6. RLHF / TRAINING DATA — thumbs up/down reaction capture ───────────────
+window.recordFeedback = (role, content, rating, correctionText = '') => {
+    const entry = {
+        id:         generateStringCode(),
+        ts:         Date.now(),
+        role,
+        content:    content.substring(0, 4000),
+        rating,     // 'up' | 'down'
+        correction: correctionText,
+        model:      window._lomaActiveModel,
+        domain:     window._lastDetectedDomain || 'general'
+    };
+    rlhfDataset.push(entry);
+    localStorage.setItem('envizion_rlhf', JSON.stringify(rlhfDataset.slice(-500)));
+
+    if (rating === 'down' && correctionText) {
+        // Inject correction into next message as context
+        const correctionPrompt = `[CORRECTION]: The previous response was rejected. User feedback: "${correctionText}". Apply the CORRECTION THINKING PIPELINE and regenerate.`;
+        const input = document.getElementById('user-prompt');
+        if (input) {
+            input.value = correctionPrompt;
+            input.dispatchEvent(new Event('input'));
+        }
+    }
+    triggerNotificationToast(
+        rating === 'up' ? 'Feedback saved' : 'Correction noted',
+        rating === 'up' ? 'Training data recorded.' : 'Regenerating with correction...',
+        rating === 'up' ? 'fa-thumbs-up' : 'fa-thumbs-down',
+        rating === 'up' ? 'bg-emerald-600' : 'bg-orange-600'
+    );
+};
+
+window.exportRLHFDataset = () => {
+    if (rlhfDataset.length === 0) {
+        triggerNotificationToast("Empty", "No training data yet.", "fa-database", "bg-slate-600");
+        return;
+    }
+    const blob = new Blob([JSON.stringify(rlhfDataset, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    Object.assign(document.createElement('a'), {
+        href: url,
+        download: `loma_rlhf_${Date.now()}.json`
+    }).click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    triggerNotificationToast("Exported", `${rlhfDataset.length} pairs saved.`, "fa-download", "bg-emerald-600");
+};
+
+
+// ─── 7. MEMORY / CAPABILITIES — remember facts about user and project ─────────
+window.saveMemory = (fact) => {
+    if (!fact || fact.trim().length < 3) return;
+    personalMemories.push({ fact: fact.trim(), ts: Date.now() });
+    localStorage.setItem('envizion_memories', JSON.stringify(personalMemories.slice(-100)));
+    triggerNotificationToast("Remembered", fact.substring(0, 60), "fa-brain", "bg-purple-600");
+};
+
+window.getMemoryContext = () => {
+    if (personalMemories.length === 0) return '';
+    return `\n\n━━━ USER MEMORY ━━━\n` + personalMemories.slice(-20).map(m => `• ${m.fact}`).join('\n');
+};
+
+// Auto-extract [REMEMBER: ...] tags from AI responses
+window.extractMemoryTags = (responseText) => {
+    const matches = responseText.matchAll(/\[REMEMBER:\s*([^\]]+)\]/gi);
+    for (const m of matches) {
+        window.saveMemory(m[1]);
+    }
+};
+
+window.addCapability = (title, rule) => {
+    evolvedCapabilities.push({ title, rule, ts: Date.now() });
+    localStorage.setItem('envizion_capabilities', JSON.stringify(evolvedCapabilities.slice(-50)));
+    window.updateCapabilitiesVaultUI?.();
+    triggerNotificationToast("Capability Added", title, "fa-dna", "bg-indigo-600");
+};
+
+window.clearMemories = () => {
+    personalMemories = [];
+    localStorage.removeItem('envizion_memories');
+    triggerNotificationToast("Cleared", "All memories wiped.", "fa-trash", "bg-red-600");
+};
+
+
+// ─── 8. DOMAIN DETECTOR — sets window._lastDetectedDomain for training data ───
+window.detectDomain = (text) => {
+    const m = text.toLowerCase();
+    if (/(<!doctype|<html|<div|tailwind|css|styled)/i.test(m))    return 'html';
+    if (/(def |import |pandas|numpy|plt\.|sklearn)/i.test(m))     return 'python';
+    if (/(function |const |let |var |\.js|react|vue)/i.test(m))  return 'javascript';
+    if (/(select |from |where |join |insert |create table)/i.test(m)) return 'sql';
+    if (/(class |public static|void main|@Override)/i.test(m))   return 'java';
+    if (/(fn |let mut|impl |use std|cargo)/i.test(m))            return 'rust';
+    if (/(#include|std::|cout|cin|vector<)/i.test(m))            return 'cpp';
+    if (/(using System|namespace |\.cs|async Task)/i.test(m))    return 'csharp';
+    if (/(go func|package main|fmt\.Print|goroutine)/i.test(m))  return 'go';
+    if (/(interface |type |:string|:number|tsx?)/i.test(m))      return 'typescript';
+    return 'text';
+};
+
+
+// ─── 9. CANVAS LIVE PREVIEW — render HTML responses into the iframe ───────────
+window.updateCanvasLive = (htmlCode, isFinal) => {
+    const frame = document.getElementById('live-canvas-frame');
+    if (!frame) return;
+    if (!isFinal) {
+        // Streaming — debounce preview updates every 800ms
+        clearTimeout(liveCanvasTimeout);
+        liveCanvasTimeout = setTimeout(() => {
+            frame.srcdoc = htmlCode;
+        }, 800);
+    } else {
+        clearTimeout(liveCanvasTimeout);
+        frame.srcdoc = htmlCode;
+    }
+};
+
+window.renderToCanvas = (base64Content) => {
+    try {
+        const html = decodeURIComponent(atob(base64Content));
+        const frame = document.getElementById('live-canvas-frame');
+        if (frame) {
+            frame.srcdoc = html;
+            // Open canvas panel if it exists
+            document.getElementById('canvas-panel')?.classList.remove('hidden');
+            document.getElementById('canvas-toggle-btn')?.classList.add('active');
+        }
+    } catch (e) {
+        triggerNotificationToast("Canvas Error", "Failed to decode app.", "fa-triangle-exclamation", "bg-red-600");
+    }
+};
+
+
+// ─── 10. ENHANCED triggerInference — patches the main inference to inject ─────
+//     memory context, domain detection, vision messages, and think rendering
+const _originalTriggerInference = triggerInference;
+window.triggerInference = async function() {
+    // Inject memory into system prompt dynamically
+    window._memoryContext = window.getMemoryContext();
+
+    // Detect domain from last user message
+    const session = chatDatabase.sessions[currentSessionId];
+    if (session?.messages?.length) {
+        const lastUser = [...session.messages].reverse().find(m => m.role === 'user');
+        if (lastUser) window._lastDetectedDomain = window.detectDomain(lastUser.content);
+    }
+
+    return _originalTriggerInference.apply(this, arguments);
+};
+
+// Patch getDynamicSystemPrompt to inject memory
+const _originalGetSystemPrompt = getDynamicSystemPrompt;
+window.getDynamicSystemPrompt = function() {
+    return _originalGetSystemPrompt() + (window._memoryContext || '') + (window.getMemoryContext?.() || '');
+};
+// Make triggerInference use the patched version
+window.getDynamicSystemPromptPatched = true;
+
+
+// ─── 11. POST-RESPONSE HOOKS — fire after each AI response completes ──────────
+// Call this at end of triggerInference (after session.messages.push assistant reply)
+window.onResponseComplete = (responseText) => {
+    // Extract and save any [REMEMBER: ...] tags
+    window.extractMemoryTags(responseText);
+
+    // Detect domain and log
+    window._lastDetectedDomain = window.detectDomain(responseText);
+
+    // Auto-save to RLHF as unlabelled (rating = null, user can thumb up/down later)
+    rlhfDataset.push({
+        id:      generateStringCode(),
+        ts:      Date.now(),
+        content: responseText.substring(0, 4000),
+        rating:  null,
+        model:   window._lomaActiveModel,
+        domain:  window._lastDetectedDomain
+    });
+    localStorage.setItem('envizion_rlhf', JSON.stringify(rlhfDataset.slice(-500)));
+};
+
+
+// ─── 12. SIDEBAR / DRIVE STUBS — prevent errors from missing Firebase ─────────
+window.signInAndConnectDrive = () => {
+    triggerNotificationToast("Local Mode", "Google Drive sync disabled in local mode.", "fa-cloud-slash", "bg-slate-600");
+};
+window.signInWithGoogle = () => {
+    triggerNotificationToast("Local Mode", "Auth not needed for local Ollama.", "fa-circle-info", "bg-slate-600");
+};
+
+
 // --- FIREBASE CONFIG ---
 const firebaseConfig = {
     apiKey: "AIzaSyDLeM4MrsA1Q8zq7_QcQfTJKk049vOVOO4",
