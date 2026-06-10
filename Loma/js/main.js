@@ -6,6 +6,11 @@ import { UI }      from './ui.js';
 import { Engine }  from './engine.js';
 import { Trainer } from './training.js';
 
+// ═══════════════════════════════════════════════════════════════════════════════
+//  main.js — State, Firebase, Drive sync, session management, capabilities UI
+//  DOES NOT bind any DOM events — that is app.js's job exclusively.
+// ═══════════════════════════════════════════════════════════════════════════════
+
 const firebaseConfig = {
     apiKey:            "AIzaSyDLeM4MrsA1Q8zq7_QcQfTJKk049vOVOO4",
     authDomain:        "envizionwork.firebaseapp.com",
@@ -22,21 +27,25 @@ export const State = {
     currentId:           generateId(),
     personalMemories:    JSON.parse(localStorage.getItem('envizion_memories')      || '[]'),
     evolvedCapabilities: JSON.parse(localStorage.getItem('envizion_capabilities')  || '[]'),
+    memoryIndex:         {},   // category -> string[] for structured memory
     gDriveToken:         null,
     driveFileId:         null,
     isEngineReady:       false,
 
-    // ── Initialise ────────────────────────────────────────────────────────
+    // ── Initialise ─────────────────────────────────────────────────────────
     init() {
         UI.init();
 
-        // Ensure current session exists
         if (!this.db.sessions) this.db.sessions = {};
         if (!this.db.sessions[this.currentId]) {
             this.db.sessions[this.currentId] = { title: 'New Session', messages: [], updated: Date.now() };
         }
 
-        this._bindEvents();
+        // Load structured memory index
+        try {
+            this.memoryIndex = JSON.parse(localStorage.getItem('loma_memory_index') || '{}');
+        } catch { this.memoryIndex = {}; }
+
         this._initFirebase();
         this.renderSidebar();
         this._updateCapabilitiesUI();
@@ -53,107 +62,61 @@ export const State = {
             'qwen2.5-coder:7b': 'Loma Coder 7B',
             'llava':            'Loma Vision',
             'loma-lora':        'Loma Trained',
-            'loma-trained':     'Loma Custom'
+            'loma-trained':     'Loma Custom',
+            'llama3.2:1b':      'Loma 1B',
         };
         return map[modelId] || modelId;
     },
 
-    // ── Bind all UI events ────────────────────────────────────────────────
-    _bindEvents() {
-        const input    = document.getElementById('prompt-input') || document.getElementById('user-prompt');
-        const submitBtn = document.getElementById('submit-prompt-btn');
-        const stopBtn   = document.getElementById('stop-btn')
-                       || document.getElementById('generation-controls');
-        const newChat   = document.getElementById('btn-new-chat');
-        const exportBtn = document.getElementById('btn-export-dpo') || document.getElementById('btn-export-domain');
-        const sidebarBtn = document.getElementById('btn-toggle-sidebar');
-        const menuBtn   = document.getElementById('btn-menu');
+    // ── Structured memory: add with category ───────────────────────────────
+    addMemory(text, category = 'general') {
+        if (!text?.trim()) return;
+        const entry = text.trim();
+        // Avoid duplicates
+        if (this.personalMemories.includes(entry)) return;
 
-        if (input) {
-            input.addEventListener('input', function () {
-                this.style.height = 'auto';
-                this.style.height = this.scrollHeight + 'px';
-                if (submitBtn) {
-                    submitBtn.classList.toggle('text-slate-400', !this.value.trim());
-                    submitBtn.classList.toggle('text-white',      !!this.value.trim());
-                }
-            });
-            input.addEventListener('keydown', e => {
-                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); Engine.submitPrompt(); }
-            });
+        this.personalMemories.push(entry);
+        if (this.personalMemories.length > 200) {
+            // Summarize oldest 50 into a single entry rather than deleting raw
+            const oldest = this.personalMemories.splice(0, 50);
+            this.personalMemories.unshift(`[Summary of earlier context]: ${oldest.slice(0, 10).join(' | ')}`);
         }
 
-        if (submitBtn)  submitBtn.onclick  = () => Engine.submitPrompt();
-        if (stopBtn)    stopBtn.onclick    = () => Engine.abort();
-        if (newChat)    newChat.onclick    = () => this.startNewChat();
-        if (exportBtn)  exportBtn.onclick  = () => Trainer.exportByDomain();
-        if (sidebarBtn) sidebarBtn.onclick = () => UI.toggleSidebar();
-        if (menuBtn)    menuBtn.onclick    = () => UI.toggleSidebar();
+        if (!this.memoryIndex[category]) this.memoryIndex[category] = [];
+        this.memoryIndex[category].push(entry);
+        if (this.memoryIndex[category].length > 50) this.memoryIndex[category].shift();
 
-        // Export all button
-        const exportAllBtn = document.getElementById('btn-export-all');
-        if (exportAllBtn) exportAllBtn.onclick = () => Trainer.exportAll();
-
-        // File attachment
-        const fileInput = document.getElementById('file-upload-input');
-        if (fileInput) fileInput.addEventListener('change', e => this._handleFile(e.target));
-
-        // Auto-scroll detection
-        const stream = document.getElementById('chat-stream');
-        if (stream) {
-            stream.addEventListener('scroll', function () {
-                const dist = this.scrollHeight - this.scrollTop - this.clientHeight;
-                window.autoScrollChat = dist < 80;
-            });
-        }
+        localStorage.setItem('envizion_memories', JSON.stringify(this.personalMemories));
+        localStorage.setItem('loma_memory_index', JSON.stringify(this.memoryIndex));
     },
 
-    // ── File attachment handler ───────────────────────────────────────────
-    _handleFile(input) {
-        const file = input.files[0];
-        if (!file) return;
-        if (file.size > 10 * 1024 * 1024) {
-            this._toast('File too large', 'Max 10MB.', 'fa-triangle-exclamation', 'bg-red-600');
-            return;
-        }
-        const textTypes  = /\.(txt|md|csv|json|js|ts|jsx|tsx|py|html|css|xml|yaml|yml|sh|bash|c|cpp|h|java|go|rs|rb|php|sql|log|env|ini|cfg|conf|svg)$/i;
-        const imageTypes = /\.(png|jpg|jpeg|gif|webp|bmp|ico|tiff)$/i;
-        const reader     = new FileReader();
+    // ── Get relevant memories for a query (by category or keyword) ─────────
+    getRelevantMemories(query, maxItems = 10) {
+        const q = (query || '').toLowerCase();
+        const isCode    = /(code|function|class|script|html|css|js|python|sql)/i.test(q);
+        const isWeb     = /\[web:/i.test(q);
+        const isPref    = /(prefer|always|never|style|format|like|dislike)/i.test(q);
 
-        if (textTypes.test(file.name) || file.type.startsWith('text/')) {
-            reader.onload = e => {
-                this._attachedContent = e.target.result;
-                this._attachedName    = file.name;
-                this._showFilePill(file.name);
-            };
-            reader.readAsText(file);
-        } else if (imageTypes.test(file.name) || file.type.startsWith('image/')) {
-            reader.onload = e => {
-                this._attachedContent = `[IMAGE: ${file.name}]\nData URL: ${e.target.result}`;
-                this._attachedName    = file.name;
-                this._showFilePill(file.name);
-            };
-            reader.readAsDataURL(file);
+        let pool = [...this.personalMemories];
+
+        // Deprioritize web search noise for non-web queries
+        if (!isWeb) pool = pool.filter(m => !m.startsWith('[Web:'));
+        // Prioritize preference memories
+        if (isPref) {
+            pool = [
+                ...pool.filter(m => /prefer|always|never|style/i.test(m)),
+                ...pool.filter(m => !/prefer|always|never|style/i.test(m))
+            ];
         }
-        input.value = '';
+        // For code queries pull code memories first
+        if (isCode && this.memoryIndex.code?.length) {
+            pool = [...this.memoryIndex.code, ...pool.filter(m => !this.memoryIndex.code?.includes(m))];
+        }
+
+        return pool.slice(0, maxItems);
     },
 
-    _showFilePill(name) {
-        const pill = document.getElementById('attached-file-pill');
-        const nameEl = document.getElementById('attached-file-name');
-        if (pill)   pill.classList.replace('hidden', 'flex');
-        if (nameEl) nameEl.innerText = name;
-    },
-
-    _toast(title, desc, icon, bg = 'bg-emerald-600') {
-        if (window.triggerNotificationToast) {
-            window.triggerNotificationToast(title, desc, icon, bg);
-        } else {
-            console.log(`[Toast] ${title}: ${desc}`);
-        }
-    },
-
-    // ── Session management ────────────────────────────────────────────────
+    // ── Session management ─────────────────────────────────────────────────
     startNewChat() {
         this.currentId = generateId();
         this.db.sessions[this.currentId] = { title: 'New Session', messages: [], updated: Date.now() };
@@ -166,85 +129,95 @@ export const State = {
                         <i class="fa-solid fa-sparkles"></i>
                     </span>
                 </div>
-                <h1 class="text-2xl font-semibold text-white mb-2">Loma Unified Intelligence</h1>
-                <p class="text-xs text-slate-500">Engineering · Vision · Creative · Research</p>
+                <h1 class="text-2xl font-semibold text-white mb-3">Autonomous Evolution Workspace</h1>
+                <p class="text-sm text-gemini-textMuted max-w-md leading-relaxed mb-8">
+                    Running locally. Propose complex capabilities, research live web events, and evolve your engine!
+                </p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 w-full max-w-lg">
+                    <button onclick="document.getElementById('user-prompt').value='Find the latest top performing JavaScript web frameworks and propose a custom capabilities upgrade so you remember to always use them for Canvas Apps!'; window.processInputMessage();" class="p-4 bg-gemini-card hover:bg-[#323639] border border-gemini-border/50 rounded-2xl text-left smooth-transition">
+                        <i class="fa-solid fa-dna text-emerald-400 mb-2 block text-lg"></i>
+                        <span class="text-sm text-slate-200 font-medium block">Propose Evolution</span>
+                        <span class="text-[11px] text-slate-400">Upgrade your prompt using live custom search!</span>
+                    </button>
+                    <button onclick="document.getElementById('user-prompt').value='Build a canvas interactive space simulator app using three.js!'; window.processInputMessage();" class="p-4 bg-gemini-card hover:bg-[#323639] border border-gemini-border/50 rounded-2xl text-left smooth-transition">
+                        <i class="fa-brands fa-html5 text-orange-400 mb-2 block text-lg"></i>
+                        <span class="text-sm text-slate-200 font-medium block">Code Three.js App</span>
+                        <span class="text-[11px] text-slate-400">Renders beautiful 3D Canvas instantly</span>
+                    </button>
+                </div>
             </div>`;
         }
 
-        const titleEl = document.getElementById('chat-title') || document.getElementById('current-chat-title');
-        if (titleEl) titleEl.innerText = 'New Session';
-
-        this.saveDb();
         this.renderSidebar();
-
-        if (window.innerWidth < 768) UI.toggleSidebar();
-        if (window.history) window.history.pushState({}, '', `/Loma/${this.currentId}`);
+        this.saveDb();
     },
 
     loadChat(id) {
         if (!this.db.sessions[id]) return;
         this.currentId = id;
-        const session  = this.db.sessions[id];
-
-        const titleEl = document.getElementById('chat-title') || document.getElementById('current-chat-title');
-        if (titleEl) titleEl.innerText = session.title;
+        const session = this.db.sessions[id];
 
         const stream = document.getElementById('chat-stream');
-        if (stream) stream.innerHTML = '';
+        if (!stream) return;
+        stream.innerHTML = '';
 
         session.messages.forEach(m => {
-            if (m.role === 'system') return;
-            if (m.role === 'user')      UI.appendBubble('user', UI.escapeHtml(m.content));
-            else UI.appendBubble('assistant', UI.processContent(m.content));
+            if (m.role === 'user') {
+                UI.appendBubble('user', UI.escapeHtml(m.content));
+            } else if (m.role === 'assistant') {
+                UI.appendBubble('assistant', UI.processContent(m.content));
+            }
         });
 
-        if (window.innerWidth < 768) UI.toggleSidebar();
-        if (window.history) window.history.pushState({}, '', `/Loma/${id}`);
+        const titleEl = document.getElementById('chat-title') || document.getElementById('current-chat-title');
+        if (titleEl) titleEl.innerText = session.title || 'Chat';
+
+        this.renderSidebar();
     },
 
     deleteChat(e, id) {
-        e.stopPropagation();
+        e?.stopPropagation();
         delete this.db.sessions[id];
+        this.saveDb();
         if (this.currentId === id) this.startNewChat();
-        else { this.saveDb(); this.renderSidebar(); }
-    },
-
-    renderSidebar() {
-        const list = document.getElementById('chat-list') || document.getElementById('recent-chats-list');
-        if (!list) return;
-
-        const sessions = Object.entries(this.db.sessions || {})
-            .filter(([, s]) => s && s.messages && s.messages.length > 0)
-            .sort((a, b) => (b[1].updated || 0) - (a[1].updated || 0));
-
-        if (sessions.length === 0) {
-            list.innerHTML = `<div class="p-3 text-gemini-textMuted text-xs italic bg-gemini-card/20
-                                          rounded-xl text-center border border-dashed border-gemini-border/30">
-                Start typing to save local threads</div>`;
-            return;
-        }
-
-        list.innerHTML = sessions.map(([id, s]) => `
-            <div class="group flex items-center justify-between w-full px-3 py-2.5 rounded-full
-                         hover:bg-gemini-card/80 smooth-transition cursor-pointer"
-                 onclick="window.loadChat('${id}')">
-                <div class="flex items-center text-slate-300 group-hover:text-white text-sm font-medium truncate">
-                    <i class="fa-regular fa-message mr-2 text-slate-500"></i>
-                    <span class="truncate">${(s.title || 'Session').replace(/</g,'&lt;')}</span>
-                </div>
-                <button onclick="window.deleteChat(event,'${id}')"
-                    class="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-red-400
-                           p-1.5 rounded-md smooth-transition">
-                    <i class="fa-solid fa-trash text-xs"></i>
-                </button>
-            </div>`).join('');
+        else this.renderSidebar();
     },
 
     saveDb() {
         localStorage.setItem('loma_db', JSON.stringify(this.db));
-        this.syncToDrive();
+        // Debounced Drive sync
+        clearTimeout(this._syncTimer);
+        this._syncTimer = setTimeout(() => this.syncToDrive(), 3000);
     },
 
+    renderSidebar() {
+        const list = document.getElementById('recent-chats-list');
+        if (!list) return;
+
+        const sessions = Object.entries(this.db.sessions)
+            .sort(([, a], [, b]) => (b.updated || 0) - (a.updated || 0))
+            .slice(0, 40);
+
+        if (sessions.length === 0) {
+            list.innerHTML = `<div class="p-3 text-gemini-textMuted text-xs italic bg-gemini-card/20 rounded-xl text-center border border-dashed border-gemini-border/30">Start typing to save local threads</div>`;
+            return;
+        }
+
+        list.innerHTML = sessions.map(([id, s]) => {
+            const isActive = id === this.currentId;
+            return `<div onclick="window.loadChat('${id}')"
+                class="group flex items-center justify-between px-3 py-2.5 rounded-xl cursor-pointer smooth-transition text-xs
+                       ${isActive ? 'bg-gemini-accent/10 border border-gemini-accent/20 text-white' : 'hover:bg-gemini-card/40 text-gemini-textMain border border-transparent'}">
+                <span class="truncate flex-1 mr-2">${UI.escapeHtml(s.title || 'New Session')}</span>
+                <button onclick="window.deleteChat(event,'${id}')"
+                    class="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-red-400 p-1 rounded smooth-transition shrink-0">
+                    <i class="fa-solid fa-xmark text-[10px]"></i>
+                </button>
+            </div>`;
+        }).join('');
+    },
+
+    // ── Capabilities UI ────────────────────────────────────────────────────
     _updateCapabilitiesUI() {
         const list  = document.getElementById('learned-capabilities-list');
         const count = document.getElementById('capability-count');
@@ -257,21 +230,46 @@ export const State = {
             list.innerHTML = `<span class="italic text-slate-500 block text-center py-1">No custom capabilities evolved yet.</span>`;
             return;
         }
-        list.innerHTML = caps.map(c => `
-            <div class="flex items-center gap-2">
-                <i class="fa-solid fa-circle-check text-emerald-400 text-[9px]"></i>
-                <span class="truncate">${c.title}</span>
+        list.innerHTML = caps.map((c, i) => `
+            <div class="flex items-center justify-between gap-2 group">
+                <div class="flex items-center gap-2 min-w-0">
+                    <i class="fa-solid fa-circle-check text-emerald-400 text-[9px] shrink-0"></i>
+                    <span class="truncate">${UI.escapeHtml(c.title)}</span>
+                </div>
+                <button onclick="window.deleteCapability(${i})"
+                    class="opacity-0 group-hover:opacity-100 text-slate-600 hover:text-red-400 smooth-transition text-[9px] shrink-0">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
             </div>`).join('');
     },
 
-    // ── Firebase / Google Auth ────────────────────────────────────────────
+    // ── Memory panel UI ────────────────────────────────────────────────────
+    renderMemoryPanel() {
+        const panel = document.getElementById('memory-panel-list');
+        if (!panel) return;
+        const mems = this.personalMemories.filter(m => !m.startsWith('[Web:'));
+        if (mems.length === 0) {
+            panel.innerHTML = `<span class="italic text-slate-500 text-[10px]">No personal memories yet.</span>`;
+            return;
+        }
+        panel.innerHTML = mems.slice(-20).reverse().map((m, i) => `
+            <div class="flex items-start gap-2 group text-[10px] text-slate-400">
+                <span class="shrink-0 text-slate-600 mt-0.5">•</span>
+                <span class="flex-1 truncate">${UI.escapeHtml(m.substring(0, 100))}</span>
+                <button onclick="window.deleteMemory(${this.personalMemories.length - 1 - i})"
+                    class="opacity-0 group-hover:opacity-100 text-slate-600 hover:text-red-400 smooth-transition shrink-0">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>`).join('');
+    },
+
+    // ── Firebase / Google Auth ─────────────────────────────────────────────
     _initFirebase() {
         const fbApp  = initializeApp(firebaseConfig);
         const auth   = getAuth(fbApp);
         const prov   = new GoogleAuthProvider();
         prov.addScope('https://www.googleapis.com/auth/drive.file');
 
-        // Sign-in buttons (multiple entry points)
         const signIn = async () => {
             try {
                 const result = await signInWithPopup(auth, prov);
@@ -288,23 +286,17 @@ export const State = {
         document.querySelectorAll('#google-login-btn, #auth-gate-btn').forEach(btn => {
             if (btn) btn.onclick = signIn;
         });
-        window.signInWithGoogle        = signIn;
-        window.signInAndConnectDrive   = signIn;
+        window.signInWithGoogle      = signIn;
+        window.signInAndConnectDrive = signIn;
 
         onAuthStateChanged(auth, async user => {
             if (!user) {
                 this.isEngineReady = false;
-                const gate = document.getElementById('auth-gate');
-                if (gate) gate.classList.remove('hidden');
                 return;
             }
 
             this.isEngineReady = true;
 
-            const gate = document.getElementById('auth-gate');
-            if (gate) gate.classList.add('hidden');
-
-            // Update UI
             const nameEl   = document.getElementById('user-display-name');
             const statusEl = document.getElementById('user-display-status');
             const avatarEl = document.getElementById('user-avatar');
@@ -320,10 +312,9 @@ export const State = {
                 avatarEl.innerHTML = `<img src="${user.photoURL}" class="w-full h-full object-cover rounded-full">`;
             }
 
-            // Drive sync
-            const driveBtn   = document.getElementById('drive-status-label');
-            const driveIcon  = document.getElementById('drive-status-icon');
-            const loginBtn   = document.getElementById('google-login-btn');
+            const driveBtn  = document.getElementById('drive-status-label');
+            const driveIcon = document.getElementById('drive-status-icon');
+            const loginBtn  = document.getElementById('google-login-btn');
             if (driveIcon) driveIcon.className   = 'fa-brands fa-google-drive text-emerald-400 text-sm';
             if (driveBtn)  driveBtn.innerHTML     = `Synced as <span class="text-white">${user.displayName || user.email}</span>`;
             if (loginBtn)  loginBtn.style.display = 'none';
@@ -357,8 +348,14 @@ export const State = {
                 );
                 if (fileRes.ok) {
                     const remote = await fileRes.json();
-                    if (remote.sessions)  this.db.sessions = { ...remote.sessions, ...this.db.sessions };
+                    // Remote wins for sessions that don't exist locally
+                    if (remote.sessions) {
+                        Object.keys(remote.sessions).forEach(id => {
+                            if (!this.db.sessions[id]) this.db.sessions[id] = remote.sessions[id];
+                        });
+                    }
                     if (remote.memories)  { this.personalMemories = remote.memories; localStorage.setItem('envizion_memories', JSON.stringify(remote.memories)); }
+                    if (remote.memIdx)    { this.memoryIndex = remote.memIdx; localStorage.setItem('loma_memory_index', JSON.stringify(remote.memIdx)); }
                     if (remote.caps)      { this.evolvedCapabilities = remote.caps; localStorage.setItem('envizion_capabilities', JSON.stringify(remote.caps)); this._updateCapabilitiesUI(); }
                     if (remote.rlhf)      { Trainer.rlhfData = remote.rlhf; localStorage.setItem('loma_rlhf', JSON.stringify(remote.rlhf)); }
                 }
@@ -376,6 +373,7 @@ export const State = {
             const payload = JSON.stringify({
                 sessions:  this.db.sessions,
                 memories:  this.personalMemories,
+                memIdx:    this.memoryIndex,
                 caps:      this.evolvedCapabilities,
                 rlhf:      Trainer.rlhfData,
                 savedAt:   Date.now()
@@ -400,17 +398,44 @@ export const State = {
     }
 };
 
-// ── Globals for HTML onclick handlers ────────────────────────────────────────
-window.loadChat         = id          => State.loadChat(id);
-window.deleteChat       = (e, id)     => State.deleteChat(e, id);
-window.startNewChatSession = ()       => State.startNewChat();
-window.loadHistoricalSession = id     => State.loadChat(id);
-window.deleteHistoricalSession = (e, id) => State.deleteChat(e, id);
-window.clearPersonalMemory = ()       => {
-    State.personalMemories = [];
-    localStorage.removeItem('envizion_memories');
-};
-window.exportRLHFDataset = () => Trainer.exportAll();
+// ── Expose on window so app.js and inline handlers can reach it ───────────────
+window.State = State;
 
-// ── Boot ─────────────────────────────────────────────────────────────────────
+// ── Globals for HTML onclick handlers ─────────────────────────────────────────
+window.loadChat                = id       => State.loadChat(id);
+window.deleteChat              = (e, id)  => State.deleteChat(e, id);
+window.startNewChatSession     = ()       => State.startNewChat();
+window.loadHistoricalSession   = id       => State.loadChat(id);
+window.deleteHistoricalSession = (e, id)  => State.deleteChat(e, id);
+window.exportRLHFDataset       = ()       => Trainer.exportAll();
+
+window.clearPersonalMemory = () => {
+    State.personalMemories = [];
+    State.memoryIndex = {};
+    localStorage.removeItem('envizion_memories');
+    localStorage.removeItem('loma_memory_index');
+    State.renderMemoryPanel?.();
+};
+
+window.deleteMemory = (idx) => {
+    State.personalMemories.splice(idx, 1);
+    localStorage.setItem('envizion_memories', JSON.stringify(State.personalMemories));
+    State.renderMemoryPanel();
+};
+
+window.deleteCapability = (idx) => {
+    State.evolvedCapabilities.splice(idx, 1);
+    localStorage.setItem('envizion_capabilities', JSON.stringify(State.evolvedCapabilities));
+    State._updateCapabilitiesUI();
+};
+
+window.toggleConfigSidebar = () => {
+    const sidebar = document.getElementById('config-sidebar');
+    if (!sidebar) return;
+    const isOpen = !sidebar.classList.contains('-translate-x-full');
+    sidebar.classList.toggle('-translate-x-full', isOpen);
+    if (!isOpen) State.renderMemoryPanel();
+};
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => State.init());
