@@ -555,10 +555,14 @@
                 </div>
                 <!-- Controls for Canvas (Tabs + Viewport size + Download + Close) -->
                 <div class="flex items-center space-x-2">
-                    <div class="flex bg-gemini-bg rounded-lg border border-gemini-border/50 p-0.5">
-                        <button onclick="window.switchCanvasTab('preview')" id="tab-preview" class="px-3 py-1 bg-gemini-card text-white text-xs rounded-md border border-gemini-border/50 shadow-sm font-semibold">Preview</button>
-                        <button onclick="window.switchCanvasTab('code')" id="tab-code" class="px-3 py-1 text-gemini-textMuted hover:text-white text-xs rounded-md smooth-transition">Code</button>
-                    </div>
+                   <div class="flex bg-gemini-bg rounded-lg border border-gemini-border/50 p-0.5 gap-0.5">
+    <button onclick="window.switchCanvasTab('preview')" id="tab-preview" class="px-3 py-1 bg-gemini-card text-white text-xs rounded-md border border-gemini-border/50 shadow-sm font-semibold">Preview</button>
+    <button onclick="window.switchCanvasTab('code')" id="tab-code" class="px-3 py-1 text-gemini-textMuted hover:text-white text-xs rounded-md smooth-transition">Code</button>
+    <button onclick="window.switchCanvasTab('console')" id="tab-console" class="px-3 py-1 text-gemini-textMuted hover:text-white text-xs rounded-md smooth-transition">Console</button>
+</div>
+<button onclick="window.applyCanvasEdit()" class="px-3 py-1 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 text-xs rounded-lg border border-emerald-500/30 smooth-transition font-semibold" title="Apply code edits to preview">
+    <i class="fa-solid fa-play mr-1"></i>Run
+</button>
                     <div class="w-px h-5 bg-gemini-border/60 mx-1"></div>
                     <!-- Responsive Viewport Resizer controls -->
                     <div class="flex items-center space-x-1.5 bg-gemini-bg/60 px-2 py-1 rounded-lg border border-gemini-border/40">
@@ -596,7 +600,14 @@
                     </html>
                 "></iframe>
                 <!-- Raw Code View -->
-                <pre id="live-canvas-code" class="hidden w-full h-full bg-[#131314] text-slate-300 font-mono text-xs p-6 overflow-auto flex-1 whitespace-pre-wrap selection:bg-gemini-accent/30"></pre>
+<textarea id="live-canvas-code" class="hidden w-full h-full bg-[#131314] text-slate-300 font-mono text-xs p-6 overflow-auto flex-1 whitespace-pre-wrap resize-none outline-none border-none selection:bg-gemini-accent/30 leading-relaxed" spellcheck="false" placeholder="Generated code will appear here. Edit freely then click Run."></textarea>
+<div id="canvas-console-panel" class="hidden w-full h-full bg-[#0d0d0f] text-slate-300 font-mono text-xs p-4 overflow-y-auto flex-1 space-y-0.5">
+    <div class="flex items-center justify-between mb-2 border-b border-white/10 pb-2">
+        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-terminal text-emerald-400"></i> Canvas Console</span>
+        <button onclick="window.clearCanvasConsole()" class="text-[10px] text-slate-500 hover:text-white">Clear</button>
+    </div>
+    <div class="text-xs text-slate-500 italic text-center py-4">No console output yet.</div>
+</div>
             </div>
         </section>
 
@@ -3533,10 +3544,18 @@ async function triggerInference() {
     const chatStream = document.getElementById('chat-stream');
     let session = chatDatabase.sessions[currentSessionId];
     
-    const currentMessages = [
-        { role: "system", content: getDynamicSystemPrompt() },
-        ...session.messages.filter(m => m.role !== 'system')
-    ];
+  // Send the full system prompt only on the FIRST message of each session.
+// After that Ollama has it in its KV cache — never resend it.
+if (!session._systemPromptSent) {
+    // First message — inject system prompt and mark it as sent
+    if (!session.messages.find(m => m.role === 'system')) {
+        session.messages.unshift({ role: 'system', content: getDynamicSystemPrompt() });
+    }
+    session._systemPromptSent = true;
+    syncDatabaseToDrive();
+}
+
+const currentMessages = session.messages; // system is already in there from now on
 
     const activeZone = appendChatBubble('assistant', null);
     try {
@@ -3903,6 +3922,267 @@ window.loadHistoricalSession = (sessionId) => {
 async function syncDatabaseToDrive() {
     localStorage.setItem('envizion_local_db', JSON.stringify(chatDatabase));
 }
+
+// ═══════════════════════════════════════════════════════════════
+//  CANVAS ENGINE — toggle, tabs, editor, console, download, URL
+// ═══════════════════════════════════════════════════════════════
+
+// ── State ────────────────────────────────────────────────────
+let _canvasCode    = '';       // raw HTML currently in canvas
+let _canvasVisible = false;    // is canvas column open
+
+// ── 1. TOGGLE canvas open/close ──────────────────────────────
+window.toggleCanvasVisibility = (forceClose) => {
+    const col  = document.getElementById('canvas-column');
+    const chat = document.getElementById('chat-column');
+    if (!col) return;
+    _canvasVisible = forceClose === false ? false : !_canvasVisible;
+    if (_canvasVisible) {
+        col.style.width  = '';
+        col.classList.remove('w-0');
+        col.classList.add('w-full', 'md:w-[45%]', 'min-w-0');
+        chat.classList.add('md:w-[55%]');
+    } else {
+        col.classList.remove('w-full', 'md:w-[45%]', 'min-w-0');
+        col.classList.add('w-0');
+        chat.classList.remove('md:w-[55%]');
+    }
+};
+
+// ── 2. SWITCH tabs: preview ↔ code (editable) ────────────────
+window.switchCanvasTab = (tab) => {
+    const frame   = document.getElementById('live-canvas-frame');
+    const codeEl  = document.getElementById('live-canvas-code');
+    const tabP    = document.getElementById('tab-preview');
+    const tabC    = document.getElementById('tab-code');
+    const consoleEl = document.getElementById('canvas-console-panel');
+
+    if (tab === 'preview') {
+        frame?.classList.remove('hidden');
+        codeEl?.classList.add('hidden');
+        consoleEl?.classList.add('hidden');
+        tabP?.classList.add('bg-gemini-card','text-white','border','border-gemini-border/50','shadow-sm','font-semibold');
+        tabP?.classList.remove('text-gemini-textMuted');
+        tabC?.classList.remove('bg-gemini-card','text-white','border','border-gemini-border/50','shadow-sm','font-semibold');
+        tabC?.classList.add('text-gemini-textMuted');
+        document.getElementById('tab-console')?.classList.remove('bg-gemini-card','text-white');
+        document.getElementById('tab-console')?.classList.add('text-gemini-textMuted');
+    } else if (tab === 'code') {
+        frame?.classList.add('hidden');
+        codeEl?.classList.remove('hidden');
+        consoleEl?.classList.add('hidden');
+        if (codeEl) codeEl.textContent = _canvasCode;
+        tabC?.classList.add('bg-gemini-card','text-white','border','border-gemini-border/50','shadow-sm','font-semibold');
+        tabC?.classList.remove('text-gemini-textMuted');
+        tabP?.classList.remove('bg-gemini-card','text-white','border','border-gemini-border/50','shadow-sm','font-semibold');
+        tabP?.classList.add('text-gemini-textMuted');
+        document.getElementById('tab-console')?.classList.remove('bg-gemini-card','text-white');
+        document.getElementById('tab-console')?.classList.add('text-gemini-textMuted');
+    } else if (tab === 'console') {
+        frame?.classList.add('hidden');
+        codeEl?.classList.add('hidden');
+        consoleEl?.classList.remove('hidden');
+        _refreshCanvasConsole();
+        document.getElementById('tab-console')?.classList.add('bg-gemini-card','text-white','border','border-gemini-border/50','shadow-sm','font-semibold');
+        document.getElementById('tab-console')?.classList.remove('text-gemini-textMuted');
+        tabP?.classList.remove('bg-gemini-card','text-white','border','border-gemini-border/50','shadow-sm','font-semibold');
+        tabP?.classList.add('text-gemini-textMuted');
+        tabC?.classList.remove('bg-gemini-card','text-white','border','border-gemini-border/50','shadow-sm','font-semibold');
+        tabC?.classList.add('text-gemini-textMuted');
+    }
+};
+
+// ── 3. RESIZE viewport ───────────────────────────────────────
+window.resizeCanvasFrame = (size) => {
+    const container = document.getElementById('canvas-frame-container');
+    const frame     = document.getElementById('live-canvas-frame');
+    if (!container || !frame) return;
+    const sizes = { desktop: '100%', tablet: '768px', mobile: '390px' };
+    frame.style.width     = sizes[size] || '100%';
+    frame.style.maxWidth  = sizes[size] || '100%';
+    frame.style.margin    = size === 'desktop' ? '0' : '0 auto';
+};
+
+// ── 4. EDITABLE code — apply edits back to preview ───────────
+window.applyCanvasEdit = () => {
+    const codeEl = document.getElementById('live-canvas-code');
+    if (!codeEl) return;
+    _canvasCode = codeEl.textContent;
+    _loadCodeIntoCanvas(_canvasCode);
+    window.switchCanvasTab('preview');
+    triggerNotificationToast('Applied', 'Code changes rendered.', 'fa-check', 'bg-emerald-600');
+};
+
+// ── 5. Internal: load code into iframe + push URL ────────────
+function _loadCodeIntoCanvas(html) {
+    _canvasCode = html;
+    const frame = document.getElementById('live-canvas-frame');
+    if (frame) frame.srcdoc = html;
+
+    // Make canvas openable via URL hash so it survives refresh/share
+    const encoded = btoa(encodeURIComponent(html));
+    const shortKey = 'canvas_' + currentSessionId;
+    try { localStorage.setItem(shortKey, encoded); } catch {}
+    window.history.replaceState({}, '', `/Loma/${currentSessionId}?canvas=1`);
+}
+
+// ── 6. DOWNLOAD canvas as .html file ─────────────────────────
+window.downloadCanvasCode = () => {
+    if (!_canvasCode.trim()) {
+        triggerNotificationToast('Nothing to download', 'Generate a web app first.', 'fa-triangle-exclamation', 'bg-yellow-600');
+        return;
+    }
+    const blob = new Blob([_canvasCode], { type: 'text/html' });
+    const a    = document.createElement('a');
+    a.href     = URL.createObjectURL(blob);
+    a.download = `loma-canvas-${currentSessionId}.html`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    triggerNotificationToast('Downloaded', 'canvas.html saved.', 'fa-download', 'bg-emerald-600');
+};
+
+// ── 7. DOWNLOAD full chat as .txt ─────────────────────────────
+window.downloadChatHistory = () => {
+    const session = chatDatabase.sessions[currentSessionId];
+    if (!session?.messages?.length) {
+        triggerNotificationToast('Nothing to export', 'Chat is empty.', 'fa-triangle-exclamation', 'bg-yellow-600');
+        return;
+    }
+    const lines = session.messages
+        .filter(m => m.role !== 'system')
+        .map(m => `[${m.role.toUpperCase()}]\n${m.content}`)
+        .join('\n\n---\n\n');
+    const blob = new Blob([lines], { type: 'text/plain' });
+    const a    = document.createElement('a');
+    a.href     = URL.createObjectURL(blob);
+    a.download = `loma-chat-${currentSessionId}.txt`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    triggerNotificationToast('Downloaded', 'Chat history saved.', 'fa-download', 'bg-emerald-600');
+};
+
+// ── 8. SHARE / generate shareable URL ────────────────────────
+window.generateShareLink = () => {
+    const url = `${location.origin}/Loma/${currentSessionId}`;
+    navigator.clipboard.writeText(url).then(() => {
+        triggerNotificationToast('Link copied!', url, 'fa-link', 'bg-indigo-600');
+    }).catch(() => {
+        triggerNotificationToast('Share link', url, 'fa-link', 'bg-indigo-600');
+    });
+};
+
+// ── 9. CANVAS CONSOLE — captures errors from the iframe ──────
+const _canvasLogs = [];
+
+// Inject a message-relay script into the iframe so its errors reach us
+function _injectConsoleRelay(frame) {
+    if (!frame) return;
+    frame.addEventListener('load', () => {
+        try {
+            // Post errors back via postMessage since iframe is sandboxed
+            const relay = `
+                window.onerror = (msg, src, line, col, err) => {
+                    window.parent.postMessage({ type:'canvas-error', msg, src, line, col }, '*');
+                };
+                window.addEventListener('unhandledrejection', e => {
+                    window.parent.postMessage({ type:'canvas-error', msg: String(e.reason) }, '*');
+                });
+                const _oc = console.log.bind(console);
+                console.log = (...a) => { _oc(...a); window.parent.postMessage({ type:'canvas-log', level:'log', msg: a.map(String).join(' ') }, '*'); };
+                console.warn = (...a) => { window.parent.postMessage({ type:'canvas-log', level:'warn', msg: a.map(String).join(' ') }, '*'); };
+                console.error = (...a) => { window.parent.postMessage({ type:'canvas-log', level:'error', msg: a.map(String).join(' ') }, '*'); };
+            `;
+            frame.contentWindow?.eval(relay);
+        } catch {}
+    });
+}
+
+window.addEventListener('message', (e) => {
+    if (e.data?.type === 'canvas-error') {
+        _canvasLogs.push({ level: 'error', msg: `${e.data.msg}${e.data.line ? ' (line ' + e.data.line + ')' : ''}`, ts: Date.now() });
+        if (_canvasLogs.length > 200) _canvasLogs.shift();
+        _refreshCanvasConsole();
+        // Flash the console tab red to signal an error
+        const tabCon = document.getElementById('tab-console');
+        if (tabCon) { tabCon.classList.add('text-red-400'); setTimeout(() => tabCon.classList.remove('text-red-400'), 3000); }
+    }
+    if (e.data?.type === 'canvas-log') {
+        _canvasLogs.push({ level: e.data.level || 'log', msg: e.data.msg, ts: Date.now() });
+        if (_canvasLogs.length > 200) _canvasLogs.shift();
+        _refreshCanvasConsole();
+    }
+});
+
+function _refreshCanvasConsole() {
+    const panel = document.getElementById('canvas-console-panel');
+    if (!panel) return;
+    const colorMap = { log: 'text-slate-300', warn: 'text-yellow-400', error: 'text-red-400' };
+    if (_canvasLogs.length === 0) {
+        panel.innerHTML = `<div class="text-xs text-slate-500 italic text-center py-4">No console output yet.</div>`;
+        return;
+    }
+    panel.innerHTML = _canvasLogs.slice().reverse().map(({ level, msg, ts }) =>
+        `<div class="flex gap-2 text-[11px] font-mono border-b border-white/5 py-1 ${colorMap[level] || 'text-slate-300'}">
+            <span class="text-slate-600 shrink-0">${new Date(ts).toLocaleTimeString()}</span>
+            <span class="break-all">${escapeHtmlString(msg)}</span>
+        </div>`
+    ).join('');
+}
+
+window.clearCanvasConsole = () => {
+    _canvasLogs.length = 0;
+    _refreshCanvasConsole();
+};
+
+// ── 10. RESTORE canvas from URL on page load ─────────────────
+window.addEventListener('DOMContentLoaded', () => {
+    // Patch iframe once DOM is ready
+    const frame = document.getElementById('live-canvas-frame');
+    _injectConsoleRelay(frame);
+
+    // If URL has ?canvas=1 restore the saved canvas for this session
+    if (location.search.includes('canvas=1')) {
+        const key = 'canvas_' + currentSessionId;
+        const saved = localStorage.getItem(key);
+        if (saved) {
+            try {
+                const html = decodeURIComponent(atob(saved));
+                _loadCodeIntoCanvas(html);
+                window.toggleCanvasVisibility();
+                triggerNotificationToast('Canvas restored', 'Previous app loaded.', 'fa-rotate-left', 'bg-indigo-600');
+            } catch {}
+        }
+    }
+}, { once: true });
+
+// ── 11. PATCH updateCanvasLive and renderToCanvas to use engine
+window.updateCanvasLive = (htmlCode, isFinal) => {
+    if (!isFinal) {
+        clearTimeout(liveCanvasTimeout);
+        liveCanvasTimeout = setTimeout(() => {
+            _loadCodeIntoCanvas(htmlCode);
+            if (!_canvasVisible) window.toggleCanvasVisibility();
+        }, 800);
+    } else {
+        clearTimeout(liveCanvasTimeout);
+        _loadCodeIntoCanvas(htmlCode);
+        if (!_canvasVisible) window.toggleCanvasVisibility();
+    }
+};
+
+window.renderToCanvas = (base64Content) => {
+    try {
+        const html = decodeURIComponent(atob(base64Content));
+        _loadCodeIntoCanvas(html);
+        if (!_canvasVisible) window.toggleCanvasVisibility();
+        window.switchCanvasTab('preview');
+    } catch (e) {
+        triggerNotificationToast('Canvas Error', 'Failed to decode app.', 'fa-triangle-exclamation', 'bg-red-600');
+    }
+};
+// ═══════════════════════════════════════════════════════════════
+//  END CANVAS ENGINE
+// ═══════════════════════════════════════════════════════════════
 
 function updateCapabilitiesVaultUI() {
     const count = document.getElementById('capability-count');
