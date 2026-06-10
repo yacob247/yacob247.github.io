@@ -121,6 +121,87 @@
 
         .stop-btn { color: #f28b82 !important; }
         .stop-btn:hover { background: rgba(242, 139, 130, 0.1); }
+
+        /* ── Structured markdown output ─────────────────────────── */
+.output-response-zone ul {
+    list-style: disc;
+    padding-left: 1.5rem;
+    margin: 0.6rem 0;
+    space-y: 0.25rem;
+}
+.output-response-zone ol {
+    list-style: decimal;
+    padding-left: 1.5rem;
+    margin: 0.6rem 0;
+}
+.output-response-zone li {
+    margin-bottom: 0.35rem;
+    line-height: 1.65;
+    color: #e3e3e3;
+}
+.output-response-zone li::marker {
+    color: var(--color-accent);
+}
+.output-response-zone p {
+    margin-bottom: 0.65rem;
+    line-height: 1.7;
+}
+.output-response-zone h1, 
+.output-response-zone h2, 
+.output-response-zone h3 {
+    font-weight: 600;
+    color: #ffffff;
+    margin-top: 1.1rem;
+    margin-bottom: 0.4rem;
+}
+.output-response-zone h1 { font-size: 1.2rem; }
+.output-response-zone h2 { font-size: 1.05rem; }
+.output-response-zone h3 { font-size: 0.95rem; color: var(--color-accent); }
+.output-response-zone strong { color: #ffffff; font-weight: 600; }
+.output-response-zone em { color: #c4c7c5; }
+.output-response-zone hr {
+    border: none;
+    border-top: 1px solid #3c4043;
+    margin: 1rem 0;
+}
+.output-response-zone blockquote {
+    border-left: 3px solid var(--color-accent);
+    padding: 0.4rem 0.8rem;
+    margin: 0.6rem 0;
+    color: #9e9e9e;
+    font-style: italic;
+    background: rgba(168,199,250,0.04);
+    border-radius: 0 8px 8px 0;
+}
+.output-response-zone table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 0.8rem 0;
+    font-size: 0.85rem;
+}
+.output-response-zone th {
+    background: #282a2c;
+    color: var(--color-accent);
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+    font-weight: 600;
+    border: 1px solid #3c4043;
+}
+.output-response-zone td {
+    padding: 0.45rem 0.75rem;
+    border: 1px solid #3c4043;
+    color: #e3e3e3;
+}
+.output-response-zone tr:nth-child(even) td { background: #1a1b1d; }
+.output-response-zone code:not(pre code) {
+    background: #282a2c;
+    color: #a8c7fa;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.85em;
+    font-family: 'JetBrains Mono', monospace;
+}
+
     </style>
 </head>
 <body class="h-full overflow-hidden flex antialiased selection:bg-gemini-accent selection:text-black">
@@ -3526,48 +3607,70 @@ async function triggerInference() {
         };
         requestAnimationFrame(animateTypewriter);
 
-       // --- REPLACE INGESTION LOOP START ---
-            let leftover = "";
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                if (currentAbortController?.signal?.aborted) break;
+     // ── Cloudflare-resilient SSE ingestion ──────────────────────────
+// Two-level buffer:
+//   leftover  = incomplete raw line (cut mid-line by the network)
+//   jsonBuf   = accumulated JSON string (cut mid-JSON by the network)
+// We only call JSON.parse once the opening { is matched by a closing }
+let leftover = "";
+let jsonBuf  = "";
 
-                // 1. Accumulate incoming stream bytes directly into a string buffer
-                leftover += decoder.decode(value, { stream: true });
+while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (currentAbortController?.signal?.aborted) break;
 
-                // 2. Split on single line breaks
-                const lines = leftover.split('\n');
+    leftover += decoder.decode(value, { stream: true });
 
-                // 3. Keep the last element in the buffer (it's either empty or a partial line)
-                leftover = lines.pop();
+    // Process every complete line (hold the last incomplete one)
+    const lines = leftover.split('\n');
+    leftover = lines.pop();                      // keep partial line
 
-                for (let line of lines) {
-                    line = line.trim();
-                    if (!line) continue;
+    for (let line of lines) {
+        line = line.trim();
+        if (!line) continue;
 
-                    // 4. Safely parse lines starting with the standard SSE data prefix
-                    if (line.startsWith('data: ')) {
-                        const text = line.slice(6).trim();
-                        if (text === '[DONE]') continue;
+        // Strip the SSE prefix wherever it appears
+        if (line.startsWith('data: ')) line = line.slice(6).trim();
+        if (line === '[DONE]') continue;
+        if (!line) continue;
 
-                        try {
-                            const parsed = JSON.parse(text);
-                            if (parsed.error) {
-                                console.error("Ollama Stream Error:", parsed.error);
-                                continue;
-                            }
-                            if (parsed.t) {
-                                tokenQueue.push(parsed.t);
-                            }
-                        } catch (e) {
-                            // Suppress warnings unless you are debugging partial fragments
-                            console.debug("Temporary partial line skipped:", text);
-                        }
-                    }
+        // Accumulate JSON fragments until braces are balanced
+        jsonBuf += line;
+
+        // Count open vs close braces to detect a complete JSON object
+        let open = 0, closed = 0;
+        for (const ch of jsonBuf) {
+            if (ch === '{') open++;
+            else if (ch === '}') closed++;
+        }
+
+        if (open > 0 && open === closed) {
+            // We have a complete JSON object — safe to parse
+            try {
+                const parsed = JSON.parse(jsonBuf);
+                if (parsed.error) {
+                    console.error("Ollama Stream Error:", parsed.error);
+                } else if (parsed.t) {
+                    tokenQueue.push(parsed.t);
                 }
+            } catch (e) {
+                // Brace count matched but JSON was still malformed — discard
+                console.debug("Malformed token dropped:", jsonBuf);
             }
-            // --- REPLACE INGESTION LOOP END ---
+            jsonBuf = "";   // reset for next object
+        }
+        // If braces don't balance yet, the next line will append to jsonBuf
+    }
+}
+// Flush anything left in jsonBuf after stream ends
+if (jsonBuf.trim()) {
+    try {
+        const parsed = JSON.parse(jsonBuf);
+        if (parsed.t) tokenQueue.push(parsed.t);
+    } catch {}
+}
+// ── End Cloudflare-resilient ingestion ───────────────────────────
 
         renderLoopActive = false;
         await new Promise(resolve => {
@@ -3608,6 +3711,7 @@ async function triggerInference() {
 
 // --- MARKDOWN & UI RENDERING ---
 function escapeHtmlString(text) { return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+
 
 function parseMarkdownResponse(text, isFinal = false) {
     let preprocessed = text;
@@ -3751,16 +3855,40 @@ window.startNewChatSession = () => {
 };
 
 function renderSidebarChats() {
-    // Basic sidebar render implementation to keep history intact
     const list = document.getElementById('recent-chats-list');
-    if(!list) return;
+    if (!list) return;
     const sessions = Object.entries(chatDatabase.sessions).sort((a, b) => b[1].updated - a[1].updated);
+    if (sessions.length === 0) {
+        list.innerHTML = `<div class="p-3 text-gemini-textMuted text-xs italic bg-gemini-card/20 rounded-xl text-center border border-dashed border-gemini-border/30">No saved threads yet</div>`;
+        return;
+    }
     list.innerHTML = sessions.map(([id, data]) => `
-        <div class="group flex items-center justify-between w-full px-3 py-2.5 rounded-full hover:bg-gemini-card/80 cursor-pointer" onclick="window.loadHistoricalSession('${id}')">
-            <div class="text-slate-300 text-sm truncate"><i class="fa-regular fa-message mr-2"></i>${escapeHtmlString(data.title)}</div>
+        <div class="group flex items-center justify-between w-full px-3 py-2.5 rounded-2xl hover:bg-gemini-card/80 smooth-transition ${id === currentSessionId ? 'bg-gemini-card/60 border border-gemini-border/30' : ''}">
+            <div class="flex-1 min-w-0 text-slate-300 text-sm truncate cursor-pointer flex items-center gap-2" onclick="window.loadHistoricalSession('${id}')">
+                <i class="fa-regular fa-message text-gemini-textMuted text-xs shrink-0"></i>
+                <span class="truncate">${escapeHtmlString(data.title)}</span>
+            </div>
+            <button onclick="window.deleteChatSession('${id}')" 
+                class="opacity-0 group-hover:opacity-100 smooth-transition ml-2 shrink-0 p-1.5 rounded-full hover:bg-red-500/20 text-gemini-textMuted hover:text-red-400"
+                title="Delete chat">
+                <i class="fa-solid fa-trash-can text-[10px]"></i>
+            </button>
         </div>
     `).join('');
 }
+
+window.deleteChatSession = (sessionId) => {
+    if (!chatDatabase.sessions[sessionId]) return;
+    const title = chatDatabase.sessions[sessionId].title;
+    delete chatDatabase.sessions[sessionId];
+    syncDatabaseToDrive();
+    // If we just deleted the active session, start a new one
+    if (sessionId === currentSessionId) {
+        window.startNewChatSession();
+    }
+    renderSidebarChats();
+    triggerNotificationToast("Deleted", `"${title}" removed`, "fa-trash-can", "bg-red-600");
+};
 
 window.loadHistoricalSession = (sessionId) => {
     if (!chatDatabase.sessions[sessionId]) return;
@@ -3780,6 +3908,297 @@ function updateCapabilitiesVaultUI() {
     const count = document.getElementById('capability-count');
     if(count) count.innerText = `${evolvedCapabilities.length} Active`;
 }
+
+
+// ─── AI PYTHON ANALYSIS ENGINE ────────────────────────────────────────────────
+// Mimics Claude-style "run code → interpret output" analysis.
+// Usage:  await window.runAIAnalysis(prompt, targetEl, options)
+//
+//   prompt   : string  — what to analyse (can include raw data inline)
+//   targetEl : Element — DOM node to stream results into (creates one if null)
+//   options  : {
+//       model       : string  (default: window._lomaActiveModel)
+//       temperature : number  (default: 0.3)
+//       showThinking: boolean (default: true)
+//       packages    : string[] additional micropip packages e.g. ['scipy']
+//   }
+// ─────────────────────────────────────────────────────────────────────────────
+window.runAIAnalysis = async (prompt, targetEl = null, options = {}) => {
+    const model       = options.model       || window._lomaActiveModel || 'qwen2.5-coder:7b';
+    const temperature = options.temperature ?? 0.3;
+    const showThinking= options.showThinking !== false;
+    const extraPkgs   = options.packages    || [];
+
+    // ── 1. Create output container if caller didn't provide one ───────────
+    if (!targetEl) {
+        targetEl = document.createElement('div');
+        targetEl.className = 'ai-analysis-panel my-4 rounded-2xl border border-gemini-border bg-gemini-card p-4 text-sm text-gemini-textMain';
+        // Append after the last message bubble if possible
+        const stream = document.getElementById('chat-stream');
+        if (stream) stream.appendChild(targetEl);
+        else document.body.appendChild(targetEl);
+    }
+
+    const setStatus = (html) => { targetEl.innerHTML = html; };
+
+    const spinnerHTML = (msg) =>
+        `<div class="flex items-center gap-3 text-slate-400 text-xs py-2">
+            <i class="fa-solid fa-spinner fa-spin text-indigo-400"></i>
+            <span>${msg}</span>
+        </div>`;
+
+    // ── 2. Phase A: Ask AI to produce Python analysis code ────────────────
+    setStatus(spinnerHTML('Thinking about analysis approach…'));
+
+    const codeSystemPrompt = `You are a Python data analyst. Given a user request, write ONLY a self-contained Python script that analyses, computes, or answers the request.
+Rules:
+- Use only: math, statistics, json, re, collections, itertools, functools, datetime, random, string — OR packages the user lists.
+- If numpy/pandas are explicitly allowed, you may use them.
+- Print every result clearly labelled with print().
+- Do NOT use matplotlib or any GUI library.
+- Do NOT include markdown fences. Output raw Python only.
+- End with a print("__ANALYSIS_COMPLETE__") sentinel.`;
+
+    let aiPythonCode = '';
+    let thinkContent = '';
+
+    try {
+        const codeRes = await fetch(ENVIZION_API, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model,
+                messages: [
+                    { role: 'system', content: codeSystemPrompt },
+                    { role: 'user',   content: prompt }
+                ],
+                temperature,
+                stream: true
+            })
+        });
+
+        if (!codeRes.ok) throw new Error(`API ${codeRes.status}`);
+
+        // Stream the code response with same Cloudflare-resilient parser
+        const codeReader  = codeRes.body.getReader();
+        const codeDecoder = new TextDecoder();
+        let codeLO  = '';
+        let codeJBuf = '';
+        let rawCode  = '';
+
+        setStatus(spinnerHTML('Generating analysis code…'));
+
+        while (true) {
+            const { done, value } = await codeReader.read();
+            if (done) break;
+            codeLO += codeDecoder.decode(value, { stream: true });
+            const lines = codeLO.split('\n');
+            codeLO = lines.pop();
+            for (let line of lines) {
+                line = line.trim();
+                if (!line) continue;
+                if (line.startsWith('data: ')) line = line.slice(6).trim();
+                if (line === '[DONE]') continue;
+                if (!line) continue;
+                codeJBuf += line;
+                let o = 0, c = 0;
+                for (const ch of codeJBuf) { if (ch === '{') o++; else if (ch === '}') c++; }
+                if (o > 0 && o === c) {
+                    try {
+                        const p = JSON.parse(codeJBuf);
+                        if (p.t) rawCode += p.t;
+                    } catch {}
+                    codeJBuf = '';
+                }
+            }
+        }
+
+        // Separate <think> block from code
+        const thinkMatch = rawCode.match(/<think>([\s\S]*?)<\/think>/);
+        if (thinkMatch) {
+            thinkContent = thinkMatch[1];
+            rawCode = rawCode.replace(/<think>[\s\S]*?<\/think>/, '').trim();
+        }
+
+        // Strip any accidental markdown fences
+        aiPythonCode = rawCode
+            .replace(/^```python\s*/i, '')
+            .replace(/^```\s*/i, '')
+            .replace(/```\s*$/i, '')
+            .trim();
+
+    } catch (e) {
+        setStatus(`<span class="text-red-400 text-xs"><i class="fa-solid fa-triangle-exclamation mr-2"></i>Code generation failed: ${escapeHtmlString(e.message)}</span>`);
+        return { error: e.message };
+    }
+
+    // ── 3. Phase B: Render thinking block if present ──────────────────────
+    targetEl.innerHTML = '';
+    if (showThinking && thinkContent) {
+        targetEl.insertAdjacentHTML('beforeend', window.renderThinkBlock(thinkContent, null));
+    }
+
+    // Show the generated code in a collapsible block
+    const codeBlockId = 'analysis-code-' + Math.random().toString(36).slice(2, 7);
+    targetEl.insertAdjacentHTML('beforeend', `
+        <div class="mb-3">
+            <button onclick="document.getElementById('${codeBlockId}').classList.toggle('hidden')"
+                class="text-[10px] font-mono text-indigo-300 hover:text-indigo-100 flex items-center gap-1 mb-1">
+                <i class="fa-solid fa-code text-[8px]"></i> View generated code
+            </button>
+            <pre id="${codeBlockId}" class="hidden text-[10px] font-mono text-emerald-300 bg-black/40 rounded-xl p-3 overflow-x-auto whitespace-pre-wrap leading-relaxed">${escapeHtmlString(aiPythonCode)}</pre>
+        </div>
+    `);
+
+    // ── 4. Phase C: Execute in Pyodide ────────────────────────────────────
+    const execStatusEl = document.createElement('div');
+    targetEl.appendChild(execStatusEl);
+    execStatusEl.innerHTML = spinnerHTML('Loading Python runtime…');
+
+    let pythonOutput = '';
+    let pythonError  = '';
+
+    try {
+        // Install extra packages if requested
+        if (extraPkgs.length > 0) {
+            const py = await window.loadPyodide();
+            execStatusEl.innerHTML = spinnerHTML(`Installing packages: ${extraPkgs.join(', ')}…`);
+            await py.loadPackagesFromImports(aiPythonCode);
+            for (const pkg of extraPkgs) {
+                await py.runPythonAsync(`import micropip; await micropip.install('${pkg}')`);
+            }
+        }
+
+        execStatusEl.innerHTML = spinnerHTML('Running analysis…');
+        const result = await window.executePythonCode(aiPythonCode);
+        pythonOutput = result.output  || '';
+        pythonError  = result.error   || '';
+    } catch (e) {
+        pythonError = e.message;
+    }
+
+    // Remove the sentinel line from visible output
+    pythonOutput = pythonOutput.replace('__ANALYSIS_COMPLETE__', '').trim();
+
+    // Show raw output in a styled block
+    const rawOutHTML = pythonOutput
+        ? `<pre class="text-xs font-mono text-emerald-300 bg-black/30 rounded-xl p-3 whitespace-pre-wrap leading-relaxed mb-3">${escapeHtmlString(pythonOutput)}</pre>`
+        : '';
+    const errOutHTML = pythonError
+        ? `<div class="text-xs font-mono text-red-400 bg-red-950/30 rounded-xl p-3 mb-3 whitespace-pre-wrap">${escapeHtmlString(pythonError)}</div>`
+        : '';
+
+    execStatusEl.innerHTML = rawOutHTML + errOutHTML;
+
+    if (!pythonOutput && pythonError) {
+        // Execution failed — show error and bail
+        targetEl.insertAdjacentHTML('beforeend',
+            `<span class="text-red-400 text-xs"><i class="fa-solid fa-triangle-exclamation mr-2"></i>Execution error — see above.</span>`);
+        return { code: aiPythonCode, output: '', error: pythonError };
+    }
+
+    // ── 5. Phase D: Ask AI to interpret the output ────────────────────────
+    const interpretDiv = document.createElement('div');
+    interpretDiv.className = 'mt-3 border-t border-gemini-border/40 pt-3';
+    targetEl.appendChild(interpretDiv);
+    interpretDiv.innerHTML = spinnerHTML('Interpreting results…');
+
+    const interpretSystemPrompt = `You are a senior data analyst. You ran Python code and received output. 
+Interpret the results clearly for the user. Be concise, insightful, and structure your answer with markdown where helpful.
+If there were errors, diagnose them and explain what they mean.`;
+
+    const interpretUserMsg = `Original question: ${prompt}\n\nPython output:\n\`\`\`\n${pythonOutput || '(no output)'}\n${pythonError ? 'Errors:\n' + pythonError : ''}\n\`\`\`\n\nPlease interpret these results.`;
+
+    let interpRaw  = '';
+    let interpLO   = '';
+    let interpJBuf = '';
+
+    try {
+        const interpRes = await fetch(ENVIZION_API, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model,
+                messages: [
+                    { role: 'system', content: interpretSystemPrompt },
+                    { role: 'user',   content: interpretUserMsg }
+                ],
+                temperature: 0.4,
+                stream: true
+            })
+        });
+        if (!interpRes.ok) throw new Error(`API ${interpRes.status}`);
+
+        const interpReader  = interpRes.body.getReader();
+        const interpDecoder = new TextDecoder();
+
+        // Stream with typewriter render
+        const interpTokenQueue = [];
+        let interpRenderActive = true;
+
+        const interpTypewriter = () => {
+            if (!interpRenderActive && interpTokenQueue.length === 0) return;
+            if (interpTokenQueue.length > 0) {
+                const batch = Math.max(1, Math.floor(interpTokenQueue.length / 3));
+                for (let i = 0; i < batch; i++) {
+                    if (interpTokenQueue.length > 0) interpRaw += interpTokenQueue.shift();
+                }
+                // Strip any <think> from interpretation output while streaming
+                let vis = interpRaw;
+                const ts = vis.indexOf('<think>'), te = vis.indexOf('</think>');
+                if (ts !== -1) vis = te !== -1 ? vis.slice(0, ts) + vis.slice(te + 8) : vis.slice(0, ts);
+                interpretDiv.innerHTML = parseMarkdownResponse(vis, false) + '<span class="streaming-cursor"></span>';
+                const cs = document.getElementById('chat-stream');
+                if (window.autoScrollChat && cs) cs.scrollTop = cs.scrollHeight;
+            }
+            if (interpRenderActive || interpTokenQueue.length > 0) requestAnimationFrame(interpTypewriter);
+        };
+        requestAnimationFrame(interpTypewriter);
+
+        while (true) {
+            const { done, value } = await interpReader.read();
+            if (done) break;
+            interpLO += interpDecoder.decode(value, { stream: true });
+            const lines = interpLO.split('\n');
+            interpLO = lines.pop();
+            for (let line of lines) {
+                line = line.trim();
+                if (!line) continue;
+                if (line.startsWith('data: ')) line = line.slice(6).trim();
+                if (line === '[DONE]') continue;
+                if (!line) continue;
+                interpJBuf += line;
+                let o = 0, c = 0;
+                for (const ch of interpJBuf) { if (ch === '{') o++; else if (ch === '}') c++; }
+                if (o > 0 && o === c) {
+                    try {
+                        const p = JSON.parse(interpJBuf);
+                        if (p.t) interpTokenQueue.push(p.t);
+                    } catch {}
+                    interpJBuf = '';
+                }
+            }
+        }
+
+        interpRenderActive = false;
+
+        // Wait for typewriter to drain
+        await new Promise(resolve => {
+            const check = () => interpTokenQueue.length === 0 ? resolve() : requestAnimationFrame(check);
+            requestAnimationFrame(check);
+        });
+
+        // Final render with full markdown
+        let cleanInterp = interpRaw.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+        interpretDiv.innerHTML = parseMarkdownResponse(cleanInterp, true);
+
+    } catch (e) {
+        interpretDiv.innerHTML = `<span class="text-red-400 text-xs"><i class="fa-solid fa-triangle-exclamation mr-2"></i>Interpretation failed: ${escapeHtmlString(e.message)}</span>`;
+    }
+
+    return { code: aiPythonCode, output: pythonOutput, error: pythonError };
+};
+// ─── END AI PYTHON ANALYSIS ENGINE ───────────────────────────────────────────
     </script>
     <!-- LOMA ADAPTIVE TRAINER — watches reactions, auto-pushes to HF Space -->
     <script src="loma-adaptive-trainer.js" defer></script>

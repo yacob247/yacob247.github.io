@@ -7,7 +7,7 @@ color 0E
 ::  LOMA - DEEP RESET  (run this when anything is broken)
 ::
 ::  What it does:
-::    1. Kills everything: cloudflared, any process on 8085/8081
+::    1. Kills everything: cloudflared, any process on 8085/8085
 ::    2. Validates all required tools (Node, ollama, cloudflared)
 ::    3. Validates config.yml points to port 8085
 ::    4. Checks node_modules exist; installs them if missing
@@ -49,11 +49,11 @@ for /f "tokens=5" %%a in ('netstat -ano 2^>nul ^| findstr ":%NODE_PORT% " ^| fin
     )
 )
 
-:: Kill stale Live Server on 8081 if present
-for /f "tokens=5" %%a in ('netstat -ano 2^>nul ^| findstr ":8081 " ^| findstr "LISTENING"') do (
+:: Kill stale Live Server on 8085 if present
+for /f "tokens=5" %%a in ('netstat -ano 2^>nul ^| findstr ":8085 " ^| findstr "LISTENING"') do (
     if not "%%a"=="" (
         taskkill /PID %%a /F >nul 2>&1
-        echo     Killed stale PID %%a on port 8081.
+        echo     Killed stale PID %%a on port 8085.
     )
 )
 
@@ -257,7 +257,9 @@ echo [7/7] Starting Cloudflare tunnel...
 if "%CF_OK%"=="0" (
     echo     Skipped — cloudflared not installed.
 ) else (
-    start "" /min cmd /c "cloudflared tunnel run --protocol http2 >> "%LOG_DIR%\tunnel.log" 2>&1"
+sc stop cloudflared >nul 2>&1
+sc config cloudflared start= disabled >nul 2>&1
+start "" /min cmd /c "cloudflared tunnel --config C:\Users\youse\.cloudflared\config.yml run --protocol http2 >> "%LOG_DIR%\tunnel.log" 2>&1"
     timeout /t 6 /nobreak >nul
 
     tasklist /FI "IMAGENAME eq cloudflared.exe" 2>nul | findstr "cloudflared.exe" >nul

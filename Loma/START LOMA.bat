@@ -183,7 +183,9 @@ echo [4/5] Starting Cloudflare tunnel...
 if "%CF_OK%"=="0" (
     echo     Skipped — cloudflared not installed.
 ) else (
-    start "" /min cmd /c "cloudflared tunnel run --protocol http2 >> "%LOG_DIR%\tunnel.log" 2>&1"
+sc stop cloudflared >nul 2>&1
+sc config cloudflared start= disabled >nul 2>&1
+start "" /min cmd /c "cloudflared tunnel --config C:\Users\youse\.cloudflared\config.yml run --protocol http2 >> "%LOG_DIR%\tunnel.log" 2>&1"
     timeout /t 5 /nobreak >nul
 
     tasklist /FI "IMAGENAME eq cloudflared.exe" 2>nul | findstr "cloudflared.exe" >nul
