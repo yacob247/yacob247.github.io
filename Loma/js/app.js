@@ -1,5 +1,5 @@
 import { Engine } from './engine.js';
-import { State } from './main.js';// ═══════════════════════════════════════════════════════════════════════════════
+import { State } from './main.js'; 
 //  app.js  —  Loma client glue
 //  Handles: input submission, file attach, web search, canvas helpers,
 //           tool bridge (image/music iframes), self-learning brain,
