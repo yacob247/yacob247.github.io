@@ -3526,30 +3526,48 @@ async function triggerInference() {
         };
         requestAnimationFrame(animateTypewriter);
 
-        let leftover = '';
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            if (currentAbortController.signal.aborted) break;
+       // --- REPLACE INGESTION LOOP START ---
+            let leftover = "";
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                if (currentAbortController?.signal?.aborted) break;
 
-            const chunk = leftover + decoder.decode(value, { stream: true });
-            const lines = chunk.split('\n');
-            leftover = lines.pop(); 
+                // 1. Accumulate incoming stream bytes directly into a string buffer
+                leftover += decoder.decode(value, { stream: true });
 
-            for (const line of lines) {
-                if (!line.trim()) continue;
-                const text = line.startsWith('data: ') ? line.slice(6) : line;
-                if (text === '[DONE]') continue;
-                try {
-                    const parsed = JSON.parse(text);
-                    // Server.js emits: { t: "token" } or { error: "msg" }
-                    if (parsed.error) throw new Error(parsed.error);
-                    if (parsed.t) tokenQueue.push(parsed.t);
-                } catch (e) {
-                    // Ignore non-json or push raw
+                // 2. Split on single line breaks
+                const lines = leftover.split('\n');
+
+                // 3. Keep the last element in the buffer (it's either empty or a partial line)
+                leftover = lines.pop();
+
+                for (let line of lines) {
+                    line = line.trim();
+                    if (!line) continue;
+
+                    // 4. Safely parse lines starting with the standard SSE data prefix
+                    if (line.startsWith('data: ')) {
+                        const text = line.slice(6).trim();
+                        if (text === '[DONE]') continue;
+
+                        try {
+                            const parsed = JSON.parse(text);
+                            if (parsed.error) {
+                                console.error("Ollama Stream Error:", parsed.error);
+                                continue;
+                            }
+                            if (parsed.t) {
+                                tokenQueue.push(parsed.t);
+                            }
+                        } catch (e) {
+                            // Suppress warnings unless you are debugging partial fragments
+                            console.debug("Temporary partial line skipped:", text);
+                        }
+                    }
                 }
             }
-        }
+            // --- REPLACE INGESTION LOOP END ---
 
         renderLoopActive = false;
         await new Promise(resolve => {

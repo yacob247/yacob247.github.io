@@ -30,7 +30,14 @@ app.post('/api/chat', async (req, res) => {
     if (!messages || !Array.isArray(messages)) {
         return res.status(400).json({ error: 'messages array required' });
     }
-
+res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache, no-transform', // no-transform stops cloudflare from compressing/buffering chunks
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no'                    // Disables buffering on proxy servers like Nginx/Cloudflare
+    });
+    
+    try {
     // SSE headers
     res.setHeader('Content-Type',      'text/event-stream');
     res.setHeader('Cache-Control',     'no-cache, no-transform');
