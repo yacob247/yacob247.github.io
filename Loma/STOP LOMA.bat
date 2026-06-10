@@ -1,44 +1,55 @@
 @echo off
+setlocal EnableDelayedExpansion
 title Loma Shutdown
 color 0C
+
+:: ═══════════════════════════════════════════════════════════════
+::  LOMA - STOP ALL SERVICES
+::  Kills: cloudflared, Node server on 8085.
+::  Leaves Ollama running (it's a background service).
+::  Safe to run even if nothing is currently running.
+:: ═══════════════════════════════════════════════════════════════
+
+set NODE_PORT=8085
+
 echo.
-echo  ========================================
-echo    LOMA - Stopping all services...
-echo  ========================================
+echo  ═══════════════════════════════════════
+echo    LOMA  ^|  Stopping all services
+echo  ═══════════════════════════════════════
 echo.
 
-:: ── 1. Stop Cloudflare tunnel ────────────────────────────────────────────────
+:: ── 1. Stop Cloudflare tunnel ────────────────────────────────
 echo [1/3] Stopping Cloudflare tunnel...
 taskkill /IM cloudflared.exe /F >nul 2>&1
 if %errorlevel%==0 (
-    echo        Tunnel stopped.
+    echo     Tunnel stopped.
 ) else (
-    echo        Tunnel was not running.
+    echo     Tunnel was not running.
 )
 
-:: ── 2. Stop Loma Node server on 8085 ─────────────────────────────────────────
-echo [2/3] Stopping Loma server (port 8085)...
-set found=0
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":8085 " ^| findstr "LISTENING"') do (
-    taskkill /PID %%a /F >nul 2>&1
-    set found=1
+:: ── 2. Stop Node server on port 8085 ────────────────────────
+echo [2/3] Stopping Loma server on port %NODE_PORT%...
+set FOUND=0
+for /f "tokens=5" %%a in ('netstat -ano 2^>nul ^| findstr ":%NODE_PORT% " ^| findstr "LISTENING"') do (
+    if not "%%a"=="" (
+        taskkill /PID %%a /F >nul 2>&1
+        echo     Killed PID %%a.
+        set FOUND=1
+    )
 )
-if "%found%"=="1" (
-    echo        Server stopped.
-) else (
-    echo        Server was not running.
-)
+if "%FOUND%"=="0" echo     Server was not running on port %NODE_PORT%.
 
-:: ── 3. Kill any orphaned node processes bound to 8085 ────────────────────────
-echo [3/3] Cleaning up any orphaned processes...
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":8085"') do (
-    taskkill /PID %%a /F >nul 2>&1
+:: ── 3. Sweep for any orphaned node processes still on 8085 ──
+echo [3/3] Final sweep for orphaned processes on %NODE_PORT%...
+for /f "tokens=5" %%a in ('netstat -ano 2^>nul ^| findstr ":%NODE_PORT%"') do (
+    if not "%%a"=="" taskkill /PID %%a /F >nul 2>&1
 )
-echo        Done.
+echo     Done.
 
 echo.
 echo  All Loma services stopped.
-echo  Ollama left running (stop manually if needed).
-echo  To stop Ollama: taskkill /IM ollama.exe /F
+echo  Ollama left running — stop it manually if needed:
+echo    taskkill /IM ollama.exe /F
 echo.
 pause
+endlocal
