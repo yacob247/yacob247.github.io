@@ -15,7 +15,7 @@ echo        Done.
 
 echo [2/2] Stopping Cloudflare tunnel...
 taskkill /IM cloudflared.exe /F >nul 2>&1
-echo        Done.
+echo      fix and start and stop  Done.
 
 echo.
 echo  All stopped. Ollama left running.

@@ -7,11 +7,11 @@ echo    LOMA - Starting all services...
 echo  ========================================
 echo.
 
-:: ── 1. Start Ollama (if not already running) ─────────────────────────
+:: ── 1. Ollama ─────────────────────────────────────────────────────────
 echo [1/3] Checking Ollama...
 curl -s http://127.0.0.1:11434/api/tags >nul 2>&1
 if %errorlevel%==0 (
-    echo        Ollama already running. OK.
+    echo        Already running. OK.
 ) else (
     echo        Starting Ollama...
     start "" "ollama" serve
@@ -19,28 +19,29 @@ if %errorlevel%==0 (
     echo        Ollama started.
 )
 
-:: ── 2. Start Cloudflare Tunnel ────────────────────────────────────────
-echo [2/3] Starting Cloudflare tunnel...
-start "" /min cmd /c "cloudflared tunnel run"
+:: ── 2. Loma Node server ───────────────────────────────────────────────
+echo [2/3] Starting Loma server on port 8085...
+:: Kill anything already on 8085
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8085 ^| findstr LISTENING') do (
+    taskkill /PID %%a /F >nul 2>&1
+)
+start "" /min cmd /c "cd /d C:\Users\youse\Downloads\yacob247.github.io-main\yacob247.github.io-main\Loma && node server.js"
 timeout /t 2 /nobreak >nul
+echo        Loma server started.
+
+:: ── 3. Cloudflare tunnel ──────────────────────────────────────────────
+echo [3/3] Starting Cloudflare tunnel...
+taskkill /IM cloudflared.exe /F >nul 2>&1
+timeout /t 1 /nobreak >nul
+start "" /min cmd /c "cloudflared tunnel run --protocol http2"
+timeout /t 3 /nobreak >nul
 echo        Tunnel started.
 
-:: ── 3. Start PM2 (loma-proxy + frontend) ─────────────────────────────
-echo [3/3] Starting PM2 servers...
-call pm2 start C:\Users\youse\.pm2\dump.pm2 >nul 2>&1
-call pm2 resurrect >nul 2>&1
-call pm2 restart loma-proxy >nul 2>&1
-call pm2 restart frontend >nul 2>&1
-echo        Servers started.
-
 echo.
 echo  ========================================
-echo    LOMA is running!
-echo    Frontend : http://localhost:8080
-echo    API      : http://localhost:8081
-echo    Tunnel   : https://envizion.work
+echo    LOMA is live!
+echo    Local  : http://localhost:8085
+echo    Tunnel : https://api.envizion.work
 echo  ========================================
 echo.
-echo  Press any key to open Loma in your browser...
 pause >nul
-start "" "https://envizion.work"
