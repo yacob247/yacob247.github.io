@@ -1,46 +1,60 @@
 import { Engine } from './engine.js';
-import { State } from './main.js'; 
-//  app.js  —  Loma client glue
-//  Handles: input submission, file attach, web search, canvas helpers,
-//           tool bridge (image/music iframes), self-learning brain,
-//           UI helpers (toast, status pill, sidebar toggles, share/download).
-//  Does NOT duplicate: engine.js, main.js, ui.js, training.js, prompts.js
+import { State }  from './main.js';
+import { Trainer } from './training.js';
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  app.js — THE SINGLE DOM owner. All event binding lives here and ONLY here.
+//  Handles: input submission, file/image attach (real base64 vision),
+//           web search grounding, canvas helpers, tool bridge,
+//           self-learning brain, toast, sidebar toggles, model selector.
+//  Does NOT: bind events in main.js, duplicate API_URL, call btoa unsafely.
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // ─── GLOBAL FLAGS ─────────────────────────────────────────────────────────────
 window.autoScrollChat   = true;
 window._lomaActiveModel = localStorage.getItem('loma_active_model') || 'qwen2.5-coder:7b';
 
-let isWebSearchEnabled  = false;
-let attachedFileContent = null;
-let attachedFileName    = null;
-let liveCanvasTimeout   = null;
+let isWebSearchEnabled     = localStorage.getItem('loma_web_search') === 'true';
+let attachedFileContent    = null;
+let attachedFileName       = null;
+let attachedImageDataUrl   = null;   // real image for vision
+let liveCanvasTimeout      = null;
+let _charCountTimer        = null;
 
-// ─── API URL (mirrors engine.js — used by search helpers) ─────────────────────
+// ─── API URL — single source of truth (engine.js uses Engine.API_URL) ─────────
 const ENVIZION_API = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
     ? `http://${location.host}/api/chat`
     : 'https://api.envizion.work/api/chat';
 
 // ═══════════════════════════════════════════════════════════════════════════════
-//  1. MAIN INPUT HANDLER
-//     Reads the prompt, prepends any attached file, runs web search if needed,
-//     then hands off to Engine.submitPrompt().
+//  1. MAIN INPUT HANDLER — the ONLY place that calls Engine.submitPrompt()
 // ═══════════════════════════════════════════════════════════════════════════════
 window.processInputMessage = async () => {
-    const input  = document.getElementById('user-prompt') || document.getElementById('prompt-input');
+    const input   = document.getElementById('user-prompt') || document.getElementById('prompt-input');
     const userMsg = (input?.value || '').trim();
-    if (!userMsg) return;
 
-    input.value = '';
-    input.style.height = 'auto';
-    input.dispatchEvent(new Event('input'));
+    // Allow submit if there's text OR an image attached
+    if (!userMsg && !attachedImageDataUrl) return;
 
-    let finalMsg = userMsg;
+    const msgToSend = userMsg || '(image attached)';
+    if (input) { input.value = ''; input.style.height = 'auto'; input.dispatchEvent(new Event('input')); }
 
-    // Prepend attached file
+    let finalMsg = msgToSend;
+
+    // Prepend attached text file
     if (attachedFileContent) {
-        finalMsg = `Attached File: "${attachedFileName}"\n\`\`\`\n${attachedFileContent}\n\`\`\`\n\n${userMsg}`;
-        window.clearFileAttachment();
+        finalMsg = `Attached File: "${attachedFileName}"\n\`\`\`\n${attachedFileContent}\n\`\`\`\n\n${msgToSend}`;
+        attachedFileContent = null;
+        attachedFileName    = null;
+        document.getElementById('attached-file-pill')?.classList.replace('flex', 'hidden');
+    }
+
+    // Pass image to engine via window flag (engine reads and clears it)
+    if (attachedImageDataUrl) {
+        window._lomaAttachedImageDataUrl = attachedImageDataUrl;
+        attachedImageDataUrl = null;
+        document.getElementById('attached-image-preview')?.classList.add('hidden');
+        _clearImagePreview();
     }
 
     // Smart search grounding
@@ -50,9 +64,7 @@ window.processInputMessage = async () => {
         let grounding = '';
 
         if (intent.crawlHint) {
-            const url = intent.crawlHint.startsWith('http')
-                ? intent.crawlHint
-                : `https://${intent.crawlHint}`;
+            const url = intent.crawlHint.startsWith('http') ? intent.crawlHint : `https://${intent.crawlHint}`;
             _appendStatusPill('fa-code', `Reading ${url.substring(0, 40)}…`);
             const page = await _crawlPageContent(url);
             if (page) grounding += `[Direct page read: ${url}]\n${page}\n\n`;
@@ -67,26 +79,31 @@ window.processInputMessage = async () => {
             _appendStatusPill('fa-bolt', 'Web context ready.', 'text-emerald-400');
             setTimeout(_removeStatusPill, 2500);
 
-            // Auto-save to personal memory
+            // Save to memory as web category (not mixed with personal facts)
+            const entry = `[Web: ${userMsg.substring(0, 60)}] ${grounding.substring(0, 200)}`;
             if (window.State) {
-                const entry = `[Web: ${userMsg.substring(0, 60)}] ${grounding.substring(0, 400)}`;
-                if (!window.State.personalMemories.some(m => m.startsWith(`[Web: ${userMsg.substring(0, 30)}`))) {
-                    window.State.personalMemories.push(entry);
-                    if (window.State.personalMemories.length > 100) window.State.personalMemories.shift();
-                    localStorage.setItem('envizion_memories', JSON.stringify(window.State.personalMemories));
-                }
+                State.addMemory(entry, 'web');
             }
         } else {
             _removeStatusPill();
         }
     }
 
-    // Hand off to Engine — passes final (possibly grounded) message as forcedPrompt
     Engine.submitPrompt(finalMsg);
 };
 
+// expose clear for engine.js
+window._clearImagePreview = _clearImagePreview;
+function _clearImagePreview() {
+    attachedImageDataUrl = null;
+    const prev = document.getElementById('attached-image-preview');
+    if (prev) prev.classList.add('hidden');
+    const img = document.getElementById('attached-image-thumb');
+    if (img) img.src = '';
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
-//  2. FILE ATTACHMENT
+//  2. FILE & IMAGE ATTACHMENT
 // ═══════════════════════════════════════════════════════════════════════════════
 window.triggerProtectedFileAttachment = () => {
     document.getElementById('file-upload-input')?.click();
@@ -97,8 +114,8 @@ window.handleFileAttachment = async (input) => {
     if (!file) return;
     input.value = '';
 
-    if (file.size > 10 * 1024 * 1024) {
-        _toast('File too large', 'Max 10 MB.', 'fa-triangle-exclamation', 'bg-red-600');
+    if (file.size > 20 * 1024 * 1024) {
+        _toast('File too large', 'Max 20 MB.', 'fa-triangle-exclamation', 'bg-red-600');
         return;
     }
 
@@ -107,45 +124,87 @@ window.handleFileAttachment = async (input) => {
 
     try {
         attachedFileName = file.name;
-        if (textTypes.test(file.name) || file.type.startsWith('text/')) {
+
+        if (imageTypes.test(file.name) || file.type.startsWith('image/')) {
+            // Real image attachment — stored as data URL for vision
+            const dataUrl = await _readFileAsDataURL(file);
+            attachedImageDataUrl = dataUrl;
+
+            // Show image preview below input
+            const prev = document.getElementById('attached-image-preview');
+            const img  = document.getElementById('attached-image-thumb');
+            if (prev && img) {
+                img.src = dataUrl;
+                prev.classList.remove('hidden');
+            } else {
+                // Create inline preview if elements don't exist in HTML
+                _showInlineImagePreview(dataUrl, file.name);
+            }
+
+            // Show file pill too
+            document.getElementById('attached-file-pill')?.classList.replace('hidden', 'flex');
+            const nameEl = document.getElementById('attached-file-name');
+            if (nameEl) nameEl.innerText = `📷 ${file.name}`;
+            _toast('Image attached', `${file.name} ready for vision analysis.`, 'fa-image', 'bg-indigo-600');
+
+        } else if (textTypes.test(file.name) || file.type.startsWith('text/')) {
             attachedFileContent = await file.text();
-        } else if (imageTypes.test(file.name) || file.type.startsWith('image/')) {
-            const b64 = await _readFileAsDataURL(file);
-            attachedFileContent = `[IMAGE: ${file.name}]\nData URL: ${b64}`;
+            document.getElementById('attached-file-pill')?.classList.replace('hidden', 'flex');
+            const nameEl = document.getElementById('attached-file-name');
+            if (nameEl) nameEl.innerText = file.name;
+            _toast('File attached', `${file.name} ready.`, 'fa-file-lines', 'bg-emerald-600');
+
         } else {
+            // Binary — read as base64 excerpt
             const b64 = await _readFileAsB64(file);
-            attachedFileContent = `[BINARY FILE: ${file.name} (${file.type || 'unknown'}, ${(file.size / 1024).toFixed(1)}KB)]\nBase64: ${b64.substring(0, 2000)}`;
+            attachedFileContent = `[BINARY FILE: ${file.name} (${file.type || 'unknown'}, ${(file.size / 1024).toFixed(1)}KB)]\nBase64 excerpt: ${b64.substring(0, 1000)}`;
+            document.getElementById('attached-file-pill')?.classList.replace('hidden', 'flex');
+            const nameEl = document.getElementById('attached-file-name');
+            if (nameEl) nameEl.innerText = file.name;
+            _toast('File attached', `${file.name} ready.`, 'fa-file-lines', 'bg-emerald-600');
         }
-        document.getElementById('attached-file-pill')?.classList.replace('hidden', 'flex');
-        const nameEl = document.getElementById('attached-file-name');
-        if (nameEl) nameEl.innerText = file.name;
-        _toast('File attached', `${file.name} ready.`, 'fa-file-lines', 'bg-emerald-600');
     } catch {
         _toast('Read error', 'Could not read file.', 'fa-triangle-exclamation', 'bg-red-600');
     }
 };
 
+function _showInlineImagePreview(dataUrl, name) {
+    // Remove existing
+    document.getElementById('loma-inline-img-preview')?.remove();
+
+    const inputArea = document.querySelector('.relative.bg-gemini-inputBg');
+    if (!inputArea) return;
+
+    const wrapper = document.createElement('div');
+    wrapper.id        = 'loma-inline-img-preview';
+    wrapper.className = 'flex items-center gap-2 px-4 pt-2';
+    wrapper.innerHTML = `
+        <div class="relative inline-block">
+            <img src="${dataUrl}" class="h-16 w-16 object-cover rounded-xl border border-gemini-border/40">
+            <button onclick="window.clearFileAttachment()"
+                class="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <span class="text-[11px] text-slate-400 truncate max-w-[120px]">${name}</span>`;
+    inputArea.prepend(wrapper);
+}
+
 window.clearFileAttachment = () => {
-    attachedFileContent = null;
-    attachedFileName    = null;
+    attachedFileContent  = null;
+    attachedFileName     = null;
+    attachedImageDataUrl = null;
+    window._lomaAttachedImageDataUrl = null;
     document.getElementById('attached-file-pill')?.classList.replace('flex', 'hidden');
+    document.getElementById('attached-image-preview')?.classList.add('hidden');
+    document.getElementById('loma-inline-img-preview')?.remove();
 };
 
 function _readFileAsDataURL(file) {
-    return new Promise((res, rej) => {
-        const r = new FileReader();
-        r.onload = () => res(r.result);
-        r.onerror = rej;
-        r.readAsDataURL(file);
-    });
+    return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
 }
 function _readFileAsB64(file) {
-    return new Promise((res, rej) => {
-        const r = new FileReader();
-        r.onload = () => res(r.result.split(',')[1]);
-        r.onerror = rej;
-        r.readAsDataURL(file);
-    });
+    return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result.split(',')[1]); r.onerror = rej; r.readAsDataURL(file); });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -170,13 +229,11 @@ function _classifySearchIntent(msg) {
     if (/(latest|newest|current|today|2024|2025|2026|this year|right now|news|trending|update|release|version|price|cost|how much|stock|weather|score)/i.test(m))
         return { search: true, crawl: false };
 
-    const isBuild   = /(build|make|create|generate|implement|develop)/i.test(m);
+    const isBuild    = /(build|make|create|generate|implement|develop)/i.test(m);
     const hasRealTool = /(stripe|firebase|supabase|react|vue|next|tailwind|three\.?js|chart\.?js|gsap|shadcn|clerk|vercel|openai|api|sdk|library|framework|plugin|shopify|wordpress)/i.test(m);
     if (isBuild && hasRealTool) return { search: true, crawl: true };
-
     if (isBuild && /(tool|app|website|dashboard|landing page|portfolio|saas|clone|like|similar)/i.test(m))
         return { search: true, crawl: false };
-
     if (/(how (do|does|to)|best way to|tutorial|guide|example).{0,60}(ai|llm|gpt|claude|gemini|ollama|docker|kubernetes|rust|bun|deno|wasm|webgpu|webrtc)/i.test(m))
         return { search: true, crawl: false };
 
@@ -192,8 +249,8 @@ async function _fetchSmartGrounding(query, isBuildRequest = false) {
 
     if (googleKey && googleCx) {
         try {
-            const url  = `https://www.googleapis.com/customsearch/v1?key=${googleKey}&cx=${googleCx}&q=${encodeURIComponent(query)}`;
-            const res  = await fetch(url);
+            const url = `https://www.googleapis.com/customsearch/v1?key=${googleKey}&cx=${googleCx}&q=${encodeURIComponent(query)}`;
+            const res = await fetch(url);
             if (res.ok) {
                 const data = await res.json();
                 if (data.items?.length > 0) {
@@ -204,12 +261,16 @@ async function _fetchSmartGrounding(query, isBuildRequest = false) {
                         const page = await _crawlPageContent(top[0].link);
                         if (page) out += `[Crawled: ${top[0].link}]\n${page}\n`;
                     }
+                    if (window.lomaAutoCrawlSearchResults) {
+                        window.lomaAutoCrawlSearchResults(top.map(i => i.link).filter(Boolean));
+                    }
                     return out;
                 }
             }
         } catch { /* fall through */ }
     }
 
+    // Fallback: SearX
     const proxy = 'https://api.allorigins.win/get?url=';
     try {
         const searchUrl = `https://searx.be/search?q=${encodeURIComponent(query)}&format=json&categories=general`;
@@ -224,8 +285,12 @@ async function _fetchSmartGrounding(query, isBuildRequest = false) {
             const page = await _crawlPageContent(top[0].url);
             if (page) out += `[Crawled: ${top[0].url}]\n${page}\n`;
         }
+        if (window.lomaAutoCrawlSearchResults) {
+            window.lomaAutoCrawlSearchResults(top.map(i => i.url).filter(Boolean));
+        }
         return out;
     } catch {
+        // Last resort: Wikipedia
         try {
             const wikiUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query.split(' ').slice(0, 3).join('_'))}`;
             const wRes = await fetch(wikiUrl, { signal: AbortSignal.timeout(6000) });
@@ -259,22 +324,21 @@ async function _crawlPageContent(url) {
 }
 
 window.toggleWebSearch = () => {
+    isWebSearchEnabled = !isWebSearchEnabled;
+    localStorage.setItem('loma_web_search', isWebSearchEnabled);
     const cb = document.getElementById('web-search-toggle');
-    if (cb) { cb.checked = !cb.checked; isWebSearchEnabled = cb.checked; }
+    if (cb) cb.checked = isWebSearchEnabled;
     _toast('Web Search', isWebSearchEnabled ? 'Live grounding enabled.' : 'Grounding disabled.', 'fa-globe', 'bg-indigo-600');
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  5. CANVAS HELPERS
-//     ui.js handles the core canvas. These helpers handle debounced live updates,
-//     opening code in canvas, and opening in a new tab.
 // ═══════════════════════════════════════════════════════════════════════════════
 window.updateCanvasLive = (code, isFinal) => {
     const codeView = document.getElementById('live-canvas-code');
     if (codeView) codeView.innerText = code;
 
     if (!isFinal) {
-        // Open panel if closed
         window.toggleCanvasVisibility?.(true);
         clearTimeout(liveCanvasTimeout);
         liveCanvasTimeout = setTimeout(() => {
@@ -282,31 +346,18 @@ window.updateCanvasLive = (code, isFinal) => {
             if (frame) frame.srcdoc = code;
         }, 80);
     } else {
-        const encoded = btoa(unescape(encodeURIComponent(code)));
-        window.renderToCanvas?.(encoded);
+        window.UI?.updateCanvas?.(code);
     }
-};
-
-window.renderToCanvas = (base64Content) => {
-    const html  = decodeURIComponent(escape(atob(base64Content)));
-    const frame = document.getElementById('live-canvas-frame');
-    const code  = document.getElementById('live-canvas-code');
-    if (frame) frame.srcdoc = html;
-    if (code)  code.innerText = html;
-    if (window.UI) window.UI.canvasCode = html;
-    window.toggleCanvasVisibility?.(true);
-    window.switchCanvasTab?.('preview');
 };
 
 window.lomaOpenCodeInCanvas = (code, lang) => {
     const isHtml = (lang === 'html' || lang === 'html5') &&
         (code.includes('<html') || code.includes('<div') || code.includes('<body') || code.includes('<canvas'));
+    if (isHtml) { window.UI?.updateCanvas?.(code); return; }
 
-    let renderable = code;
-    if (!isHtml) {
-        const escaped = code.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-        const canRunJS = lang === 'javascript' || lang === 'js';
-        renderable = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+    const escaped  = code.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    const canRunJS = lang === 'javascript' || lang === 'js';
+    const renderable = `<!DOCTYPE html><html><head><meta charset="UTF-8">
 <title>Loma · ${lang}</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -325,222 +376,126 @@ pre{margin:0;padding:20px;font-size:13px;line-height:1.75;overflow:auto;flex:1;w
   ${canRunJS ? '<button class="run-btn" onclick="runCode()">▶ Run</button>' : '<span style="color:#4b5563">read-only</span>'}
 </div>
 <pre id="code-el">${escaped}</pre>
-<div class="out-zone" id="out-zone"><div style="font-size:10px;color:#6b7280;text-transform:uppercase;margin-bottom:6px">Output</div><div id="out-content"></div></div>
-<script>
+<div class="out-zone" id="out"></div>
+${canRunJS ? `<script>
 function runCode(){
-  const oz=document.getElementById('out-zone');
-  const oc=document.getElementById('out-content');
-  oz.className='out-zone on';
-  ${canRunJS ? `try{const logs=[];const ol=console.log;console.log=(...a)=>{logs.push(a.map(x=>typeof x==='object'?JSON.stringify(x,null,2):String(x)).join(' '));ol(...a)};eval(document.getElementById('code-el').textContent);console.log=ol;oc.textContent=logs.join('\\n')||'(no console output)';}catch(e){oc.textContent='Error: '+e.message;oc.style.color='#f87171';}` : `oc.textContent='Run in your environment.';`}
+    const out = document.getElementById('out');
+    out.classList.add('on');
+    out.textContent = '';
+    const origLog = console.log;
+    console.log = (...a) => { out.textContent += a.join(' ') + '\\n'; origLog(...a); };
+    try { eval(document.getElementById('code-el').textContent); }
+    catch(e){ out.style.color='#f87171'; out.textContent = 'Error: '+e.message; }
+    console.log = origLog;
 }
-<\/script></body></html>`;
-    }
-    const encoded = btoa(unescape(encodeURIComponent(renderable)));
-    window.renderToCanvas(encoded);
-};
-
-window.lomaOpenInNewTab = (code, lang) => {
-    const isHtml = (lang === 'html' || lang === 'html5') && (code.includes('<html') || code.includes('<div') || code.includes('<body'));
-    let content = code;
-    if (!isHtml) {
-        const escaped = code.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-        content = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Loma · ${lang}</title>
-<style>*{box-sizing:border-box;margin:0;padding:0}body{background:#0d0e10;color:#e2e8f0;font-family:'Courier New',monospace}
-.hdr{padding:12px 16px;background:#16181c;border-bottom:1px solid #2a2d33;font-size:11px;color:#6b7280}
-pre{padding:20px;font-size:13px;line-height:1.75;white-space:pre-wrap;word-break:break-word}</style></head>
-<body><div class="hdr">loma / ${lang}</div><pre>${escaped}</pre></body></html>`;
-    }
-    window.open(URL.createObjectURL(new Blob([content], { type: 'text/html' })), '_blank');
+<\/script>` : ''}
+</body></html>`;
+    window.UI?.updateCanvas?.(renderable);
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
-//  6. UI HELPERS  (toast, status pill, sidebar toggles, share, download chat)
+//  6. MODEL SELECTOR
 // ═══════════════════════════════════════════════════════════════════════════════
-function _toast(title, desc, icon, bgClass = 'bg-emerald-600') {
-    const toast = document.getElementById('alert-toast');
-    if (!toast) return;
-    document.getElementById('alert-title').innerText  = title;
-    document.getElementById('alert-desc').innerText   = desc;
-    document.getElementById('alert-icon').className   = `fa-solid ${icon}`;
-    document.getElementById('alert-icon-wrapper').className =
-        `h-10 w-10 rounded-full ${bgClass}/20 flex items-center justify-center text-lg`;
-    toast.classList.remove('translate-y-20', 'opacity-0');
-    toast.classList.add('translate-y-0', 'opacity-100');
-    setTimeout(() => {
-        toast.classList.remove('translate-y-0', 'opacity-100');
-        toast.classList.add('translate-y-20', 'opacity-0');
-    }, 4000);
-}
-// Expose so engine.js / main.js can call it
-window.triggerNotificationToast = _toast;
-
-function _appendStatusPill(icon, text, colorClass = 'text-gemini-textMuted') {
-    const stream = document.getElementById('chat-stream');
-    if (!stream) return;
-    const id = 'status-pill-' + Date.now();
-    stream.insertAdjacentHTML('beforeend',
-        `<div id="${id}" class="status-pill text-center my-2">
-            <span class="inline-flex items-center gap-2 px-3 py-1 bg-gemini-card/30
-                         rounded-full text-[10px] font-mono ${colorClass}">
-                <i class="fa-solid ${icon}"></i> ${text}
-            </span>
-        </div>`);
-    if (window.autoScrollChat) stream.scrollTop = stream.scrollHeight;
-}
-function _removeStatusPill() {
-    document.querySelectorAll('.status-pill').forEach(p => p.remove());
-}
-
-window.toggleSidebarCollapse = () => {
-    const sidebar  = document.getElementById('gemini-sidebar');
-    const overlay  = document.getElementById('mobile-overlay');
-    if (!sidebar) return;
-    sidebar.classList.toggle('-translate-x-full');
-    if (window.innerWidth < 768) {
-        if (sidebar.classList.contains('-translate-x-full')) {
-            overlay?.classList.add('hidden');
-            overlay?.classList.remove('opacity-100');
-        } else {
-            overlay?.classList.remove('hidden');
-            setTimeout(() => overlay?.classList.add('opacity-100'), 10);
-        }
-    }
-};
-
-window.toggleConfigSidebar = () => {
-    document.getElementById('config-sidebar')?.classList.toggle('-translate-x-full');
-};
-
-window.applyNewConfig = () => {
-    const model   = document.getElementById('config-model')?.value.trim();
-    const tokens  = parseInt(document.getElementById('config-tokens')?.value);
-    const depth   = parseInt(document.getElementById('config-reasoning-depth')?.value);
-    const gKey    = document.getElementById('google-search-api-key')?.value.trim();
-    const gCx     = document.getElementById('google-search-cx')?.value.trim();
-
-    if (model)  { window._lomaActiveModel = model; localStorage.setItem('loma_active_model', model); }
-    if (tokens) localStorage.setItem('envizion_tokens', tokens);
-    if (depth)  localStorage.setItem('envizion_reasoning_depth', depth);
-    if (gKey)   localStorage.setItem('envizion_google_key', gKey);
-    if (gCx)    localStorage.setItem('envizion_google_cx', gCx);
-
-    window.toggleConfigSidebar();
-    _toast('Settings Saved', 'Intelligence preferences updated.', 'fa-check', 'bg-emerald-600');
-};
-
 window.selectModel = (modelId, label) => {
     window._lomaActiveModel = modelId;
     localStorage.setItem('loma_active_model', modelId);
     const pill = document.getElementById('model-pill-label');
     if (pill) pill.textContent = label;
+    // Update dots
     document.querySelectorAll('.model-dot').forEach(d => {
-        d.className = d.getAttribute('data-model') === modelId
-            ? 'w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0 model-dot'
-            : 'w-2 h-2 rounded-full bg-indigo-400/40 flex-shrink-0 model-dot';
+        const isActive = d.getAttribute('data-model') === modelId;
+        d.className = `w-2 h-2 rounded-full flex-shrink-0 model-dot ${isActive ? 'bg-emerald-400' : 'bg-indigo-400/40'}`;
     });
-    const cfgModel = document.getElementById('config-model');
-    if (cfgModel) cfgModel.value = modelId;
-    window.toggleModelDropdown?.(false);
-    _toast('Model Switched', `Now using: ${label}`, 'fa-microchip', 'bg-indigo-600');
+    window.toggleModelDropdown(false);
+    _toast('Model switched', `Now using: ${label}`, 'fa-microchip', 'bg-indigo-600');
 };
 
-window.toggleModelDropdown = (forceState) => {
+window.toggleModelDropdown = (force) => {
     const dd = document.getElementById('model-dropdown');
     if (!dd) return;
-    const open = forceState !== undefined ? forceState : dd.classList.contains('hidden');
-    if (open) {
-        dd.classList.remove('hidden');
-        const close = e => {
-            if (!document.getElementById('model-selector-wrapper')?.contains(e.target)) {
-                dd.classList.add('hidden');
-                document.removeEventListener('click', close);
+    const shouldShow = force !== undefined ? force : dd.classList.contains('hidden');
+    dd.classList.toggle('hidden', !shouldShow);
+};
+
+// Close dropdown on outside click
+document.addEventListener('click', (e) => {
+    const wrapper = document.getElementById('model-selector-wrapper');
+    if (wrapper && !wrapper.contains(e.target)) {
+        document.getElementById('model-dropdown')?.classList.add('hidden');
+    }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  7. TOAST NOTIFICATION
+// ═══════════════════════════════════════════════════════════════════════════════
+function _toast(title, desc, icon = 'fa-bell', bg = 'bg-emerald-600') {
+    const toast   = document.getElementById('alert-toast');
+    const titleEl = document.getElementById('alert-title');
+    const descEl  = document.getElementById('alert-desc');
+    const iconEl  = document.getElementById('alert-icon');
+    const iconWr  = document.getElementById('alert-icon-wrapper');
+    if (!toast) return;
+
+    if (titleEl) titleEl.textContent = title;
+    if (descEl)  descEl.textContent  = desc;
+    if (iconEl)  iconEl.className    = `fa-solid ${icon}`;
+    if (iconWr)  iconWr.className    = `h-10 w-10 rounded-full flex items-center justify-center text-white text-lg ${bg}`;
+
+    toast.classList.remove('translate-y-20', 'opacity-0');
+    toast.classList.add('translate-y-0', 'opacity-100');
+    clearTimeout(toast._timer);
+    toast._timer = setTimeout(() => {
+        toast.classList.remove('translate-y-0', 'opacity-100');
+        toast.classList.add('translate-y-20', 'opacity-0');
+    }, 3000);
+}
+window.triggerNotificationToast = _toast;
+
+function _appendStatusPill(icon, text, colorClass = 'text-blue-400') {
+    _removeStatusPill();
+    const stream = document.getElementById('chat-stream');
+    if (!stream) return;
+    const pill = document.createElement('div');
+    pill.id = 'loma-status-pill';
+    pill.className = `flex items-center gap-2 text-xs ${colorClass} px-4 py-2 animate-pulse`;
+    pill.innerHTML = `<i class="fa-solid ${icon} fa-spin"></i><span>${text}</span>`;
+    stream.appendChild(pill);
+    stream.scrollTop = stream.scrollHeight;
+}
+function _removeStatusPill() {
+    document.getElementById('loma-status-pill')?.remove();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  8. TOOL BRIDGE (image gen, music gen via Pollinations iframe)
+// ═══════════════════════════════════════════════════════════════════════════════
+function _callTool(iframeId, requestType, responseType, payload) {
+    return new Promise((resolve, reject) => {
+        let iframe = document.getElementById(iframeId);
+        if (!iframe) {
+            iframe = document.createElement('iframe');
+            iframe.id = iframeId;
+            iframe.style.cssText = 'position:fixed;bottom:-1px;right:-1px;width:1px;height:1px;opacity:0;pointer-events:none;border:none;';
+            const src = iframeId === 'image-gen'
+                ? './loma-tool-bridge.html?tool=image'
+                : './loma-tool-bridge.html?tool=music';
+            iframe.src = src;
+            document.body.appendChild(iframe);
+        }
+
+        const timeout = setTimeout(() => reject(new Error('Tool timeout after 30s')), 30000);
+        const handler = (e) => {
+            if (e.data?.type === responseType) {
+                clearTimeout(timeout);
+                window.removeEventListener('message', handler);
+                if (e.data.error) reject(new Error(e.data.error));
+                else resolve(e.data);
             }
         };
-        setTimeout(() => document.addEventListener('click', close), 0);
-    } else {
-        dd.classList.add('hidden');
-    }
-};
-
-window.generateShareLink = () => {
-    const id  = window.State?.currentId || '';
-    const url = `https://envizion.work/Loma/${id}`;
-    navigator.clipboard.writeText(url)
-        .then(() => _toast('Link Copied', 'Shareable URL copied.', 'fa-link', 'bg-blue-600'))
-        .catch(() => prompt('Copy this link:', url));
-};
-
-window.downloadChatHistory = () => {
-    const session = window.State?.db?.sessions?.[window.State?.currentId];
-    if (!session || session.messages.length <= 1) {
-        _toast('Empty Chat', 'Nothing to download yet.', 'fa-xmark', 'bg-red-600');
-        return;
-    }
-    let text = `Chat: ${session.title}\nExported: ${new Date().toLocaleString()}\n\n`;
-    session.messages.forEach(m => {
-        if (m.role !== 'system') text += `--- ${m.role.toUpperCase()} ---\n${m.content}\n\n`;
-    });
-    const a    = document.createElement('a');
-    a.href     = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
-    a.download = `chat_${window.State?.currentId || Date.now()}.txt`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-};
-
-// ═══════════════════════════════════════════════════════════════════════════════
-//  7. TOOL BRIDGE  —  music-gen.html + image-gen.html (hidden iframe pool)
-//     CPU stays on the USER's machine — the server only routes the API call.
-// ═══════════════════════════════════════════════════════════════════════════════
-const TOOL_BASE_URL       = 'https://envizion.work/Loma';
-const _toolIframes        = {};
-const _pendingToolRequests = {};
-
-function _getToolIframe(name) {
-    if (_toolIframes[name]) return _toolIframes[name];
-    const iframe = document.createElement('iframe');
-    iframe.src = `${TOOL_BASE_URL}/${name}.html`;
-    iframe.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;left:-9999px;top:-9999px;border:0';
-    iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms');
-    document.body.appendChild(iframe);
-    _toolIframes[name] = iframe;
-    return iframe;
-}
-
-function _callTool(toolName, requestType, resultType, payload) {
-    return new Promise((resolve, reject) => {
-        const id      = Date.now() + Math.random();
-        const iframe  = _getToolIframe(toolName);
-        const timeout = setTimeout(() => {
-            delete _pendingToolRequests[id];
-            reject(new Error(`Tool "${toolName}" timed out after 90s`));
-        }, 90_000);
-        _pendingToolRequests[id] = { resolve, reject, timeout, resultType };
-        const send = () => iframe.contentWindow?.postMessage({ type: requestType, payload, _id: id }, '*');
-        if (iframe.contentDocument?.readyState === 'complete') send();
-        else iframe.onload = send;
+        window.addEventListener('message', handler);
+        iframe.contentWindow?.postMessage({ type: requestType, ...payload }, '*');
     });
 }
-
-window.addEventListener('message', e => {
-    const msg = e.data;
-    if (!msg || typeof msg !== 'object') return;
-
-    // Tool bridge results
-    for (const [id, entry] of Object.entries(_pendingToolRequests)) {
-        if (msg.type === entry.resultType) {
-            clearTimeout(entry.timeout);
-            delete _pendingToolRequests[id];
-            msg.error ? entry.reject(new Error(msg.error)) : entry.resolve(msg);
-            break;
-        }
-    }
-
-    // Learning from tool results
-    if (msg.type === 'LOMA_IMAGE_RESULT' && msg.prompt)
-        window.lomaLearnFromImage({ prompt: msg.prompt, style: msg.style });
-    if (msg.type === 'LOMA_MUSIC_RESULT' && msg.prompt)
-        window.lomaLearnFromMusic({ prompt: msg.prompt, style: msg.style, bpm: msg.bpm, key: msg.key });
-});
 
 window.lomaGenerateMusic = (prompt, opts = {}) =>
     _callTool('music-gen', 'LOMA_MUSIC_REQUEST', 'LOMA_MUSIC_RESULT', { prompt, ...opts });
@@ -548,7 +503,7 @@ window.lomaGenerateMusic = (prompt, opts = {}) =>
 window.lomaGenerateImage = (prompt, opts = {}) =>
     _callTool('image-gen', 'LOMA_IMAGE_REQUEST', 'LOMA_IMAGE_RESULT', { prompt, ...opts });
 
-// Post-process tool tags in the final reply (called from engine.js after stream ends)
+// ── Post-process tool tags after stream ends ──────────────────────────────────
 const MUSIC_TAG_RE = /\[GENERATE_MUSIC:\s*([^\]]+)\]/gi;
 const IMAGE_TAG_RE = /\[GENERATE_IMAGE:\s*([^\]]+)\]/gi;
 
@@ -566,7 +521,7 @@ window.lomaProcessToolTags = async (replyText, outputEl) => {
 
     for (const match of [...replyText.matchAll(MUSIC_TAG_RE)]) {
         const attrs = _parseTagAttrs(match[1]);
-        const placeholder = `<span class="loma-tool-pending"><i class="fa-solid fa-spinner fa-spin text-[#a8c7fa] mr-2"></i>Generating music: "${attrs.prompt}"…</span>`;
+        const placeholder = `<span class="loma-tool-pending"><i class="fa-solid fa-spinner fa-spin text-blue-400 mr-2"></i>Generating music: "${attrs.prompt}"…</span>`;
         processed = processed.replace(match[0], placeholder);
         if (outputEl) outputEl.innerHTML = parseContent(processed);
         try {
@@ -580,6 +535,7 @@ window.lomaProcessToolTags = async (replyText, outputEl) => {
                 <div class="text-[10px] text-gray-600 mt-2">${result.prompt} · ${result.duration}s</div>
             </div>`;
             processed = processed.replace(placeholder, html);
+            if (window.lomaLearnFromMusic) window.lomaLearnFromMusic({ prompt: attrs.prompt, bpm: attrs.bpm, key: attrs.key, style: attrs.style });
         } catch (err) {
             processed = processed.replace(placeholder, `<span class="text-red-400 text-xs">⚠ Music failed: ${err.message}</span>`);
         }
@@ -588,25 +544,35 @@ window.lomaProcessToolTags = async (replyText, outputEl) => {
 
     for (const match of [...replyText.matchAll(IMAGE_TAG_RE)]) {
         const attrs = _parseTagAttrs(match[1]);
-        const placeholder = `<span class="loma-tool-pending"><i class="fa-solid fa-spinner fa-spin text-[#a8c7fa] mr-2"></i>Generating image: "${attrs.prompt}"…</span>`;
+        // Apply prompt enhancement if available
+        const enhancedPrompt = window.lomaBuildEnhancedImagePrompt?.(attrs.prompt) || attrs.prompt;
+        const placeholder = `<span class="loma-tool-pending"><i class="fa-solid fa-spinner fa-spin text-blue-400 mr-2"></i>Generating image…</span>`;
         processed = processed.replace(match[0], placeholder);
         if (outputEl) outputEl.innerHTML = parseContent(processed);
         try {
-            const result = await window.lomaGenerateImage(attrs.prompt, {
+            const result = await window.lomaGenerateImage(enhancedPrompt, {
                 style: attrs.style || 'flux', ratio: attrs.ratio || '1024x1024',
                 enhance: attrs.enhance !== 'false', nologo: true
             });
+            // Save to session image gallery
+            _saveImageToGallery(result.imageData || result.imageUrl, enhancedPrompt);
+
             const html = `<div class="my-4 max-w-lg">
-                <div class="rounded-xl overflow-hidden border border-[#2e2f30]">
-                    <img src="${result.imageData}" alt="${attrs.prompt}" class="w-full block">
+                <div class="rounded-xl overflow-hidden border border-[#2e2f30] bg-[#0c0d12]">
+                    <img src="${result.imageData || result.imageUrl}" alt="${enhancedPrompt}" class="w-full block" loading="lazy">
                 </div>
                 <div class="flex justify-between items-center mt-2">
-                    <p class="text-[10px] text-gray-500">${result.prompt}</p>
-                    <a href="${result.imageData}" download="loma-${Date.now()}.png"
-                       class="text-[10px] text-[#a8c7fa] px-2 py-1 bg-[#1a1b1c] border border-[#2e2f30] rounded">Save</a>
+                    <p class="text-[10px] text-gray-500 truncate flex-1 mr-2">${enhancedPrompt}</p>
+                    <div class="flex gap-2 shrink-0">
+                        <a href="${result.imageData || result.imageUrl}" download="loma-${Date.now()}.png"
+                           class="text-[10px] text-blue-400 px-2 py-1 bg-[#1a1b1c] border border-[#2e2f30] rounded hover:bg-[#2a2d33] transition">Save</a>
+                        <button onclick="window.lomaRegenerateImage(this, '${encodeURIComponent(enhancedPrompt)}')"
+                            class="text-[10px] text-slate-400 px-2 py-1 bg-[#1a1b1c] border border-[#2e2f30] rounded hover:bg-[#2a2d33] transition">↻</button>
+                    </div>
                 </div>
             </div>`;
             processed = processed.replace(placeholder, html);
+            if (window.lomaLearnFromImage) window.lomaLearnFromImage({ prompt: enhancedPrompt, style: attrs.style || 'flux' });
         } catch (err) {
             processed = processed.replace(placeholder, `<span class="text-red-400 text-xs">⚠ Image failed: ${err.message}</span>`);
         }
@@ -616,10 +582,36 @@ window.lomaProcessToolTags = async (replyText, outputEl) => {
     return processed;
 };
 
+// ── Image gallery (persists across reload) ────────────────────────────────────
+const _IMG_GALLERY_KEY = 'loma_image_gallery';
+function _saveImageToGallery(src, prompt) {
+    try {
+        const gallery = JSON.parse(localStorage.getItem(_IMG_GALLERY_KEY) || '[]');
+        gallery.unshift({ src, prompt, ts: Date.now() });
+        if (gallery.length > 50) gallery.pop();
+        localStorage.setItem(_IMG_GALLERY_KEY, JSON.stringify(gallery));
+    } catch { /* storage full */ }
+}
+
+window.lomaRegenerateImage = async (btn, encodedPrompt) => {
+    const prompt = decodeURIComponent(encodedPrompt);
+    const container = btn.closest('.my-4');
+    if (!container) return;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+    try {
+        const result = await window.lomaGenerateImage(prompt, { style: 'flux', ratio: '1024x1024', nologo: true });
+        const img = container.querySelector('img');
+        if (img) img.src = result.imageData || result.imageUrl;
+        _saveImageToGallery(result.imageData || result.imageUrl, prompt);
+        btn.innerHTML = '↻';
+    } catch (e) {
+        btn.innerHTML = '⚠';
+        btn.title = e.message;
+    }
+};
+
 // ═══════════════════════════════════════════════════════════════════════════════
-//  8. SELF-LEARNING BRAIN
-//     All computation here runs in the USER's browser — zero server CPU.
-//     The server only receives/sends chat messages.
+//  9. SELF-LEARNING BRAIN
 // ═══════════════════════════════════════════════════════════════════════════════
 const _MEM = {
     CODE:    'loma_code_patterns',
@@ -628,14 +620,14 @@ const _MEM = {
     CRAWL:   'loma_crawl_cache',
     IMPROVE: 'loma_improve_log',
 };
-const _load = key => { try { return JSON.parse(localStorage.getItem(key) || 'null') || []; } catch { return []; } };
-const _save = (key, data) => { try { localStorage.setItem(key, JSON.stringify(data)); } catch {} };
+const _loadMem = key => { try { return JSON.parse(localStorage.getItem(key) || 'null') || []; } catch { return []; } };
+const _saveMem = (key, data) => { try { localStorage.setItem(key, JSON.stringify(data)); } catch {} };
 
-let _codeMem    = _load(_MEM.CODE);
-let _imageMem   = _load(_MEM.IMAGE);
-let _musicMem   = _load(_MEM.MUSIC);
-let _crawlCache = _load(_MEM.CRAWL);
-let _improveLog = _load(_MEM.IMPROVE);
+let _codeMem    = _loadMem(_MEM.CODE);
+let _imageMem   = _loadMem(_MEM.IMAGE);
+let _musicMem   = _loadMem(_MEM.MUSIC);
+let _crawlCache = _loadMem(_MEM.CRAWL);
+let _improveLog = _loadMem(_MEM.IMPROVE);
 
 function _detectLang(code) {
     if (/<(html|div|nav|section|header|button|canvas|svg)/i.test(code)) return 'html';
@@ -666,16 +658,14 @@ window.lomaLearnFromCode = (code, lang) => {
     const tok  = Math.round(code.split(/\s+/).length * 1.3);
     const better = _codeMem.filter(p => p.lang === lang && (p.quality > q + 0.1 || p.tokens < tok * 0.7)).slice(0, 3);
     if (better.length > 0) {
-        const note = `[LOMA LEARNING] Found ${better.length} better ${lang} patterns: ${
-            better.map(p => p.tokens < tok * 0.7 ? `${Math.round((1 - p.tokens / tok) * 100)}% fewer tokens` : 'higher quality').join(', ')
-        }. Apply next time.`;
+        const note = `[LOMA LEARNING] Found ${better.length} better ${lang} patterns. Apply next time.`;
         _improveLog.push({ ts: Date.now(), lang, note, myQ: q, bestQ: Math.max(...better.map(p => p.quality)) });
         if (_improveLog.length > 500) _improveLog = _improveLog.slice(-500);
-        _save(_MEM.IMPROVE, _improveLog);
+        _saveMem(_MEM.IMPROVE, _improveLog);
     }
     _codeMem.push({ lang, code: code.slice(0, 2000), quality: q, tokens: tok, source: 'self-generated', ts: Date.now() });
     if (_codeMem.length > 1000) _codeMem = _codeMem.slice(-1000);
-    _save(_MEM.CODE, _codeMem);
+    _saveMem(_MEM.CODE, _codeMem);
 };
 
 window.lomaLearnFromImage = imgData => {
@@ -687,7 +677,7 @@ window.lomaLearnFromImage = imgData => {
     if (imgData.prompt.split(',').length > 4) q += 0.1;
     _imageMem.push({ ...imgData, quality: q, ts: Date.now() });
     if (_imageMem.length > 300) _imageMem = _imageMem.slice(-300);
-    _save(_MEM.IMAGE, _imageMem);
+    _saveMem(_MEM.IMAGE, _imageMem);
 };
 
 window.lomaLearnFromMusic = data => {
@@ -700,7 +690,7 @@ window.lomaLearnFromMusic = data => {
     if (/melody|bass|reverb|delay/.test(data.prompt)) q += 0.1;
     _musicMem.push({ ...data, quality: q, ts: Date.now() });
     if (_musicMem.length > 200) _musicMem = _musicMem.slice(-200);
-    _save(_MEM.MUSIC, _musicMem);
+    _saveMem(_MEM.MUSIC, _musicMem);
 };
 
 window.lomaBuildEnhancedImagePrompt = raw => {
@@ -722,7 +712,6 @@ window.lomaBuildEnhancedMusicPrompt = (raw, style) => {
     return found.length > 0 ? `${raw}, ${found.slice(0, 2).join(', ')}` : raw;
 };
 
-// Injected into system prompt by engine.js via window.lomaGetLearningContext()
 window.lomaGetLearningContext = () => {
     let ctx = '';
     if (_improveLog.length > 0) {
@@ -735,7 +724,7 @@ window.lomaGetLearningContext = () => {
     if (topLangs.length > 0) ctx += `\n• Studied ${_codeMem.length} code patterns (${topLangs.join(', ')}). Use most efficient patterns.`;
     if (_imageMem.length > 0) {
         const best = [..._imageMem].sort((a, b) => b.quality - a.quality)[0];
-        if (best) ctx += `\n• Best image prompt: "${best.prompt.slice(0, 80)}"`;
+        if (best) ctx += `\n• Best image prompt so far: "${best.prompt.slice(0, 80)}"`;
     }
     if (_musicMem.length > 0) {
         const best = [..._musicMem].sort((a, b) => b.quality - a.quality)[0];
@@ -744,7 +733,6 @@ window.lomaGetLearningContext = () => {
     return ctx;
 };
 
-// Page crawl for learning (separate from search crawl — URL list from search results)
 window.lomaAutoCrawlSearchResults = async urls => {
     if (!urls?.length) return;
     for (const url of urls.slice(0, 3)) {
@@ -752,7 +740,7 @@ window.lomaAutoCrawlSearchResults = async urls => {
         if (patterns.length > 0) {
             _codeMem.push(...patterns);
             if (_codeMem.length > 1000) _codeMem = _codeMem.slice(-1000);
-            _save(_MEM.CODE, _codeMem);
+            _saveMem(_MEM.CODE, _codeMem);
         }
     }
 };
@@ -775,7 +763,7 @@ async function _crawlAndExtractPatterns(url) {
         });
         _crawlCache.push({ url, patterns, ts: Date.now() });
         if (_crawlCache.length > 200) _crawlCache = _crawlCache.slice(-200);
-        _save(_MEM.CRAWL, _crawlCache);
+        _saveMem(_MEM.CRAWL, _crawlCache);
         return patterns;
     } catch { return []; }
 }
@@ -787,10 +775,11 @@ window.lomaGetStats = () => {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
-//  9. SETTINGS UI INIT  (runs on DOMContentLoaded)
+//  10. DOMContentLoaded — SINGLE event binding hub. app.js owns ALL of this.
 // ═══════════════════════════════════════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', () => {
-    // Restore model pill
+
+    // ── Restore model pill ──────────────────────────────────────────────────
     const active = window._lomaActiveModel;
     const modelLabels = {
         'qwen2.5-coder:7b': 'Loma Coder 7B',
@@ -803,12 +792,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (pill) pill.textContent = modelLabels[active] || active;
 
     document.querySelectorAll('.model-dot').forEach(d => {
-        d.className = d.getAttribute('data-model') === active
-            ? 'w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0 model-dot'
-            : 'w-2 h-2 rounded-full bg-indigo-400/40 flex-shrink-0 model-dot';
+        d.className = `w-2 h-2 rounded-full flex-shrink-0 model-dot ${d.getAttribute('data-model') === active ? 'bg-emerald-400' : 'bg-indigo-400/40'}`;
     });
 
-    // Restore settings inputs
+    // ── Restore settings inputs ─────────────────────────────────────────────
     const cfgModel  = document.getElementById('config-model');
     const cfgTokens = document.getElementById('config-tokens');
     const cfgDepth  = document.getElementById('config-reasoning-depth');
@@ -821,17 +808,24 @@ document.addEventListener('DOMContentLoaded', () => {
     if (gKey)      gKey.value      = localStorage.getItem('envizion_google_key') || '';
     if (gCx)       gCx.value       = localStorage.getItem('envizion_google_cx') || '';
 
-    // Token slider label
     const tokenVal = document.getElementById('token-val');
-    if (cfgTokens && tokenVal) {
-        cfgTokens.addEventListener('input', () => { tokenVal.innerText = cfgTokens.value; });
-    }
+    if (cfgTokens && tokenVal) cfgTokens.addEventListener('input', () => {
+        tokenVal.innerText = cfgTokens.value;
+        localStorage.setItem('envizion_tokens', cfgTokens.value);
+    });
     const depthVal = document.getElementById('reasoning-depth-val');
-    if (cfgDepth && depthVal) {
-        cfgDepth.addEventListener('input', () => { depthVal.innerText = cfgDepth.value; });
-    }
+    if (cfgDepth && depthVal) cfgDepth.addEventListener('input', () => {
+        depthVal.innerText = cfgDepth.value;
+        localStorage.setItem('envizion_reasoning_depth', cfgDepth.value);
+    });
+    if (gKey) gKey.addEventListener('change', () => localStorage.setItem('envizion_google_key', gKey.value));
+    if (gCx)  gCx.addEventListener('change',  () => localStorage.setItem('envizion_google_cx',  gCx.value));
 
-    // Auto-scroll detection
+    // ── Restore web search toggle state ────────────────────────────────────
+    const cb = document.getElementById('web-search-toggle');
+    if (cb) cb.checked = isWebSearchEnabled;
+
+    // ── Auto-scroll detection ───────────────────────────────────────────────
     const stream = document.getElementById('chat-stream');
     if (stream) {
         stream.addEventListener('scroll', function () {
@@ -839,25 +833,85 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Keyboard submit (for id="user-prompt" in index.html)
-    const input     = document.getElementById('user-prompt');
+    // ── Keyboard submit + auto-resize + char counter ────────────────────────
+    const input     = document.getElementById('user-prompt') || document.getElementById('prompt-input');
     const submitBtn = document.getElementById('submit-prompt-btn');
+    const charCount = document.getElementById('char-count-label');
+
     if (input) {
         input.addEventListener('keydown', e => {
             if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); window.processInputMessage(); }
         });
         input.addEventListener('input', function () {
             this.style.height = 'auto';
-            this.style.height = this.scrollHeight + 'px';
+            this.style.height = Math.min(this.scrollHeight, 200) + 'px';
             if (submitBtn) {
-                submitBtn.classList.toggle('text-slate-400', !this.value.trim());
-                submitBtn.classList.toggle('text-white',      !!this.value.trim());
+                const hasContent = !!this.value.trim() || !!attachedImageDataUrl;
+                submitBtn.classList.toggle('text-slate-400', !hasContent);
+                submitBtn.classList.toggle('text-white',     hasContent);
+            }
+            // Live char/token estimate
+            if (charCount) {
+                const len = this.value.length;
+                const approxTok = Math.round(len / 4);
+                charCount.textContent = len > 0 ? `~${approxTok} tokens` : '';
             }
         });
+        input.addEventListener('paste', () => {
+            // Check clipboard for images
+            // handled by paste event on window below
+        });
     }
+
+    // ── Paste image from clipboard ──────────────────────────────────────────
+    window.addEventListener('paste', async (e) => {
+        const items = e.clipboardData?.items;
+        if (!items) return;
+        for (const item of items) {
+            if (item.type.startsWith('image/')) {
+                e.preventDefault();
+                const file = item.getAsFile();
+                if (file) {
+                    const dataUrl = await _readFileAsDataURL(file);
+                    attachedImageDataUrl = dataUrl;
+                    window._lomaAttachedImageDataUrl = dataUrl;
+                    _showInlineImagePreview(dataUrl, 'pasted-image.png');
+                    _toast('Image pasted', 'Ready for vision analysis.', 'fa-image', 'bg-indigo-600');
+                    // Activate submit button
+                    if (submitBtn) submitBtn.classList.replace('text-slate-400', 'text-white');
+                }
+                break;
+            }
+        }
+    });
+
     if (submitBtn) submitBtn.onclick = window.processInputMessage;
 
-    // Responsive canvas resize
+    // ── Stop button — only the button itself, not the container ────────────
+    const stopBtn = document.getElementById('stop-btn');
+    if (stopBtn) stopBtn.onclick = (e) => { e.stopPropagation(); Engine.abort(); };
+
+    // ── Sidebar mobile toggle ───────────────────────────────────────────────
+    const sidebarBtn  = document.getElementById('sidebar-toggle') || document.getElementById('btn-menu');
+    if (sidebarBtn) sidebarBtn.onclick = () => {
+        const sidebar = document.getElementById('gemini-sidebar');
+        const overlay = document.getElementById('mobile-overlay');
+        if (!sidebar) return;
+        sidebar.classList.toggle('-translate-x-full');
+        if (overlay) {
+            const isOpen = !sidebar.classList.contains('-translate-x-full');
+            overlay.classList.toggle('hidden', !isOpen);
+        }
+    };
+
+    window.toggleSidebarCollapse = () => {
+        const sidebar = document.getElementById('gemini-sidebar');
+        const overlay = document.getElementById('mobile-overlay');
+        if (sidebar) sidebar.classList.add('-translate-x-full');
+        if (overlay) overlay.classList.add('hidden');
+    };
+
+    // ── Responsive canvas resize ────────────────────────────────────────────
     window.addEventListener('resize', () => {
         const cv = document.getElementById('canvas-column');
         if (cv && cv.style.width && cv.style.width !== '0px') {
@@ -868,6 +922,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    console.log('[app.js] ✅ Loma client loaded. Model:', active);
+    console.log('[app.js] ✅ Loma loaded. Model:', active, '| WebSearch:', isWebSearchEnabled);
     console.log('[app.js] Brain — code:', _codeMem.length, '| images:', _imageMem.length, '| music:', _musicMem.length);
+    console.log('[app.js] Training pairs:', Trainer.rlhfData.length);
 });
