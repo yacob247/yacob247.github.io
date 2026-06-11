@@ -1426,8 +1426,23 @@ const UNIVERSAL_THINKING_PIPELINE = `
 </think>
 `;
 
+function getCompressedSystemPrompt() {
+    // Returns a hard-capped ~4000 token system prompt so Ollama prefills in seconds.
+    // Full prompt is ~63k chars (~15k tokens) — way too slow for local models.
+    const full = getDynamicSystemPrompt();
+    const CHAR_LIMIT = 16000; // ~4k tokens, safe for any context window
+    if (full.length <= CHAR_LIMIT) return full;
+
+    // Smart trim: keep the head (identity + core rules) and tail (canvas/output rules)
+    // These are the parts the model actually needs per-turn. The giant knowledge blocks
+    // (math, biology, history, etc.) are in the model weights already — no need to repeat.
+    const head = full.slice(0, 10000);
+    const tail = full.slice(-6000);
+    return head + '\n\n[...knowledge sections omitted for speed — already in model weights...]\n\n' + tail;
+}
+
 function getDynamicSystemPrompt() {
-    let prompt = UNIVERSAL_THINKING_PIPELINE;
+        let prompt = UNIVERSAL_THINKING_PIPELINE;
 
 // ─── CORRECTION THINKING PIPELINE ─────────────────────────────────────────────
 // Fires when user presses 👎 and submits a correction comment.
@@ -3628,9 +3643,9 @@ async function triggerInference() {
 // Inject system prompt once per session — persist the flag in localStorage
   // so a page reload doesn't re-send the huge prompt to Ollama.
   const _spKey = 'loma_sp_sent_' + currentSessionId;
-  if (!localStorage.getItem(_spKey)) {
+if (!localStorage.getItem(_spKey)) {
       if (!session.messages.find(m => m.role === 'system')) {
-          session.messages.unshift({ role: 'system', content: getDynamicSystemPrompt() });
+          session.messages.unshift({ role: 'system', content: getCompressedSystemPrompt() });
       }
       localStorage.setItem(_spKey, '1');
       syncDatabaseToDrive();
