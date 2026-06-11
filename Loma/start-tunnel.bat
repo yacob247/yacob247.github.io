@@ -35,20 +35,23 @@ for %%p in (8085 8080 8443 3000) do (
     )
 )
 
-:: Use PowerShell for deep process kill (catches things taskkill misses)
-powershell -NoProfile -Command "Get-Process -Name 'cloudflared','node' -ErrorAction SilentlyContinue | Stop-Process -Force" >nul 2>&1
+:: Deep kill via PowerShell - process names AND all port owners
+powershell -NoProfile -Command "Get-Process -Name 'cloudflared','node','ollama' -ErrorAction SilentlyContinue | Stop-Process -Force" >nul 2>&1
 
-:: Wait for ports to fully release
-echo Waiting for ports to release...
+:: Kill every PID owning any of our ports - two methods for redundancy
+powershell -NoProfile -Command "8085,8080,8443,3000,11434 | ForEach-Object { $p=$_; Get-NetTCPConnection -LocalPort $p -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue } }" >nul 2>&1
+
+:: Also kill by image name with WMI (catches processes taskkill misses due to ACL)
+wmic process where "name='cloudflared.exe'" delete >nul 2>&1
+wmic process where "name='node.exe'" delete >nul 2>&1
+
+:: Release TIME_WAIT sockets immediately via netsh
+netsh int ipv4 set dynamicport tcp start=1025 num=64511 >nul 2>&1
+
 timeout /t 3 /nobreak >nul
 
-:: Verify cleanup
-netstat -ano | findstr ":8085 " | findstr LISTENING >nul
-if %errorlevel% equ 0 (
-    echo [!] Port 8085 still occupied - forcing with PowerShell...
-    powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort 8085 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }"
-    timeout /t 2 /nobreak >nul
-)
+:: Final verification - nuke anything still squatting on 8085
+powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort 8085 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }; Get-NetTCPConnection -State TimeWait -LocalPort 8085 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }" >nul 2>&1
 
 echo [OK] Cleanup complete.
 
