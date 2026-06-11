@@ -5,25 +5,14 @@ import { fileURLToPath } from 'url';
 
 const app      = express();
 const PORT     = 8085;
+const HOST     = '127.0.0.1'; // Force IPv4 to match Cloudflare Tunnel config
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-// ── Model routing ─────────────────────────────────────────────────────────────
-// All model selection happens on the CLIENT.
-// Server reads the model field from the request body and forwards it verbatim.
-// Server never selects or overrides the model.
 
 app.use(cors({ origin: '*', credentials: true }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static(__dirname));
 
 // ─── PURE STREAMING PROXY ─────────────────────────────────────────────────────
-// The server does EXACTLY one thing: receive a request and forward the raw
-// Ollama stream back to the client as SSE.
-// Zero CPU processing on the server.
-// Zero JSON parsing of content on the server.
-// All token rendering, markdown parsing, image tag handling, think-block
-// stripping, and training data writing happen entirely on the CLIENT's CPU.
-// ─────────────────────────────────────────────────────────────────────────────
 app.post('/api/chat', async (req, res) => {
     const { messages, model, temperature = 0.5, stream = true, options = {} } = req.body;
 
@@ -31,12 +20,11 @@ app.post('/api/chat', async (req, res) => {
         return res.status(400).json({ error: 'messages array required' });
     }
 
-    // Write SSE Headers with explicit flags preventing Cloudflare/Proxy buffering
     res.writeHead(200, {
         'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache, no-transform', // "no-transform" prevents Cloudflare from compression/gzipping streaming frames
+        'Cache-Control': 'no-cache, no-transform', 
         'Connection': 'keep-alive',
-        'X-Accel-Buffering': 'no'                    // Disables buffering in reverse proxies (like Cloudflare & Nginx)
+        'X-Accel-Buffering': 'no'                    
     });
 
     let onClientClose = () => {};
@@ -82,25 +70,20 @@ app.post('/api/chat', async (req, res) => {
                     
                     if (parsed.message && parsed.message.content) {
                         res.write(`data: ${JSON.stringify({ t: parsed.message.content })}\n\n`); 
-                        if (typeof res.flush === "function") res.flush();
                     }
 
-                    // Forward Ollama errors to client
                     if (parsed.error) {
                         res.write(`data: ${JSON.stringify({ error: parsed.error })}\n\n`);
                         res.end();
                         return;
                     }
 
-                    // Stream done
                     if (parsed.done === true) {
                         res.write('data: [DONE]\n\n');
                         res.end();
                         return;
                     }
-                } catch {
-                    // Malformed line — skip silently
-                }
+                } catch { }
             }
         }
     } catch (streamErr) {
@@ -113,12 +96,16 @@ app.post('/api/chat', async (req, res) => {
     }
 });
 
-// ── Static fallback ───────────────────────────────────────────────────────────
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-app.listen(PORT, () => {
-    console.log(`\n🚀 Loma → http://localhost:${PORT}\n`);
-    console.log('   Models available: qwen2.5-coder, llama3, etc.');
+// Start server on explicit 127.0.0.1
+const server = app.listen(PORT, HOST, () => {
+    console.log(`\n🚀 Loma LIVE → http://${HOST}:${PORT}`);
+    console.log(`🔗 Cloudflare Tunnel pointing to: api.envizion.work`);
 });
+
+// Prevent Cloudflare timeout for long AI streams
+server.timeout = 0; 
+server.keepAliveTimeout = 0;
