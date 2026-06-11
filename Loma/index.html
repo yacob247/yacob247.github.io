@@ -232,6 +232,10 @@
             
             <p class="text-[10px] font-bold text-gemini-textMuted tracking-wider uppercase pl-2 mb-2 mt-2">Capabilities Workspace</p>
             
+            <button onclick="window.exportLoRADataset()" class="...your existing button classes...">
+    <i class="fa-solid fa-dna mr-2"></i>Export LoRA Dataset
+</button>
+
             <!-- RLHF Export Tool -->
             <div class="px-3 py-3 bg-gemini-card/30 border border-gemini-border/30 rounded-2xl mb-2 hover:bg-gemini-card/60 smooth-transition cursor-pointer group" onclick="window.exportRLHFDataset()">
                 <div class="flex items-center gap-3 text-sm text-gemini-textMain group-hover:text-gemini-accent smooth-transition">
@@ -982,15 +986,60 @@ window.exportRLHFDataset = () => {
 };
 
 
+window.exportLoRADataset = () => {
+    const rated = rlhfDataset.filter(d => d.rating === 'up' && d.content);
+    if (rated.length === 0) {
+        triggerNotificationToast("No data", "Thumb up good responses first.", "fa-database", "bg-slate-600");
+        return;
+    }
+    // Format as Alpaca-style JSONL for LoRA training
+    const lines = rated.map(d => JSON.stringify({
+        instruction: d.prompt || "Respond as Loma.",
+        input: "",
+        output: d.content
+    })).join('\n');
+    const blob = new Blob([lines], { type: 'application/jsonl' });
+    const url = URL.createObjectURL(blob);
+    Object.assign(document.createElement('a'), {
+        href: url,
+        download: `loma_lora_dataset_${Date.now()}.jsonl`
+    }).click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    triggerNotificationToast("LoRA Dataset", `${rated.length} pairs exported.`, "fa-download", "bg-emerald-600");
+};
+
 // ─── 7. MEMORY / CAPABILITIES — remember facts about user and project ─────────
-window.saveMemory = (fact) => {
+// ─── PHASE 2: Real Vector Memory via ChromaDB ─────────────────────────────────
+const MEMORY_API = 'http://127.0.0.1:8765';
+window.saveMemory = async (fact) => {
     if (!fact || fact.trim().length < 3) return;
+    // Still save to localStorage as fallback
     personalMemories.push({ fact: fact.trim(), ts: Date.now() });
-    localStorage.setItem('envizion_memories', JSON.stringify(personalMemories.slice(-100)));
+    localStorage.setItem('envizion_memories', JSON.stringify(personalMemories.slice(-200)));
+    // Also save to ChromaDB for real vector search
+    try {
+        await fetch(`${MEMORY_API}/save`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fact: fact.trim(), ts: Date.now() })
+        });
+    } catch(e) { /* ChromaDB offline — localStorage fallback active */ }
     triggerNotificationToast("Remembered", fact.substring(0, 60), "fa-brain", "bg-purple-600");
 };
 
-window.getMemoryContext = () => {
+window.getMemoryContext = async (query = '') => {
+    try {
+        const res = await fetch(`${MEMORY_API}/recall`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query: query || 'general context', top_k: 10 })
+        });
+        const data = await res.json();
+        if (data.memories?.length) {
+            return `\n\n━━━ LOMA MEMORY (vector recalled) ━━━\n` + data.memories.map(m => `• ${m}`).join('\n');
+        }
+    } catch(e) { /* fallback to localStorage */ }
+    // Fallback
     if (personalMemories.length === 0) return '';
     return `\n\n━━━ USER MEMORY ━━━\n` + personalMemories.slice(-20).map(m => `• ${m.fact}`).join('\n');
 };
@@ -1067,18 +1116,17 @@ window.renderToCanvas = (base64Content) => {
 
 
 // ─── 10. ENHANCED triggerInference — patches the main inference to inject ─────
-//     memory context, domain detection, vision messages, and think rendering
 const _originalTriggerInference = triggerInference;
 window.triggerInference = async function() {
-    // Inject memory into system prompt dynamically
-    window._memoryContext = window.getMemoryContext();
+    // Get session and last user message ONCE
+    const session = chatDatabase.sessions[currentSessionId];
+    const lastUser = [...(session?.messages || [])].reverse().find(m => m.role === 'user');
+
+    // Inject vector memory into system prompt
+    window._memoryContext = await window.getMemoryContext(lastUser?.content || '');
 
     // Detect domain from last user message
-    const session = chatDatabase.sessions[currentSessionId];
-    if (session?.messages?.length) {
-        const lastUser = [...session.messages].reverse().find(m => m.role === 'user');
-        if (lastUser) window._lastDetectedDomain = window.detectDomain(lastUser.content);
-    }
+    if (lastUser) window._lastDetectedDomain = window.detectDomain(lastUser.content);
 
     return _originalTriggerInference.apply(this, arguments);
 };
