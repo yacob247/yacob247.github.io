@@ -635,8 +635,9 @@ import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged } from
 
 // --- API ROUTING ---
 // Point directly to your local Node.js server.js endpoint
-const ENVIZION_API = 'https://api.envizion.work/api/chat';
-
+const ENVIZION_API_REMOTE = 'https://api.envizion.work/api/chat';
+const ENVIZION_API_LOCAL  = 'http://127.0.0.1:8085/api/chat';
+const ENVIZION_API = ENVIZION_API_REMOTE; // dynamic selection below handles fallback
 const TRAINING_API = 'https://train.envizion.work'; 
 
 
@@ -3662,17 +3663,26 @@ const currentMessages = session.messages; // system is already in there from now
         const autoTemp = autoSelectTemperature(originalPromptText).temp;
 
         // Fetch to local server.js
-        const response = await fetch(ENVIZION_API, {
+      // Fetch with automatic local fallback if remote tunnel is down
+        const _fetchPayload = {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                model: window._lomaActiveModel || 'qwen2.5-coder:7b', 
+                model: window._lomaActiveModel || 'qwen2.5-coder:7b',
                 messages: currentMessages,
                 temperature: autoTemp,
                 stream: true
             }),
             signal: currentAbortController.signal
-        });
+        };
+        let response;
+        try {
+            response = await fetch(ENVIZION_API_REMOTE, _fetchPayload);
+            if (!response.ok) throw new Error('remote fail');
+        } catch (_remoteErr) {
+            console.warn('Remote API failed, falling back to localhost...');
+            response = await fetch(ENVIZION_API_LOCAL, { ..._fetchPayload, signal: currentAbortController.signal });
+        }
 
         if (!response.ok) {
             const errText = await response.text().catch(() => '');
@@ -3800,10 +3810,10 @@ if (jsonBuf.trim()) {
 
         let cleanParsedReply = rawAccumulated.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
         
-        const compiledHTML = cleanParsedReply.length === 0
-            ? `<span class="text-orange-400 text-xs"><i class="fa-solid fa-circle-exclamation mr-2"></i>No response. Ensure Ollama is running your model.</span>`
+       const compiledHTML = cleanParsedReply.length === 0
+            ? `<span class="text-orange-400 text-xs"><i class="fa-solid fa-circle-exclamation mr-2"></i>Empty response from Ollama. Possible causes: model <code>${window._lomaActiveModel}</code> not pulled (<code>ollama pull ${window._lomaActiveModel}</code>), context too large, or Ollama crashed. Check the Node server window for errors.</span>`
             : parseMarkdownResponse(cleanParsedReply, true);
-
+            
         activeZone.innerHTML = compiledHTML;
         if (window.autoScrollChat && chatStream) chatStream.scrollTop = chatStream.scrollHeight;
 
