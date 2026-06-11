@@ -1,56 +1,25 @@
 @echo off
-setlocal EnableDelayedExpansion
-title Loma - Cloudflare Tunnel
-color 0B
+title Loma Startup
 
-:: ═══════════════════════════════════════════════════════════════
-::  LOMA - START CLOUDFLARE TUNNEL ONLY
-::  Use this if the tunnel dropped but Node + Ollama are still up.
-:: ═══════════════════════════════════════════════════════════════
-
-set LOG_DIR=C:\Users\youse\.loma
-
-echo.
-echo  ═══════════════════════════════════════
-echo    LOMA  ^|  Starting Cloudflare Tunnel
-echo  ═══════════════════════════════════════
-echo.
-
-:: Ensure log dir exists
-if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
-
-:: ── Find cloudflared ─────────────────────────────────────────
-where cloudflared >nul 2>&1
-if %errorlevel% neq 0 (
-    if exist "C:\Program Files (x86)\cloudflared\cloudflared.exe" (
-        set PATH=%PATH%;C:\Program Files (x86)\cloudflared
-        echo  Found cloudflared at default install path.
-    ) else (
-        echo  !! ERROR: cloudflared not found in PATH or default location.
-        echo     Install from: https://developers.cloudflare.com/cloudflared
-        pause
-        exit /b 1
-    )
-)
-
-:: ── Kill any stale tunnel first ──────────────────────────────
+:: Kill any ghost processes
+echo Cleaning up old processes...
 taskkill /IM cloudflared.exe /F >nul 2>&1
-timeout /t 1 /nobreak >nul
+taskkill /IM node.exe /F >nul 2>&1
+sc stop cloudflared >nul 2>&1
+sc config cloudflared start= disabled >nul 2>&1
 
-:: ── Start tunnel ─────────────────────────────────────────────
-echo  Starting tunnel...
-start "" /min cmd /c "cloudflared tunnel run --protocol http2 >> "%LOG_DIR%\tunnel.log" 2>&1"
-timeout /t 5 /nobreak >nul
+:: Kill anything on port 8085
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8085') do taskkill /PID %%a /F >nul 2>&1
 
-tasklist /FI "IMAGENAME eq cloudflared.exe" 2>nul | findstr "cloudflared.exe" >nul
-if %errorlevel%==0 (
-    echo  Tunnel running.  OK
-    echo  Public URL: https://api.envizion.work
-) else (
-    echo  !! ERROR: cloudflared did not start.
-    echo     Check log: %LOG_DIR%\tunnel.log
-)
+:: Start Node server in new window
+echo Starting Node server...
+start "Loma Node Server" cmd /k "cd /d C:\Users\youse\Downloads\yacob247.github.io-main\yacob247.github.io-main\Loma && node server.js"
 
-echo.
-pause
-endlocal
+:: Wait for Node to be ready
+timeout /t 3 /nobreak >nul
+
+:: Start cloudflared tunnel in new window
+echo Starting cloudflared tunnel...
+start "Loma Cloudflared" cmd /k "cloudflared tunnel --config C:\Users\youse\.cloudflared\config.yml run --protocol http2"
+
+echo Done! Both windows should be running.
