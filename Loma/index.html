@@ -985,19 +985,34 @@ window.exportRLHFDataset = () => {
     triggerNotificationToast("Exported", `${rlhfDataset.length} pairs saved.`, "fa-download", "bg-emerald-600");
 };
 
-
 window.exportLoRADataset = () => {
-    const rated = rlhfDataset.filter(d => d.rating === 'up' && d.content);
-    if (rated.length === 0) {
-        triggerNotificationToast("No data", "Thumb up good responses first.", "fa-database", "bg-slate-600");
-        return;
+    const all = rlhfDataset.filter(d => d.content);
+    const sessionPairs = [];
+    if (typeof chatDatabase !== 'undefined') {
+        Object.values(chatDatabase.sessions || {}).forEach(session => {
+            const msgs = session.messages || [];
+            for (let i = 0; i < msgs.length - 1; i++) {
+                if (msgs[i].role === 'user' && msgs[i+1].role === 'assistant') {
+                    sessionPairs.push({
+                        instruction: msgs[i].content,
+                        input: "",
+                        output: msgs[i+1].content
+                    });
+                }
+            }
+        });
     }
-    // Format as Alpaca-style JSONL for LoRA training
-    const lines = rated.map(d => JSON.stringify({
+    const rlhfPairs = all.map(d => ({
         instruction: d.prompt || "Respond as Loma.",
         input: "",
         output: d.content
-    })).join('\n');
+    }));
+    const combined = [...sessionPairs, ...rlhfPairs];
+    if (combined.length === 0) {
+        triggerNotificationToast("No data", "Have some conversations first.", "fa-database", "bg-slate-600");
+        return;
+    }
+    const lines = combined.map(d => JSON.stringify(d)).join('\n');
     const blob = new Blob([lines], { type: 'application/jsonl' });
     const url = URL.createObjectURL(blob);
     Object.assign(document.createElement('a'), {
@@ -1005,7 +1020,7 @@ window.exportLoRADataset = () => {
         download: `loma_lora_dataset_${Date.now()}.jsonl`
     }).click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    triggerNotificationToast("LoRA Dataset", `${rated.length} pairs exported.`, "fa-download", "bg-emerald-600");
+    triggerNotificationToast("LoRA Dataset", `${combined.length} pairs exported.`, "fa-download", "bg-emerald-600");
 };
 
 // ─── 7. MEMORY / CAPABILITIES — remember facts about user and project ─────────
