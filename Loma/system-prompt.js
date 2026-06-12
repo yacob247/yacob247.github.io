@@ -115,5 +115,22 @@ RESPONSE STRUCTURE
 - Use ━━━ SECTION NAME ━━━ dividers for long structured responses
 - Use <think> tags to show your reasoning on hard problems (user can toggle visibility)
 - Never apologise for being thorough. Never truncate a code block.
-- Always end tool-related responses with the [TOOL:key] tag if a tool was relevant.`;
+- Always end tool-related responses with the [TOOL:key] tag if a tool was relevant.
+
+════════════════════════════════════════
+CRITICAL OUTPUT RULES
+════════════════════════════════════════
+1. Code blocks must ALWAYS be complete — no truncation, no placeholders.
+2. When a tool is relevant, end your message with [TOOL:toolkey] on its own line.
+3. Python print statements: each on its own line. Never merge them.
+4. HTML apps: single <!DOCTYPE html> file, everything inline.
+5. Thinking: wrap deep reasoning in <think>...</think> before your answer.
+6. Section headers in long responses: ━━━ TITLE ━━━
+7. Memory: tag facts with [REMEMBER: fact] at the end.
+8. Never say "here is a basic example" — always build the real thing.
+9. Buttons always have onclick handlers. Inputs always have event listeners.
+10. Every feature you describe must be implemented in the code, not left as a comment.`;
+
+
 };
+

@@ -1654,6 +1654,8 @@ processedText = processedText.replace(
 );
 
     // ── 4. Render remaining markdown normally ──
+ // Strip [TOOL:key] tags from visible text — they're for function calls, not display
+    processedText = processedText.replace(/\[TOOL:\w+\]/gi, '');
     out += parseMarkdownResponse(processedText, isFinal);
     return out;
 };
@@ -2376,18 +2378,38 @@ async function triggerInference() {
 // Inject system prompt once per session — persist the flag in localStorage
   // so a page reload doesn't re-send the huge prompt to Ollama.
   // Bust old truncated prompt cache on load
-  if (typeof window.__spCacheBusted === 'undefined') {
+ if (typeof window.__spCacheBusted === 'undefined') {
     window.__spCacheBusted = true;
-    Object.keys(localStorage).filter(k => k.startsWith('loma_sp_sent_')).forEach(k => localStorage.removeItem(k));
+    // Only bust stale sessions older than 2 hours, not all — keeps KV cache warm
+    Object.keys(localStorage).filter(k => k.startsWith('loma_sp_sent_')).forEach(k => {
+        const age = Date.now() - parseInt(localStorage.getItem(k + '_ts') || '0');
+        if (age > 7200000) localStorage.removeItem(k);
+    });
   }
+  localStorage.setItem(_spKey + '_ts', Date.now().toString());
+
+  
   const _spKey = 'loma_sp_sent_' + currentSessionId;
 if (!localStorage.getItem(_spKey)) {
-      if (!session.messages.find(m => m.role === 'system')) {
-session.messages.unshift({ role: 'system', content: '' });
-      }
-      localStorage.setItem(_spKey, '1');
-      syncDatabaseToDrive();
-  }
+    const builtPrompt = (typeof window.getDynamicSystemPrompt === 'function')
+        ? window.getDynamicSystemPrompt()
+        : '';
+    const existing = session.messages.find(m => m.role === 'system');
+    if (existing) {
+        existing.content = builtPrompt;
+    } else {
+        session.messages.unshift({ role: 'system', content: builtPrompt });
+    }
+    localStorage.setItem(_spKey, '1');
+    syncDatabaseToDrive();
+} else {
+    // Refresh system prompt content on every call (memory + capabilities may have changed)
+    const existing = session.messages.find(m => m.role === 'system');
+    if (existing && typeof window.getDynamicSystemPrompt === 'function') {
+        existing.content = window.getDynamicSystemPrompt();
+    }
+}
+
 
 const currentMessages = session.messages; // system is already in there from now on
 
@@ -2571,6 +2593,26 @@ function escapeHtmlString(text) { return text.replace(/&/g, "&amp;").replace(/</
 
 function parseMarkdownResponse(text, isFinal = false) {
     let preprocessed = text;
+
+    // Render ━━━ SECTION ━━━ dividers
+    preprocessed = preprocessed.replace(
+        /^━+\s*([^━\n]+?)\s*━+$/gm,
+        (_, title) => `\n<div class="flex items-center gap-3 my-5">
+            <div class="flex-1 h-px bg-gemini-border/40"></div>
+            <span class="text-[10px] font-bold text-gemini-accent uppercase tracking-widest whitespace-nowrap">${title.trim()}</span>
+            <div class="flex-1 h-px bg-gemini-border/40"></div>
+        </div>\n`
+    );
+
+    // Render [REMEMBER: fact] tags as subtle memory pills
+    preprocessed = preprocessed.replace(
+        /\[REMEMBER:\s*([^\]]+)\]/gi,
+        (_, fact) => `<div class="inline-flex items-center gap-1.5 px-2 py-0.5 bg-indigo-500/10 border border-indigo-500/20 rounded-full text-[10px] text-indigo-300 my-1"><i class="fa-solid fa-brain text-[8px]"></i> Saved: ${fact.trim()}</div>`
+    );
+
+    // Strip [TOOL:key] from visible text
+    preprocessed = preprocessed.replace(/\[TOOL:\w+\]/gi, '');
+
 
     // "Nano Banana" Style Image Generator integration
     preprocessed = preprocessed.replace(/\[GENERATE_IMAGE:[^\]]*?prompt="([^"]+)"[^\]]*\]/gi, (match, prompt) => {
@@ -3446,11 +3488,8 @@ If there were errors, diagnose them and explain what they mean.`;
             if (!interpRenderActive && interpTokenQueue.length === 0) return;
             if (interpTokenQueue.length > 0) {
                 while (interpTokenQueue.length > 0) interpRaw += interpTokenQueue.shift();
-                // Strip any <think> from interpretation output while streaming
-                let vis = interpRaw;
-                const ts = vis.indexOf('<think>'), te = vis.indexOf('</think>');
-                if (ts !== -1) vis = te !== -1 ? vis.slice(0, ts) + vis.slice(te + 8) : vis.slice(0, ts);
-                interpretDiv.innerHTML = parseMarkdownResponse(vis, false) + '<span class="streaming-cursor"></span>';
+               interpretDiv.innerHTML = (window._patchedParseMarkdown || parseMarkdownResponse)(interpRaw, false) + '<span class="streaming-cursor"></span>';
+
                 const cs = document.getElementById('chat-stream');
                 if (window.autoScrollChat && cs) cs.scrollTop = cs.scrollHeight;
             }
