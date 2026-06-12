@@ -60,6 +60,7 @@
     //  can understand what it is carrying.
     // ════════════════════════════════════════════════════════════════════════════
 
+
     window.lomaReadSystemPrompt = function () {
         const raw = typeof getDynamicSystemPrompt === 'function'
             ? getDynamicSystemPrompt()

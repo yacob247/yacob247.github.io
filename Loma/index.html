@@ -2085,14 +2085,14 @@ function getCompressedSystemPrompt() {
     // Returns a hard-capped ~4000 token system prompt so Ollama prefills in seconds.
     // Full prompt is ~63k chars (~15k tokens) — way too slow for local models.
     const full = getDynamicSystemPrompt();
-    const CHAR_LIMIT = 16000; // ~4k tokens, safe for any context window
+    const CHAR_LIMIT = 120000; // ~30k tokens — qwen2.5:7b has 32k ctx, keep head+tail intact
     if (full.length <= CHAR_LIMIT) return full;
 
     // Smart trim: keep the head (identity + core rules) and tail (canvas/output rules)
     // These are the parts the model actually needs per-turn. The giant knowledge blocks
     // (math, biology, history, etc.) are in the model weights already — no need to repeat.
-    const head = full.slice(0, 10000);
-    const tail = full.slice(-6000);
+    const head = full.slice(0, 80000);
+    const tail = full.slice(-40000);
     return head + '\n\n[...knowledge sections omitted for speed — already in model weights...]\n\n' + tail;
 }
 
@@ -4070,7 +4070,6 @@ ${TRAINING_DATA_PROTOCOL}
 When generating multi-file projects always use [VFS_FILE:...][/VFS_FILE] blocks.
 When users want BG removal, OCR, audio extract, encryption, PDF, or Envizion tools — call the relevant window.* function and generate UI that triggers it.
 `;
-
   prompt += `
 
 ━━━ EXTENDED LOMA CAPABILITIES (NEWLY ADDED) ━━━
@@ -4120,7 +4119,6 @@ and generate a UI that triggers it.
 `;
     return prompt;
 }
-
 
 window.selectModel = (modelId, label) => {
     window._lomaActiveModel = modelId;
@@ -4381,6 +4379,11 @@ async function triggerInference() {
 // After that Ollama has it in its KV cache — never resend it.
 // Inject system prompt once per session — persist the flag in localStorage
   // so a page reload doesn't re-send the huge prompt to Ollama.
+  // Bust old truncated prompt cache on load
+  if (typeof window.__spCacheBusted === 'undefined') {
+    window.__spCacheBusted = true;
+    Object.keys(localStorage).filter(k => k.startsWith('loma_sp_sent_')).forEach(k => localStorage.removeItem(k));
+  }
   const _spKey = 'loma_sp_sent_' + currentSessionId;
 if (!localStorage.getItem(_spKey)) {
       if (!session.messages.find(m => m.role === 'system')) {
