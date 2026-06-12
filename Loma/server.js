@@ -5,53 +5,7 @@ import { fileURLToPath } from 'url';
 
 const app      = express();
 const PORT     = 8085;
-const GEMINI_MODEL = 'gemini-2.5-flash-preview-09-2025';
-
-// ── KEY ROTATION POOL ─────────────────────────────────────────────────────────
-// Add as many keys as you want. When one hits quota it auto-rotates to the next.
-const GEMINI_KEYS = [
-    'AIzaSyABCN1fCOAIZHFJBxEvqVpYzs3Qc1laUXc',
-    'AIzaSyBny0Ij_a0cT2vky_lw3ocVfUsHvU5YgMU',
-    'AIzaSyCsuKyVE2_f37JrBB3uRMXu45CBuPZ-BIE',
-    'AQ.Ab8RN6IYruXCPEbN-T6HegHMFQY8Zt3hkx-KQfW_VQBgHAAJ8g',
-    'AQ.Ab8RN6J0X8yi-Pvr3KBpekmyMrd6ky_PYAL9_muUKNcelLCAxg',
-    'AQ.Ab8RN6IwI0yjNzkrIjA7lqfsVAkQOtuhj7P9ZyQuwoGAeq-UJA',
-    
-];
-
-let _keyIndex = 0;
-const _keyFailures = {}; // tracks which keys are exhausted
-const _keyResetTime = {}; // reset exhausted keys after 24h
-
-function getNextGeminiKey() {
-    const now = Date.now();
-    // Reset keys that have been cooling down for 24h
-    for (const [i, t] of Object.entries(_keyResetTime)) {
-        if (now - t > 24 * 60 * 60 * 1000) {
-            delete _keyFailures[i];
-            delete _keyResetTime[i];
-        }
-    }
-    // Find next working key
-    for (let i = 0; i < GEMINI_KEYS.length; i++) {
-        const idx = (_keyIndex + i) % GEMINI_KEYS.length;
-        if (!_keyFailures[idx]) {
-            _keyIndex = (idx + 1) % GEMINI_KEYS.length;
-            return { key: GEMINI_KEYS[idx], idx };
-        }
-    }
-    // All keys exhausted — reset all and start over
-    Object.keys(_keyFailures).forEach(k => delete _keyFailures[k]);
-    _keyIndex = 0;
-    return { key: GEMINI_KEYS[0], idx: 0 };
-}
-
-function markKeyExhausted(idx) {
-    _keyFailures[idx] = true;
-    _keyResetTime[idx] = Date.now();
-    console.warn(`[KeyRotation] Key ${idx} exhausted, rotating. ${Object.keys(_keyFailures).length}/${GEMINI_KEYS.length} keys used.`);
-}
-
+const HOST     = '127.0.0.1'; // Force IPv4 to match Cloudflare Tunnel config
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 app.use(cors({ origin: '*', credentials: true }));
@@ -59,12 +13,47 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.static(__dirname));
 
 // ─── PURE STREAMING PROXY ─────────────────────────────────────────────────────
-app.post('/api/chat', async (req, res) => {
-    const { messages, model, temperature = 0.5, stream = true, options = {} } = req.body;
-    const useGemini = !model || model === 'gemini' || model.startsWith('gemini');
+function compressMessages(messages) {
+    const system = messages.filter(m => m.role === 'system');
+    const chat   = messages.filter(m => m.role !== 'system');
+    const KEEP_LAST = 6;
+    if (chat.length <= KEEP_LAST) return messages;
+    const old    = chat.slice(0, chat.length - KEEP_LAST);
+    const recent = chat.slice(-KEEP_LAST);
+    const compressed = old.map(m => ({
+        ...m,
+        content: m.content
+            .replace(/```[\s\S]*?```/g, '[code]')
+            .replace(/<!DOCTYPE[\s\S]*?<\/html>/gi, '[html]')
+            .replace(/\n{3,}/g, '\n')
+            .replace(/\s{4,}/g, ' ')
+            .slice(0, 400)
+    }));
+    const historyBlock = {
+        role: 'system',
+        content: `[PRIOR CONTEXT — ${old.length} messages]\n` +
+            compressed.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n')
+    };
+    return [...system, historyBlock, ...recent];
+}
 
-    if (!messages || !Array.isArray(messages)) {
-        return res.status(400).json({ error: 'messages array required' });
+function compressSystemPrompt(content) {
+    return content
+        .replace(/<knowledge:[\s\S]*?<\/knowledge:[^>]+>/g, '')
+        .replace(/(<think:[^>]+>)([\s\S]*?)(<\/think:[^>]+>)/g,
+            (_, open, body, close) => open + body.slice(0, 300) + '\n[...]\n' + close)
+        .replace(/\n{4,}/g, '\n\n')
+        .trim();
+}
+
+app.post('/api/chat', async (req, res) => {
+    const { messages: rawMessages, model, temperature = 0.5, stream = true, options = {} } = req.body;
+    const messages = compressMessages(rawMessages);
+    const sysIdx = messages.findIndex(m => m.role === 'system');
+    if (sysIdx !== -1) messages[sysIdx].content = compressSystemPrompt(messages[sysIdx].content);
+
+if (!rawMessages || !Array.isArray(rawMessages)) {
+            return res.status(400).json({ error: 'messages array required' });
     }
 
     res.writeHead(200, {
@@ -77,139 +66,60 @@ app.post('/api/chat', async (req, res) => {
     let onClientClose = () => {};
 
     try {
-if (useGemini) {
-            // ── GEMINI FLASH 2.5 ────────────────────────────────────────────
-            const systemMsg = messages.find(m => m.role === 'system');
-            const chatMsgs  = messages.filter(m => m.role !== 'system');
+        const ollamaRes = await fetch('http://127.0.0.1:11434/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model,
+                messages,
+                options: { temperature, ...options },
+                stream: true
+            })
+        });
 
-            const geminiBody = {
-                system_instruction: systemMsg ? { parts: [{ text: systemMsg.content }] } : undefined,
-                contents: chatMsgs.map(m => ({
-                    role: m.role === 'assistant' ? 'model' : 'user',
-                    parts: m.images
-                        ? [{ text: m.content || '' }, { inline_data: { mime_type: 'image/jpeg', data: m.images[0] } }]
-                        : [{ text: m.content || '' }]
-                })),
-                generationConfig: {
-                    temperature,
-                    maxOutputTokens: 65536,
-                    thinkingConfig: { thinkingBudget: 8192 }
-                }
-            };
+        if (!ollamaRes.ok) {
+            const errText = await ollamaRes.text();
+            throw new Error(`Ollama responded with ${ollamaRes.status}: ${errText}`);
+        }
 
-           // Auto-rotate keys on quota errors
-            let geminiRes, activeKeyIdx;
-            for (let attempt = 0; attempt < GEMINI_KEYS.length; attempt++) {
-                const { key, idx } = getNextGeminiKey();
-                activeKeyIdx = idx;
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:streamGenerateContent?alt=sse&key=${key}`;
-                geminiRes = await fetch(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(geminiBody)
-                });
-                // 429 = quota hit, 403 = key invalid — rotate
-                if (geminiRes.status === 429 || geminiRes.status === 403) {
-                    markKeyExhausted(idx);
-                    continue;
-                }
-                if (!geminiRes.ok) {
-                    const errText = await geminiRes.text();
-                    throw new Error(`Gemini responded with ${geminiRes.status}: ${errText}`);
-                }
-                break; // good key, proceed
-            }
-            if (!geminiRes.ok) {
-                throw new Error('All Gemini API keys exhausted. Add more keys to GEMINI_KEYS array.');
-            }
-            
+        const reader = ollamaRes.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
 
-            const reader  = geminiRes.body.getReader();
-            const decoder = new TextDecoder();
-            let buffer = '';
+        onClientClose = () => {
+            try { reader.cancel(); } catch {}
+        };
+        req.on('close', onClientClose);
 
-            onClientClose = () => { try { reader.cancel(); } catch {} };
-            req.on('close', onClientClose);
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
 
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
 
-                buffer += decoder.decode(value, { stream: true });
-                const lines = buffer.split('\n');
-                buffer = lines.pop();
+            for (const line of lines) {
+                if (!line.trim()) continue;
+                try {
+                    const parsed = JSON.parse(line);
+                    
+                    if (parsed.message && parsed.message.content) {
+                        res.write(`data: ${JSON.stringify({ t: parsed.message.content })}\n\n`); 
+                    }
 
-                for (const line of lines) {
-                    if (!line.trim() || !line.startsWith('data:')) continue;
-                    const raw = line.slice(5).trim();
-                    if (raw === '[DONE]') continue;
-                    try {
-                        const parsed = JSON.parse(raw);
-                        const parts  = parsed.candidates?.[0]?.content?.parts || [];
-                        for (const part of parts) {
-                            if (part.text) {
-                                res.write(`data: ${JSON.stringify({ t: part.text })}\n\n`);
-                            }
-                        }
-                        if (parsed.candidates?.[0]?.finishReason === 'STOP') {
-                            res.write('data: [DONE]\n\n');
-                            res.end();
-                            return;
-                        }
-                    } catch {}
-                }
-            }
+                    if (parsed.error) {
+                        res.write(`data: ${JSON.stringify({ error: parsed.error })}\n\n`);
+                        res.end();
+                        return;
+                    }
 
-        } else {
-            // ── OLLAMA FALLBACK ──────────────────────────────────────────────
-            const ollamaRes = await fetch('http://127.0.0.1:11434/api/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    model,
-                    messages,
-                    options: { temperature, ...options },
-                    stream: true
-                })
-            });
-
-            if (!ollamaRes.ok) {
-                const errText = await ollamaRes.text();
-                throw new Error(`Ollama responded with ${ollamaRes.status}: ${errText}`);
-            }
-
-            const reader  = ollamaRes.body.getReader();
-            const decoder = new TextDecoder();
-            let buffer = '';
-
-            onClientClose = () => { try { reader.cancel(); } catch {} };
-            req.on('close', onClientClose);
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                buffer += decoder.decode(value, { stream: true });
-                const lines = buffer.split('\n');
-                buffer = lines.pop();
-
-                for (const line of lines) {
-                    if (!line.trim()) continue;
-                    try {
-                        const parsed = JSON.parse(line);
-                        if (parsed.message?.content) {
-                            res.write(`data: ${JSON.stringify({ t: parsed.message.content })}\n\n`);
-                        }
-                        if (parsed.error) {
-                            res.write(`data: ${JSON.stringify({ error: parsed.error })}\n\n`);
-                            res.end(); return;
-                        }
-                        if (parsed.done === true) {
-                            res.write('data: [DONE]\n\n');
-                            res.end(); return;
-                        }
-                    } catch {}
-                }
+                    if (parsed.done === true) {
+                        res.write('data: [DONE]\n\n');
+                        res.end();
+                        return;
+                    }
+                } catch { }
             }
         }
     } catch (streamErr) {
