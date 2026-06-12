@@ -462,13 +462,12 @@ function detectToolDomain(text) {
   if (/(select |from |where |join |insert |create table|drop table)/i.test(m))                return 'SQL';
   if (/(#include|std::|cout|cin|vector<|unique_ptr|shared_ptr)/i.test(m))                     return 'CPP';
   if (/(using system|namespace |\.cs\b|async task|ienumerable)/i.test(m))                     return 'CSHARP';
-  if (/(fn |let mut|impl |use std|cargo\.toml|#\[derive)/i.test(m))                          return 'RUST';
+  if (/(fn |let mut|impl |use std|cargo toml|derive)/i.test(m))                             return 'RUST';
   if (/(class |public static void main|@override|@springboot)/i.test(m))                      return 'JAVA';
   if (/(import swiftui|@state|@binding|swiftui|xcode)/i.test(m))                             return 'SWIFT';
   if (/(fun |val |var |\.kt\b|@composable|coroutine|stateflow)/i.test(m))                    return 'KOTLIN';
-  if (/(go func|package main|fmt\.print|goroutine|\.go\b)/i.test(m))                         return 'GO';
-  if (/(bash|zsh|powershell|#!/|git |chmod|npm run|yarn |brew |apt )/i.test(m))              return 'POWERSHELL_CLI';
-  if (/(error|exception|stacktrace|cannot find module|typeerror|syntaxerror|cors|404|500)/i.test(m)) return 'CONSOLE_ERRORS';
+  if (/(go func|package main|fmt.print|goroutine)/i.test(m))                                return 'GO';
+  if (/(bash|zsh|powershell|shebang|git clone|chmod|npm run|yarn |brew |apt )/i.test(m))   return 'POWERSHELL_CLI';
   if (/(generate.*image|draw.*picture|create.*photo|portrait of|landscape of)/i.test(m))     return 'IMAGE_GENERATION';
 
   return 'TEXT_GENERATION';
