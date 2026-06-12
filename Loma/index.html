@@ -640,11 +640,664 @@ const ENVIZION_API_LOCAL  = 'http://127.0.0.1:8085/api/chat';
 const ENVIZION_API = ENVIZION_API_REMOTE; // dynamic selection below handles fallback
 const TRAINING_API = 'https://train.envizion.work'; 
 
+// ═══════════════════════════════════════════════════════════════════════════════
+//  LOMA — EXTENDED CAPABILITY LAYER
+//  Claude API, Claude Code, Python extended, BG removal, Base64,
+//  Replit-style multi-file editor, Envizion tool suite integrations
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ── CLAUDE API (Anthropic direct — uses claude-sonnet-4-6) ───────────────────
+const CLAUDE_API_URL = 'https://api.anthropic.com/v1/messages';
+window._claudeEnabled = false; // toggled true when user sets key
+window._claudeApiKey  = localStorage.getItem('loma_claude_key') || '';
+if (window._claudeApiKey) window._claudeEnabled = true;
+
+window.setClaudeApiKey = (key) => {
+    window._claudeApiKey = key.trim();
+    window._claudeEnabled = !!key.trim();
+    localStorage.setItem('loma_claude_key', window._claudeApiKey);
+    triggerNotificationToast('Claude API', window._claudeEnabled ? 'Claude enabled.' : 'Key cleared.', 'fa-brain', 'bg-violet-600');
+};
+
+// Call Claude API directly (non-streaming, returns full text)
+window.callClaudeAPI = async (messages, systemPrompt = '', maxTokens = 4096) => {
+    if (!window._claudeEnabled) return null;
+    const payload = {
+        model: 'claude-sonnet-4-6',
+        max_tokens: maxTokens,
+        messages: messages.filter(m => m.role !== 'system').map(m => ({ role: m.role, content: m.content }))
+    };
+    if (systemPrompt) payload.system = systemPrompt;
+    try {
+        const res = await fetch(CLAUDE_API_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': window._claudeApiKey,
+                'anthropic-version': '2023-06-01',
+                'anthropic-dangerous-direct-browser-access': 'true'
+            },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error.message);
+        return data.content?.map(b => b.text || '').join('') || '';
+    } catch (e) {
+        triggerNotificationToast('Claude Error', e.message.slice(0, 80), 'fa-triangle-exclamation', 'bg-red-600');
+        return null;
+    }
+};
+
+// Claude Code mode — routes coding requests to Claude API and renders to canvas
+window.claudeCodeMode = false;
+window.toggleClaudeCodeMode = () => {
+    if (!window._claudeEnabled) {
+        triggerNotificationToast('Claude Code', 'Set your Claude API key first.', 'fa-key', 'bg-orange-600');
+        return;
+    }
+    window.claudeCodeMode = !window.claudeCodeMode;
+    const btn = document.getElementById('claude-code-btn');
+    if (btn) {
+        btn.classList.toggle('text-violet-400', window.claudeCodeMode);
+        btn.classList.toggle('text-gemini-textMuted', !window.claudeCodeMode);
+    }
+    triggerNotificationToast('Claude Code', window.claudeCodeMode ? 'ON — Code requests → Claude.' : 'OFF', 'fa-code', window.claudeCodeMode ? 'bg-violet-600' : 'bg-slate-600');
+};
+
+// Intercept coding requests when claudeCodeMode is on
+window._claudeCodeIntercept = async (userMsg, sessionMessages) => {
+    if (!window.claudeCodeMode || !window._claudeEnabled) return null;
+    const codeIntent = /(build|create|make|write|generate|code|html|app|tool|page|dashboard|widget|script|function|class|component)/i.test(userMsg);
+    if (!codeIntent) return null;
+    appendStatusPill('fa-brain', 'Claude Code generating…');
+    const result = await window.callClaudeAPI(
+        [{ role: 'user', content: userMsg }],
+        'You are an expert full-stack developer. Generate complete, production-ready code. For HTML/CSS/JS apps, output a single <!DOCTYPE html> self-contained file. No explanations before the code unless asked.',
+        8192
+    );
+    removeStatusPill();
+    return result;
+};
+
+// ── PYTHON EXTENDED STDLIB — add packages to Pyodide sandbox ─────────────────
+window.pyExtraPackages = ['numpy', 'pandas', 'matplotlib', 'scipy', 'pillow', 'requests'];
+
+window.installPyPackage = async (pkg) => {
+    const py = await window.loadPyodide();
+    if (!py) return;
+    try {
+        await py.loadPackagesFromImports(`import ${pkg}`);
+    } catch {
+        try {
+            await py.runPythonAsync(`import micropip; await micropip.install('${pkg}')`);
+        } catch (e) {
+            triggerNotificationToast('Pip Error', `Could not install ${pkg}`, 'fa-triangle-exclamation', 'bg-red-600');
+        }
+    }
+    triggerNotificationToast('Python', `${pkg} ready.`, 'fa-check', 'bg-emerald-600');
+};
+
+// ── BACKGROUND REMOVAL (local WASM via @imgly/background-removal) ─────────────
+window._bgRemovalReady = false;
+window.initBgRemoval = async () => {
+    if (window._bgRemovalReady) return;
+    await new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.4.5/dist/background-removal.js';
+        s.onload = res; s.onerror = rej;
+        document.head.appendChild(s);
+    });
+    window._bgRemovalReady = true;
+};
+
+window.removeBackground = async (imageFile) => {
+    triggerNotificationToast('BG Remove', 'Loading AI model…', 'fa-spinner', 'bg-indigo-600');
+    try {
+        await window.initBgRemoval();
+        const blob = await window.imglyRemoveBackground(imageFile, {
+            publicPath: 'https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.4.5/dist/',
+            output: { format: 'image/png', quality: 1 }
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'bg_removed.png'; a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+        triggerNotificationToast('BG Remove', 'Done! File downloaded.', 'fa-check', 'bg-emerald-600');
+        return url;
+    } catch (e) {
+        triggerNotificationToast('BG Remove Error', e.message.slice(0,80), 'fa-triangle-exclamation', 'bg-red-600');
+        return null;
+    }
+};
+
+// ── BASE64 ENCODE / DECODE ─────────────────────────────────────────────────────
+window.base64Encode = (text) => {
+    try { return btoa(unescape(encodeURIComponent(text))); }
+    catch { return btoa(text); }
+};
+window.base64Decode = (b64) => {
+    try { return decodeURIComponent(escape(atob(b64))); }
+    catch { return atob(b64); }
+};
+window.base64EncodeFile = (file) => new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result);   // returns full data URL
+    r.onerror = rej;
+    r.readAsDataURL(file);
+});
+// Detect if a string is base64 and auto-decode in chat
+window._tryBase64AutoDecode = (text) => {
+    const stripped = text.trim().replace(/\s/g, '');
+    if (stripped.length < 16 || stripped.length > 100000) return null;
+    if (!/^[A-Za-z0-9+/]+=*$/.test(stripped)) return null;
+    try { return window.base64Decode(stripped); } catch { return null; }
+};
+
+// ── REPLIT-STYLE MULTI-FILE EDITOR (Virtual FS + Monaco-lite) ─────────────────
+window._vfs = {};  // { filename: content }
+window._vfsActiveFile = null;
+
+window.vfsWrite = (filename, content) => {
+    window._vfs[filename] = content;
+    window._vfsRenderTree();
+};
+window.vfsRead  = (filename) => window._vfs[filename] || '';
+window.vfsDelete = (filename) => {
+    delete window._vfs[filename];
+    if (window._vfsActiveFile === filename) window._vfsActiveFile = null;
+    window._vfsRenderTree();
+};
+window.vfsRename = (oldName, newName) => {
+    if (!window._vfs[oldName]) return;
+    window._vfs[newName] = window._vfs[oldName];
+    delete window._vfs[oldName];
+    if (window._vfsActiveFile === oldName) window._vfsActiveFile = newName;
+    window._vfsRenderTree();
+};
+window.vfsList = () => Object.keys(window._vfs);
+
+window._vfsRenderTree = () => {
+    const panel = document.getElementById('vfs-file-tree');
+    if (!panel) return;
+    panel.innerHTML = Object.keys(window._vfs).map(f => `
+        <div class="flex items-center justify-between px-2 py-1 rounded-lg hover:bg-gemini-card/60 cursor-pointer group ${window._vfsActiveFile===f?'bg-gemini-card/80 text-white':'text-slate-300'}" onclick="window.vfsOpen('${f}')">
+            <span class="text-[11px] font-mono truncate flex-1"><i class="fa-regular fa-file-code mr-1.5 text-gemini-textMuted"></i>${f}</span>
+            <button onclick="event.stopPropagation();window.vfsDelete('${f}')" class="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300 text-[10px] px-1">✕</button>
+        </div>`).join('') || '<div class="text-[10px] text-slate-500 italic px-2 py-1">No files yet.</div>';
+};
+
+window.vfsOpen = (filename) => {
+    window._vfsActiveFile = filename;
+    const code = window.vfsRead(filename);
+    const ta = document.getElementById('live-canvas-code');
+    if (ta) { ta.value = code; ta.classList.remove('hidden'); }
+    const frame = document.getElementById('live-canvas-frame');
+    if (frame) frame.classList.add('hidden');
+    window._vfsRenderTree();
+    document.getElementById('canvas-column')?.classList.remove('w-0');
+};
+
+window.vfsSave = () => {
+    const ta = document.getElementById('live-canvas-code');
+    if (ta && window._vfsActiveFile) {
+        window._vfs[window._vfsActiveFile] = ta.value;
+        triggerNotificationToast('VFS', `${window._vfsActiveFile} saved.`, 'fa-floppy-disk', 'bg-emerald-600');
+    }
+};
+
+window.vfsNewFile = (filename) => {
+    filename = filename || prompt('Filename (e.g. app.js, style.css):');
+    if (!filename) return;
+    window.vfsWrite(filename.trim(), '');
+    window.vfsOpen(filename.trim());
+};
+
+window.vfsRunBundle = () => {
+    // Bundle all files into a single iframe: inject JS into HTML, inline CSS
+    let html = window._vfs['index.html'] || window._vfs[Object.keys(window._vfs).find(f => f.endsWith('.html'))] || '<html><body></body></html>';
+    Object.entries(window._vfs).forEach(([fname, content]) => {
+        if (fname.endsWith('.css')) html = html.replace('</head>', `<style>${content}</style></head>`);
+        if (fname.endsWith('.js') && fname !== 'index.js') html = html.replace('</body>', `<script>${content}<\/script></body>`);
+    });
+    const frame = document.getElementById('live-canvas-frame');
+    const ta    = document.getElementById('live-canvas-code');
+    if (frame) { frame.srcdoc = html; frame.classList.remove('hidden'); }
+    if (ta) ta.classList.add('hidden');
+    triggerNotificationToast('VFS', 'Bundle running.', 'fa-play', 'bg-emerald-600');
+};
+
+window.vfsDownloadZip = async () => {
+    // Download all VFS files as a zip using JSZip (CDN)
+    if (!window.JSZip) {
+        await new Promise((res, rej) => {
+            const s = document.createElement('script');
+            s.src = 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js';
+            s.onload = res; s.onerror = rej;
+            document.head.appendChild(s);
+        });
+    }
+    const zip = new JSZip();
+    Object.entries(window._vfs).forEach(([f, c]) => zip.file(f, c));
+    const blob = await zip.generateAsync({ type: 'blob' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'loma_project.zip';
+    a.click();
+    triggerNotificationToast('VFS', 'Project downloaded as ZIP.', 'fa-download', 'bg-emerald-600');
+};
+
+// ── AI AUTO-WRITES TO VFS (triggered when AI generates multi-file output) ─────
+// AI can output [VFS_FILE: filename.ext] ... [/VFS_FILE] to write to virtual FS
+window._parseVFSTags = (text) => {
+    const re = /\[VFS_FILE:\s*([^\]]+)\]([\s\S]*?)\[\/VFS_FILE\]/gi;
+    let match;
+    let wrote = false;
+    while ((match = re.exec(text)) !== null) {
+        window.vfsWrite(match[1].trim(), match[2].trim());
+        wrote = true;
+    }
+    if (wrote) {
+        window._vfsRenderTree();
+        triggerNotificationToast('VFS', 'AI wrote project files.', 'fa-folder-open', 'bg-indigo-600');
+    }
+};
+
+// ── IMAGE TOOLS ───────────────────────────────────────────────────────────────
+// OCR via Tesseract.js (free, local WASM)
+window.runOCR = async (imageFileOrUrl) => {
+    if (!window.Tesseract) {
+        await new Promise((res, rej) => {
+            const s = document.createElement('script');
+            s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+            s.onload = res; s.onerror = rej;
+            document.head.appendChild(s);
+        });
+    }
+    triggerNotificationToast('OCR', 'Reading text from image…', 'fa-spinner', 'bg-indigo-600');
+    try {
+        const { data: { text } } = await Tesseract.recognize(imageFileOrUrl, 'eng');
+        triggerNotificationToast('OCR', 'Text extracted.', 'fa-check', 'bg-emerald-600');
+        return text;
+    } catch (e) {
+        triggerNotificationToast('OCR Error', e.message.slice(0,80), 'fa-triangle-exclamation', 'bg-red-600');
+        return null;
+    }
+};
+
+// Image Upscaler via Pollinations (AI upscale)
+window.upscaleImage = (prompt, width = 1920, height = 1080) => {
+    const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=${width}&height=${height}&nologo=true&enhance=true&model=flux`;
+    return url;
+};
+
+// Image crop / resize via Canvas API
+window.cropImage = (imgElement, x, y, w, h) => {
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    c.getContext('2d').drawImage(imgElement, x, y, w, h, 0, 0, w, h);
+    return c.toDataURL('image/png');
+};
+
+// ── AUDIO / MEDIA TOOLS ───────────────────────────────────────────────────────
+// Extract audio from video (client-side via WebAudio + MediaRecorder)
+window.extractAudioFromVideo = async (videoFile, format = 'audio/webm') => {
+    const url = URL.createObjectURL(videoFile);
+    const audio = document.createElement('audio');
+    audio.src = url;
+    triggerNotificationToast('AuraConvert', 'Processing…', 'fa-music', 'bg-indigo-600');
+    // Web Audio decode approach
+    const ctx = new AudioContext();
+    const buf = await (await fetch(url)).arrayBuffer();
+    const decoded = await ctx.decodeAudioData(buf);
+    const offCtx = new OfflineAudioContext(decoded.numberOfChannels, decoded.length, decoded.sampleRate);
+    const src = offCtx.createBufferSource();
+    src.buffer = decoded;
+    src.connect(offCtx.destination);
+    src.start();
+    const rendered = await offCtx.startRendering();
+    // Convert to WAV (PCM)
+    const wavBlob = window._audioBufferToWav(rendered);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(wavBlob);
+    a.download = videoFile.name.replace(/\.[^.]+$/, '') + '.wav';
+    a.click();
+    URL.revokeObjectURL(url);
+    triggerNotificationToast('AuraConvert', 'Audio extracted!', 'fa-check', 'bg-emerald-600');
+};
+
+window._audioBufferToWav = (buffer) => {
+    const numChannels = buffer.numberOfChannels;
+    const sampleRate  = buffer.sampleRate;
+    const format      = 1; // PCM
+    const bitDepth    = 16;
+    const blockAlign  = numChannels * bitDepth / 8;
+    const byteRate    = sampleRate * blockAlign;
+    const samples     = buffer.length * numChannels;
+    const dataSize    = samples * (bitDepth / 8);
+    const ab          = new ArrayBuffer(44 + dataSize);
+    const view        = new DataView(ab);
+    const writeStr = (o, s) => { for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i)); };
+    writeStr(0, 'RIFF'); view.setUint32(4, 36 + dataSize, true);
+    writeStr(8, 'WAVE'); writeStr(12, 'fmt ');
+    view.setUint32(16, 16, true); view.setUint16(20, format, true);
+    view.setUint16(22, numChannels, true); view.setUint32(24, sampleRate, true);
+    view.setUint32(28, byteRate, true); view.setUint16(32, blockAlign, true);
+    view.setUint16(34, bitDepth, true); writeStr(36, 'data');
+    view.setUint32(40, dataSize, true);
+    let offset = 44;
+    for (let i = 0; i < buffer.length; i++) {
+        for (let ch = 0; ch < numChannels; ch++) {
+            const sample = Math.max(-1, Math.min(1, buffer.getChannelData(ch)[i]));
+            view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
+            offset += 2;
+        }
+    }
+    return new Blob([ab], { type: 'audio/wav' });
+};
+
+// ── UNIVERSAL FILE ENCRYPTION (AES-GCM via WebCrypto) ─────────────────────────
+window.encryptFile = async (file, password) => {
+    const enc  = new TextEncoder();
+    const keyMat = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
+    const salt  = crypto.getRandomValues(new Uint8Array(16));
+    const iv    = crypto.getRandomValues(new Uint8Array(12));
+    const key   = await crypto.subtle.deriveKey(
+        { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
+        keyMat, { name: 'AES-GCM', length: 256 }, false, ['encrypt']
+    );
+    const data      = await file.arrayBuffer();
+    const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, data);
+    const out  = new Uint8Array(salt.byteLength + iv.byteLength + encrypted.byteLength);
+    out.set(salt, 0); out.set(iv, 16); out.set(new Uint8Array(encrypted), 28);
+    const blob = new Blob([out], { type: 'application/octet-stream' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = file.name + '.enc';
+    a.click();
+    triggerNotificationToast('Encrypted', file.name + '.enc saved.', 'fa-lock', 'bg-emerald-600');
+};
+
+window.decryptFile = async (file, password, originalName) => {
+    const enc  = new TextEncoder();
+    const raw  = await file.arrayBuffer();
+    const data = new Uint8Array(raw);
+    const salt = data.slice(0, 16);
+    const iv   = data.slice(16, 28);
+    const body = data.slice(28);
+    const keyMat = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
+    const key = await crypto.subtle.deriveKey(
+        { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
+        keyMat, { name: 'AES-GCM', length: 256 }, false, ['decrypt']
+    );
+    try {
+        const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, body);
+        const blob = new Blob([decrypted]);
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = originalName || file.name.replace('.enc', '');
+        a.click();
+        triggerNotificationToast('Decrypted', 'File restored.', 'fa-unlock', 'bg-emerald-600');
+    } catch {
+        triggerNotificationToast('Decrypt Error', 'Wrong password or corrupt file.', 'fa-triangle-exclamation', 'bg-red-600');
+    }
+};
+
+// ── PDF TOOLS ─────────────────────────────────────────────────────────────────
+window.loadPdfLib = async () => {
+    if (window.pdfjsLib) return;
+    await new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
+        s.onload = () => { pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js'; res(); };
+        s.onerror = rej;
+        document.head.appendChild(s);
+    });
+};
+
+window.extractPdfText = async (pdfFile) => {
+    await window.loadPdfLib();
+    triggerNotificationToast('PDF', 'Extracting text…', 'fa-spinner', 'bg-indigo-600');
+    const arrayBuffer = await pdfFile.arrayBuffer();
+    const pdf  = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    let text = '';
+    for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        text += content.items.map(s => s.str).join(' ') + '\n\n';
+    }
+    triggerNotificationToast('PDF', `${pdf.numPages} pages extracted.`, 'fa-check', 'bg-emerald-600');
+    return text.trim();
+};
+
+// ── ENVIZION TOOLS — deep-link shortcuts ──────────────────────────────────────
+// These open tools from envizion.work in a canvas iframe or new tab
+window.ENVIZION_TOOLS = {
+    teleprompter:   'https://envizion.work/teleprompter',
+    voiceEditor:    'https://envizion.work/voice-editor',
+    separator:      'https://envizion.work/separator',
+    audioLibrary:   'https://envizion.work/audio-library',
+    excel:          'https://envizion.work/excel',
+    bgRemove:       'https://envizion.work/bg-remove',
+    imageOptimizer: 'https://envizion.work/image-optimizer',
+    ocr:            'https://envizion.work/ocr',
+    upscaler:       'https://envizion.work/upscaler',
+    videoCrop:      'https://envizion.work/video-crop',
+    auraConvert:    'https://envizion.work/aura-convert',
+    mediaForge:     'https://envizion.work/media-forge',
+    watermarker:    'https://envizion.work/watermarker',
+    encryption:     'https://envizion.work/encryption',
+    omniConvert:    'https://envizion.work/omni-convert',
+    pdfExtractor:   'https://envizion.work/pdf-extractor',
+    htmlViewer:     'https://envizion.work/html-viewer',
+    pdfMerger:      'https://envizion.work/pdf-merger',
+    dictionary:     'https://envizion.work/dictionary',
+};
+
+window.openEnvizionTool = (key) => {
+    const url = window.ENVIZION_TOOLS[key];
+    if (!url) { triggerNotificationToast('Tool', 'Unknown tool: ' + key, 'fa-triangle-exclamation', 'bg-red-600'); return; }
+    const frame = document.getElementById('live-canvas-frame');
+    if (frame) {
+        frame.src = url; // Use src not srcdoc so it loads a real page
+        frame.removeAttribute('sandbox'); // Tools need full access
+        document.getElementById('canvas-column')?.classList.remove('w-0');
+        document.getElementById('canvas-column')?.classList.add('w-[50%]');
+        const ta = document.getElementById('live-canvas-code');
+        if (ta) ta.classList.add('hidden');
+        frame.classList.remove('hidden');
+    } else {
+        window.open(url, '_blank');
+    }
+    triggerNotificationToast('Envizion', key + ' opened.', 'fa-arrow-up-right-from-square', 'bg-indigo-600');
+};
+
+// ── OMNICONVERT — format conversion bridge (PDF, QR, OCR, barcode) ───────────
+window.generateQRCode = async (text, size = 300) => {
+    if (!window.QRCode) {
+        await new Promise((res, rej) => {
+            const s = document.createElement('script');
+            s.src = 'https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js';
+            s.onload = res; s.onerror = rej;
+            document.head.appendChild(s);
+        });
+    }
+    const c = document.createElement('canvas');
+    c.width = size; c.height = size;
+    await QRCode.toCanvas(c, text, { width: size, margin: 2, color: { dark: '#a8c7fa', light: '#131314' } });
+    return c.toDataURL('image/png');
+};
+
+// ── CODE EXECUTION SANDBOX EXTENSION — run JS directly from chat ──────────────
+window.runJSSandbox = (code) => {
+    const sandbox = document.getElementById('live-canvas-frame');
+    if (!sandbox) return;
+    const html = `<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"><\/script></head>
+<body class="bg-slate-900 text-white p-4 font-mono text-sm">
+<div id="output"></div>
+<script>
+const _out = [];
+const _log = console.log;
+console.log = (...a) => { _out.push(a.map(String).join(' ')); _log(...a); };
+try { ${code} } catch(e) { _out.push('ERROR: ' + e.message); }
+setTimeout(() => {
+    const el = document.getElementById('output');
+    if (el) el.innerHTML = _out.map(l => '<div class="text-emerald-300 py-0.5 border-b border-white/5">'+l+'</div>').join('');
+}, 100);
+<\/script></body></html>`;
+    sandbox.srcdoc = html;
+    sandbox.classList.remove('hidden');
+    const ta = document.getElementById('live-canvas-code');
+    if (ta) ta.classList.add('hidden');
+    triggerNotificationToast('JS Run', 'Executed in sandbox.', 'fa-play', 'bg-emerald-600');
+};
+
+// ── INTENT DETECTION EXTENSIONS — auto-route to tools ────────────────────────
+const _originalProcessInput = window.processInputMessage;
+window.processInputMessage = async function() {
+    const prompt = document.getElementById('user-prompt')?.value?.trim() || '';
+
+    // Base64 auto-detect
+    if (prompt.length > 8 && prompt.length < 50000 && !/\s{3,}/.test(prompt)) {
+        const decoded = window._tryBase64AutoDecode(prompt);
+        if (decoded) {
+            triggerNotificationToast('Base64', 'Auto-decoded.', 'fa-code', 'bg-indigo-600');
+        }
+    }
+
+    // Check if Claude Code mode intercepts this before Ollama
+    if (window.claudeCodeMode && window._claudeEnabled) {
+        const codeIntent = /(build|create|make|write|generate|code|html|app|tool|page|dashboard|widget)/i.test(prompt);
+        if (codeIntent) {
+            const session = chatDatabase?.sessions?.[currentSessionId];
+            const result = await window._claudeCodeIntercept(prompt, session?.messages || []);
+            if (result) {
+                // Append AI bubble with Claude result
+                const ua = document.getElementById('user-prompt');
+                if (ua) ua.value = '';
+                appendChatBubble('user', prompt);
+                const zone = appendChatBubble('assistant', null);
+                zone.innerHTML = parseMarkdownResponse(result, true);
+                // Parse VFS tags and render canvas
+                window._parseVFSTags(result);
+                const htmlMatch = result.match(/<!DOCTYPE html[\s\S]*<\/html>/i);
+                if (htmlMatch) window.updateCanvasLive(htmlMatch[0], true);
+                session?.messages?.push({ role: 'user', content: prompt });
+                session?.messages?.push({ role: 'assistant', content: result });
+                return;
+            }
+        }
+    }
+
+    // Pass through to original
+    if (_originalProcessInput) return _originalProcessInput.apply(this, arguments);
+};
+
+// ── VFS TAG PARSING — hook into triggerInference response ─────────────────────
+// After every response, scan for [VFS_FILE:...] tags
+const _vfsObserver = new MutationObserver(() => {
+    document.querySelectorAll('.answer-wrapper').forEach(el => {
+        if (el._vfsParsed) return;
+        el._vfsParsed = true;
+        window._parseVFSTags(el.textContent || '');
+    });
+});
+window.addEventListener('DOMContentLoaded', () => {
+    const stream = document.getElementById('chat-stream');
+    if (stream) _vfsObserver.observe(stream, { childList: true, subtree: true });
+});
+
+// ── SETTINGS PANEL EXTENSIONS — Claude Key + VFS controls ────────────────────
+window._injectExtendedSettings = () => {
+    const panel = document.getElementById('config-sidebar');
+    if (!panel || document.getElementById('claude-key-section')) return;
+    const section = document.createElement('div');
+    section.id = 'claude-key-section';
+    section.className = 'px-5 py-4 border-t border-gemini-border/30';
+    section.innerHTML = `
+        <p class="text-[10px] font-bold text-gemini-textMuted uppercase tracking-wider mb-3">Claude API</p>
+        <input id="claude-api-key-input" type="password" placeholder="sk-ant-api03-…"
+            class="w-full bg-gemini-card border border-gemini-border/40 rounded-xl px-3 py-2 text-xs text-slate-200 outline-none focus:border-violet-400 mb-2"
+            value="${window._claudeApiKey}"
+            oninput="window.setClaudeApiKey(this.value)" />
+        <button onclick="window.toggleClaudeCodeMode()" id="claude-code-btn"
+            class="w-full py-2 text-xs rounded-xl border border-violet-500/30 hover:bg-violet-500/10 text-gemini-textMuted smooth-transition font-semibold flex items-center justify-center gap-2">
+            <i class="fa-solid fa-code text-violet-400"></i> Claude Code Mode
+        </button>
+        <p class="text-[10px] font-bold text-gemini-textMuted uppercase tracking-wider mb-3 mt-4">Virtual File System</p>
+        <div id="vfs-file-tree" class="space-y-0.5 mb-2 max-h-40 overflow-y-auto"></div>
+        <div class="flex gap-1">
+            <button onclick="window.vfsNewFile()" class="flex-1 py-1.5 text-[10px] bg-gemini-card/60 hover:bg-gemini-card border border-gemini-border/30 rounded-lg text-slate-300 font-semibold">+ File</button>
+            <button onclick="window.vfsRunBundle()" class="flex-1 py-1.5 text-[10px] bg-emerald-600/20 hover:bg-emerald-600/40 border border-emerald-500/30 rounded-lg text-emerald-400 font-semibold">▶ Run</button>
+            <button onclick="window.vfsDownloadZip()" class="flex-1 py-1.5 text-[10px] bg-gemini-card/60 hover:bg-gemini-card border border-gemini-border/30 rounded-lg text-slate-300 font-semibold">⬇ ZIP</button>
+        </div>
+    `;
+    panel.appendChild(section);
+};
+window.addEventListener('DOMContentLoaded', () => {
+    setTimeout(window._injectExtendedSettings, 800);
+});
+
+// ── SYSTEM PROMPT ADDITION — tell AI about all new capabilities ───────────────
+// ADD THIS TEXT TO YOUR SYSTEM PROMPT:
+// ════════════════════════════════════════════════════════════════════
+// PASTE THE BLOCK BELOW INSIDE getDynamicSystemPrompt(), JUST BEFORE
+// THE CLOSING RETURN STATEMENT (right before: return prompt; on ~line 3384)
+// ════════════════════════════════════════════════════════════════════
+/*
+    prompt += `
+
+━━━ EXTENDED LOMA CAPABILITIES (NEWLY ADDED) ━━━
+
+13. CLAUDE API: When window._claudeEnabled is true, window.callClaudeAPI(messages, system, maxTokens) 
+    sends requests to Claude claude-sonnet-4-6. Claude Code Mode routes all coding requests there.
+    Users set their key via Settings panel. Trigger: [CLAUDE_CODE: <task>]
+
+14. VIRTUAL FILE SYSTEM (VFS): window.vfsWrite/vfsRead/vfsDelete/vfsRename/vfsList manage a 
+    multi-file project in memory. AI can write files by outputting:
+    [VFS_FILE: filename.ext]
+    <full file content here>
+    [/VFS_FILE]
+    Multiple [VFS_FILE] blocks in one response = full multi-file project (Replit-style).
+    window.vfsRunBundle() bundles and runs everything. window.vfsDownloadZip() exports a ZIP.
+
+15. BACKGROUND REMOVAL: window.removeBackground(imageFile) — local AI model via @imgly/background-removal.
+    No server, no API key. Works on logos, products, portraits.
+
+16. BASE64: window.base64Encode(text), window.base64Decode(b64), window.base64EncodeFile(file).
+    Auto-detect and decode base64 strings pasted into chat.
+
+17. IMAGE TOOLS: window.runOCR(imageFileOrUrl) — Tesseract.js local OCR, returns text.
+    window.upscaleImage(prompt, w, h) — Pollinations AI upscale URL.
+    window.cropImage(imgEl, x, y, w, h) — Canvas-based crop, returns data URL.
+
+18. AUDIO/VIDEO: window.extractAudioFromVideo(videoFile) — extracts WAV audio from any video file.
+    window.generateQRCode(text, size) — returns canvas data URL of QR code.
+
+19. FILE ENCRYPTION: window.encryptFile(file, password) / window.decryptFile(file, password) —
+    AES-GCM 256-bit via WebCrypto. No server. Files download directly.
+
+20. PDF: window.extractPdfText(pdfFile) — returns full text from any PDF via PDF.js.
+
+21. ENVIZION TOOLS: window.openEnvizionTool(key) opens any Envizion tool in the canvas iframe.
+    Keys: teleprompter, voiceEditor, separator, audioLibrary, excel, bgRemove, imageOptimizer,
+    ocr, upscaler, videoCrop, auraConvert, mediaForge, watermarker, encryption, omniConvert,
+    pdfExtractor, htmlViewer, pdfMerger, dictionary.
+
+22. JS SANDBOX: window.runJSSandbox(code) — executes arbitrary JS in the canvas iframe with
+    console.log capture and visual output.
+
+When users ask about any of these capabilities, use them. When generating multi-file projects,
+always use [VFS_FILE: ...][/VFS_FILE] blocks. When users want background removal, OCR, audio
+extraction, encryption, PDF tools, or any Envizion tool — call the relevant window.* function
+and generate a UI that triggers it.
+`;
+*/
+// ════════════════════════════════════════════════════════════════════
+// END OF SYSTEM PROMPT PASTE BLOCK
+// ════════════════════════════════════════════════════════════════════
 
 // ═══════════════════════════════════════════════════════════════════════════════
-//  LOMA — MISSING CAPABILITY FUNCTIONS
-//  Paste this block into index.html right after the ENVIZION_API declaration
-//  (around line 542, after: const ENVIZION_API = '...')
+//  LOMA — MISSING CAPABILITY FUNCTIONS (original block continues below)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 
@@ -3381,6 +4034,42 @@ ${TRAINING_DATA_PROTOCOL}
         prompt += `\n\n━━━ AUTONOMOUS EVOLUTION RULES ━━━\n`;
         prompt += evolvedCapabilities.map((c, i) => `${i + 1}. ${c.title}: ${c.rule}`).join('\n');
     }
+
+    // ── EXTENDED CAPABILITIES BLOCK (auto-injected) ──────────────────────────
+    prompt += `
+
+━━━ EXTENDED LOMA CAPABILITIES ━━━
+
+13. CLAUDE API: window.callClaudeAPI(messages,system,maxTokens) → Claude claude-sonnet-4-6.
+    Claude Code Mode routes coding requests there. Users set key in Settings.
+
+14. VIRTUAL FILE SYSTEM (VFS): Multi-file Replit-style projects.
+    Output files using: [VFS_FILE: filename.ext]<content>[/VFS_FILE]
+    Multiple blocks = full project. window.vfsRunBundle() bundles+runs. window.vfsDownloadZip() = ZIP.
+
+15. BACKGROUND REMOVAL: window.removeBackground(imageFile) — local WASM, no API key.
+
+16. BASE64: window.base64Encode/Decode/EncodeFile. Auto-detected in chat input.
+
+17. IMAGE TOOLS: window.runOCR(file) → Tesseract text. window.upscaleImage(prompt,w,h) → URL. window.cropImage(el,x,y,w,h) → dataURL.
+
+18. AUDIO/VIDEO: window.extractAudioFromVideo(file) → WAV download. window.generateQRCode(text) → PNG dataURL.
+
+19. FILE ENCRYPTION: window.encryptFile(file,pass) / window.decryptFile(file,pass) — AES-GCM 256.
+
+20. PDF: window.extractPdfText(pdfFile) → full text string via PDF.js.
+
+21. ENVIZION TOOLS: window.openEnvizionTool(key) — opens in canvas iframe.
+    Keys: teleprompter, voiceEditor, separator, audioLibrary, excel, bgRemove, imageOptimizer,
+    ocr, upscaler, videoCrop, auraConvert, mediaForge, watermarker, encryption, omniConvert,
+    pdfExtractor, htmlViewer, pdfMerger, dictionary.
+
+22. JS SANDBOX: window.runJSSandbox(code) — runs JS in canvas with console capture.
+
+When generating multi-file projects always use [VFS_FILE:...][/VFS_FILE] blocks.
+When users want BG removal, OCR, audio extract, encryption, PDF, or Envizion tools — call the relevant window.* function and generate UI that triggers it.
+`;
+
     return prompt;
 }
 
