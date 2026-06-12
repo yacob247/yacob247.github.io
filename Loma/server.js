@@ -116,6 +116,17 @@ app.post('/api/chat', async (req, res) => {
         const reader = ollamaRes.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
+        let wordBatch = '';
+        let wordCount = 0;
+        const BATCH_SIZE = 100; // flush every 100 words
+
+        const flushBatch = () => {
+            if (wordBatch) {
+                res.write(`data: ${JSON.stringify({ t: wordBatch })}\n\n`);
+                wordBatch = '';
+                wordCount = 0;
+            }
+        };
 
         onClientClose = () => {
             try { reader.cancel(); } catch {}
@@ -134,18 +145,24 @@ app.post('/api/chat', async (req, res) => {
                 if (!line.trim()) continue;
                 try {
                     const parsed = JSON.parse(line);
-                    
+
                     if (parsed.message && parsed.message.content) {
-                        res.write(`data: ${JSON.stringify({ t: parsed.message.content })}\n\n`); 
+                        const chunk = parsed.message.content;
+                        wordBatch += chunk;
+                        // count words by spaces as a cheap heuristic
+                        wordCount += (chunk.match(/\s+/g) || []).length;
+                        if (wordCount >= BATCH_SIZE) flushBatch();
                     }
 
                     if (parsed.error) {
+                        flushBatch();
                         res.write(`data: ${JSON.stringify({ error: parsed.error })}\n\n`);
                         res.end();
                         return;
                     }
 
                     if (parsed.done === true) {
+                        flushBatch(); // send whatever remains
                         res.write('data: [DONE]\n\n');
                         res.end();
                         return;
