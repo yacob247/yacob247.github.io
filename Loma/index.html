@@ -1801,8 +1801,13 @@ window.triggerInference = async function() {
     return _originalTriggerInference.apply(this, arguments);
 };
 
-
-
+// Patch getDynamicSystemPrompt to inject memory
+const _originalGetSystemPrompt = getDynamicSystemPrompt;
+window.getDynamicSystemPrompt = function() {
+    return _originalGetSystemPrompt() + (window._memoryContext || '') + (window.getMemoryContext?.() || '');
+};
+// Make triggerInference use the patched version
+window.getDynamicSystemPromptPatched = true;
 
 
 // ─── 11. POST-RESPONSE HOOKS — fire after each AI response completes ──────────
@@ -1924,7 +1929,7 @@ window.addEventListener('DOMContentLoaded', () => {
     if(document.getElementById('config-model')) document.getElementById('config-model').value = systemConfig.model;
     if(document.getElementById('config-tokens')) document.getElementById('config-tokens').value = systemConfig.maxTokens;
     if(document.getElementById('token-val')) document.getElementById('token-val').innerText = systemConfig.maxTokens || 32768;
-if(document.getElementById('config-system-prompt')) document.getElementById('config-system-prompt').value = '';
+    if(document.getElementById('config-system-prompt')) document.getElementById('config-system-prompt').value = getDynamicSystemPrompt();
     if(document.getElementById('google-search-api-key')) document.getElementById('google-search-api-key').value = systemConfig.googleKey;
     if(document.getElementById('google-search-cx')) document.getElementById('google-search-cx').value = systemConfig.googleCx;
     
@@ -2284,7 +2289,8 @@ async function triggerInference() {
   const _spKey = 'loma_sp_sent_' + currentSessionId;
 if (!localStorage.getItem(_spKey)) {
       if (!session.messages.find(m => m.role === 'system')) {
-session.messages.unshift({ role: 'system', content: '' });      }
+          session.messages.unshift({ role: 'system', content: getCompressedSystemPrompt() });
+      }
       localStorage.setItem(_spKey, '1');
       syncDatabaseToDrive();
   }
@@ -2338,13 +2344,11 @@ const currentMessages = session.messages; // system is already in there from now
             if (!renderLoopActive && tokenQueue.length === 0) return;
 
             if (tokenQueue.length > 0) {
-                let batchSize = Math.max(1, Math.floor(tokenQueue.length / 3)); 
-                for (let i = 0; i < batchSize; i++) {
-                    if (tokenQueue.length > 0) {
-                        const tok = tokenQueue.shift();
-                        rawAccumulated += tok;
-                        answerText += tok;
-                    }
+                // drain entire queue instantly — no artificial drip
+                while (tokenQueue.length > 0) {
+                    const tok = tokenQueue.shift();
+                    rawAccumulated += tok;
+                    answerText += tok;
                 }
 
                 let processedText = answerText;
@@ -3338,8 +3342,8 @@ If there were errors, diagnose them and explain what they mean.`;
         const interpTypewriter = () => {
             if (!interpRenderActive && interpTokenQueue.length === 0) return;
             if (interpTokenQueue.length > 0) {
-// drain entire queue at once — no artificial drip
-while (interpTokenQueue.length > 0) interpRaw += interpTokenQueue.shift();
+                // drain entire queue instantly — no artificial drip
+                while (interpTokenQueue.length > 0) interpRaw += interpTokenQueue.shift();
                 // Strip any <think> from interpretation output while streaming
                 let vis = interpRaw;
                 const ts = vis.indexOf('<think>'), te = vis.indexOf('</think>');
