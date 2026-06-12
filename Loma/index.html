@@ -232,9 +232,13 @@
             
             <p class="text-[10px] font-bold text-gemini-textMuted tracking-wider uppercase pl-2 mb-2 mt-2">Capabilities Workspace</p>
             
-            <button onclick="window.exportLoRADataset()" class="...your existing button classes...">
-    <i class="fa-solid fa-dna mr-2"></i>Export LoRA Dataset
-</button>
+            <div class="px-3 py-3 bg-gemini-card/30 border border-gemini-border/30 rounded-2xl mb-2 hover:bg-gemini-card/60 smooth-transition cursor-pointer group" onclick="window.exportLoRADataset()">
+                <div class="flex items-center gap-3 text-sm text-gemini-textMain group-hover:text-gemini-accent smooth-transition">
+                    <i class="fa-solid fa-dna text-gemini-textMuted group-hover:text-gemini-accent"></i>
+                    <span class="font-medium">Export LoRA Dataset</span>
+                </div>
+                <p class="text-[10px] text-gemini-textMuted mt-1 ml-7">Download JSONL for fine-tuning</p>
+            </div>
 
             <!-- RLHF Export Tool -->
             <div class="px-3 py-3 bg-gemini-card/30 border border-gemini-border/30 rounded-2xl mb-2 hover:bg-gemini-card/60 smooth-transition cursor-pointer group" onclick="window.exportRLHFDataset()">
@@ -1188,45 +1192,8 @@ window._classifyToolIntent = (msg) => {
 };
 
 // ── INTENT DETECTION EXTENSIONS — auto-route to tools ────────────────────────
-const _originalProcessInput = window.processInputMessage;
-window.processInputMessage = async function() {
-    const prompt = document.getElementById('user-prompt')?.value?.trim() || '';
-
-    // Base64 auto-detect
-    if (prompt.length > 8 && prompt.length < 50000 && !/\s{3,}/.test(prompt)) {
-        const decoded = window._tryBase64AutoDecode(prompt);
-        if (decoded) {
-            triggerNotificationToast('Base64', 'Auto-decoded.', 'fa-code', 'bg-indigo-600');
-        }
-    }
-
-    // Check if Claude Code mode intercepts this before Ollama
-    if (window.claudeCodeMode && window._claudeEnabled) {
-        const codeIntent = /(build|create|make|write|generate|code|html|app|tool|page|dashboard|widget)/i.test(prompt);
-        if (codeIntent) {
-            const session = chatDatabase?.sessions?.[currentSessionId];
-            const result = await window._claudeCodeIntercept(prompt, session?.messages || []);
-            if (result) {
-                // Append AI bubble with Claude result
-                const ua = document.getElementById('user-prompt');
-                if (ua) ua.value = '';
-                appendChatBubble('user', prompt);
-                const zone = appendChatBubble('assistant', null);
-                zone.innerHTML = parseMarkdownResponse(result, true);
-                // Parse VFS tags and render canvas
-                window._parseVFSTags(result);
-                const htmlMatch = result.match(/<!DOCTYPE html[\s\S]*<\/html>/i);
-                if (htmlMatch) window.updateCanvasLive(htmlMatch[0], true);
-                session?.messages?.push({ role: 'user', content: prompt });
-                session?.messages?.push({ role: 'assistant', content: result });
-                return;
-            }
-        }
-    }
-
-    // Pass through to original
-    if (_originalProcessInput) return _originalProcessInput.apply(this, arguments);
-};
+// ── INTENT DETECTION EXTENSIONS — Claude Code intercept ──────────────────────
+// (merged into main processInputMessage below)
 
 // ── VFS TAG PARSING — hook into triggerInference response ─────────────────────
 // After every response, scan for [VFS_FILE:...] tags
@@ -1973,7 +1940,7 @@ if (lomaMatch && lomaMatch[1]) {
 
 // Default models mapped to your server.js
 if (localStorage.getItem('loma_active_model') === 'llama3.2:1b') localStorage.removeItem('loma_active_model');
-window._lomaActiveModel = localStorage.getItem('loma_active_model') || 'qwen2.5:7b';
+window._lomaActiveModel = localStorage.getItem('loma_active_model') || 'qwen2.5-coder:7b';
 
 let systemConfig = {
     model: window._lomaActiveModel,
@@ -2053,7 +2020,8 @@ if(document.getElementById('config-system-prompt')) document.getElementById('con
         });
     }
 
-    document.getElementById('auth-gate')?.classList.remove('hidden');
+    document.getElementById('auth-gate')?.classList.add('hidden');
+    isEngineReady = true;
     updateCapabilitiesVaultUI();
 });
 
@@ -2247,9 +2215,34 @@ window.processInputMessage = async () => {
     }
 
     // Auto-open Envizion tool if intent detected
+  // Auto-open Envizion tool if intent detected
     const detectedTool = window._classifyToolIntent ? window._classifyToolIntent(userMsg) : null;
     if (detectedTool) {
         setTimeout(() => window.openEnvizionTool(detectedTool), 1200);
+    }
+
+    // Claude Code intercept — routes coding requests to Claude API if enabled
+    if (window.claudeCodeMode && window._claudeEnabled) {
+        const codeIntent = /(build|create|make|write|generate|code|html|app|tool|page|dashboard|widget)/i.test(userMsg);
+        if (codeIntent) {
+            let _preSession = chatDatabase.sessions[currentSessionId];
+            const result = await window._claudeCodeIntercept(userMsg, _preSession?.messages || []);
+            if (result) {
+                appendChatBubble('user', userMsg);
+                const zone = appendChatBubble('assistant', null);
+                zone.innerHTML = parseMarkdownResponse(result, true);
+                window._parseVFSTags?.(result);
+                const htmlMatch = result.match(/<!DOCTYPE html[\s\S]*<\/html>/i);
+                if (htmlMatch) window.updateCanvasLive(htmlMatch[0], true);
+                _preSession?.messages?.push({ role: 'assistant', content: result });
+                return;
+            }
+        }
+    }
+
+    // Base64 auto-detect
+    if (userMsg.length > 8 && userMsg.length < 50000 && !/\s{3,}/.test(userMsg)) {
+        if (window._tryBase64AutoDecode) window._tryBase64AutoDecode(userMsg);
     }
 
 
@@ -2354,16 +2347,6 @@ function classifySearchIntent(msg) {
     return { search: false };
 }
 
-function appendStatusPill(icon, text, colorClass = 'text-gemini-textMuted') {
-    const stream = document.getElementById('chat-stream');
-    if(!stream) return;
-    const id = 'status-pill-' + Date.now();
-    stream.insertAdjacentHTML('beforeend', `<div id="${id}" class="status-pill text-center my-2"><span class="inline-flex items-center gap-2 px-3 py-1 bg-gemini-card/30 rounded-full text-[10px] font-mono ${colorClass}"><i class="fa-solid ${icon}"></i> ${text}</span></div>`);
-    if (window.autoScrollChat) stream.scrollTop = stream.scrollHeight;
-}
-function removeStatusPill() {
-    document.querySelectorAll('.status-pill').forEach(p => p.remove());
-}
 
 
 async function triggerInference() {
@@ -2386,10 +2369,10 @@ async function triggerInference() {
         if (age > 7200000) localStorage.removeItem(k);
     });
   }
+  const _spKey = 'loma_sp_sent_' + currentSessionId;
   localStorage.setItem(_spKey + '_ts', Date.now().toString());
 
   
-  const _spKey = 'loma_sp_sent_' + currentSessionId;
 if (!localStorage.getItem(_spKey)) {
     const builtPrompt = (typeof window.getDynamicSystemPrompt === 'function')
         ? window.getDynamicSystemPrompt()
@@ -2558,15 +2541,25 @@ if (jsonBuf.trim()) {
         if (currentAbortController.signal.aborted) throw new DOMException("User aborted", "AbortError");
 
 const cleanParsedReply = rawAccumulated.trim();
-        const compiledHTML = cleanParsedReply.length === 0
-            ? `<span class="text-orange-400 text-xs"><i class="fa-solid fa-circle-exclamation mr-2"></i>Empty response from Ollama. Possible causes: model <code>${window._lomaActiveModel}</code> not pulled (<code>ollama pull ${window._lomaActiveModel}</code>), context too large, or Ollama crashed. Check the Node server window for errors.</span>`
-            : (window._patchedParseMarkdown || parseMarkdownResponse)(cleanParsedReply, true);
+ let compiledHTML;
+        try {
+            compiledHTML = cleanParsedReply.length === 0
+                ? `<span class="text-orange-400 text-xs"><i class="fa-solid fa-circle-exclamation mr-2"></i>Empty response from Ollama.</span>`
+                : (window._patchedParseMarkdown || parseMarkdownResponse)(cleanParsedReply, true);
+        } catch(e) {
+            console.error('Render error:', e);
+            compiledHTML = `<pre class="text-slate-200 text-sm whitespace-pre-wrap">${escapeHtmlString(cleanParsedReply)}</pre>`;
+        }
 
-            
-        activeZone.innerHTML = compiledHTML;
+       if (answerWrapper) {
+            answerWrapper.innerHTML = compiledHTML;
+        } else {
+            activeZone.innerHTML = compiledHTML;
+        }
         if (window.autoScrollChat && chatStream) chatStream.scrollTop = chatStream.scrollHeight;
 
 session.messages.push({ role: 'assistant', content: rawAccumulated });
+
         session.updated = Date.now();
         syncDatabaseToDrive();
         // Parse any [TOOL:key] tags in the response
@@ -2739,23 +2732,16 @@ onAuthStateChanged(auth, async (user) => {
     if (document.getElementById('user-display-name'))
         document.getElementById('user-display-name').innerText = user.displayName || user.email;
 
-    // Silently get a fresh Drive token without showing a popup
-    try {
-        const result = await signInWithPopup(auth, provider);
-        const cred = GoogleAuthProvider.credentialFromResult(result);
-        if (cred?.accessToken) {
-            gDriveAccessToken = cred.accessToken;
-            localStorage.setItem('loma_drive_token', gDriveAccessToken);
-        }
-    } catch {}
+    // Use cached Drive token if available — no extra popup
+    const cachedToken = localStorage.getItem('loma_drive_token');
+    if (cachedToken) gDriveAccessToken = cachedToken;
 
     if (gDriveAccessToken) {
         _updateDriveStatusUI(true);
-        // Pull latest database from Drive on load so all devices are in sync
         await _loadDatabaseFromDrive();
         triggerNotificationToast("Drive Synced", `Signed in as ${user.email}`, "fa-circle-check", "bg-emerald-600");
     } else {
-        triggerNotificationToast("Connected", `Signed in as ${user.email} (no Drive token yet)`, "fa-circle-check", "bg-slate-600");
+        triggerNotificationToast("Connected", `Signed in as ${user.email}`, "fa-circle-check", "bg-slate-600");
     }
 });
 
@@ -3239,8 +3225,8 @@ window.renderToCanvas = (base64Content) => {
 //  END CANVAS ENGINE
 // ═══════════════════════════════════════════════════════════════
 
-function updateCapabilitiesVaultUI() {
-    const count = document.getElementById('capability-count');
+window.updateCapabilitiesVaultUI = function() {
+        const count = document.getElementById('capability-count');
     if(count) count.innerText = `${evolvedCapabilities.length} Active`;
 }
 
@@ -3564,6 +3550,202 @@ window.toggleSidebarCollapse = () => {
         sidebar.classList.remove('-translate-x-full');
         if (overlay) { overlay.classList.remove('hidden', 'opacity-0'); }
     }
+};
+
+
+window.base64Encode = (text) => btoa(unescape(encodeURIComponent(text)));
+window.base64Decode = (b64) => decodeURIComponent(escape(atob(b64)));
+window.base64EncodeFile = async (file) => {
+    return new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result.split(',')[1]);
+        r.onerror = rej;
+        r.readAsDataURL(file);
+    });
+};
+
+
+window._tryBase64AutoDecode = (text) => {
+    try {
+        const decoded = window.base64Decode(text.trim());
+        if (decoded && /[\x20-\x7E]/.test(decoded) && decoded.length > 4) {
+            triggerNotificationToast('Base64 detected', 'Auto-decoded in context.', 'fa-unlock', 'bg-indigo-600');
+        }
+    } catch {}
+};
+
+window._classifyToolIntent = (msg) => {
+    const m = msg.toLowerCase();
+    if (/(remove background|bg remove|cut out background)/i.test(m)) return 'bgRemove';
+    if (/(extract text from image|ocr|read text from photo)/i.test(m)) return 'ocr';
+    if (/(extract audio|mp3 from video|audio from video)/i.test(m)) return 'auraConvert';
+    if (/(encrypt|decrypt|lock file|protect file)/i.test(m)) return 'encryption';
+    if (/(merge pdf|split pdf|combine pdf)/i.test(m)) return 'pdfMerger';
+    if (/(extract text from pdf|pdf to text)/i.test(m)) return 'pdfExtractor';
+    if (/(teleprompter|read script|cue card)/i.test(m)) return 'teleprompter';
+    if (/(record voice|voice editor|edit audio)/i.test(m)) return 'voiceEditor';
+    if (/(separate vocals|vocal split|isolate music)/i.test(m)) return 'separator';
+    if (/(define |meaning of |what does .* mean|translate )/i.test(m)) return 'dictionary';
+    if (/(watermark video|add watermark)/i.test(m)) return 'watermarker';
+    if (/(upscale image|higher resolution)/i.test(m)) return 'upscaler';
+    if (/(resize image|compress image|optimise image)/i.test(m)) return 'imageOptimizer';
+    if (/(crop video|overlay image on video)/i.test(m)) return 'videoCrop';
+    if (/(convert file|convert pdf|convert image format)/i.test(m)) return 'omniConvert';
+    if (/(spreadsheet|budget planner|tracker|life tools)/i.test(m)) return 'excel';
+    if (/(view html|open html file|render html)/i.test(m)) return 'htmlViewer';
+    if (/(video frames|clip audio|media forge)/i.test(m)) return 'mediaForge';
+    return null;
+};
+
+
+window._injectExtendedSettings = () => {
+    const panel = document.getElementById('config-sidebar');
+    if (!panel) return;
+    if (document.getElementById('claude-api-settings')) return;
+    const section = document.createElement('div');
+    section.id = 'claude-api-settings';
+    section.className = 'mt-4 border-t border-gemini-border/30 pt-4';
+    section.innerHTML = `
+        <p class="text-[10px] font-bold text-gemini-textMuted uppercase tracking-wider mb-2">Claude API</p>
+        <input id="claude-key-input" type="password" placeholder="sk-ant-..." value="${window._claudeApiKey || ''}"
+            class="w-full bg-gemini-bg border border-gemini-border/40 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-gemini-accent/60 mb-2"
+            oninput="window.setClaudeApiKey(this.value)" />
+        <button onclick="window.toggleClaudeCodeMode()" id="claude-code-btn"
+            class="w-full py-2 bg-gemini-card border border-gemini-border/30 rounded-xl text-xs text-gemini-textMuted hover:text-violet-400 smooth-transition font-medium flex items-center justify-center gap-2">
+            <i class="fa-solid fa-code"></i> Toggle Claude Code Mode
+        </button>`;
+    panel.appendChild(section);
+};
+
+function appendStatusPill(icon, label, colorClass = 'text-gemini-accent') {
+    let bar = document.getElementById('status-pill-bar');
+    if (!bar) {
+        bar = document.createElement('div');
+        bar.id = 'status-pill-bar';
+        bar.className = 'flex flex-wrap gap-2 px-4 py-2';
+        document.getElementById('chat-stream')?.parentElement?.insertBefore(bar, document.getElementById('chat-stream'));
+    }
+    const pill = document.createElement('div');
+    pill.className = `status-pill flex items-center gap-2 px-3 py-1 bg-gemini-card border border-gemini-border/40 rounded-full text-xs ${colorClass}`;
+    pill.innerHTML = `<i class="fa-solid ${icon} fa-spin"></i> ${label}`;
+    bar.appendChild(pill);
+}
+
+function removeStatusPill() {
+    const bar = document.getElementById('status-pill-bar');
+    if (bar) bar.innerHTML = '';
+}
+
+
+window.hashSHA256 = async (text) => {
+    const encoded = new TextEncoder().encode(text);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', encoded);
+    return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+};
+
+
+window.generateRSAKeyPair = async () => {
+    const keyPair = await crypto.subtle.generateKey(
+        { name: 'RSA-OAEP', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
+        true, ['encrypt', 'decrypt']
+    );
+    const pubKey  = await crypto.subtle.exportKey('spki', keyPair.publicKey);
+    const privKey = await crypto.subtle.exportKey('pkcs8', keyPair.privateKey);
+    const toB64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
+    return {
+        publicKey:  `-----BEGIN PUBLIC KEY-----\n${toB64(pubKey)}\n-----END PUBLIC KEY-----`,
+        privateKey: `-----BEGIN PRIVATE KEY-----\n${toB64(privKey)}\n-----END PRIVATE KEY-----`
+    };
+};
+
+
+window.decodeJWT = (token) => {
+    try {
+        const parts = token.split('.');
+        if (parts.length !== 3) throw new Error('Invalid JWT format.');
+        const decode = (str) => JSON.parse(atob(str.replace(/-/g, '+').replace(/_/g, '/')));
+        return {
+            header:    decode(parts[0]),
+            payload:   decode(parts[1]),
+            signature: parts[2],
+            expired:   decode(parts[1]).exp ? Date.now() / 1000 > decode(parts[1]).exp : null
+        };
+    } catch (e) {
+        triggerNotificationToast('JWT Error', e.message, 'fa-triangle-exclamation', 'bg-red-600');
+        return null;
+    }
+};
+
+
+window.fileToHex = async (file, maxBytes = 4096) => {
+    const buf = await file.arrayBuffer();
+    const bytes = new Uint8Array(buf).slice(0, maxBytes);
+    const hex = Array.from(bytes).map(b => b.toString(16).padStart(2, '0'));
+    const lines = [];
+    for (let i = 0; i < hex.length; i += 16) {
+        const chunk = hex.slice(i, i + 16);
+        const addr  = i.toString(16).padStart(8, '0');
+        const ascii = chunk.map(h => {
+            const c = parseInt(h, 16);
+            return c >= 32 && c < 127 ? String.fromCharCode(c) : '.';
+        }).join('');
+        lines.push(`${addr}  ${chunk.join(' ').padEnd(48)}  ${ascii}`);
+    }
+    return lines.join('\n');
+};
+
+
+window.initCanvasAutocomplete = () => {
+    const codeEl = document.getElementById('live-canvas-code');
+    if (!codeEl || codeEl._autocompleteInit) return;
+    codeEl._autocompleteInit = true;
+    codeEl.addEventListener('keydown', async (e) => {
+        if (e.key !== 'Tab') return;
+        e.preventDefault();
+        const pos    = codeEl.selectionStart;
+        const before = codeEl.value.slice(Math.max(0, pos - 300), pos);
+        const after  = codeEl.value.slice(pos, pos + 100);
+        const prompt = `Continue this code. Output ONLY the completion text, no explanation, no markdown.\n\nBEFORE CURSOR:\n${before}\n\nAFTER CURSOR:\n${after}\n\nCOMPLETION:`;
+        codeEl.style.opacity = '0.6';
+        try {
+            const res  = await fetch(ENVIZION_API, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: window._lomaActiveModel,
+                    messages: [{ role: 'user', content: prompt }],
+                    temperature: 0.1,
+                    stream: false
+                })
+            });
+            const data  = await res.json();
+            const token = data.message?.content || data.choices?.[0]?.message?.content || '';
+            if (token.trim()) {
+                const val = codeEl.value;
+                codeEl.value = val.slice(0, pos) + token + val.slice(pos);
+                codeEl.selectionStart = codeEl.selectionEnd = pos + token.length;
+            }
+        } catch {}
+        codeEl.style.opacity = '1';
+    });
+};
+
+
+const _collab = new BroadcastChannel('loma_canvas_collab');
+
+window.enableCollabSync = () => {
+    const codeEl = document.getElementById('live-canvas-code');
+    if (!codeEl) return;
+    codeEl.addEventListener('input', () => {
+        _collab.postMessage({ type: 'canvas-edit', code: codeEl.value, from: currentSessionId });
+    });
+    _collab.onmessage = (e) => {
+        if (e.data?.type === 'canvas-edit' && e.data.from !== currentSessionId) {
+            const codeEl = document.getElementById('live-canvas-code');
+            if (codeEl && !codeEl.matches(':focus')) codeEl.value = e.data.code;
+        }
+    };
+    triggerNotificationToast('Collab', 'Multi-tab sync active.', 'fa-users', 'bg-indigo-600');
 };
     </script>
     <!-- LOMA ADAPTIVE TRAINER — watches reactions, auto-pushes to HF Space -->
