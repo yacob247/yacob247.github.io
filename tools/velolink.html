@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VeloLink - Zero-Storage Video Sharing Concept</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+        }
+        /* Custom scrollbar for URL and text displays */
+        .custom-scrollbar::-webkit-scrollbar {
+            height: 6px;
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 9999px;
+        }
+        /* Custom Fade Animations */
+        .animate-fade-in {
+            animation: fadeIn 0.4s ease-out forwards;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col selection:bg-indigo-500 selection:text-white transition-all duration-300">
+
+    <!-- Global App Header (Hidden in strict embed mode) -->
+    <header id="appHeader" class="border-b border-slate-900 bg-slate-950/80 backdrop-blur sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-3 cursor-pointer" onclick="resetToHome()">
+                <div class="p-2 bg-gradient-to-tr from-indigo-600 to-violet-500 rounded-xl text-white shadow-lg shadow-indigo-500/20">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="none" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                </div>
+                <div>
+                    <span class="font-bold text-lg tracking-tight bg-gradient-to-r from-white via-slate-100 to-indigo-400 bg-clip-text text-transparent">VeloLink</span>
+                    <span class="text-xs block text-slate-500 font-medium leading-none">Powered by envizion.work</span>
+                </div>
+            </div>
+            <div class="flex items-center gap-4">
+                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                    100% Serverless
+                </span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Strict Universal Embed Mode Frame (Hidden by default, shown ONLY when embedding) -->
+    <div id="strictEmbedContainer" class="hidden fixed inset-0 w-full h-full bg-black z-[9999] flex items-center justify-center group">
+        <video id="embedPlayer" class="w-full h-full object-contain" controls></video>
+        <!-- Overlay watermark attribution referencing owner's site -->
+        <a id="embedWatermark" href="https://envizion.work" target="_blank" class="absolute top-4 right-4 bg-slate-950/80 hover:bg-slate-900 text-slate-200 text-xs px-3 py-1.5 rounded-lg border border-slate-850/80 flex items-center gap-1.5 transition-all opacity-0 group-hover:opacity-100 duration-300 shadow-lg">
+            <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
+            <span>via envizion.work</span>
+        </a>
+    </div>
+
+    <!-- Main Content Workspace -->
+    <main id="appMain" class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col justify-center">
+        
+        <!-- Viewer View (Triggered if hash is present) -->
+        <div id="viewMode" class="hidden space-y-8 animate-fade-in">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <!-- Video Player Column -->
+                <div class="lg:col-span-2 space-y-4">
+                    <div class="relative bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden shadow-2xl group">
+                        <video id="player" class="w-full h-auto aspect-video object-contain" controls></video>
+                        <div class="absolute top-4 left-4 bg-slate-950/80 backdrop-blur border border-slate-800 text-xs px-3 py-1.5 rounded-lg flex items-center gap-2 pointer-events-none">
+                            <span class="w-2.5 h-2.5 rounded-full bg-indigo-500 animate-pulse"></span>
+                            <span>Playing from URL Memory</span>
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-900/40 p-6 rounded-2xl border border-slate-900/60 flex flex-wrap gap-4 items-center justify-between">
+                        <div>
+                            <h3 class="font-semibold text-lg text-slate-100 flex items-center gap-2">
+                                <span id="viewFileName">Embedded Video Clip</span>
+                            </h3>
+                            <p class="text-xs text-slate-400 mt-1" id="originAttribution">Origin Site: envizion.work</p>
+                        </div>
+                        <div class="flex gap-2">
+                            <button id="downloadBtn" onclick="downloadVideo()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-100 rounded-xl text-sm font-medium transition-colors flex items-center gap-2 border border-slate-700/50">
+                                <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                                </svg>
+                                Save Video File
+                            </button>
+                            <button onclick="resetToHome()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition-colors">
+                                Create New VeloLink
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Share & Embed Sidebar -->
+                <div class="space-y-6">
+                    <div class="bg-slate-900 p-6 rounded-2xl border border-slate-800 space-y-6">
+                        <h3 class="text-md font-semibold text-slate-200 flex items-center gap-2 border-b border-slate-800 pb-3">
+                            <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M8.684 10.742l4.576-2.288m0 0A3 3 0 1012.13 6.09L7.554 8.378m8.22 5.244l-4.576-2.288M12.13 13.91a3 3 0 114.562 2.279"/>
+                            </svg>
+                            Distribute Link
+                        </h3>
+
+                        <!-- Active URL Display -->
+                        <div class="space-y-2">
+                            <label class="text-xs text-slate-400 font-medium">Unique Video Link</label>
+                            <div class="flex gap-2">
+                                <input type="text" readonly id="viewUrlBox" class="bg-slate-950 px-3 py-2 rounded-xl text-xs text-indigo-400 border border-slate-800 flex-grow focus:outline-none focus:ring-1 focus:ring-indigo-500 select-all font-mono" />
+                                <button onclick="copyToClipboard('viewUrlBox', 'urlCopyStatus')" class="px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl transition-all border border-slate-700/50 flex items-center justify-center">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>
+                                </button>
+                            </div>
+                            <span id="urlCopyStatus" class="text-[10px] text-emerald-400 hidden">Link copied successfully!</span>
+                        </div>
+
+                        <!-- Iframe Embed Generator -->
+                        <div class="space-y-2">
+                            <label class="text-xs text-slate-400 font-medium">Responsive Embed Iframe</label>
+                            <div class="flex gap-2">
+                                <input type="text" readonly id="embedCodeBox" class="bg-slate-950 px-3 py-2 rounded-xl text-xs text-emerald-400 border border-slate-800 flex-grow focus:outline-none focus:ring-1 focus:ring-indigo-500 select-all font-mono" />
+                                <button onclick="copyToClipboard('embedCodeBox', 'embedCopyStatus')" class="px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl transition-all border border-slate-700/50 flex items-center justify-center">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>
+                                </button>
+                            </div>
+                            <span id="embedCopyStatus" class="text-[10px] text-emerald-400 hidden">Embed snippet copied!</span>
+                        </div>
+
+                        <div class="bg-indigo-950/20 rounded-xl p-4 border border-indigo-500/10 text-xs text-indigo-300 space-y-1.5">
+                            <p class="font-semibold flex items-center gap-1.5">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                Decoupled Portability
+                            </p>
+                            <p class="leading-relaxed">Because the video's bytes are contained in the hash of the URL, this link remains fully readable without any database. It functions even completely offline!</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Creator View (Default) -->
+        <div id="creatorMode" class="max-w-3xl w-full mx-auto space-y-8 animate-fade-in">
+            <!-- Hero Statement -->
+            <div class="text-center space-y-4">
+                <h1 class="text-3xl sm:text-5xl font-extrabold tracking-tight bg-gradient-to-r from-white via-slate-100 to-indigo-400 bg-clip-text text-transparent">
+                    Video Sharing. Zero Servers.
+                </h1>
+                <p class="text-base sm:text-lg text-slate-400 max-w-xl mx-auto leading-relaxed">
+                    Instantly package local video files directly into an immutable web address. Share, stream, and embed instantly with guaranteed zero-storage privacy.
+                </p>
+            </div>
+
+            <!-- Upload Area & Generator -->
+            <div class="bg-slate-900 rounded-3xl border border-slate-800 p-6 sm:p-8 space-y-6 shadow-2xl">
+                
+                <!-- Custom Upload Box -->
+                <div id="dropzone" class="border-2 border-dashed border-slate-700/60 hover:border-indigo-500/50 rounded-2xl p-8 text-center cursor-pointer transition-all duration-300 group bg-slate-950/30">
+                    <input type="file" id="fileInput" accept="video/*" class="hidden" onchange="handleFileSelect(event)">
+                    
+                    <div class="space-y-4 flex flex-col items-center">
+                        <div class="p-4 bg-slate-850 rounded-full text-indigo-400 group-hover:scale-110 group-hover:bg-indigo-600 group-hover:text-white transition-all duration-300 shadow-md">
+                            <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                            </svg>
+                        </div>
+                        <div class="space-y-1">
+                            <p class="text-sm text-slate-200 font-medium"><span class="text-indigo-400 group-hover:underline">Choose a video file</span> or drag it here</p>
+                            <p class="text-xs text-slate-500">Supports MP4, WebM, OGG, or GIF-converted clips</p>
+                        </div>
+                        <div class="bg-slate-800/40 px-3 py-1 rounded-lg border border-slate-700/30 text-[11px] text-slate-400">
+                            Recommended size: &lt; 25MB (Optimized for URL limits)
+                        </div>
+                    </div>
+                </div>
+
+                <!-- File Info and Settings (Hidden until file selected) -->
+                <div id="processingSection" class="hidden space-y-6 animate-fade-in">
+                    <!-- File Metadata Card -->
+                    <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800/80 flex items-center justify-between">
+                        <div class="flex items-center gap-3 overflow-hidden">
+                            <div class="p-2.5 bg-slate-900 rounded-lg text-indigo-400 shrink-0">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                            </div>
+                            <div class="overflow-hidden">
+                                <p id="fileName" class="text-sm font-semibold text-slate-200 truncate">video_file.mp4</p>
+                                <p id="fileSize" class="text-xs text-slate-500 mt-0.5">Size: Calculating...</p>
+                            </div>
+                        </div>
+                        <button onclick="clearSelection()" class="p-2 text-slate-500 hover:text-rose-400 transition-colors">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                        </button>
+                    </div>
+
+                    <!-- Origin Settings and Attributes -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="space-y-2">
+                            <label class="text-xs font-semibold text-slate-300 tracking-wider uppercase block">Custom Origin Attribution</label>
+                            <div class="relative">
+                                <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-xs text-slate-500">https://</span>
+                                <input type="text" id="domainAttributionInput" value="envizion.work" class="w-full bg-slate-950 border border-slate-800 text-sm text-slate-200 rounded-xl pl-16 pr-4 py-3 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all">
+                            </div>
+                        </div>
+
+                        <!-- Embed Parameters -->
+                        <div class="space-y-2">
+                            <label class="text-xs font-semibold text-slate-300 tracking-wider uppercase block">Default Embed Settings</label>
+                            <div class="bg-slate-950 border border-slate-800 rounded-xl p-2.5 flex items-center justify-around h-[46px]">
+                                <label class="inline-flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer">
+                                    <input type="checkbox" id="embedAutoplay" class="rounded bg-slate-900 border-slate-800 text-indigo-500 focus:ring-0">
+                                    Autoplay
+                                </label>
+                                <label class="inline-flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer">
+                                    <input type="checkbox" id="embedMute" checked class="rounded bg-slate-900 border-slate-800 text-indigo-500 focus:ring-0">
+                                    Mute
+                                </label>
+                                <label class="inline-flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer">
+                                    <input type="checkbox" id="embedLoop" class="rounded bg-slate-900 border-slate-800 text-indigo-500 focus:ring-0">
+                                    Loop
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Generate Trigger -->
+                    <button id="generateBtn" onclick="generateVeloLink()" class="w-full bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-semibold py-4 rounded-2xl transition-all duration-300 shadow-lg shadow-indigo-600/10 flex items-center justify-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                        Convert and Package to URL Memory
+                    </button>
+                </div>
+
+            </div>
+
+            <!-- Conceptual Educational Grid -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="bg-slate-900/50 border border-slate-900 p-5 rounded-2xl space-y-2">
+                    <div class="w-8 h-8 rounded-lg bg-indigo-500/10 text-indigo-400 flex items-center justify-center">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+                    </div>
+                    <h4 class="font-semibold text-sm text-slate-200">Ultimate Privacy</h4>
+                    <p class="text-xs text-slate-400 leading-relaxed">No data ever reaches a server or cloud database. Ideal for confidential, single-session, or light-weight videos.</p>
+                </div>
+
+                <div class="bg-slate-900/50 border border-slate-900 p-5 rounded-2xl space-y-2">
+                    <div class="w-8 h-8 rounded-lg bg-indigo-500/10 text-indigo-400 flex items-center justify-center">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 100-6 3 3 0 000 6z"/></svg>
+                    </div>
+                    <h4 class="font-semibold text-sm text-slate-200">Instant Loading</h4>
+                    <p class="text-xs text-slate-400 leading-relaxed">The receiver's browser reconstructs raw video streams directly in physical memory without buffering delays.</p>
+                </div>
+
+                <div class="bg-slate-900/50 border border-slate-900 p-5 rounded-2xl space-y-2">
+                    <div class="w-8 h-8 rounded-lg bg-indigo-500/10 text-indigo-400 flex items-center justify-center">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+                    </div>
+                    <h4 class="font-semibold text-sm text-slate-200">Universal Embedding</h4>
+                    <p class="text-xs text-slate-400 leading-relaxed">Works out of the box inside WordPress, Wix, blogs, or custom React/HTML codebases. Embed seamlessly anywhere.</p>
+                </div>
+            </div>
+
+            <!-- Educational Warning Section (URL Limitations) -->
+            <div class="bg-slate-900/30 border border-indigo-900/30 rounded-2xl p-6 text-slate-400 space-y-3">
+                <h4 class="text-xs font-semibold uppercase tracking-wider text-indigo-400 flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                    Understanding Browser URL Constraints
+                </h4>
+                <p class="text-xs leading-relaxed">
+                    This is a fully decentralized approach. Because the video code is stored natively in the URL, browsers need to process large characters. Different browsers handle different URL length capacities. For long 4K movies, traditional server storage remains necessary. VeloLink is optimized for lightweight animated clips, product tutorials, looped micro-content, and short presentations!
+                </p>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Footer (Hidden in strict embed mode) -->
+    <footer id="appFooter" class="border-t border-slate-900 py-6 bg-slate-950">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <p class="text-xs text-slate-500">
+                &copy; 2026 VeloLink. Powered by <a href="https://envizion.work" class="text-indigo-400 hover:underline">envizion.work</a>.
+            </p>
+            <div class="flex gap-4 text-xs text-slate-400">
+                <span class="hover:text-indigo-400 transition-colors cursor-help" onclick="toggleTechInfo()">How does this work?</span>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Tech Info Modal -->
+    <div id="techModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[10000] flex items-center justify-center p-4 hidden">
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-lg w-full space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                <h3 class="text-md font-bold text-slate-100">The Mechanics of URL Storage</h3>
+                <button onclick="toggleTechInfo()" class="text-slate-400 hover:text-slate-200">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <div class="space-y-3 text-xs text-slate-400 leading-relaxed">
+                <p><strong>1. Parsing Bytes into Text:</strong> Standard binary data (like a video file) cannot fit naturally inside a URL string. We encode those raw bytes into a Base64 text string, prefixed by a standard <code class="bg-slate-950 px-1.5 py-0.5 rounded text-indigo-400 text-[10px]">data:video/mp4;base64,...</code> MIME container.</p>
+                <p><strong>2. Using Hash (#) Routing:</strong> Browsers do not transmit anything after the hashtag hash (<code class="bg-slate-950 px-1.5 py-0.5 rounded text-indigo-400">#</code>) back to web servers. Keeping the payload strictly in the hash guarantees complete zero-knowledge transmission and maintains maximum security.</p>
+                <p><strong>3. Dynamic Re-Construction:</strong> When a recipient opens the VeloLink URL, the browser detects the base64 string, converts it back into a native Blob Object in memory, and points the custom video player to it!</p>
+            </div>
+            <button onclick="toggleTechInfo()" class="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-100 rounded-xl text-xs font-semibold transition-colors">Close Guide</button>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="fixed bottom-6 right-6 bg-slate-900 border border-indigo-500/30 px-4 py-3 rounded-2xl shadow-xl shadow-indigo-500/10 text-xs text-slate-200 flex items-center gap-2 transform translate-y-24 opacity-0 transition-all duration-300 z-[10001]">
+        <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        <span id="toastMsg">Success!</span>
+    </div>
+
+    <!-- JS Logic -->
+    <script>
+        // Global storage state
+        let loadedVideoBase64 = '';
+        let loadedVideoMime = '';
+        let loadedVideoName = '';
+
+        // DOM elements
+        const dropzone = document.getElementById('dropzone');
+        const fileInput = document.getElementById('fileInput');
+        const processingSection = document.getElementById('processingSection');
+        const fileNameEl = document.getElementById('fileName');
+        const fileSizeEl = document.getElementById('fileSize');
+        const domainInput = document.getElementById('domainAttributionInput');
+        const creatorMode = document.getElementById('creatorMode');
+        const viewMode = document.getElementById('viewMode');
+        const player = document.getElementById('player');
+        const viewFileName = document.getElementById('viewFileName');
+        const originAttribution = document.getElementById('originAttribution');
+        const viewUrlBox = document.getElementById('viewUrlBox');
+        const embedCodeBox = document.getElementById('embedCodeBox');
+        const techModal = document.getElementById('techModal');
+        
+        // Strict Embed Layout DOM
+        const strictEmbedContainer = document.getElementById('strictEmbedContainer');
+        const embedPlayer = document.getElementById('embedPlayer');
+        const embedWatermark = document.getElementById('embedWatermark');
+        const appHeader = document.getElementById('appHeader');
+        const appMain = document.getElementById('appMain');
+        const appFooter = document.getElementById('appFooter');
+
+        // Check if there's a payload on load
+        window.onload = function() {
+            handleHashNavigation();
+            setupDropzoneEvents();
+        };
+
+        // Handle browser Back/Forward navigation with hashed links
+        window.onhashchange = function() {
+            handleHashNavigation();
+        };
+
+        function setupDropzoneEvents() {
+            // Drag and drop trigger styling
+            dropzone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropzone.classList.add('border-indigo-500', 'bg-indigo-950/10');
+            });
+
+            dropzone.addEventListener('dragleave', () => {
+                dropzone.classList.remove('border-indigo-500', 'bg-indigo-950/10');
+            });
+
+            dropzone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropzone.classList.remove('border-indigo-500', 'bg-indigo-950/10');
+                if (e.dataTransfer.files.length > 0) {
+                    processFile(e.dataTransfer.files[0]);
+                }
+            });
+
+            dropzone.addEventListener('click', () => {
+                fileInput.click();
+            });
+        }
+
+        function handleFileSelect(event) {
+            if (event.target.files.length > 0) {
+                processFile(event.target.files[0]);
+            }
+        }
+
+        // Reads local video file and updates interface
+        function processFile(file) {
+            if (!file.type.startsWith('video/')) {
+                showToast("Please select a valid video file format.");
+                return;
+            }
+
+            loadedVideoName = file.name;
+            loadedVideoMime = file.type;
+
+            fileNameEl.textContent = file.name;
+            const sizeInMB = (file.size / (1024 * 1024)).toFixed(2);
+            fileSizeEl.textContent = `Size: ${sizeInMB} MB`;
+
+            // Read the file structure into memory as base64 string
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                loadedVideoBase64 = e.target.result;
+                processingSection.classList.remove('hidden');
+                dropzone.classList.add('hidden');
+                showToast("Video loaded successfully into local buffer!");
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function clearSelection() {
+            loadedVideoBase64 = '';
+            loadedVideoMime = '';
+            loadedVideoName = '';
+            fileInput.value = '';
+            processingSection.classList.add('hidden');
+            dropzone.classList.remove('hidden');
+        }
+
+        // Generates the final Zero-Storage URL using hash parameters
+        function generateVeloLink() {
+            if (!loadedVideoBase64) return;
+
+            // Generate an envelope containing origin domain info and binary source metadata
+            const originDomain = domainInput.value.trim() || "envizion.work";
+            
+            // Build embed settings flags
+            const settings = {
+                autoplay: document.getElementById('embedAutoplay').checked,
+                mute: document.getElementById('embedMute').checked,
+                loop: document.getElementById('embedLoop').checked
+            };
+
+            const packageObject = {
+                v: loadedVideoBase64,
+                n: loadedVideoName,
+                o: originDomain,
+                s: settings
+            };
+
+            // Compress to base64 string
+            const packedString = btoa(unescape(encodeURIComponent(JSON.stringify(packageObject))));
+            
+            // Load viewer mode locally immediately
+            window.location.hash = `payload=${packedString}`;
+        }
+
+        // Navigates application views depending on URL composition and detects embeds
+        function handleHashNavigation() {
+            const hash = window.location.hash;
+            
+            // Check for strict embed requests
+            const isEmbedUrl = hash.includes('&embed=true') || (window.self !== window.top);
+
+            if (hash && hash.includes('payload=')) {
+                try {
+                    // Extract payload correctly matching potential flags
+                    const hashParams = new URLSearchParams(hash.substring(1));
+                    const encodedPayload = hashParams.get('payload');
+                    
+                    const parsedPackage = JSON.parse(decodeURIComponent(escape(atob(encodedPayload))));
+                    const settings = parsedPackage.s || { autoplay: false, mute: true, loop: false };
+                    
+                    if (isEmbedUrl) {
+                        // Activate 100% borderless embed screen layout
+                        appHeader.classList.add('hidden');
+                        appMain.classList.add('hidden');
+                        appFooter.classList.add('hidden');
+                        strictEmbedContainer.classList.remove('hidden');
+
+                        embedPlayer.src = parsedPackage.v;
+                        embedPlayer.autoplay = settings.autoplay;
+                        embedPlayer.muted = settings.mute;
+                        embedPlayer.loop = settings.loop;
+                        
+                        // Set specific custom brand domain watermark link
+                        embedWatermark.href = parsedPackage.o.startsWith('http') ? parsedPackage.o : `https://${parsedPackage.o}`;
+                        embedWatermark.innerHTML = `<span class="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span><span>via ${parsedPackage.o}</span>`;
+                    } else {
+                        // Deactivate embed screen, present normal premium sharing UI
+                        strictEmbedContainer.classList.add('hidden');
+                        appHeader.classList.remove('hidden');
+                        appMain.classList.remove('hidden');
+                        appFooter.classList.remove('hidden');
+                        
+                        creatorMode.classList.add('hidden');
+                        viewMode.classList.remove('hidden');
+                        
+                        // Assign information context
+                        viewFileName.textContent = parsedPackage.n || "Embedded Video Clip";
+                        originAttribution.textContent = `Origin Site: ${parsedPackage.o || 'envizion.work'}`;
+                        
+                        // Load payload source straight into HTML5 Video container
+                        player.src = parsedPackage.v;
+                        player.autoplay = settings.autoplay;
+                        player.muted = settings.mute;
+                        player.loop = settings.loop;
+                        
+                        // Render clean sharing URL links
+                        const originUrl = `${window.location.origin}${window.location.pathname}#payload=${encodedPayload}`;
+                        viewUrlBox.value = originUrl;
+                        
+                        // Render responsive HTML embed snippet block with strict flag
+                        const embedUrl = `${originUrl}&embed=true`;
+                        const embedHtml = `<iframe src="${embedUrl}" width="100%" height="100%" style="border:none; aspect-ratio:16/9; border-radius:12px; background:#000;" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
+                        embedCodeBox.value = embedHtml;
+                    }
+
+                } catch (error) {
+                    showToast("Error processing video URL context.");
+                    resetToHome();
+                }
+            } else {
+                // Return to home state
+                strictEmbedContainer.classList.add('hidden');
+                appHeader.classList.remove('hidden');
+                appMain.classList.remove('hidden');
+                appFooter.classList.remove('hidden');
+                
+                creatorMode.classList.remove('hidden');
+                viewMode.classList.add('hidden');
+                player.src = '';
+                embedPlayer.src = '';
+            }
+        }
+
+        // Action to trigger original download back from memory
+        function downloadVideo() {
+            const source = player.src;
+            if (!source) return;
+
+            const name = viewFileName.textContent;
+            const link = document.createElement('a');
+            link.href = source;
+            link.download = name || 'velolink-download.mp4';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            showToast("Video downloaded successfully.");
+        }
+
+        // Resets state back to upload dashboard
+        function resetToHome() {
+            window.location.hash = '';
+            clearSelection();
+        }
+
+        // Safe copy fallback to bypass sandboxed iframe browser blocks
+        function copyToClipboard(inputId, statusId) {
+            const inputElement = document.getElementById(inputId);
+            const statusEl = document.getElementById(statusId);
+
+            inputElement.select();
+            inputElement.setSelectionRange(0, 99999); // For mobile devices
+
+            try {
+                // Native copy strategy compatible across old and new browser viewports
+                const successful = document.execCommand('copy');
+                if (successful) {
+                    statusEl.classList.remove('hidden');
+                    setTimeout(() => {
+                        statusEl.classList.add('hidden');
+                    }, 2500);
+                } else {
+                    showToast("Failed to copy. Try selecting manually.");
+                }
+            } catch (err) {
+                showToast("Failed to copy. Try selecting manually.");
+            }
+            window.getSelection().removeAllRanges();
+        }
+
+        function toggleTechInfo() {
+            techModal.classList.toggle('hidden');
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            const toastMsg = document.getElementById('toastMsg');
+            toastMsg.textContent = msg;
+            toast.classList.remove('translate-y-24', 'opacity-0');
+            
+            setTimeout(() => {
+                toast.classList.add('translate-y-24', 'opacity-0');
+            }, 3000);
+        }
+    </script>
+</body>
+</html>

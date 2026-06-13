@@ -1,3 +1,10 @@
+// 1. Mock the browser window environment to prevent system-prompt.js from crashing Node.js
+if (typeof global.window === 'undefined') {
+    global.window = {
+        getDynamicSystemPrompt: function() { return ""; }
+    };
+}
+
 import express from 'express';
 import cors    from 'cors';
 import path    from 'path';
@@ -5,7 +12,6 @@ import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 
 // Load the function-schema system prompt builder
-// (uses createRequire so the CJS export from system-prompt.js works with ESM server)
 const require           = createRequire(import.meta.url);
 const { buildSystemPrompt } = require('./system-prompt.js');
 
@@ -20,7 +26,6 @@ app.use(express.static(__dirname));
 
 // ─── PURE STREAMING PROXY ─────────────────────────────────────────────────────
 // ─── MESSAGE HISTORY COMPRESSION ─────────────────────────────────────────────
-// Keeps last 6 turns verbatim; older turns are compressed to ~400 chars each.
 function compressMessages(messages) {
     const system = messages.filter(m => m.role === 'system');
     const chat   = messages.filter(m => m.role !== 'system');
@@ -46,26 +51,21 @@ function compressMessages(messages) {
 }
 
 // ─── FUNCTION-SCHEMA SYSTEM PROMPT ────────────────────────────────────────────
-// Replaces the old prose blob (~15k tokens) with a domain-targeted prompt
-// (~800–1200 tokens) built per-request from system-prompt.js.
-// 
-// HOW IT WORKS:
-//   1. Extract the last user message from the chat history.
-//   2. detectToolDomain() picks the ONE specialist block that matches.
-//   3. detectKnowledgeDomains() injects compact knowledge hints only when relevant.
-//   4. The resulting prompt is ~10x smaller than the old prose system prompt.
-//
-// isCorrectionMode: set to true when the user message contains 👎 feedback.
-// evolvedCaps: pass [] here; the browser injects evolved caps client-side.
 function buildTurnSystemPrompt(messages) {
-    // Find last user message for domain detection
     const lastUser = [...messages]
         .reverse()
         .find(m => m.role === 'user');
     const userText       = lastUser?.content || '';
     const isCorrection   = /👎/.test(userText);
 
-    return buildSystemPrompt(userText, isCorrection, []);
+    // If your original script exports buildSystemPrompt globally via window, fallback to it here
+    const promptBuilder = buildSystemPrompt || global.window.buildSystemPrompt;
+    
+    if (typeof promptBuilder === 'function') {
+        return promptBuilder(userText, isCorrection, []);
+    }
+    
+    return "You are a helpful AI assistant.";
 }
 
 app.post('/api/chat', async (req, res) => {
@@ -75,11 +75,7 @@ app.post('/api/chat', async (req, res) => {
         return res.status(400).json({ error: 'messages array required' });
     }
 
-    // 1. Compress old message history (keeps last 6 turns verbatim)
     const compressedHistory = compressMessages(rawMessages);
-
-    // 2. Build a domain-targeted system prompt (~800-1200 tokens vs old ~15k)
-    //    Strips any client-sent system messages and replaces with our function-schema prompt.
     const builtSystemPrompt = buildTurnSystemPrompt(rawMessages);
     const chatMessages      = compressedHistory.filter(m => m.role !== 'system');
     const messages = [
@@ -97,7 +93,7 @@ app.post('/api/chat', async (req, res) => {
     let onClientClose = () => {};
 
     try {
-        const ollamaRes = await fetch('http://127.0.0.1:11434/api/chat', {
+        const ollamaRes = await fetch('http://127.0.0', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -167,12 +163,10 @@ app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Start server on explicit 127.0.0.1
 const server = app.listen(PORT, HOST, () => {
     console.log(`\n🚀 Loma LIVE → http://${HOST}:${PORT}`);
     console.log(`🔗 Cloudflare Tunnel pointing to: api.envizion.work`);
 });
 
-// Prevent Cloudflare timeout for long AI streams
 server.timeout = 0; 
 server.keepAliveTimeout = 0;
