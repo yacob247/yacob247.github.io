@@ -650,70 +650,50 @@ const TRAINING_API = 'https://train.envizion.work';
 //  Replit-style multi-file editor, Envizion tool suite integrations
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// ── CLAUDE API (Anthropic direct — uses claude-sonnet-4-6) ───────────────────
-const CLAUDE_API_URL = 'https://api.anthropic.com/v1/messages';
-window._claudeEnabled = false; // toggled true when user sets key
-window._claudeApiKey  = localStorage.getItem('loma_claude_key') || '';
-if (window._claudeApiKey) window._claudeEnabled = true;
+// ── QWEN CODE MODE (local Ollama — qwen2.5-coder:7b) ─────────────────────────
+window.claudeCodeMode = false; // kept as claudeCodeMode for compat with existing toggles
 
-window.setClaudeApiKey = (key) => {
-    window._claudeApiKey = key.trim();
-    window._claudeEnabled = !!key.trim();
-    localStorage.setItem('loma_claude_key', window._claudeApiKey);
-    triggerNotificationToast('Claude API', window._claudeEnabled ? 'Claude enabled.' : 'Key cleared.', 'fa-brain', 'bg-violet-600');
-};
-
-// Call Claude API directly (non-streaming, returns full text)
-window.callClaudeAPI = async (messages, systemPrompt = '', maxTokens = 4096) => {
-    if (!window._claudeEnabled) return null;
-    const payload = {
-        model: 'claude-sonnet-4-6',
-        max_tokens: maxTokens,
-        messages: messages.filter(m => m.role !== 'system').map(m => ({ role: m.role, content: m.content }))
-    };
-    if (systemPrompt) payload.system = systemPrompt;
-    try {
-        const res = await fetch(CLAUDE_API_URL, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-api-key': window._claudeApiKey,
-                'anthropic-version': '2023-06-01',
-                'anthropic-dangerous-direct-browser-access': 'true'
-            },
-            body: JSON.stringify(payload)
-        });
-        const data = await res.json();
-        if (data.error) throw new Error(data.error.message);
-        return data.content?.map(b => b.text || '').join('') || '';
-    } catch (e) {
-        triggerNotificationToast('Claude Error', e.message.slice(0, 80), 'fa-triangle-exclamation', 'bg-red-600');
-        return null;
-    }
-};
-
-// Claude Code mode — routes coding requests to Claude API and renders to canvas
-window.claudeCodeMode = false;
 window.toggleClaudeCodeMode = () => {
-    if (!window._claudeEnabled) {
-        triggerNotificationToast('Claude Code', 'Set your Claude API key first.', 'fa-key', 'bg-orange-600');
-        return;
-    }
     window.claudeCodeMode = !window.claudeCodeMode;
     const btn = document.getElementById('claude-code-btn');
     if (btn) {
         btn.classList.toggle('text-violet-400', window.claudeCodeMode);
         btn.classList.toggle('text-gemini-textMuted', !window.claudeCodeMode);
     }
-    triggerNotificationToast('Claude Code', window.claudeCodeMode ? 'ON — Code requests → Claude.' : 'OFF', 'fa-code', window.claudeCodeMode ? 'bg-violet-600' : 'bg-slate-600');
+    triggerNotificationToast('Qwen Code', window.claudeCodeMode ? 'ON — Code requests → qwen2.5-coder:7b.' : 'OFF', 'fa-code', window.claudeCodeMode ? 'bg-violet-600' : 'bg-slate-600');
 };
 
-// Intercept coding requests when claudeCodeMode is on
+// callClaudeAPI → now routes to local Ollama qwen2.5-coder:7b (non-streaming)
+window.callClaudeAPI = async (messages, systemPrompt = '', maxTokens = 4096) => {
+    const ollamaMessages = [];
+    if (systemPrompt) ollamaMessages.push({ role: 'system', content: systemPrompt });
+    ollamaMessages.push(...messages.map(m => ({ role: m.role, content: m.content })));
+    try {
+        const res = await fetch(window.OLLAMA_BASE_URL || 'http://localhost:11434/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: 'qwen2.5-coder:7b',
+                messages: ollamaMessages,
+                stream: false,
+                options: { num_predict: maxTokens }
+            })
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        return data.message?.content || '';
+    } catch (e) {
+        triggerNotificationToast('Qwen Error', e.message.slice(0, 80), 'fa-triangle-exclamation', 'bg-red-600');
+        return null;
+    }
+};
+
+// Intercept coding requests when claudeCodeMode is on — uses qwen2.5-coder:7b
 window._claudeCodeIntercept = async (userMsg, sessionMessages) => {
-    if (!window.claudeCodeMode || !window._claudeEnabled) return null;
+    if (!window.claudeCodeMode) return null;
     const codeIntent = /(build|create|make|write|generate|code|html|app|tool|page|dashboard|widget|script|function|class|component)/i.test(userMsg);
     if (!codeIntent) return null;
-    appendStatusPill('fa-brain', 'Claude Code generating…');
+    appendStatusPill('fa-brain', 'Qwen Coder generating…');
     const result = await window.callClaudeAPI(
         [{ role: 'user', content: userMsg }],
         'You are an expert full-stack developer. Generate complete, production-ready code. For HTML/CSS/JS apps, output a single <!DOCTYPE html> self-contained file. No explanations before the code unless asked.',
@@ -1217,14 +1197,10 @@ window._injectExtendedSettings = () => {
     section.id = 'claude-key-section';
     section.className = 'px-5 py-4 border-t border-gemini-border/30';
     section.innerHTML = `
-        <p class="text-[10px] font-bold text-gemini-textMuted uppercase tracking-wider mb-3">Claude API</p>
-        <input id="claude-api-key-input" type="password" placeholder="sk-ant-api03-…"
-            class="w-full bg-gemini-card border border-gemini-border/40 rounded-xl px-3 py-2 text-xs text-slate-200 outline-none focus:border-violet-400 mb-2"
-            value="${window._claudeApiKey}"
-            oninput="window.setClaudeApiKey(this.value)" />
+        <p class="text-[10px] font-bold text-gemini-textMuted uppercase tracking-wider mb-3">Qwen Code Mode</p>
         <button onclick="window.toggleClaudeCodeMode()" id="claude-code-btn"
             class="w-full py-2 text-xs rounded-xl border border-violet-500/30 hover:bg-violet-500/10 text-gemini-textMuted smooth-transition font-semibold flex items-center justify-center gap-2">
-            <i class="fa-solid fa-code text-violet-400"></i> Claude Code Mode
+            <i class="fa-solid fa-code text-violet-400"></i> Toggle Qwen Code Mode
         </button>
         <p class="text-[10px] font-bold text-gemini-textMuted uppercase tracking-wider mb-3 mt-4">Virtual File System</p>
         <div id="vfs-file-tree" class="space-y-0.5 mb-2 max-h-40 overflow-y-auto"></div>
@@ -1251,9 +1227,9 @@ window.addEventListener('DOMContentLoaded', () => {
 
 ━━━ EXTENDED LOMA CAPABILITIES (NEWLY ADDED) ━━━
 
-13. CLAUDE API: When window._claudeEnabled is true, window.callClaudeAPI(messages, system, maxTokens) 
-    sends requests to Claude claude-sonnet-4-6. Claude Code Mode routes all coding requests there.
-    Users set their key via Settings panel. Trigger: [CLAUDE_CODE: <task>]
+13. QWEN CODE MODE: window.callClaudeAPI(messages, system, maxTokens) routes to local Ollama
+    qwen2.5-coder:7b. Qwen Code Mode routes all coding requests there (no API key needed).
+    Toggle via Settings panel. Trigger: [CLAUDE_CODE: <task>]
 
 14. VIRTUAL FILE SYSTEM (VFS): window.vfsWrite/vfsRead/vfsDelete/vfsRename/vfsList manage a 
     multi-file project in memory. AI can write files by outputting:
@@ -2221,8 +2197,8 @@ window.processInputMessage = async () => {
         setTimeout(() => window.openEnvizionTool(detectedTool), 1200);
     }
 
-    // Claude Code intercept — routes coding requests to Claude API if enabled
-    if (window.claudeCodeMode && window._claudeEnabled) {
+    // Qwen Code intercept — routes coding requests to local Ollama if enabled
+    if (window.claudeCodeMode) {
         const codeIntent = /(build|create|make|write|generate|code|html|app|tool|page|dashboard|widget)/i.test(userMsg);
         if (codeIntent) {
             let _preSession = chatDatabase.sessions[currentSessionId];
@@ -4454,13 +4430,10 @@ window._injectExtendedSettings = () => {
     section.id = 'claude-api-settings';
     section.className = 'mt-4 border-t border-gemini-border/30 pt-4';
     section.innerHTML = `
-        <p class="text-[10px] font-bold text-gemini-textMuted uppercase tracking-wider mb-2">Claude API</p>
-        <input id="claude-key-input" type="password" placeholder="sk-ant-..." value="${window._claudeApiKey || ''}"
-            class="w-full bg-gemini-bg border border-gemini-border/40 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-gemini-accent/60 mb-2"
-            oninput="window.setClaudeApiKey(this.value)" />
+        <p class="text-[10px] font-bold text-gemini-textMuted uppercase tracking-wider mb-2">Qwen Code Mode</p>
         <button onclick="window.toggleClaudeCodeMode()" id="claude-code-btn"
             class="w-full py-2 bg-gemini-card border border-gemini-border/30 rounded-xl text-xs text-gemini-textMuted hover:text-violet-400 smooth-transition font-medium flex items-center justify-center gap-2">
-            <i class="fa-solid fa-code"></i> Toggle Claude Code Mode
+            <i class="fa-solid fa-code"></i> Toggle Qwen Code Mode
         </button>`;
     panel.appendChild(section);
 };
