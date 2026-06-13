@@ -1,8 +1,14 @@
 // system-prompt.js — Loma Master System Prompt
-window.getDynamicSystemPrompt = function() {
+// Works in both browser (window.getDynamicSystemPrompt) and Node (module.exports.buildSystemPrompt)
+
+function getDynamicSystemPrompt() {
     const now = new Date().toLocaleString('en-AU', { timeZone: 'Australia/Sydney' });
-    const caps = (window.evolvedCapabilities || []).map(c => `• ${c.title}: ${c.rule}`).join('\n') || 'None yet.';
-    const mem  = (window._memoryContext || '').trim();
+
+    const evolvedCapabilities = (typeof window !== 'undefined' && window.evolvedCapabilities) || [];
+    const memoryContext       = (typeof window !== 'undefined' && window._memoryContext) || '';
+
+    const caps = evolvedCapabilities.map(c => `• ${c.title}: ${c.rule}`).join('\n') || 'None yet.';
+    const mem  = (memoryContext || '').trim();
 
     return `You are Loma — a powerful, deeply capable AI assistant built on the Envizion platform. You are NOT a simple chatbot. You reason carefully, write complete production-quality code, use tools proactively, and always finish the job fully.
 
@@ -129,17 +135,15 @@ CRITICAL OUTPUT RULES
 7. Memory: tag facts with [REMEMBER: fact] at the end.
 8. Never say "here is a basic example" — always build the real thing.
 9. Buttons always have onclick handlers. Inputs always have event listeners.
-10. Every feature you describe must be implemented in the code, not left as a comment.`;
+10. Every feature you describe must be implemented in the code, not left as a comment.
 
- prompt += `
-
-━━━ EXTENDED LOMA CAPABILITIES (NEWLY ADDED) ━━━
+━━━ EXTENDED LOMA CAPABILITIES ━━━
 
 13. QWEN CODE MODE: window.callClaudeAPI(messages, system, maxTokens) routes to local Ollama
-    qwen2.5-coder:1.5b. Qwen Code Mode routes all coding requests there (no API key needed).
+    qwen2.5-1m:7b. Qwen Code Mode routes all coding requests there (no API key needed).
     Toggle via Settings panel. Trigger: [CLAUDE_CODE: <task>]
 
-14. VIRTUAL FILE SYSTEM (VFS): window.vfsWrite/vfsRead/vfsDelete/vfsRename/vfsList manage a 
+14. VIRTUAL FILE SYSTEM (VFS): window.vfsWrite/vfsRead/vfsDelete/vfsRename/vfsList manage a
     multi-file project in memory. AI can write files by outputting:
     [VFS_FILE: filename.ext]
     <full file content here>
@@ -176,8 +180,53 @@ CRITICAL OUTPUT RULES
 When users ask about any of these capabilities, use them. When generating multi-file projects,
 always use [VFS_FILE: ...][/VFS_FILE] blocks. When users want background removal, OCR, audio
 extraction, encryption, PDF tools, or any Envizion tool — call the relevant window.* function
-and generate a UI that triggers it.
-`;
+and generate a UI that triggers it.`;
+}
 
-};
+// ─── Adaptive temperature based on the latest user message ──────────────────
+function detectTemperature(userText) {
+    const text = (userText || '').toLowerCase();
 
+    // Debugging / fixing / exact computation → precise, literal
+    if (/\b(debug|fix|error|bug|crash|broken|doesn't work|not working|wrong|incorrect|trace|stack ?trace)\b/.test(text)) {
+        return 0.2;
+    }
+
+    // Building / generating / implementing → thorough, complete, verbose
+    if (/\b(build|create|generate|make|implement|write (a|an|some)|add (a|an)|develop|code up)\b/.test(text)) {
+        return 0.3;
+    }
+
+    // Explaining / researching / comparing → structured, balanced, accurate
+    if (/\b(explain|compare|what is|how does|difference between|research|analy[sz]e|describe)\b/.test(text)) {
+        return 0.4;
+    }
+
+    // Brainstorming / creative / story → imaginative, divergent
+    if (/\b(brainstorm|story|creative|imagine|poem|idea|fun|joke)\b/.test(text)) {
+        return 0.7;
+    }
+
+    // Default: balanced for general chat / mixed requests
+    return 0.3;
+}
+
+// ─── Browser export ──────────────────────────────────────────────────────────
+if (typeof window !== 'undefined') {
+    window.getDynamicSystemPrompt = getDynamicSystemPrompt;
+    window.detectTemperature = detectTemperature;
+}
+
+// ─── Node export (used by server.js) ────────────────────────────────────────
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+        buildSystemPrompt: function(userText, isCorrection, history) {
+            let prompt = getDynamicSystemPrompt();
+            if (isCorrection) {
+                prompt += `\n\n════════════════════════════════════════\nCORRECTION NOTICE\n════════════════════════════════════════\nThe user flagged your previous response as incorrect or unsatisfactory (👎). Re-read their latest message carefully, identify what was wrong with the prior approach, and produce a corrected, complete response — do not repeat the same mistake.`;
+            }
+            return prompt;
+        },
+        detectTemperature: detectTemperature
+    };
+}
