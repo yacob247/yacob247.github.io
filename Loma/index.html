@@ -2614,8 +2614,856 @@ function parseMarkdownResponse(text, isFinal = false) {
         }
         const cleanPrompt = prompt.trim();
         const imageId = 'g-img-' + Math.random().toString(36).substring(2, 7);
-        // Using pollinations as an external proxy to simulate server-side Nano Banana Image generation beautifully
-        const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanPrompt)}?nologo=true&model=flux`;
+// Using Pollinations.ai API for real-time image generation via Flux model
+// 
+
+// ═══════════════════════════════════════════════════════════════════════
+//  LAYER 1 — INTELLIGENT MULTI-LLM ROUTER
+//  Routes requests to the best local model based on intent classification
+// ═══════════════════════════════════════════════════════════════════════
+
+window.LOMA_MODEL_REGISTRY = {
+    'qwen2.5-coder:7b':  { name: 'Qwen Coder',   tags: ['code','build','html','css','js','app','debug','script'] },
+    'llava':             { name: 'LLaVA Vision',  tags: ['image','photo','picture','vision','see','look','describe'] },
+    'llama3.2:1b':       { name: 'Llama 3.2',     tags: ['chat','explain','write','story','creative','general'] },
+    'deepseek-r1:7b':    { name: 'DeepSeek R1',   tags: ['reason','math','logic','proof','solve','analyse','compare'] },
+    'mistral:7b':        { name: 'Mistral',        tags: ['summarize','translate','email','document','draft'] },
+};
+
+window.intelligentAutoRoute = (userMsg) => {
+    const m = userMsg.toLowerCase();
+    // Vision → LLaVA
+    if (attachedImageBase64 || /(image|photo|picture|screenshot|diagram|chart|look at)/i.test(m)) {
+        return { model: 'llava', reason: 'Vision input detected — routing to LLaVA' };
+    }
+    // Math / Reasoning → DeepSeek R1
+    if (/(prove|theorem|equation|calculus|derivative|integral|logic puzzle|step by step reasoning|think through|analyze carefully|math|statistics|probability)/i.test(m)) {
+        return { model: 'deepseek-r1:7b', reason: 'Reasoning task — routing to DeepSeek R1' };
+    }
+    // Code → Qwen Coder
+    if (/(build|create|make|code|html|css|javascript|python|function|class|component|app|dashboard|script|debug|fix the bug|refactor|api|endpoint)/i.test(m)) {
+        return { model: 'qwen2.5-coder:7b', reason: 'Code generation — routing to Qwen Coder' };
+    }
+    // Writing/Documents → Mistral
+    if (/(write|draft|summarize|translate|email|letter|essay|document|blog post|article|paragraph|rewrite)/i.test(m)) {
+        return { model: 'mistral:7b', reason: 'Writing task — routing to Mistral' };
+    }
+    // Default → current model (no route change)
+    return { model: window._lomaActiveModel, reason: null };
+};
+
+// Patch processInputMessage to auto-route before inference
+const _origProcessInput = window.processInputMessage;
+window.processInputMessage = async function() {
+    const input = document.getElementById('user-prompt');
+    const msg = (input?.value || '').trim();
+    if (msg && window._autoRouteEnabled !== false) {
+        const route = window.intelligentAutoRoute(msg);
+        if (route.reason && route.model !== window._lomaActiveModel) {
+            // Check if that model is available
+            window.selectModel(route.model, window.LOMA_MODEL_REGISTRY[route.model]?.name || route.model);
+            appendStatusPill('fa-route', route.reason, 'text-emerald-400');
+            setTimeout(removeStatusPill, 3000);
+        }
+    }
+    return _origProcessInput.apply(this, arguments);
+};
+
+window.toggleAutoRoute = () => {
+    window._autoRouteEnabled = !(window._autoRouteEnabled !== false);
+    triggerNotificationToast(
+        'Smart Router',
+        window._autoRouteEnabled !== false ? 'Auto-routing ON — best model selected per task' : 'Auto-routing OFF — using manual model',
+        'fa-route',
+        window._autoRouteEnabled !== false ? 'bg-emerald-600' : 'bg-slate-600'
+    );
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+//  LAYER 2 — MODEL VOTING SYSTEM
+//  Sends prompt to 2 models simultaneously, AI judge picks the best answer
+// ═══════════════════════════════════════════════════════════════════════
+
+window.runModelVote = async (userMsg, models = ['qwen2.5-coder:7b', 'llama3.2:1b']) => {
+    const zone = appendChatBubble('assistant', null);
+    zone.innerHTML = `<div class="flex items-center gap-2 text-xs text-slate-400 py-2"><i class="fa-solid fa-spinner fa-spin text-indigo-400"></i> Running ${models.length} models in parallel for best answer...</div>`;
+    
+    const fetchModel = async (model, msg) => {
+        try {
+            const payload = {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model,
+                    messages: [
+                        { role: 'system', content: 'Answer clearly and helpfully.' },
+                        { role: 'user', content: msg }
+                    ],
+                    temperature: 0.5,
+                    stream: false
+                })
+            };
+            let res;
+            try { res = await fetch(ENVIZION_API_REMOTE, payload); if (!res.ok) throw new Error(); }
+            catch { res = await fetch(ENVIZION_API_LOCAL, payload); }
+            const data = await res.json();
+            // Handle both Ollama streaming format and standard chat format
+            return data.message?.content || data.choices?.[0]?.message?.content || '';
+        } catch { return ''; }
+    };
+    
+    // Run all models in parallel
+    appendStatusPill('fa-bolt', `Querying ${models.join(' vs ')}...`);
+    const results = await Promise.all(models.map(m => fetchModel(m, userMsg)));
+    removeStatusPill();
+    
+    const validResults = results.map((r, i) => ({ model: models[i], answer: r })).filter(r => r.answer.length > 10);
+    
+    if (validResults.length === 0) {
+        zone.innerHTML = `<span class="text-red-400 text-xs">All models failed to respond.</span>`;
+        return;
+    }
+    
+    if (validResults.length === 1) {
+        zone.innerHTML = (window._patchedParseMarkdown || parseMarkdownResponse)(validResults[0].answer, true);
+        return;
+    }
+    
+    // Build judge prompt
+    const judgePrompt = `You are an impartial judge. Compare these answers and output ONLY the text of the single best answer verbatim — no commentary, no preamble.\n\n${validResults.map((r, i) => `ANSWER ${i+1} (${r.model}):\n${r.answer}`).join('\n\n---\n\n')}`;
+    
+    appendStatusPill('fa-gavel', 'Judge selecting best answer...');
+    const judgedAnswer = await fetchModel(window._lomaActiveModel, judgePrompt);
+    removeStatusPill();
+    
+    const finalAnswer = judgedAnswer.trim() || validResults[0].answer;
+    
+    // Render with vote badge
+    zone.innerHTML = `
+        <div class="flex items-center gap-2 mb-3 flex-wrap">
+            <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Model Vote</span>
+            ${validResults.map(r => `<span class="px-2 py-0.5 bg-gemini-card border border-gemini-border/40 rounded-full text-[10px] text-slate-400 font-mono">${r.model}</span>`).join('')}
+            <span class="px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/30 rounded-full text-[10px] text-emerald-400 font-bold"><i class="fa-solid fa-gavel mr-1"></i>Judge selected</span>
+        </div>
+        <div class="answer-wrapper">${(window._patchedParseMarkdown || parseMarkdownResponse)(finalAnswer, true)}</div>`;
+    
+    // Store in session
+    const session = chatDatabase.sessions[currentSessionId];
+    if (session) session.messages.push({ role: 'assistant', content: finalAnswer });
+    window.onResponseComplete?.(finalAnswer);
+};
+
+
+
+
+
+
+
+// ═══════════════════════════════════════════════════════════════════════
+//  LAYER 3 — DEEP RESEARCH AGENT
+//  Multi-source web research with synthesis
+// ═══════════════════════════════════════════════════════════════════════
+
+window.runDeepResearch = async (query, targetEl = null) => {
+    const zone = targetEl || appendChatBubble('assistant', null);
+    
+    const setStatus = (msg) => {
+        zone.innerHTML = `<div class="flex items-center gap-2 text-xs text-slate-400 py-2"><i class="fa-solid fa-spinner fa-spin text-blue-400"></i> ${msg}</div>`;
+    };
+    
+    setStatus('Initiating deep research...');
+    
+    const proxy = 'https://api.allorigins.win/get?url=';
+    const sources = [];
+    
+    // Step 1: Query multiple search engines
+    const searchEngines = [
+        `https://searx.be/search?q=${encodeURIComponent(query)}&format=json`,
+        `https://search.projectsegfau.lt/search?q=${encodeURIComponent(query)}&format=json`
+    ];
+    
+    setStatus(`Searching ${searchEngines.length} sources for: "${query.substring(0, 60)}"`);
+    
+    for (const engine of searchEngines) {
+        try {
+            const res = await fetch(`${proxy}${encodeURIComponent(engine)}`, { signal: AbortSignal.timeout(8000) });
+            const data = JSON.parse((await res.json()).contents || '{}');
+            if (data.results?.length) {
+                sources.push(...data.results.slice(0, 3).map(r => ({ title: r.title, url: r.url, snippet: r.content })));
+            }
+        } catch {}
+    }
+    
+    // Deduplicate by URL
+    const seen = new Set();
+    const uniqueSources = sources.filter(s => !seen.has(s.url) && seen.add(s.url));
+    
+    if (uniqueSources.length === 0) {
+        zone.innerHTML = `<span class="text-yellow-400 text-xs"><i class="fa-solid fa-triangle-exclamation mr-2"></i>No search results found. Try a more specific query.</span>`;
+        return;
+    }
+    
+    setStatus(`Found ${uniqueSources.length} sources. Crawling top pages...`);
+    
+    // Step 2: Crawl top 3 sources
+    const crawled = [];
+    for (const src of uniqueSources.slice(0, 3)) {
+        try {
+            const content = await crawlPageContent(src.url, false);
+            if (content && content.length > 100) {
+                crawled.push({ ...src, body: content.substring(0, 1500) });
+            }
+        } catch {}
+    }
+    
+    setStatus(`Synthesizing ${crawled.length} sources...`);
+    
+    // Step 3: Synthesize with AI
+    const researchContext = crawled.length > 0
+        ? crawled.map((s, i) => `SOURCE ${i+1}: ${s.title}\nURL: ${s.url}\n${s.body}`).join('\n\n---\n\n')
+        : uniqueSources.map((s, i) => `SOURCE ${i+1}: ${s.title}\n${s.snippet}`).join('\n\n---\n\n');
+    
+    const synthesisPrompt = `Based on these research sources, provide a comprehensive, well-structured answer to the question: "${query}"\n\nSOURCES:\n${researchContext}\n\nProvide a thorough synthesis with key findings, citing which source numbers support each point.`;
+    
+    const session = chatDatabase.sessions[currentSessionId];
+    
+    let rawAnswer = '';
+    let tokenQueue = [];
+    let renderActive = true;
+    zone.innerHTML = '';
+    
+    // Source pills header
+    zone.insertAdjacentHTML('beforeend', `
+        <div class="flex items-center gap-2 mb-3 flex-wrap">
+            <span class="text-[10px] font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1"><i class="fa-solid fa-magnifying-glass-plus"></i> Deep Research</span>
+            ${(crawled.length > 0 ? crawled : uniqueSources.slice(0, 3)).map((s, i) => 
+                `<a href="${s.url}" target="_blank" class="px-2 py-0.5 bg-blue-500/10 border border-blue-500/20 rounded-full text-[10px] text-blue-300 hover:text-blue-100 transition-colors truncate max-w-[120px]">[${i+1}] ${s.title.substring(0, 25)}</a>`
+            ).join('')}
+        </div>
+    `);
+    
+    const answerDiv = document.createElement('div');
+    answerDiv.className = 'answer-wrapper';
+    zone.appendChild(answerDiv);
+    
+    const typewriter = () => {
+        if (!renderActive && tokenQueue.length === 0) return;
+        while (tokenQueue.length > 0) rawAnswer += tokenQueue.shift();
+        if (rawAnswer) answerDiv.innerHTML = (window._patchedParseMarkdown || parseMarkdownResponse)(rawAnswer, false) + '<span class="streaming-cursor"></span>';
+        const cs = document.getElementById('chat-stream');
+        if (window.autoScrollChat && cs) cs.scrollTop = cs.scrollHeight;
+        if (renderActive || tokenQueue.length > 0) requestAnimationFrame(typewriter);
+    };
+    requestAnimationFrame(typewriter);
+    
+    try {
+        const res = await fetch(ENVIZION_API_REMOTE, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: window._lomaActiveModel,
+                messages: [{ role: 'user', content: synthesisPrompt }],
+                temperature: 0.4,
+                stream: true
+            })
+        }).catch(() => fetch(ENVIZION_API_LOCAL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: window._lomaActiveModel, messages: [{ role: 'user', content: synthesisPrompt }], temperature: 0.4, stream: true })
+        }));
+        
+        if (!res.ok) throw new Error(`API ${res.status}`);
+        
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let lo = '', jb = '';
+        
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            lo += decoder.decode(value, { stream: true });
+            const lines = lo.split('\n');
+            lo = lines.pop();
+            for (let line of lines) {
+                line = line.trim();
+                if (!line || line === '[DONE]') continue;
+                if (line.startsWith('data: ')) line = line.slice(6).trim();
+                if (!line) continue;
+                jb += line;
+                let o = 0, c = 0;
+                for (const ch of jb) { if (ch === '{') o++; else if (ch === '}') c++; }
+                if (o > 0 && o === c) {
+                    try { const p = JSON.parse(jb); if (p.t) tokenQueue.push(p.t); } catch {}
+                    jb = '';
+                }
+            }
+        }
+    } catch (e) {
+        rawAnswer += `\n\n[Research synthesis error: ${e.message}]`;
+    }
+    
+    renderActive = false;
+    await new Promise(r => { const check = () => tokenQueue.length === 0 ? r() : requestAnimationFrame(check); requestAnimationFrame(check); });
+    
+    answerDiv.innerHTML = (window._patchedParseMarkdown || parseMarkdownResponse)(rawAnswer.trim(), true);
+    
+    if (session) session.messages.push({ role: 'assistant', content: rawAnswer });
+    window.onResponseComplete?.(rawAnswer);
+};
+
+// Hook: if user says "research X" or "deep dive into X" → trigger research agent
+const _origClassifySearch = classifySearchIntent;
+window._researchIntentRegex = /^(research|deep (dive|research)|find out about|investigate|learn about|comprehensive (guide|overview|analysis) (of|on))\s+(.+)/i;
+
+
+
+
+
+
+
+// ═══════════════════════════════════════════════════════════════════════
+//  LAYER 4 — MULTI-STEP PLANNING AGENT
+//  Question → Plan → Research → Execute → Verify → Answer
+// ═══════════════════════════════════════════════════════════════════════
+
+window.runPlannerAgent = async (goal) => {
+    const zone = appendChatBubble('assistant', null);
+    
+    const steps = [];
+    const addStep = (icon, label, status = 'pending') => {
+        steps.push({ icon, label, status });
+        renderPlan();
+    };
+    const setStepStatus = (i, status) => { if (steps[i]) { steps[i].status = status; renderPlan(); } };
+    
+    const renderPlan = () => {
+        const statusColors = { pending: 'text-slate-500', active: 'text-blue-400 animate-pulse', done: 'text-emerald-400', error: 'text-red-400' };
+        const statusIcons = { pending: 'fa-circle', active: 'fa-spinner fa-spin', done: 'fa-circle-check', error: 'fa-circle-xmark' };
+        zone.innerHTML = `
+            <div class="rounded-xl border border-indigo-500/20 bg-indigo-950/10 p-4 mb-3">
+                <div class="text-xs font-bold text-indigo-300 uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <i class="fa-solid fa-diagram-project"></i> Planner Agent
+                </div>
+                <div class="space-y-2">
+                    ${steps.map(s => `
+                        <div class="flex items-center gap-3 text-sm ${statusColors[s.status]}">
+                            <i class="fa-solid ${statusIcons[s.status]} text-xs shrink-0"></i>
+                            <i class="fa-solid ${s.icon} text-xs shrink-0 opacity-60"></i>
+                            <span>${s.label}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+            <div id="planner-result" class="answer-wrapper"></div>`;
+    };
+    
+    // Step 1: Generate a plan
+    addStep('fa-list-check', 'Analyzing goal and creating execution plan...', 'active');
+    
+    const planPrompt = `Break this goal into 3-5 clear executable steps. Output ONLY a JSON array like: [{"step":"Step title","type":"research|code|analyze|write|verify"}]. Goal: "${goal}"`;
+    
+    let planJson = [];
+    try {
+        const res = await fetch(ENVIZION_API_REMOTE, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: window._lomaActiveModel, messages: [{ role: 'user', content: planPrompt }], temperature: 0.3, stream: false })
+        }).catch(() => fetch(ENVIZION_API_LOCAL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: window._lomaActiveModel, messages: [{ role: 'user', content: planPrompt }], temperature: 0.3, stream: false }) }));
+        
+        const data = await res.json();
+        const raw = data.message?.content || data.choices?.[0]?.message?.content || '[]';
+        const match = raw.match(/\[[\s\S]*\]/);
+        if (match) planJson = JSON.parse(match[0]);
+    } catch {}
+    
+    setStepStatus(0, 'done');
+    
+    if (planJson.length === 0) {
+        planJson = [{ step: 'Execute goal directly', type: 'write' }];
+    }
+    
+    // Add plan steps to UI
+    planJson.forEach(s => addStep(
+        s.type === 'research' ? 'fa-magnifying-glass' : s.type === 'code' ? 'fa-code' : s.type === 'analyze' ? 'fa-chart-line' : s.type === 'verify' ? 'fa-shield-check' : 'fa-pen',
+        s.step,
+        'pending'
+    ));
+    
+    addStep('fa-check-double', 'Compile final answer', 'pending');
+    
+    // Step 2: Execute each plan step
+    let context = `Goal: ${goal}\n\nPlan:\n${planJson.map((s, i) => `${i+1}. ${s.step}`).join('\n')}\n\nExecution:\n`;
+    
+    for (let i = 0; i < planJson.length; i++) {
+        const stepIdx = i + 1; // +1 for the initial plan step
+        setStepStatus(stepIdx, 'active');
+        
+        const step = planJson[i];
+        let stepResult = '';
+        
+        if (step.type === 'research') {
+            try {
+                const searchResult = await fetchSmartGrounding(step.step + ' ' + goal, false);
+                stepResult = searchResult || 'No web data available.';
+            } catch { stepResult = 'Search failed.'; }
+        } else {
+            const execPrompt = `You are executing step ${i+1} of a multi-step task.\n\nGoal: ${goal}\nStep: ${step.step}\nContext so far:\n${context}\n\nExecute this step and provide the result.`;
+            try {
+                const res = await fetch(ENVIZION_API_REMOTE, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model: window._lomaActiveModel, messages: [{ role: 'user', content: execPrompt }], temperature: 0.5, stream: false })
+                }).catch(() => fetch(ENVIZION_API_LOCAL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: window._lomaActiveModel, messages: [{ role: 'user', content: execPrompt }], temperature: 0.5, stream: false }) }));
+                const data = await res.json();
+                stepResult = data.message?.content || data.choices?.[0]?.message?.content || '';
+            } catch (e) { stepResult = `Error: ${e.message}`; }
+        }
+        
+        context += `\n\nStep ${i+1} (${step.step}):\n${stepResult.substring(0, 800)}`;
+        setStepStatus(stepIdx, 'done');
+    }
+    
+    // Final synthesis
+    const finalStepIdx = planJson.length + 1;
+    setStepStatus(finalStepIdx, 'active');
+    
+    const finalPrompt = `Based on this execution trace, provide a complete, well-formatted final answer to the original goal.\n\n${context}`;
+    
+    let finalAnswer = '';
+    const resultDiv = document.getElementById('planner-result');
+    
+    try {
+        const res = await fetch(ENVIZION_API_REMOTE, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: window._lomaActiveModel, messages: [{ role: 'user', content: finalPrompt }], temperature: 0.5, stream: true })
+        }).catch(() => fetch(ENVIZION_API_LOCAL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: window._lomaActiveModel, messages: [{ role: 'user', content: finalPrompt }], temperature: 0.5, stream: true }) }));
+        
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let lo = '', jb = '', tokenQueue = [], renderActive = true;
+        
+        const tw = () => {
+            while (tokenQueue.length > 0) finalAnswer += tokenQueue.shift();
+            if (finalAnswer && resultDiv) resultDiv.innerHTML = (window._patchedParseMarkdown || parseMarkdownResponse)(finalAnswer, false) + '<span class="streaming-cursor"></span>';
+            if (renderActive || tokenQueue.length > 0) requestAnimationFrame(tw);
+        };
+        requestAnimationFrame(tw);
+        
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            lo += decoder.decode(value, { stream: true });
+            const lines = lo.split('\n'); lo = lines.pop();
+            for (let line of lines) {
+                line = line.trim();
+                if (!line || line === '[DONE]') continue;
+                if (line.startsWith('data: ')) line = line.slice(6);
+                jb += line;
+                let o = 0, c = 0;
+                for (const ch of jb) { if (ch === '{') o++; else if (ch === '}') c++; }
+                if (o > 0 && o === c) { try { const p = JSON.parse(jb); if (p.t) tokenQueue.push(p.t); } catch {} jb = ''; }
+            }
+        }
+        renderActive = false;
+        await new Promise(r => { const ck = () => tokenQueue.length === 0 ? r() : requestAnimationFrame(ck); requestAnimationFrame(ck); });
+    } catch (e) { finalAnswer = `Planning execution failed: ${e.message}`; }
+    
+    setStepStatus(finalStepIdx, 'done');
+    if (resultDiv) resultDiv.innerHTML = (window._patchedParseMarkdown || parseMarkdownResponse)(finalAnswer.trim(), true);
+    
+    const session = chatDatabase.sessions[currentSessionId];
+    if (session) session.messages.push({ role: 'assistant', content: finalAnswer });
+    window.onResponseComplete?.(finalAnswer);
+};
+
+
+
+
+// ═══════════════════════════════════════════════════════════════════════
+//  LAYER 5 — SELF-CRITIQUE AGENT
+//  AI answers, then a critic pass reviews and corrects
+// ═══════════════════════════════════════════════════════════════════════
+
+window.runSelfCritiqueAgent = async (userMsg) => {
+    const zone = appendChatBubble('assistant', null);
+    zone.innerHTML = `<div class="flex items-center gap-2 text-xs text-slate-400 py-2"><i class="fa-solid fa-spinner fa-spin text-purple-400"></i> Generating initial response...</div>`;
+    
+    const fetchAnswer = async (messages, temp = 0.5) => {
+        const payload = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: window._lomaActiveModel, messages, temperature: temp, stream: false }) };
+        try {
+            let res = await fetch(ENVIZION_API_REMOTE, payload);
+            if (!res.ok) throw new Error();
+            const d = await res.json();
+            return d.message?.content || d.choices?.[0]?.message?.content || '';
+        } catch {
+            try {
+                const res = await fetch(ENVIZION_API_LOCAL, payload);
+                const d = await res.json();
+                return d.message?.content || d.choices?.[0]?.message?.content || '';
+            } catch { return ''; }
+        }
+    };
+    
+    // Phase 1: Initial answer
+    const initialAnswer = await fetchAnswer([{ role: 'user', content: userMsg }]);
+    
+    zone.innerHTML = `
+        <div class="mb-2 flex items-center gap-2 text-xs text-slate-500">
+            <i class="fa-solid fa-spinner fa-spin text-purple-400"></i> Running critic pass...
+        </div>
+        <div class="rounded-xl border border-gemini-border/30 bg-gemini-card/20 p-3 mb-3 opacity-60">
+            <div class="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Initial Draft</div>
+            <div class="text-sm text-slate-400">${escapeHtmlString(initialAnswer.substring(0, 300))}...</div>
+        </div>`;
+    
+    // Phase 2: Critic pass
+    const criticPrompt = `Review this answer for: accuracy, completeness, clarity, and helpfulness. Then provide an IMPROVED version.\n\nQuestion: ${userMsg}\n\nAnswer to review:\n${initialAnswer}\n\nOutput ONLY the improved answer. Do not include critique commentary.`;
+    
+    const improvedAnswer = await fetchAnswer([{ role: 'user', content: criticPrompt }], 0.3);
+    
+    const finalAnswer = improvedAnswer.trim() || initialAnswer;
+    
+    zone.innerHTML = `
+        <div class="flex items-center gap-2 mb-3">
+            <span class="px-2 py-0.5 bg-purple-500/10 border border-purple-500/20 rounded-full text-[10px] text-purple-300 font-bold"><i class="fa-solid fa-shield-check mr-1"></i>Self-Critiqued</span>
+            <span class="text-[10px] text-slate-500">Reviewed and improved automatically</span>
+        </div>
+        <div class="answer-wrapper">${(window._patchedParseMarkdown || parseMarkdownResponse)(finalAnswer, true)}</div>`;
+    
+    const session = chatDatabase.sessions[currentSessionId];
+    if (session) session.messages.push({ role: 'assistant', content: finalAnswer });
+    window.onResponseComplete?.(finalAnswer);
+};
+
+
+
+
+
+// ═══════════════════════════════════════════════════════════════════════
+//  LAYER 6 — FILE CONVERSION SUITABILITY CONSOLE
+//  Classifies conversions as Safe/Recommended/Partial/Lossy/Unsupported
+// ═══════════════════════════════════════════════════════════════════════
+
+window.FILE_CONVERSION_MATRIX = {
+    // Documents
+    'docx→pdf':   { status: 'safe',        reason: 'Standard document format conversion. Layout preserved.' },
+    'doc→pdf':    { status: 'safe',        reason: 'Legacy Word to PDF. Layout mostly preserved.' },
+    'pdf→docx':   { status: 'recommended', reason: 'AI-assisted reconstruction. Complex layouts may shift.' },
+    'pdf→txt':    { status: 'safe',        reason: 'Text extraction only. Formatting removed.' },
+    'txt→pdf':    { status: 'safe',        reason: 'Plain text wrapped into PDF. No formatting.' },
+    'md→html':    { status: 'safe',        reason: 'Clean markdown-to-HTML render.' },
+    'md→pdf':     { status: 'safe',        reason: 'Markdown rendered then exported to PDF.' },
+    'html→pdf':   { status: 'recommended', reason: 'Browser-style render. CSS may not translate fully.' },
+    'epub→pdf':   { status: 'recommended', reason: 'Ebook to PDF. Chapter structure preserved.' },
+    // Spreadsheets
+    'xlsx→csv':   { status: 'partial',     reason: 'Only active sheet exported. Formulas become values. Multiple sheets lost.' },
+    'csv→xlsx':   { status: 'safe',        reason: 'Data imported as flat table. No formulas generated.' },
+    'xlsx→pdf':   { status: 'recommended', reason: 'Sheet exported as table. Multi-sheet files need per-sheet export.' },
+    // Presentations
+    'pptx→pdf':   { status: 'safe',        reason: 'Slides converted to PDF pages. Animations removed.' },
+    'pptx→html':  { status: 'partial',     reason: 'Slide content converted. Transitions and media may not transfer.' },
+    // Images
+    'png→jpg':    { status: 'lossy',       reason: 'PNG is lossless; JPEG introduces compression artifacts. Transparency lost.' },
+    'jpg→png':    { status: 'safe',        reason: 'Upconvert to lossless. No quality gain but no loss.' },
+    'svg→png':    { status: 'safe',        reason: 'Vector rasterized at specified resolution.' },
+    'png→svg':    { status: 'partial',     reason: 'AI vectorization. Complex photos will not trace cleanly.' },
+    'heic→jpg':   { status: 'recommended', reason: 'Apple format to universal JPEG. Minor quality reduction.' },
+    'webp→png':   { status: 'safe',        reason: 'Modern web format to PNG. Full quality retained.' },
+    // Audio
+    'mp3→wav':    { status: 'safe',        reason: 'Compressed to uncompressed. No quality recovery but no further loss.' },
+    'wav→mp3':    { status: 'lossy',       reason: 'Uncompressed to compressed. Quality loss is permanent.' },
+    'mp4→mp3':    { status: 'safe',        reason: 'Audio track extracted from video. Clean extraction.' },
+    'flac→mp3':   { status: 'lossy',       reason: 'Lossless to lossy. Quality loss is permanent.' },
+    // Video
+    'mp4→webm':   { status: 'safe',        reason: 'Standard web video format conversion.' },
+    'mov→mp4':    { status: 'safe',        reason: 'Apple format to universal MP4. Quality preserved.' },
+    'mkv→mp4':    { status: 'safe',        reason: 'Container change. Video/audio streams preserved.' },
+    // Archives
+    'zip→7z':     { status: 'safe',        reason: 'Re-compress with better algorithm. Content unchanged.' },
+    'rar→zip':    { status: 'safe',        reason: 'Re-extract and re-archive. Content unchanged.' },
+    'tar→zip':    { status: 'safe',        reason: 'Unix archive to ZIP. Content unchanged.' },
+    // Cross-type (partial)
+    'pdf→pptx':   { status: 'partial',     reason: 'PDF pages become slides. Text extracted, layout approximate.' },
+    'mp4→docx':   { status: 'partial',     reason: 'Video cannot become a document directly. Transcript can be extracted first.' },
+    'mp3→docx':   { status: 'partial',     reason: 'Audio cannot become a document directly. Transcription step required.' },
+    'jpg→mp4':    { status: 'partial',     reason: 'Image can become a video slideshow/still frame video.' },
+    'pdf→mp3':    { status: 'partial',     reason: 'PDF text can be read via TTS to produce audio.' },
+    // Unsupported
+    'exe→mp3':    { status: 'unsupported', reason: 'Binary executable cannot be converted to audio.' },
+    'mp3→exe':    { status: 'unsupported', reason: 'Audio cannot become an executable.' },
+    'jpg→exe':    { status: 'unsupported', reason: 'Image cannot become an executable.' },
+    'exe→pdf':    { status: 'unsupported', reason: 'Executables have no document equivalent.' },
+};
+
+window.checkFileSuitability = (fromExt, toExt) => {
+    const key = `${fromExt.toLowerCase().replace('.', '')}→${toExt.toLowerCase().replace('.', '')}`;
+    const reverseKey = `${toExt.toLowerCase().replace('.', '')}→${fromExt.toLowerCase().replace('.', '')}`;
+    
+    if (window.FILE_CONVERSION_MATRIX[key]) return { key, ...window.FILE_CONVERSION_MATRIX[key] };
+    
+    // Same type = safe
+    if (fromExt.toLowerCase() === toExt.toLowerCase()) {
+        return { key, status: 'safe', reason: 'Same format — no conversion needed.' };
+    }
+    
+    // Check category compatibility
+    const docTypes  = ['pdf','docx','doc','txt','rtf','odt','md','epub','html'];
+    const imgTypes  = ['png','jpg','jpeg','webp','gif','bmp','tiff','svg','heic'];
+    const audioTypes= ['mp3','wav','flac','aac','ogg','m4a'];
+    const videoTypes= ['mp4','mov','mkv','avi','webm','flv'];
+    const dataTypes = ['xlsx','csv','xls','json','xml','ods'];
+    const archiveTypes = ['zip','rar','7z','tar','gz'];
+    const codeTypes = ['html','css','js','ts','py','java','cpp','rs','go','jsx'];
+    
+    const classify = (ext) => {
+        const e = ext.toLowerCase();
+        if (docTypes.includes(e))     return 'document';
+        if (imgTypes.includes(e))     return 'image';
+        if (audioTypes.includes(e))   return 'audio';
+        if (videoTypes.includes(e))   return 'video';
+        if (dataTypes.includes(e))    return 'data';
+        if (archiveTypes.includes(e)) return 'archive';
+        if (codeTypes.includes(e))    return 'code';
+        return 'unknown';
+    };
+    
+    const fromCat = classify(fromExt);
+    const toCat   = classify(toExt);
+    
+    if (fromCat === toCat) return { key, status: 'recommended', reason: `Both are ${fromCat} formats. Conversion is generally possible with some formatting differences.` };
+    
+    if (fromCat === 'unknown' || toCat === 'unknown') {
+        return { key, status: 'unsupported', reason: `Unrecognized format "${fromCat === 'unknown' ? fromExt : toExt}". Conversion cannot be determined.` };
+    }
+    
+    const crossCompatible = {
+        'document→image': { status: 'partial', reason: 'Document pages can be rasterized to images. Text becomes non-editable.' },
+        'image→document': { status: 'partial', reason: 'OCR can extract text. Layout will not be preserved.' },
+        'video→audio':    { status: 'safe',    reason: 'Audio track can be cleanly extracted from video.' },
+        'video→image':    { status: 'partial', reason: 'Individual frames can be extracted as images.' },
+        'audio→document': { status: 'partial', reason: 'Transcription step required. Speech-to-text then document.' },
+        'document→audio': { status: 'partial', reason: 'TTS (text-to-speech) step required.' },
+        'data→document':  { status: 'recommended', reason: 'Data can be formatted as a table in a document.' },
+        'document→data':  { status: 'partial', reason: 'Tables can be extracted. Narrative text will be lost.' },
+        'code→document':  { status: 'safe',    reason: 'Source code can be exported as formatted text/PDF.' },
+        'image→video':    { status: 'partial', reason: 'Still image or slideshow video can be created.' },
+    };
+    
+    const crossKey = `${fromCat}→${toCat}`;
+    if (crossCompatible[crossKey]) return { key, ...crossCompatible[crossKey] };
+    
+    return { key, status: 'unsupported', reason: `${fromCat} → ${toCat} conversion is not supported without intermediary steps.` };
+};
+
+window.openFileSuitabilityConsole = () => {
+    const existing = document.getElementById('file-suitability-modal');
+    if (existing) { existing.remove(); return; }
+    
+    const statusConfig = {
+        safe:        { color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/30', icon: 'fa-circle-check',    label: 'Safe' },
+        recommended: { color: 'text-blue-400',    bg: 'bg-blue-500/10 border-blue-500/30',       icon: 'fa-circle-info',     label: 'Recommended' },
+        partial:     { color: 'text-yellow-400',  bg: 'bg-yellow-500/10 border-yellow-500/30',   icon: 'fa-circle-half-stroke', label: 'Partial' },
+        lossy:       { color: 'text-orange-400',  bg: 'bg-orange-500/10 border-orange-500/30',   icon: 'fa-triangle-exclamation', label: 'Lossy' },
+        unsupported: { color: 'text-red-400',     bg: 'bg-red-500/10 border-red-500/30',         icon: 'fa-circle-xmark',    label: 'Unsupported' },
+    };
+    
+    const modal = document.createElement('div');
+    modal.id = 'file-suitability-modal';
+    modal.className = 'fixed inset-0 z-[200] bg-black/70 flex items-center justify-center p-4';
+    modal.innerHTML = `
+        <div class="bg-gemini-bg border border-gemini-border rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
+            <div class="flex items-center justify-between px-6 py-4 border-b border-gemini-border/50">
+                <div class="flex items-center gap-3">
+                    <i class="fa-solid fa-file-circle-question text-indigo-400"></i>
+                    <span class="font-bold text-sm text-white">File Conversion Suitability Console</span>
+                </div>
+                <button onclick="document.getElementById('file-suitability-modal').remove()" class="text-slate-500 hover:text-white text-lg">✕</button>
+            </div>
+            <div class="p-6 space-y-4">
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">From</label>
+                        <input id="fc-from" placeholder="e.g. mp4, pdf, docx" class="w-full bg-gemini-card border border-gemini-border/60 text-sm text-slate-200 rounded-xl px-3 py-2 outline-none focus:border-indigo-400">
+                    </div>
+                    <div>
+                        <label class="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">To</label>
+                        <input id="fc-to" placeholder="e.g. mp3, docx, png" class="w-full bg-gemini-card border border-gemini-border/60 text-sm text-slate-200 rounded-xl px-3 py-2 outline-none focus:border-indigo-400">
+                    </div>
+                </div>
+                <button onclick="window._runSuitabilityCheck()" class="w-full py-2.5 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/30 text-indigo-300 text-sm font-semibold rounded-xl smooth-transition">
+                    <i class="fa-solid fa-magnifying-glass mr-2"></i>Check Suitability
+                </button>
+                <div id="fc-result" class="hidden"></div>
+                <div class="border-t border-gemini-border/30 pt-4">
+                    <div class="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-3">Quick Reference</div>
+                    <div class="grid grid-cols-3 gap-2">
+                        ${Object.entries(statusConfig).map(([k, v]) => `
+                            <div class="flex items-center gap-2 px-2 py-1.5 border ${v.bg} rounded-lg">
+                                <i class="fa-solid ${v.icon} ${v.color} text-xs"></i>
+                                <span class="text-[11px] ${v.color} font-semibold">${v.label}</span>
+                            </div>`).join('')}
+                    </div>
+                </div>
+            </div>
+        </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+};
+
+window._runSuitabilityCheck = () => {
+    const from = document.getElementById('fc-from')?.value?.trim();
+    const to   = document.getElementById('fc-to')?.value?.trim();
+    const result = document.getElementById('fc-result');
+    if (!from || !to || !result) return;
+    
+    const check = window.checkFileSuitability(from, to);
+    
+    const statusConfig = {
+        safe:        { color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/30', icon: 'fa-circle-check' },
+        recommended: { color: 'text-blue-400',    bg: 'bg-blue-500/10 border-blue-500/30',       icon: 'fa-circle-info' },
+        partial:     { color: 'text-yellow-400',  bg: 'bg-yellow-500/10 border-yellow-500/30',   icon: 'fa-circle-half-stroke' },
+        lossy:       { color: 'text-orange-400',  bg: 'bg-orange-500/10 border-orange-500/30',   icon: 'fa-triangle-exclamation' },
+        unsupported: { color: 'text-red-400',     bg: 'bg-red-500/10 border-red-500/30',         icon: 'fa-circle-xmark' },
+    };
+    
+    const cfg = statusConfig[check.status] || statusConfig.unsupported;
+    
+    const alternatives = {
+        partial: 'Consider an intermediate step (e.g., extract text/audio first).',
+        lossy: 'Consider keeping the original file alongside the converted one.',
+        unsupported: 'Try using an intermediate format (e.g., to PDF first, then to target).',
+    };
+    
+    result.className = `rounded-xl border p-4 ${cfg.bg}`;
+    result.innerHTML = `
+        <div class="flex items-center gap-3 mb-3">
+            <i class="fa-solid ${cfg.icon} ${cfg.color} text-lg"></i>
+            <div>
+                <div class="font-bold text-sm ${cfg.color} capitalize">${check.status}</div>
+                <div class="text-[10px] text-slate-500 font-mono">${from.toLowerCase()} → ${to.toLowerCase()}</div>
+            </div>
+        </div>
+        <p class="text-sm text-slate-300 leading-relaxed mb-2">${check.reason}</p>
+        ${alternatives[check.status] ? `<p class="text-xs text-slate-500 italic">${alternatives[check.status]}</p>` : ''}`;
+    result.classList.remove('hidden');
+};
+
+
+
+
+
+// ═══════════════════════════════════════════════════════════════════════
+//  LAYER 7 — KNOWLEDGE GRAPH MEMORY
+//  Upgrades flat memory list to a linked node graph
+// ═══════════════════════════════════════════════════════════════════════
+
+window.knowledgeGraph = {
+    nodes: JSON.parse(localStorage.getItem('loma_kg_nodes') || '{}'),
+    edges: JSON.parse(localStorage.getItem('loma_kg_edges') || '[]'),
+    
+    save() {
+        localStorage.setItem('loma_kg_nodes', JSON.stringify(this.nodes));
+        localStorage.setItem('loma_kg_edges', JSON.stringify(this.edges));
+    },
+    
+    addNode(id, type, label, data = {}) {
+        this.nodes[id] = { id, type, label, data, ts: Date.now() };
+        this.save();
+        return this.nodes[id];
+    },
+    
+    addEdge(fromId, toId, relation) {
+        // Avoid duplicates
+        if (!this.edges.find(e => e.from === fromId && e.to === toId && e.rel === relation)) {
+            this.edges.push({ from: fromId, to: toId, rel: relation, ts: Date.now() });
+            this.save();
+        }
+    },
+    
+    getRelated(nodeId, depth = 1) {
+        const related = new Set();
+        const queue = [nodeId];
+        for (let d = 0; d < depth; d++) {
+            const current = [...queue];
+            queue.length = 0;
+            for (const id of current) {
+                this.edges.forEach(e => {
+                    if (e.from === id && !related.has(e.to)) { related.add(e.to); queue.push(e.to); }
+                    if (e.to === id && !related.has(e.from)) { related.add(e.from); queue.push(e.from); }
+                });
+            }
+        }
+        return [...related].map(id => this.nodes[id]).filter(Boolean);
+    },
+    
+    search(query) {
+        const q = query.toLowerCase();
+        return Object.values(this.nodes).filter(n =>
+            n.label.toLowerCase().includes(q) ||
+            (n.data?.content || '').toLowerCase().includes(q)
+        );
+    },
+    
+    // Auto-extract entities from text and add to graph
+    async extractAndAdd(text, sessionId) {
+        const extractPrompt = `Extract the key entities from this text and return ONLY a JSON array: [{"entity":"name","type":"person|project|concept|tool|company|file"}]\n\nText: ${text.substring(0, 500)}`;
+        try {
+            const res = await fetch(ENVIZION_API_REMOTE, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model: 'qwen2.5-coder:7b', messages: [{ role: 'user', content: extractPrompt }], temperature: 0.1, stream: false })
+            }).catch(() => fetch(ENVIZION_API_LOCAL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'qwen2.5-coder:7b', messages: [{ role: 'user', content: extractPrompt }], temperature: 0.1, stream: false }) }));
+            
+            const data = await res.json();
+            const raw = data.message?.content || '';
+            const match = raw.match(/\[[\s\S]*?\]/);
+            if (!match) return;
+            
+            const entities = JSON.parse(match[0]);
+            const sessionNodeId = `session_${sessionId}`;
+            if (!this.nodes[sessionNodeId]) {
+                this.addNode(sessionNodeId, 'session', `Chat ${sessionId.substring(0, 8)}`);
+            }
+            
+            entities.forEach(e => {
+                const nodeId = `${e.type}_${e.entity.toLowerCase().replace(/\s+/g, '_')}`;
+                if (!this.nodes[nodeId]) this.addNode(nodeId, e.type, e.entity);
+                this.addEdge(sessionNodeId, nodeId, 'mentioned');
+            });
+        } catch {}
+    },
+    
+    getContextForQuery(query) {
+        const results = this.search(query);
+        if (results.length === 0) return '';
+        const related = new Set(results);
+        results.forEach(n => this.getRelated(n.id, 1).forEach(r => related.add(r)));
+        const nodes = [...related].slice(0, 15);
+        if (nodes.length === 0) return '';
+        return `\n\n━━━ KNOWLEDGE GRAPH ━━━\n` +
+            nodes.map(n => `• [${n.type}] ${n.label}`).join('\n') +
+            (this.edges.length > 0 ? `\nRelationships: ${this.edges.slice(-10).map(e => `${this.nodes[e.from]?.label || e.from} →[${e.rel}]→ ${this.nodes[e.to]?.label || e.to}`).join(', ')}` : '');
+    }
+};
+
+// Upgrade getMemoryContext to include knowledge graph
+const _origGetMemory = window.getMemoryContext;
+window.getMemoryContext = async (query = '') => {
+    const baseMemory = await _origGetMemory(query);
+    const kgContext = window.knowledgeGraph.getContextForQuery(query);
+    return baseMemory + kgContext;
+};
+
+// Auto-extract entities after each response
+const _origOnResponseComplete = window.onResponseComplete;
+window.onResponseComplete = (responseText) => {
+    _origOnResponseComplete?.(responseText);
+    // Background entity extraction (non-blocking)
+    if (responseText.length > 50) {
+        setTimeout(() => window.knowledgeGraph.extractAndAdd(responseText, currentSessionId), 2000);
+    }
+};
+
+
+const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanPrompt)}?nologo=true&model=flux`;
         
         return `\n<div class="my-4 rounded-3xl overflow-hidden border border-purple-500/30 shadow-[0_0_20px_rgba(168,85,247,0.15)] max-w-sm bg-[#131314] text-left">
             <div class="relative w-full aspect-square bg-black flex items-center justify-center">
@@ -3747,6 +4595,9 @@ window.enableCollabSync = () => {
     };
     triggerNotificationToast('Collab', 'Multi-tab sync active.', 'fa-users', 'bg-indigo-600');
 };
+
+
+
     </script>
     <!-- LOMA ADAPTIVE TRAINER — watches reactions, auto-pushes to HF Space -->
     <script src="loma-adaptive-trainer.js" defer></script>
