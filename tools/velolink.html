@@ -428,6 +428,74 @@
         }
         .info-box strong { color: #fff; }
 
+        /* ── MEDIA PLAYER ── */
+        .media-player-wrap {
+            background: #000;
+            border-radius: 14px;
+            overflow: hidden;
+            border: 1px solid var(--border);
+            margin-bottom: 1.25rem;
+            position: relative;
+        }
+        .media-player-wrap video {
+            width: 100%;
+            display: block;
+            max-height: 70vh;
+            background: #000;
+        }
+        .media-player-wrap audio {
+            width: 100%;
+            display: block;
+            padding: 1rem;
+            background: var(--bg2);
+        }
+        .media-filename {
+            position: absolute;
+            top: 10px;
+            left: 12px;
+            background: rgba(0,0,0,0.65);
+            backdrop-filter: blur(6px);
+            color: #fff;
+            font-size: 0.7rem;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 999px;
+            pointer-events: none;
+            max-width: calc(100% - 24px);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .audio-meta {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 1.25rem;
+            background: var(--bg2);
+        }
+        .audio-icon {
+            width: 52px; height: 52px;
+            background: linear-gradient(135deg, rgba(99,102,241,0.2), rgba(168,85,247,0.2));
+            border: 1px solid rgba(99,102,241,0.2);
+            border-radius: 12px;
+            display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0;
+            color: var(--accent2);
+        }
+        .temp-note {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.72rem;
+            color: var(--muted);
+            padding: 0.65rem 1rem;
+            background: rgba(245,158,11,0.05);
+            border: 1px solid rgba(245,158,11,0.12);
+            border-radius: 10px;
+            margin-bottom: 1rem;
+        }
+        .temp-note svg { flex-shrink: 0; color: var(--warn); }
+
         @media(max-width: 600px) {
             main { padding: 2rem 1rem; }
             .stat-row { grid-template-columns: 1fr 1fr; }
@@ -633,19 +701,52 @@
                 <div class="recv-chunks" id="chunkViz"></div>
             </div>
 
-            <div id="recvDoneSection" style="display:none; text-align:center; padding:1.5rem 0;">
-                <div style="width:52px;height:52px;background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.25);border-radius:14px;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem;color:var(--success);">
-                    <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" width="28" height="28">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
-                    </svg>
+            <div id="recvDoneSection" style="display:none;">
+                <!-- Media player (shown for video/audio) -->
+                <div id="mediaPlayerWrap" class="media-player-wrap" style="display:none;">
+                    <span class="media-filename" id="mediaFilename"></span>
+                    <video id="recvVideoPlayer" controls style="display:none;" preload="auto"></video>
+                    <div id="recvAudioWrap" style="display:none;">
+                        <div class="audio-meta">
+                            <div class="audio-icon">
+                                <svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" width="26" height="26">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 9l10.5-3m0 6.553v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 11-.99-3.467l2.31-.66a2.25 2.25 0 001.632-2.163zm0 0V2.25L9 5.25v10.303m0 0v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 01-.99-3.467l2.31-.66A2.25 2.25 0 009 15.553z"/>
+                                </svg>
+                            </div>
+                            <div>
+                                <div style="font-weight:600;font-size:0.9rem;" id="audioTitle">—</div>
+                                <div style="font-size:0.75rem;color:var(--muted);margin-top:2px;" id="audioMeta">—</div>
+                            </div>
+                        </div>
+                        <audio id="recvAudioPlayer" controls style="width:100%; display:block;"></audio>
+                    </div>
                 </div>
-                <div style="font-weight:700;font-size:1.1rem;">Transfer complete</div>
-                <div style="font-size:0.8rem;color:var(--muted);margin-top:4px;" id="recvCompleteInfo"></div>
-                <button class="btn btn-primary" style="margin-top:1.5rem;" onclick="triggerDownload()" id="downloadBtn">
+
+                <!-- Stats row -->
+                <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;margin-bottom:1rem;">
+                    <div style="font-weight:700;font-size:0.95rem;display:flex;align-items:center;gap:8px;">
+                        <span style="width:22px;height:22px;background:rgba(16,185,129,0.15);border-radius:6px;display:inline-flex;align-items:center;justify-content:center;color:var(--success);">
+                            <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" width="13" height="13"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                        </span>
+                        Ready
+                    </div>
+                    <div style="font-size:0.75rem;color:var(--muted);" id="recvCompleteInfo"></div>
+                </div>
+
+                <!-- Temp memory notice -->
+                <div class="temp-note">
+                    <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="15" height="15">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/>
+                    </svg>
+                    Stored in memory only — this file will be gone when you close this tab.
+                </div>
+
+                <!-- Save button -->
+                <button class="btn btn-secondary" style="width:100%;" onclick="triggerDownload()" id="downloadBtn">
                     <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/>
                     </svg>
-                    Save file to device
+                    Save to device permanently
                 </button>
             </div>
 
@@ -1020,21 +1121,57 @@ function handleDone() {
     const avgSpeed = formatBytes(receivedBytes / ((Date.now() - transferStart) / 1000));
     document.getElementById('recvCompleteInfo').textContent =
         `${formatBytes(receivedBytes)} in ${elapsed}s — avg ${avgSpeed}/s`;
+
+    // Build blob and auto-play if media
+    const blob = new Blob(receivedChunks, { type: receivedMime || 'application/octet-stream' });
+    downloadURL = URL.createObjectURL(blob);
+
+    const mime = (receivedMime || '').toLowerCase();
+    const isVideo = mime.startsWith('video/');
+    const isAudio = mime.startsWith('audio/');
+
+    if (isVideo || isAudio) {
+        const wrap = document.getElementById('mediaPlayerWrap');
+        wrap.style.display = 'block';
+        document.getElementById('mediaFilename').textContent = receivedFileName;
+
+        if (isVideo) {
+            const vp = document.getElementById('recvVideoPlayer');
+            vp.style.display = 'block';
+            vp.src = downloadURL;
+            vp.play().catch(() => {}); // autoplay may be blocked; that's fine
+        } else {
+            const aw = document.getElementById('recvAudioWrap');
+            aw.style.display = 'block';
+            document.getElementById('audioTitle').textContent = receivedFileName;
+            document.getElementById('audioMeta').textContent = formatBytes(receivedBytes) + ' · ' + mime.replace('audio/', '').toUpperCase();
+            const ap = document.getElementById('recvAudioPlayer');
+            ap.src = downloadURL;
+            ap.play().catch(() => {});
+        }
+    }
 }
 
 let downloadURL = null;
 function triggerDownload() {
-    if (!receivedChunks.length) return;
-    const blob = new Blob(receivedChunks, { type: receivedMime || 'application/octet-stream' });
-    downloadURL = URL.createObjectURL(blob);
+    if (!downloadURL) return;
     const a = document.createElement('a');
     a.href = downloadURL;
     a.download = receivedFileName || 'velolink-file';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    showToast('Download started!');
+    showToast('Saving to device…');
 }
+
+// Revoke blob URL when tab closes — frees all temp memory
+window.addEventListener('beforeunload', () => {
+    if (downloadURL) {
+        URL.revokeObjectURL(downloadURL);
+        downloadURL = null;
+    }
+    receivedChunks = [];
+});
 
 function setRecvStatus(type, label) {
     const el = document.getElementById('recvStatus');
