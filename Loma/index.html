@@ -13,6 +13,8 @@
     <!-- Marked.js for full Markdown parsing -->
     <script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
     <script src="system-prompt.js"></script>
+    <script src="loma-core-engine.js"></script>
+
     <script>
         tailwind.config = {
             theme: {
@@ -201,6 +203,155 @@
     font-size: 0.85em;
     font-family: 'JetBrains Mono', monospace;
 }
+
+/* ════════════════════════════════════════════════════════════════════════
+   LOMA CORE ENGINE — CSS FIXES
+   Append after the existing <style> block (or include via <link>).
+   Fixes:
+     1. marked.js fenced code blocks had NO styling at all (pre/code were
+        unstyled inside .output-response-zone) — now properly themed,
+        scrollable, with language label support.
+     2. Inline vs block code conflict resolved (`code:not(pre code)` kept,
+        but `pre code` now explicitly reset so it doesn't inherit the pill
+        styling).
+     3. Canvas console/log lines reused inline styles scattered across JS —
+        consolidated into classes so the JS no longer needs to set
+        style.background/color directly (faster renders, no layout thrash).
+     4. Streaming cursor + loading dots now share one timing curve so
+        chat, canvas console, and Python live-output all feel identical.
+     5. Long Python output / canvas iframe overflow fixed (was causing
+        horizontal scroll-jank on mobile).
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1 & 2. Code blocks inside AI responses ─────────────────────────── */
+.output-response-zone pre {
+    background: #0d0d0e;
+    border: 1px solid #3c4043;
+    border-radius: 12px;
+    padding: 0.9rem 1rem;
+    margin: 0.75rem 0;
+    overflow-x: auto;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    line-height: 1.6;
+    -webkit-overflow-scrolling: touch;
+}
+.output-response-zone pre code {
+    background: transparent !important;
+    color: #e3e3e3 !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+    font-size: inherit !important;
+    white-space: pre;
+}
+.output-response-zone code:not(pre code) {
+    background: #282a2c;
+    color: #a8c7fa;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.85em;
+    font-family: 'JetBrains Mono', monospace;
+    word-break: break-word;
+}
+/* Optional language label, set via JS: pre[data-lang]::before */
+.output-response-zone pre[data-lang]::before {
+    content: attr(data-lang);
+    display: block;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-accent);
+    margin-bottom: 0.4rem;
+    opacity: 0.7;
+}
+
+/* ── 3. Canvas console — consolidated classes ───────────────────────── */
+.canvas-console-row {
+    display: flex;
+    gap: 10px;
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    font-size: 11px;
+    line-height: 1.5;
+    font-family: 'JetBrains Mono', monospace;
+}
+.canvas-console-time {
+    color: #3f3f46;
+    flex-shrink: 0;
+}
+.canvas-console-msg { word-break: break-all; }
+.canvas-console-msg.level-log   { color: #a1a1aa; }
+.canvas-console-msg.level-warn  { color: #fbbf24; }
+.canvas-console-msg.level-error { color: #f87171; }
+.canvas-console-msg.level-info  { color: #60a5fa; }
+.canvas-console-empty {
+    font-size: 11px;
+    color: #3f3f46;
+    font-style: italic;
+    text-align: center;
+    padding: 16px 0;
+}
+
+/* ── 4. Unified streaming/typing indicators ─────────────────────────── */
+.streaming-cursor,
+.gemini-loading-dot {
+    animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+.live-output {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    color: #6ee7b7;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 0.75rem;
+    padding: 0.75rem;
+    white-space: pre-wrap;
+    line-height: 1.6;
+    min-height: 1.25rem;
+}
+.live-output-error {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    color: #f87171;
+    background: rgba(127, 29, 29, 0.2);
+    border-radius: 0.75rem;
+    padding: 0.75rem;
+    white-space: pre-wrap;
+    margin-bottom: 0.75rem;
+}
+
+/* ── 5. Canvas iframe / overflow fixes ──────────────────────────────── */
+#canvas-column { max-width: 100vw; }
+#live-canvas-frame {
+    width: 100%;
+    height: 100%;
+    border: none;
+    background: #ffffff;
+    display: block;
+}
+#live-canvas-code {
+    width: 100%;
+    height: 100%;
+    resize: none;
+    background: #0d0d0e;
+    color: #e3e3e3;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    line-height: 1.6;
+    padding: 1rem;
+    border: none;
+    outline: none;
+    tab-size: 2;
+}
+#canvas-console-panel {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Status pills (web search / routing / tool indicators) */
+.status-pill {
+    transition: opacity 0.2s ease;
+}
+
 
     </style>
 </head>
@@ -497,11 +648,11 @@
                                 </button>
                                 <div id="model-dropdown" class="hidden absolute bottom-full mb-2 left-0 glass-menu rounded-2xl border border-gemini-border/50 shadow-2xl py-2 min-w-[220px] z-50">
                                     <div class="px-3 pb-2 pt-1 text-[9px] font-bold text-slate-500 uppercase tracking-widest">Engine</div>
-                                    <button onclick="window.selectModel('llama3.2','Qwen 2.5 7B')" class="w-full text-left px-4 py-2.5 hover:bg-gemini-card/60 smooth-transition flex items-center gap-3 text-xs">
-                                        <span class="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0 model-dot" data-model="llama3.2"></span>
+                                    <button onclick="window.selectModel('llama3.2:1b','Qwen 2.5 7B')" class="w-full text-left px-4 py-2.5 hover:bg-gemini-card/60 smooth-transition flex items-center gap-3 text-xs">
+                                        <span class="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0 model-dot" data-model="llama3.2:1b"></span>
                                         <div>
                                             <p class="font-semibold text-slate-200">Loma 1B <span class="text-emerald-400 text-[9px] ml-1">● Active</span></p>
-                                            <p class="text-[10px] text-slate-500">Fast · llama3.2</p>
+                                            <p class="text-[10px] text-slate-500">Fast · llama3.2:1b</p>
                                         </div>
                                     </button>
                                     <button onclick="window.selectModel('loma-lora','Loma Trained')" class="w-full text-left px-4 py-2.5 hover:bg-gemini-card/60 smooth-transition flex items-center gap-3 text-xs">
@@ -679,7 +830,7 @@ const TRAINING_API = 'https://train.envizion.work';
 //  Replit-style multi-file editor, Envizion tool suite integrations
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// ── QWEN CODE MODE (local Ollama — llama3.2) ─────────────────────────
+// ── QWEN CODE MODE (local Ollama — llama3.2:1b) ─────────────────────────
 window.claudeCodeMode = false; // kept as claudeCodeMode for compat with existing toggles
 
 window.toggleClaudeCodeMode = () => {
@@ -689,10 +840,10 @@ window.toggleClaudeCodeMode = () => {
         btn.classList.toggle('text-violet-400', window.claudeCodeMode);
         btn.classList.toggle('text-gemini-textMuted', !window.claudeCodeMode);
     }
-    triggerNotificationToast('Qwen Code', window.claudeCodeMode ? 'ON — Code requests → llama3.2.' : 'OFF', 'fa-code', window.claudeCodeMode ? 'bg-violet-600' : 'bg-slate-600');
+    triggerNotificationToast('Qwen Code', window.claudeCodeMode ? 'ON — Code requests → llama3.2:1b.' : 'OFF', 'fa-code', window.claudeCodeMode ? 'bg-violet-600' : 'bg-slate-600');
 };
 
-// callClaudeAPI → now routes to local Ollama llama3.2 (non-streaming)
+// callClaudeAPI → now routes to local Ollama llama3.2:1b (non-streaming)
 window.callClaudeAPI = async (messages, systemPrompt = '', maxTokens = 4096) => {
     const ollamaMessages = [];
     if (systemPrompt) ollamaMessages.push({ role: 'system', content: systemPrompt });
@@ -702,7 +853,7 @@ window.callClaudeAPI = async (messages, systemPrompt = '', maxTokens = 4096) => 
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                model: 'llama3.2',
+                model: 'llama3.2:1b',
                 messages: ollamaMessages,
                 stream: false,
                 options: { num_predict: maxTokens }
@@ -717,7 +868,7 @@ window.callClaudeAPI = async (messages, systemPrompt = '', maxTokens = 4096) => 
     }
 };
 
-// Intercept coding requests when claudeCodeMode is on — uses llama3.2
+// Intercept coding requests when claudeCodeMode is on — uses llama3.2:1b
 window._claudeCodeIntercept = async (userMsg, sessionMessages) => {
     if (!window.claudeCodeMode) return null;
     const codeIntent = /(build|create|make|write|generate|code|html|app|tool|page|dashboard|widget|script|function|class|component)/i.test(userMsg);
@@ -1877,7 +2028,7 @@ if (lomaMatch && lomaMatch[1]) {
 }
 
 // Default models mapped to your server.js
-if (localStorage.getItem('loma_active_model') === 'llama3.2:1b') localStorage.removeItem('loma_active_model');
+if (localStorage.getItem('loma_active_model') === 'llama3.2') localStorage.removeItem('loma_active_model');
 window._lomaActiveModel = localStorage.getItem('loma_active_model') || 'llama3.2';
 
 let systemConfig = {
@@ -2561,7 +2712,7 @@ function parseMarkdownResponse(text, isFinal = false) {
 // ═══════════════════════════════════════════════════════════════════════
 
 window.LOMA_MODEL_REGISTRY = {
-    'llama3.2':  { name: 'Qwen Coder',   tags: ['code','build','html','css','js','app','debug','script'] },
+    'llama3.2:1b':  { name: 'Qwen Coder',   tags: ['code','build','html','css','js','app','debug','script'] },
     'llava':             { name: 'LLaVA Vision',  tags: ['image','photo','picture','vision','see','look','describe'] },
     'llama3.2:1b':       { name: 'Llama 3.2',     tags: ['chat','explain','write','story','creative','general'] },
     'deepseek-r1:7b':    { name: 'DeepSeek R1',   tags: ['reason','math','logic','proof','solve','analyse','compare'] },
@@ -2580,7 +2731,7 @@ window.intelligentAutoRoute = (userMsg) => {
     }
     // Code → Qwen Coder
     if (/(build|create|make|code|html|css|javascript|python|function|class|component|app|dashboard|script|debug|fix the bug|refactor|api|endpoint)/i.test(m)) {
-        return { model: 'llama3.2', reason: 'Code generation — routing to Qwen Coder' };
+        return { model: 'llama3.2:1b', reason: 'Code generation — routing to Qwen Coder' };
     }
     // Writing/Documents → Mistral
     if (/(write|draft|summarize|translate|email|letter|essay|document|blog post|article|paragraph|rewrite)/i.test(m)) {
@@ -2623,7 +2774,7 @@ window.toggleAutoRoute = () => {
 //  Sends prompt to 2 models simultaneously, AI judge picks the best answer
 // ═══════════════════════════════════════════════════════════════════════
 
-window.runModelVote = async (userMsg, models = ['llama3.2', 'llama3.2:1b']) => {
+window.runModelVote = async (userMsg, models = ['llama3.2:1b', 'llama3.2:1b']) => {
     const zone = appendChatBubble('assistant', null);
     zone.innerHTML = `<div class="flex items-center gap-2 text-xs text-slate-400 py-2"><i class="fa-solid fa-spinner fa-spin text-indigo-400"></i> Running ${models.length} models in parallel for best answer...</div>`;
     
@@ -3347,8 +3498,8 @@ window.knowledgeGraph = {
         try {
             const res = await fetch(ENVIZION_API_REMOTE, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ model: 'llama3.2', messages: [{ role: 'user', content: extractPrompt }], temperature: 0.1, stream: false })
-            }).catch(() => fetch(ENVIZION_API_LOCAL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'llama3.2', messages: [{ role: 'user', content: extractPrompt }], temperature: 0.1, stream: false }) }));
+                body: JSON.stringify({ model: 'llama3.2:1b', messages: [{ role: 'user', content: extractPrompt }], temperature: 0.1, stream: false })
+            }).catch(() => fetch(ENVIZION_API_LOCAL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'llama3.2:1b', messages: [{ role: 'user', content: extractPrompt }], temperature: 0.1, stream: false }) }));
             
             const data = await res.json();
             const raw = data.message?.content || '';
@@ -3992,42 +4143,113 @@ window.renderToCanvas = (base64Content) => {
 //  END CANVAS ENGINE
 // ═══════════════════════════════════════════════════════════════
 
-window.updateCapabilitiesVaultUI = function() {
-        const count = document.getElementById('capability-count');
-    if(count) count.innerText = `${evolvedCapabilities.length} Active`;
+function extractCodeArtifacts(rawCode) {
+    let artifacts = [];
+    let cleaned = rawCode || "";
+    let match;
+
+    // 1. XML-style artifact extraction (Claude/standard format)
+    const xmlRegex = /<file\s+name="([^"]+)">([\s\S]*?)<\/file>/gi;
+    while ((match = xmlRegex.exec(cleaned)) !== null) {
+        artifacts.push({
+            filename: match[1].trim(),
+            code: match[2].trim(),
+            type: 'xml'
+        });
+    }
+    
+   while ((match = fenceRegex.exec(cleaned)) !== null) {
+        let filename = match[1] ? match[1].trim() : `script_block_${artifacts.length + 1}.py`;
+        artifacts.push({ 
+            filename, 
+            code: match[2].trim(),
+            type: 'markdown'
+        });
+    }
+
+    // 3. Fallback: Parse line-by-line if model ignores formatting entirely
+    if (artifacts.length === 0) {
+        let lines = cleaned.split('\n');
+        let codeLines = [];
+        let hasSeenCodeIndicator = false;
+
+        const conversationalPatterns = [
+            /^(i'd be happy|sure|here is|below is|certainly|of course|here's a)/i,
+            /^(this script|to do this|the following code)/i,
+            /^[a-zA-Z\s,']+\.?$/ // Pure conversational english sentences
+        ];
+
+        for (let line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) {
+                if (hasSeenCodeIndicator) codeLines.push(line);
+                continue;
+            }
+
+            // Look for strong programmatic keywords
+            const isPythonIndicator = /^(import\s|from\s|def\s|class\s|print\(|#|assert\s|[a-zA-Z_][a-zA-Z0-9_]*\s*=)/.test(trimmed);
+
+            if (isPythonIndicator) {
+                hasSeenCodeIndicator = true;
+            }
+
+            if (hasSeenCodeIndicator) {
+                if (!trimmed.startsWith('```')) codeLines.push(line);
+            } else {
+                const isConversational = conversationalPatterns.some(pattern => pattern.test(trimmed)) || (trimmed.split(' ').length > 4 && !/[()={}\[\]]/.test(trimmed));
+                if (!isConversational) {
+                    hasSeenCodeIndicator = true;
+                    codeLines.push(line);
+                }
+            }
+        }
+
+        const finalCode = codeLines.join('\n').trim();
+        if (finalCode && /(import|def|print|=)/.test(finalCode)) {
+            artifacts.push({ 
+                filename: "fallback_analysis.py", 
+                code: finalCode,
+                type: 'fallback'
+            });
+        }
+    }
+
+    return artifacts;
 }
 
+function cleanPythonCode(rawCode) {
+    const artifacts = extractCodeArtifacts(rawCode);
+    
+    if (!artifacts || artifacts.length === 0) {
+        throw new Error("No executable code could be extracted from the AI's response. The model may have returned pure conversation.");
+    }
 
-// ─── AI PYTHON ANALYSIS ENGINE ────────────────────────────────────────────────
-// Mimics Claude-style "run code → interpret output" analysis.
-// Usage:  await window.runAIAnalysis(prompt, targetEl, options)
-//
-//   prompt   : string  — what to analyse (can include raw data inline)
-//   targetEl : Element — DOM node to stream results into (creates one if null)
-//   options  : {
-//       model       : string  (default: window._lomaActiveModel)
-//       temperature : number  (default: 0.3)
-//       showThinking: boolean (default: true)
-//       packages    : string[] additional micropip packages e.g. ['scipy']
-//   }
-// ─────────────────────────────────────────────────────────────────────────────
+    // Combine all extracted code sections safely with spacers
+    // This allows Pyodide to evaluate multiple extracted file blocks as a single procedural run
+    return artifacts.map(a => {
+        return `# --- Extracted: ${a.filename} ---\n${a.code}`;
+    }).join('\n\n');
+}
+
+// ─── AI PYTHON ANALYSIS ENGINE ───────────────────────────────────────────
 window.runAIAnalysis = async (prompt, targetEl = null, options = {}) => {
-    const model       = options.model       || window._lomaActiveModel || 'llama3.2';
+    const model       = options.model       || window._lomaActiveModel || 'llama3.2:1b';
     const temperature = options.temperature ?? 0.3;
     const showThinking= options.showThinking !== false;
     const extraPkgs   = options.packages    || [];
 
+    // Safe helper fallbacks
+    const escapeHtmlString = typeof window.escapeHtmlString === 'function' ? window.escapeHtmlString : (str) => str.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const envizionApi = window.ENVIZION_API_LOCAL || '/api/chat';
+
     // ── 1. Create output container if caller didn't provide one ───────────
     if (!targetEl) {
         targetEl = document.createElement('div');
-        targetEl.className = 'ai-analysis-panel my-4 rounded-2xl border border-gemini-border bg-gemini-card p-4 text-sm text-gemini-textMain';
-        // Append after the last message bubble if possible
+        targetEl.className = 'ai-analysis-panel my-4 rounded-2xl border border-gemini-border bg-gemini-card p-4 text-sm text-gemini-textMain shadow-sm';
         const stream = document.getElementById('chat-stream');
         if (stream) stream.appendChild(targetEl);
         else document.body.appendChild(targetEl);
     }
-
-    const setStatus = (html) => { targetEl.innerHTML = html; };
 
     const spinnerHTML = (msg) =>
         `<div class="flex items-center gap-3 text-slate-400 text-xs py-2">
@@ -4035,31 +4257,31 @@ window.runAIAnalysis = async (prompt, targetEl = null, options = {}) => {
             <span>${msg}</span>
         </div>`;
 
-   // ── 2. Phase A: Ask AI to produce Python analysis code (LIVE STREAM) ──
+    // ── 2. Phase A: Ask AI to produce Python analysis code (LIVE STREAM) ──
     const codeBlockId = 'analysis-code-' + Math.random().toString(36).slice(2, 7);
     targetEl.innerHTML = `
         <div class="mb-3">
             <div class="text-[10px] font-mono text-indigo-300 flex items-center gap-1 mb-1">
-                <i class="fa-solid fa-spinner fa-spin text-[8px]"></i> Generating analysis code…
+                <i class="fa-solid fa-spinner fa-spin text-[8px]"></i> Generating & extracting code artifacts…
             </div>
             <pre id="${codeBlockId}" class="text-[10px] font-mono text-emerald-300 bg-black/40 rounded-xl p-3 overflow-x-auto whitespace-pre-wrap leading-relaxed min-h-[2rem]"></pre>
         </div>`;
     const codePreEl = document.getElementById(codeBlockId);
 
-    const codeSystemPrompt = `You are a Python data analyst. Output ONLY a raw Python script. No markdown, no fences, no backticks, no explanations, no comments.
+    const codeSystemPrompt = `You are a Senior Python Data Analyst. Output ONLY raw executable Python code. 
+If organizing into sections, you may use XML artifact tags like <file name="script.py">...</file> or markdown fences.
 Rules:
-- Each print() on its own line — never merge
+- NO conversational filler. NO markdown outside of code blocks.
+- Each print() on its own line.
 - Import only: statistics, math, random, itertools, functools, collections, string
-- No matplotlib, numpy, pandas, os, sys, open(), file I/O — use statistics module only
-- No external packages, no file system access — Pyodide sandbox only
-- Only compute and print results
-- End with: print("__ANALYSIS_COMPLETE__") on its own line`;
+- No matplotlib, numpy, pandas, os, sys, open(), file I/O — Pyodide sandbox ONLY.
+- End your primary logic with: print("__ANALYSIS_COMPLETE__")`;
 
-    let aiPythonCode = '';
+    let rawCode = '';
     let thinkContent = '';
 
     try {
-        const codeRes = await fetch(ENVIZION_API_LOCAL, {
+        const codeRes = await fetch(envizionApi, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -4068,218 +4290,255 @@ Rules:
                     { role: 'system', content: codeSystemPrompt },
                     { role: 'user',   content: prompt }
                 ],
-                temperature: 0.15,
+                temperature,
                 stream: true,
-                options: { num_predict: 300 } 
+                options: { num_predict: 800 } 
             })
         });
-        if (!codeRes.ok) throw new Error(`API ${codeRes.status}`);
+        
+        if (!codeRes.ok) throw new Error(`API returned status ${codeRes.status}`);
 
         const codeReader  = codeRes.body.getReader();
         const codeDecoder = new TextDecoder();
-        let codeLO = '', codeJBuf = '', rawCode = '';
+        let codeLO = '', codeJBuf = '';
 
+        // Robust stream parsing
         while (true) {
             const { done, value } = await codeReader.read();
             if (done) break;
+            
             codeLO += codeDecoder.decode(value, { stream: true });
             const lines = codeLO.split('\n');
             codeLO = lines.pop();
+            
             for (let line of lines) {
                 line = line.trim();
                 if (!line || line === '[DONE]') continue;
                 if (line.startsWith('data: ')) line = line.slice(6).trim();
                 if (!line) continue;
+                
                 codeJBuf += line;
-                let o = 0, c = 0;
-                for (const ch of codeJBuf) { if (ch === '{') o++; else if (ch === '}') c++; }
-                if (o > 0 && o === c) {
-                    try {
-                        const p = JSON.parse(codeJBuf);
-                        if (p.t) {
-                            rawCode += p.t;
-                            // Live update code block as tokens arrive
-                            codePreEl.textContent = rawCode;
-                            const cs = document.getElementById('chat-stream');
-                            if (window.autoScrollChat && cs) cs.scrollTop = cs.scrollHeight;
-                        }
-                    } catch {}
-                    codeJBuf = '';
+                try {
+                    // Try to parse buffer as JSON. If it fails, wait for more chunks.
+                    const p = JSON.parse(codeJBuf);
+                    // Standardize cross-API payload token extraction
+                    const token = p.t || p.response || p.message?.content || p.choices?.[0]?.delta?.content || '';
+                    if (token) {
+                        rawCode += token;
+                        // Provide live preview of raw token stream
+                        codePreEl.textContent = rawCode;
+                        const cs = document.getElementById('chat-stream');
+                        if (window.autoScrollChat && cs) cs.scrollTop = cs.scrollHeight;
+                    }
+                    codeJBuf = ''; // Reset buffer on successful parse
+                } catch (err) {
+                    // Incomplete JSON chunk, continue accumulating
                 }
             }
         }
 
-        // Strip <think> block
-        const thinkMatch = rawCode.match(/<think>([\s\S]*?)<\/think>/);
-        if (thinkMatch) { thinkContent = thinkMatch[1]; rawCode = rawCode.replace(/<think>[\s\S]*?<\/think>/, '').trim(); }
-
-        // Robust fence extractor
-        const fenceMatch = rawCode.match(/```(?:python)?\s*\n?([\s\S]*?)```/i);
-        if (fenceMatch) {
-            aiPythonCode = fenceMatch[1].trim();
-        } else {
-            aiPythonCode = rawCode.split('\n').filter(l => !/^```/.test(l.trim())).join('\n').trim();
+        // Strip <think> block from execution and keep for display
+        const thinkMatch = rawCode.match(/<think>([\s\S]*?)<\/think>/i);
+        if (thinkMatch) { 
+            thinkContent = thinkMatch[1]; 
+            rawCode = rawCode.replace(/<think>[\s\S]*?<\/think>/i, '').trim(); 
         }
+
+        // Apply Claude-like Advanced Artifact Extraction
+        const aiPythonCode = cleanPythonCode(rawCode);
+        
+        // Display strictly the extracted, cleaned code
         codePreEl.textContent = aiPythonCode;
-        codePreEl.previousElementSibling.innerHTML = `<i class="fa-solid fa-code text-[8px]"></i> Generated code`;
+        codePreEl.previousElementSibling.innerHTML = `<i class="fa-solid fa-code-merge text-[8px]"></i> Extracted Artifacts Ready`;
 
-    } catch (e) {
-        targetEl.innerHTML = `<span class="text-red-400 text-xs"><i class="fa-solid fa-triangle-exclamation mr-2"></i>Code generation failed: ${escapeHtmlString(e.message)}</span>`;
-        return { error: e.message };
-    }
-
-    // ── 3. Phase B: thinking block ────────────────────────────────────────
-    if (showThinking && thinkContent) {
-        codePreEl.closest('.mb-3').insertAdjacentHTML('beforebegin', window.renderThinkBlock(thinkContent, null));
-    }
-
-    // ── 4. Phase C: Execute in Pyodide with LIVE stdout ───────────────────
-    const execStatusEl = document.createElement('div');
-    execStatusEl.className = 'mt-2';
-    targetEl.appendChild(execStatusEl);
-    execStatusEl.innerHTML = spinnerHTML('Loading Python runtime…');
-
-    const liveOutId = 'live-out-' + Math.random().toString(36).slice(2, 7);
-    execStatusEl.innerHTML = `<pre id="${liveOutId}" class="text-xs font-mono text-emerald-300 bg-black/30 rounded-xl p-3 whitespace-pre-wrap leading-relaxed mb-2 min-h-[1rem]"></pre>`;
-    const liveOutEl = document.getElementById(liveOutId);
-
-    let pythonOutput = '';
-    let pythonError  = '';
-
-    try {
-        if (extraPkgs.length > 0) {
-            const py = await window.loadPyodide();
-            liveOutEl.textContent = `Installing: ${extraPkgs.join(', ')}…`;
-            await py.loadPackagesFromImports(aiPythonCode);
-            for (const pkg of extraPkgs) await py.runPythonAsync(`import micropip; await micropip.install('${pkg}')`);
+        // ── 3. Phase B: Optional Thinking Block Rendering ─────────────────────
+        if (showThinking && thinkContent && typeof window.renderThinkBlock === 'function') {
+            codePreEl.closest('.mb-3').insertAdjacentHTML('beforebegin', window.renderThinkBlock(thinkContent, null));
         }
 
-        // Patch print() to update the live output element in real-time
-        const py = await window.loadPyodide();
-        py.runPython(`
+        // ── 4. Phase C: Execute in Pyodide with LIVE stdout ───────────────────
+        const execStatusEl = document.createElement('div');
+        execStatusEl.className = 'mt-2 border-t border-gemini-border/40 pt-2';
+        targetEl.appendChild(execStatusEl);
+        execStatusEl.innerHTML = spinnerHTML('Loading Python runtime sandox…');
+
+        const liveOutId = 'live-out-' + Math.random().toString(36).slice(2, 7);
+        execStatusEl.innerHTML = `<pre id="${liveOutId}" class="text-xs font-mono text-emerald-300 bg-black/30 border border-black/50 rounded-xl p-3 whitespace-pre-wrap leading-relaxed mb-2 min-h-[1rem] shadow-inner"></pre>`;
+        const liveOutEl = document.getElementById(liveOutId);
+
+        let pythonOutput = '';
+        let pythonError  = '';
+
+        try {
+            let py;
+            if (typeof window.loadPyodide === 'function') {
+                py = await window.loadPyodide();
+                if (extraPkgs.length > 0) {
+                    liveOutEl.textContent = `Installing required packages: ${extraPkgs.join(', ')}…`;
+                    // Ensure micropip is available before calling it
+                    await py.loadPackage("micropip");
+                    await py.loadPackagesFromImports(aiPythonCode);
+                    for (const pkg of extraPkgs) {
+                        await py.runPythonAsync(`import micropip; await micropip.install('${pkg}')`);
+                    }
+                }
+                
+                // Inject LiveIO redirect for real-time console streaming
+                py.runPython(`
 import sys, io
 class LiveIO(io.StringIO):
     pass
 sys.stdout = LiveIO()
 sys.stderr = LiveIO()
 `);
-        // Run in chunks — flush stdout after each top-level statement by polling
-        const pollInterval = setInterval(() => {
-            try {
-                const partial = py.runPython(`sys.stdout.getvalue()`);
-                if (partial !== pythonOutput) {
-                    pythonOutput = partial;
-                    liveOutEl.textContent = partial.replace('__ANALYSIS_COMPLETE__', '').trim() || ' ';
-                    const cs = document.getElementById('chat-stream');
-                    if (window.autoScrollChat && cs) cs.scrollTop = cs.scrollHeight;
-                }
-            } catch {}
-        }, 80);
+            }
 
-        const result = await window.executePythonCode(aiPythonCode);
-        clearInterval(pollInterval);
-        pythonOutput = result.output || '';
-        pythonError  = result.error  || '';
+            // Poll stdout buffer rapidly to simulate live terminal
+            const pollInterval = setInterval(() => {
+                try {
+                    if (py) {
+                        const partial = py.runPython(`sys.stdout.getvalue()`);
+                        if (partial !== pythonOutput) {
+                            pythonOutput = partial;
+                            liveOutEl.textContent = partial.replace('__ANALYSIS_COMPLETE__', '').trim() || ' ';
+                            const cs = document.getElementById('chat-stream');
+                            if (window.autoScrollChat && cs) cs.scrollTop = cs.scrollHeight;
+                        }
+                    }
+                } catch {}
+            }, 80);
 
-    } catch (e) {
-        pythonError = e.message;
-    }
+            // Execute the compiled artifacts block safely
+            const result = typeof window.executePythonCode === 'function' ? 
+                           await window.executePythonCode(aiPythonCode) : 
+                           { output: py ? py.runPython(`sys.stdout.getvalue()`) : '', error: py ? '' : 'executePythonCode/Pyodide missing' };
+                           
+            clearInterval(pollInterval);
+            
+            // Sync final stdout state safely in case polling missed the last log
+            if (py) {
+                try { pythonOutput = py.runPython(`sys.stdout.getvalue()`); } catch (e) {}
+            }
+            
+            if (result && result.output) pythonOutput = result.output;
+            if (result && result.error) pythonError = result.error;
 
-    pythonOutput = pythonOutput.replace('__ANALYSIS_COMPLETE__', '').trim();
-    liveOutEl.textContent = pythonOutput || ' ';
-    if (pythonError) {
-        execStatusEl.insertAdjacentHTML('beforeend',
-            `<div class="text-xs font-mono text-red-400 bg-red-950/30 rounded-xl p-3 mb-3 whitespace-pre-wrap">${escapeHtmlString(pythonError)}</div>`);
-    }
-
-    if (!pythonOutput && pythonError) {
-        targetEl.insertAdjacentHTML('beforeend',
-            `<span class="text-red-400 text-xs"><i class="fa-solid fa-triangle-exclamation mr-2"></i>Execution error — see above.</span>`);
-        return { code: aiPythonCode, output: '', error: pythonError };
-    }
-
-    // ── 5. Phase D: Interpret results (live stream) ───────────────────────
-    const interpretDiv = document.createElement('div');
-    interpretDiv.className = 'mt-3 border-t border-gemini-border/40 pt-3';
-    targetEl.appendChild(interpretDiv);
-    interpretDiv.innerHTML = spinnerHTML('Interpreting results…');
-
-    const interpretSystemPrompt = `You are a senior data analyst. Interpret the Python output concisely. Use markdown. Be direct and insightful.`;
-    const interpretUserMsg = `Question: ${prompt}\n\nPython output:\n${pythonOutput || '(no output)'}${pythonError ? '\nErrors:\n' + pythonError : ''}\n\nInterpret these results.`;
-
-    let interpRaw = '', interpLO = '', interpJBuf = '';
-    const interpTokenQueue = [];
-    let interpRenderActive = true;
-
-    const interpTypewriter = () => {
-        if (!interpRenderActive && interpTokenQueue.length === 0) return;
-        if (interpTokenQueue.length > 0) {
-            while (interpTokenQueue.length > 0) interpRaw += interpTokenQueue.shift();
-            interpretDiv.innerHTML = (window._patchedParseMarkdown || parseMarkdownResponse)(interpRaw, false) + '<span class="streaming-cursor"></span>';
-            const cs = document.getElementById('chat-stream');
-            if (window.autoScrollChat && cs) cs.scrollTop = cs.scrollHeight;
+        } catch (e) {
+            pythonError = e.message;
         }
-        if (interpRenderActive || interpTokenQueue.length > 0) requestAnimationFrame(interpTypewriter);
-    };
-    requestAnimationFrame(interpTypewriter);
 
-    try {
-        const interpRes = await fetch(ENVIZION_API_LOCAL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                model,
-                messages: [
-                    { role: 'system', content: interpretSystemPrompt },
-                    { role: 'user',   content: interpretUserMsg }
-                ],
-                temperature: 0.4,
-                stream: true,
-                options: { num_predict: 2048, num_ctx: 4096 }
-            })
-        });
-        if (!interpRes.ok) throw new Error(`API ${interpRes.status}`);
+        // Clean final output
+        pythonOutput = pythonOutput.replace('__ANALYSIS_COMPLETE__', '').trim();
+        liveOutEl.textContent = pythonOutput || '(Process exited with no stdout output)';
+        
+        if (pythonError) {
+            execStatusEl.insertAdjacentHTML('beforeend',
+                `<div class="text-[11px] font-mono text-red-400 bg-red-950/30 border border-red-900/50 rounded-xl p-3 mb-3 whitespace-pre-wrap shadow-inner"><i class="fa-solid fa-bug mr-2"></i>${escapeHtmlString(pythonError)}</div>`);
+        }
 
-        const interpReader = interpRes.body.getReader();
-        const interpDecoder = new TextDecoder();
+        if (!pythonOutput && pythonError) {
+            targetEl.insertAdjacentHTML('beforeend',
+                `<span class="text-red-400 text-xs font-semibold"><i class="fa-solid fa-triangle-exclamation mr-2"></i>Execution halted due to runtime errors.</span>`);
+            return { code: aiPythonCode, output: '', error: pythonError };
+        }
 
-        while (true) {
-            const { done, value } = await interpReader.read();
-            if (done) break;
-            interpLO += interpDecoder.decode(value, { stream: true });
-            const lines = interpLO.split('\n');
-            interpLO = lines.pop();
-            for (let line of lines) {
-                line = line.trim();
-                if (!line || line === '[DONE]') continue;
-                if (line.startsWith('data: ')) line = line.slice(6).trim();
-                if (!line) continue;
-                interpJBuf += line;
-                let o = 0, c = 0;
-                for (const ch of interpJBuf) { if (ch === '{') o++; else if (ch === '}') c++; }
-                if (o > 0 && o === c) {
-                    try { const p = JSON.parse(interpJBuf); if (p.t) interpTokenQueue.push(p.t); } catch {}
-                    interpJBuf = '';
+        // ── 5. Phase D: AI Interpretation (Live Stream) ───────────────────────
+        const interpretDiv = document.createElement('div');
+        interpretDiv.className = 'mt-3 border-t border-gemini-border/40 pt-3 text-sm';
+        targetEl.appendChild(interpretDiv);
+        interpretDiv.innerHTML = spinnerHTML('Interpreting runtime data…');
+
+        const interpretSystemPrompt = `You are an expert Data Analyst interpreting automated Python output. 
+Synthesize the findings cleanly using markdown. Be insightful and highlight key metrics. Do not invent data not present in the output.`;
+        
+        const interpretUserMsg = `Original Prompt: ${prompt}\n\n[Terminal Output]:\n${pythonOutput || '(no output)'}${pythonError ? '\n[Terminal Errors]:\n' + pythonError : ''}\n\nProvide your final interpretation of these results.`;
+
+        let interpRaw = '', interpLO = '', interpJBuf = '';
+        const interpTokenQueue = [];
+        let interpRenderActive = true;
+
+        // Use safe markdown fallback
+        const mdParser = window._patchedParseMarkdown || window.parseMarkdownResponse || (text => text);
+
+        const interpTypewriter = () => {
+            if (!interpRenderActive && interpTokenQueue.length === 0) return;
+            if (interpTokenQueue.length > 0) {
+                while (interpTokenQueue.length > 0) interpRaw += interpTokenQueue.shift();
+                interpretDiv.innerHTML = mdParser(interpRaw, false) + '<span class="streaming-cursor"></span>';
+                const cs = document.getElementById('chat-stream');
+                if (window.autoScrollChat && cs) cs.scrollTop = cs.scrollHeight;
+            }
+            if (interpRenderActive || interpTokenQueue.length > 0) requestAnimationFrame(interpTypewriter);
+        };
+        requestAnimationFrame(interpTypewriter);
+
+        try {
+            const interpRes = await fetch(envizionApi, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model,
+                    messages: [
+                        { role: 'system', content: interpretSystemPrompt },
+                        { role: 'user',   content: interpretUserMsg }
+                    ],
+                    temperature: 0.4,
+                    stream: true,
+                    options: { num_predict: 2048, num_ctx: 4096 }
+                })
+            });
+            
+            if (!interpRes.ok) throw new Error(`API returned status ${interpRes.status}`);
+
+            const interpReader = interpRes.body.getReader();
+            const interpDecoder = new TextDecoder();
+
+            while (true) {
+                const { done, value } = await interpReader.read();
+                if (done) break;
+                
+                interpLO += interpDecoder.decode(value, { stream: true });
+                const lines = interpLO.split('\n');
+                interpLO = lines.pop();
+                
+                for (let line of lines) {
+                    line = line.trim();
+                    if (!line || line === '[DONE]') continue;
+                    if (line.startsWith('data: ')) line = line.slice(6).trim();
+                    if (!line) continue;
+                    
+                    interpJBuf += line;
+                    try { 
+                        const p = JSON.parse(interpJBuf); 
+                        const token = p.t || p.response || p.message?.content || p.choices?.[0]?.delta?.content || '';
+                        if (token) interpTokenQueue.push(token); 
+                        interpJBuf = ''; // Reset on success
+                    } catch (err) {}
                 }
             }
+
+            interpRenderActive = false;
+            // Wait for typewriter queue to drain
+            await new Promise(resolve => {
+                const check = () => interpTokenQueue.length === 0 ? resolve() : requestAnimationFrame(check);
+                requestAnimationFrame(check);
+            });
+            
+            interpretDiv.innerHTML = mdParser(interpRaw.trim(), true);
+
+        } catch (e) {
+            interpretDiv.innerHTML = `<span class="text-red-400 text-xs"><i class="fa-solid fa-triangle-exclamation mr-2"></i>Failed to generate interpretation: ${escapeHtmlString(e.message)}</span>`;
         }
 
-        interpRenderActive = false;
-        await new Promise(resolve => {
-            const check = () => interpTokenQueue.length === 0 ? resolve() : requestAnimationFrame(check);
-            requestAnimationFrame(check);
-        });
-        interpretDiv.innerHTML = (window._patchedParseMarkdown || parseMarkdownResponse)(interpRaw.trim(), true);
+        return { code: aiPythonCode, output: pythonOutput, error: pythonError };
 
     } catch (e) {
-        interpretDiv.innerHTML = `<span class="text-red-400 text-xs"><i class="fa-solid fa-triangle-exclamation mr-2"></i>Interpretation failed: ${escapeHtmlString(e.message)}</span>`;
+        targetEl.innerHTML = `<span class="text-red-400 text-xs"><i class="fa-solid fa-circle-xmark mr-2"></i>Analysis Pipeline Failed: ${escapeHtmlString(e.message)}</span>`;
+        return { error: e.message };
     }
-
-    return { code: aiPythonCode, output: pythonOutput, error: pythonError };
 };
 // ─── END AI PYTHON ANALYSIS ENGINE ───────────────────────────────────────────
 // ─── END AI PYTHON ANALYSIS ENGINE ───────────────────────────────────────────
-
 
 
 window.toggleSidebarCollapse = () => {

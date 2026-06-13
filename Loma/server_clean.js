@@ -1,4 +1,4 @@
-// Node.js backend configured strictly for cloud-offloaded Base Model completions
+﻿// Node.js backend configured strictly for cloud-offloaded Base Model completions
 if (typeof global.window === 'undefined') {
     global.window = {
         getDynamicSystemPrompt: function() { return ""; }
@@ -6,8 +6,8 @@ if (typeof global.window === 'undefined') {
 }
 
 import express from 'express';
-import cors     from 'cors';
-import path     from 'path';
+import cors    from 'cors';
+import path    from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 
@@ -19,22 +19,25 @@ const PORT      = 8085;
 const HOST      = '127.0.0.1'; // Force IPv4 to match Cloudflare Tunnel configurations
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// ─── HUGGING FACE CLOUD INITIALIZATION ────────────────────────────────────
+// â”€â”€â”€ HUGGING FACE CLOUD INITIALIZATION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Sets up your authorization token and the endpoint path for Meta's Base model.
+// Set HF_TOKEN in your environment before executing.
 const HF_TOKEN   = process.env.HF_TOKEN || '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';
-// FIXED: Point to the Inference API text-generation router
-const HF_MODEL   = 'meta-llama/Llama-3.2-3B'; 
-const HF_API_URL = `https://api-inference.huggingface.co/models/${HF_MODEL}`; 
+const HF_API_URL = 'https://huggingface.co{HF_MODEL}/v1/chat/completions'; //
 
-// Local Fallback Config — Local Ollama options
+// ðŸš€ CRITICAL: Points strictly to the raw Base model (no instruct tuning applied)
+const HF_MODEL   = 'meta-llama/Llama-3.2-3B'; 
+
+// Local Fallback Config â€” Local Ollama options
 const DEFAULT_MODEL       = 'llama3.2:1b'; 
-const DEFAULT_NUM_CTX     = 65536; // Adjusted to safe real-world context limit
-const DEFAULT_NUM_PREDICT = 4096;  
+const DEFAULT_NUM_CTX     = 99999; // 64K context window allocation
+const DEFAULT_NUM_PREDICT = 99999;  // Long structured code prediction limit
 
 app.use(cors({ origin: '*', credentials: true }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static(__dirname));
 
-// ─── MESSAGE HISTORY COMPRESSION ─────────────────────────────────────────
+// â”€â”€â”€ MESSAGE HISTORY COMPRESSION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function compressMessages(messages) {
     const system = messages.filter(m => m.role === 'system');
     const chat    = messages.filter(m => m.role !== 'system');
@@ -53,17 +56,17 @@ function compressMessages(messages) {
     }));
     const historyBlock = {
         role: 'system',
-        content: `[PRIOR CONTEXT — ${old.length} messages]\n` +
+        content: `[PRIOR CONTEXT â€” ${old.length} messages]\n` +
             compressed.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n')
     };
     return [...system, historyBlock, ...recent];
 }
 
-// ─── SYSTEM PROMPT BUILDER ─────────────────────────────────────────────────
+// â”€â”€â”€ SYSTEM PROMPT BUILDER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function buildTurnSystemPrompt(messages) {
     const lastUser = [...messages].reverse().find(m => m.role === 'user');
     const userText     = lastUser?.content || '';
-    const isCorrection = /👎/.test(userText);
+    const isCorrection = /ðŸ‘Ž/.test(userText);
 
     const promptBuilder = buildSystemPrompt || global.window.buildSystemPrompt;
 
@@ -74,7 +77,7 @@ function buildTurnSystemPrompt(messages) {
     return "You are a raw text completion assistant.";
 }
 
-// ─── ADAPTIVE TEMPERATURE ──────────────────────────────────────────────────
+// â”€â”€â”€ ADAPTIVE TEMPERATURE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function resolveTemperature(messages, requestedTemperature) {
     if (typeof requestedTemperature === 'number' && !Number.isNaN(requestedTemperature)) {
         return requestedTemperature;
@@ -90,7 +93,7 @@ function resolveTemperature(messages, requestedTemperature) {
     return 0.3;
 }
 
-// ─── STREAM FROM HUGGING FACE CLOUD (Base Model Safe) ─────────────────────
+// â”€â”€â”€ STREAM FROM HUGGING FACE CLOUD (Base Model Safe) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function streamFromHuggingFace(messages, resolvedTemp, options, res, req) {
     let onClientClose = () => {};
     let wroteAnything = false;
@@ -101,11 +104,13 @@ async function streamFromHuggingFace(messages, resolvedTemp, options, res, req) 
     }
 
     try {
+        // ðŸ”¥ BASE MODEL COMPATIBILITY TRANSLATION:
+        // Converts separate chat histories and system guidelines into a unified text continuous sequence.
+        // This isolates the prompt payload to pass to the Hugging Face Serverless endpoint.
         const systemPromptBlock = buildTurnSystemPrompt(messages);
         const continuousTextPrompt = `System instructions: ${systemPromptBlock}\n\n` + 
             messages.map(m => `${m.role}: ${m.content}`).join('\n') + '\nassistant:';
 
-        // FIXED: Hit the standard serverless inputs pipeline with streaming flags active
         const hfRes = await fetch(HF_API_URL, {
             method: 'POST',
             headers: {
@@ -113,16 +118,13 @@ async function streamFromHuggingFace(messages, resolvedTemp, options, res, req) 
                 'Authorization': `Bearer ${HF_TOKEN}`
             },
             body: JSON.stringify({
-                inputs: continuousTextPrompt,
-                parameters: {
-                    temperature: resolvedTemp || 0.3,
-                    max_new_tokens: options.num_predict || 1024,
-                    return_full_text: false
-                },
-                options: {
-                    use_cache: false,
-                    wait_for_model: true
-                }
+                model: HF_MODEL,
+                // Wrapping your sequence into a clean user array tricks the Chat Completion router 
+                // into accepting raw base completion text blocks seamlessly.
+                messages: [{ role: 'user', content: continuousTextPrompt }],
+                stream: true,
+                temperature: resolvedTemp,
+                max_tokens: options.num_predict || DEFAULT_NUM_PREDICT
             })
         });
 
@@ -148,38 +150,29 @@ async function streamFromHuggingFace(messages, resolvedTemp, options, res, req) 
 
             for (const line of lines) {
                 const cleanedLine = line.trim();
-                if (!cleanedLine) continue;
-                
-                // Serverless API streams chunks either as raw JSON objects per line or via text structures
+                if (!cleanedLine || !cleanedLine.startsWith('data:')) continue;
+                if (cleanedLine === 'data: [DONE]') {
+                    res.write('data: [DONE]\n\n');
+                    res.end();
+                    return true;
+                }
+
                 try {
-                    const parsed = JSON.parse(cleanedLine);
-                    const tokenDelta = parsed.token?.text || parsed[0]?.generated_text;
+                    const rawJson = cleanedLine.replace(/^data:\s*/, '');
+                    const parsed = JSON.parse(rawJson);
+                    const tokenDelta = parsed.choices?.[0]?.delta?.content;
 
                     if (tokenDelta) {
                         res.write(`data: ${JSON.stringify({ t: tokenDelta })}\n\n`);
                         wroteAnything = true;
                     }
-                } catch {
-                    // Fallback to strip basic wrapper layouts if chunk contains standard EventSource fragments
-                    if (cleanedLine.startsWith('data:')) {
-                        try {
-                            const rawJson = cleanedLine.replace(/^data:\s*/, '');
-                            const parsed = JSON.parse(rawJson);
-                            const tokenDelta = parsed.choices?.[0]?.delta?.content || parsed.token?.text;
-                            if (tokenDelta) {
-                                res.write(`data: ${JSON.stringify({ t: tokenDelta })}\n\n`);
-                                wroteAnything = true;
-                            }
-                        } catch {}
-                    }
+                } catch (innerErr) {
+                    // Ignore broken streaming chunks gracefully
                 }
             }
         }
 
-        if (!res.destroyed) {
-            res.write('data: [DONE]\n\n');
-            res.end();
-        }
+        if (!res.destroyed) res.end();
         return true;
     } catch (err) {
         console.error('>>> Hugging Face Cloud Execution Exception:', err.message);
@@ -196,14 +189,13 @@ async function streamFromHuggingFace(messages, resolvedTemp, options, res, req) 
     }
 }
 
-// ─── STREAM FROM LOCAL OLLAMA FALLBACK ─────────────────────────────────────
+// â”€â”€â”€ STREAM FROM LOCAL OLLAMA FALLBACK â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function streamFromOllama(messages, model, resolvedTemp, options, res, req) {
     let onClientClose = () => {};
     let wroteAnything = false;
 
     try {
-        // FIXED: Corrected local loopback address endpoint to Ollama standard API
-        const ollamaRes = await fetch('http://127.0.0.1:11434/api/chat', {
+        const ollamaRes = await fetch('http://127.0.0', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -272,49 +264,5 @@ async function streamFromOllama(messages, model, resolvedTemp, options, res, req
     } catch (err) {
         if (wroteAnything) {
             if (!res.destroyed) {
-                // FIXED: Removed structural broken trailing syntax comma
-                res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
-                res.end();
-            }
-            return true;
-        }
-        console.error('>>> Local Ollama fallback error:', err.message);
-        return false;
-    } finally {
-        req.off('close', onClientClose);
-    }
-}
-
-// ─── ROUTE HANDLER ENTRYPOINT ──────────────────────────────────────────────
-app.post('/api/chat', async (req, res) => {
-    const { messages, temperature, options = {}, model = DEFAULT_MODEL } = req.body;
-    
-    if (!messages || !Array.isArray(messages)) {
-        return res.status(400).json({ error: "Invalid or missing messages array." });
-    }
-
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-
-    const processedMessages = compressMessages(messages);
-    const resolvedTemp = resolveTemperature(processedMessages, temperature);
-
-    // Primary Execution Track: Cloud Offload
-    let success = await streamFromHuggingFace(processedMessages, resolvedTemp, options, res, req);
-    
-    // Secondary Track Fallback: Local Compute
-    if (!success) {
-        console.log('>>> Offload failed or skipped. Transitioning fallback sequence to local engine...');
-        success = await streamFromOllama(processedMessages, model, resolvedTemp, options, res, req);
-    }
-
-    if (!success && !res.destroyed) {
-        res.status(500).write(`data: ${JSON.stringify({ error: "Both cloud engine and local fallback context channels failed." })}\n\n`);
-        res.end();
-    }
-});
-
-app.listen(PORT, HOST, () => {
-    console.log(`[LOMA Matrix Engine] Orchestrator active across cloud/local contexts -> http://${HOST}:${PORT}`);
-});
+res.write(`data: ${JSON.stringify({ error: err.message })},\n\n`);
+res.end();}return true;}console.error('>>> Local Ollama fallback error:', err.message);return false;} finally {req.off('close', onClientClose);}}// â”€â”€â”€ CHAT COMPLETIONS ENDPOINT ROUTING â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€app.post('/v1/chat/completions', async (req, res) => {res.setHeader('Content-Type', 'text/event-stream');res.setHeader('Cache-Control', 'no-cache');res.setHeader('Connection', 'keep-alive');let { messages = [], model = DEFAULT_MODEL, temperature, options = {} } = req.body;if (!Array.isArray(messages) || messages.length === 0) {res.write(data: ${JSON.stringify({ error: "Missing or blank 'messages' context array structure." })}\n\n);res.end();return;}const compressed = compressMessages(messages);const resolvedTemp = resolveTemperature(compressed, temperature);console.log(\n[Routing Request] Dispatching pipeline token compilation...);// ðŸŒŸ PRIMARY STRATEGY: Execute over Hugging Face Cloud to eliminate local computer CPU strainconst hfSuccess = await streamFromHuggingFace(compressed, resolvedTemp, options, res, req);if (hfSuccess) return;// ðŸ’¤ LOCAL FALLBACK METHOD: Runs over local Ollama service if Cloud credentials are missingconsole.log(>>> Falling back to local network Ollama instance...);const ollamaSuccess = await streamFromOllama(compressed, model, resolvedTemp, options, res, req);if (!ollamaSuccess && !res.destroyed) {res.write(data: ${JSON.stringify({ error: "Both Hugging Face Cloud cluster and local Ollama targets failed to execute." })}\n\n);res.end();}});// Start Server Listen Execution Loopapp.listen(PORT, HOST, () => {console.log(========================================================================);console.log(ðŸš€ Base Completion Execution Router online at: http://${HOST}:${PORT});console.log(ðŸ¤– Targeting Cloud Base Pipeline Model Repository: ${HF_MODEL});console.log(ðŸ”’ Status check: HF_TOKEN is ${HF_TOKEN ? 'CONFIGURED âœ”ï¸' : 'MISSING âŒ'});console.log(========================================================================);});
