@@ -70,7 +70,7 @@ function buildTurnSystemPrompt(messages) {
 
 app.post('/api/chat', async (req, res) => {
     const { messages: rawMessages, model, temperature = 0.5, stream = true, options = {} } = req.body;
-
+console.log('>>> BODY received:', JSON.stringify({ model, msgCount: rawMessages?.length }));
     if (!rawMessages || !Array.isArray(rawMessages)) {
         return res.status(400).json({ error: 'messages array required' });
     }
@@ -93,14 +93,16 @@ app.post('/api/chat', async (req, res) => {
     let onClientClose = () => {};
 
     try {
-        const ollamaRes = await fetch('http://127.0.0', {
+const ollamaRes = await fetch('http://127.0.0.1:11434/api/chat', {  
             method: 'POST',
+
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 model,
                 messages,
                 options: { temperature, ...options },
-                stream: true
+                stream: true,
+                options: { temperature, num_ctx: 999999, num_predict: 100000, ...options }
             })
         });
 

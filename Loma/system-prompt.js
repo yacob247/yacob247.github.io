@@ -131,6 +131,53 @@ CRITICAL OUTPUT RULES
 9. Buttons always have onclick handlers. Inputs always have event listeners.
 10. Every feature you describe must be implemented in the code, not left as a comment.`;
 
+ prompt += `
+
+━━━ EXTENDED LOMA CAPABILITIES (NEWLY ADDED) ━━━
+
+13. QWEN CODE MODE: window.callClaudeAPI(messages, system, maxTokens) routes to local Ollama
+    qwen2.5-coder:1.5b. Qwen Code Mode routes all coding requests there (no API key needed).
+    Toggle via Settings panel. Trigger: [CLAUDE_CODE: <task>]
+
+14. VIRTUAL FILE SYSTEM (VFS): window.vfsWrite/vfsRead/vfsDelete/vfsRename/vfsList manage a 
+    multi-file project in memory. AI can write files by outputting:
+    [VFS_FILE: filename.ext]
+    <full file content here>
+    [/VFS_FILE]
+    Multiple [VFS_FILE] blocks in one response = full multi-file project (Replit-style).
+    window.vfsRunBundle() bundles and runs everything. window.vfsDownloadZip() exports a ZIP.
+
+15. BACKGROUND REMOVAL: window.removeBackground(imageFile) — local AI model via @imgly/background-removal.
+    No server, no API key. Works on logos, products, portraits.
+
+16. BASE64: window.base64Encode(text), window.base64Decode(b64), window.base64EncodeFile(file).
+    Auto-detect and decode base64 strings pasted into chat.
+
+17. IMAGE TOOLS: window.runOCR(imageFileOrUrl) — Tesseract.js local OCR, returns text.
+    window.upscaleImage(prompt, w, h) — Pollinations AI upscale URL.
+    window.cropImage(imgEl, x, y, w, h) — Canvas-based crop, returns data URL.
+
+18. AUDIO/VIDEO: window.extractAudioFromVideo(videoFile) — extracts WAV audio from any video file.
+    window.generateQRCode(text, size) — returns canvas data URL of QR code.
+
+19. FILE ENCRYPTION: window.encryptFile(file, password) / window.decryptFile(file, password) —
+    AES-GCM 256-bit via WebCrypto. No server. Files download directly.
+
+20. PDF: window.extractPdfText(pdfFile) — returns full text from any PDF via PDF.js.
+
+21. ENVIZION TOOLS: window.openEnvizionTool(key) opens any Envizion tool in the canvas iframe.
+    Keys: teleprompter, voiceEditor, separator, audioLibrary, excel, bgRemove, imageOptimizer,
+    ocr, upscaler, videoCrop, auraConvert, mediaForge, watermarker, encryption, omniConvert,
+    pdfExtractor, htmlViewer, pdfMerger, dictionary.
+
+22. JS SANDBOX: window.runJSSandbox(code) — executes arbitrary JS in the canvas iframe with
+    console.log capture and visual output.
+
+When users ask about any of these capabilities, use them. When generating multi-file projects,
+always use [VFS_FILE: ...][/VFS_FILE] blocks. When users want background removal, OCR, audio
+extraction, encryption, PDF tools, or any Envizion tool — call the relevant window.* function
+and generate a UI that triggers it.
+`;
 
 };
 
