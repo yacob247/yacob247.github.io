@@ -22,7 +22,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // ─── HUGGING FACE CLOUD INITIALIZATION ────────────────────────────────────
 // Sets up your authorization token and the endpoint path for Meta's Base model.
 // Set HF_TOKEN in your environment before executing.
-const HF_TOKEN   = process.env.HF_TOKEN || '';
+const HF_TOKEN   = process.env.HF_TOKEN || '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';
 const HF_API_URL = 'https://huggingface.co'; //
 
 // 🚀 CRITICAL: Points strictly to the raw Base model (no instruct tuning applied)
