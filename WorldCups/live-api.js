@@ -32,7 +32,7 @@ const LIVE_API_TOKEN = "227c450cee7b4d259492ca8e2c15d2a9";
 // FIX: Checks if a token actually exists and isn't just an empty string
 const LIVE_API_IS_CONFIGURED = LIVE_API_TOKEN !== ""; 
 const PROXY_BASE_URL = ""; // e.g. "https://your-worker.yourname.workers.dev" — leave blank to call football-data.org directly
-const FOOTBALL_DATA_BASE = "https://api.football-data.org/v4";
+const FOOTBALL_DATA_BASE =  "https://api.football-data.org/v4/matches";
 const CACHE_MS = 60 * 1000; // 60s cache to respect free-tier rate limits
 
 const _cache = new Map();
