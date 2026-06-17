@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title id="page-title">Team — World Cup Hub</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<main>
+  <div class="shell" id="not-found-mount" style="display:none; padding:64px 0;">
+    <div class="data-block" style="min-height:200px;">
+      <div class="overlay-block">
+        <div class="icon">🔎</div>
+        <div class="msg"><strong>Team not found</strong>That team isn't in the 2022 archive. <a href="archive2022.html" style="color:var(--floodlight);">Back to the archive</a></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="team-content" style="display:none;">
+    <section class="team-hero">
+      <div class="shell" style="display:flex; align-items:center; gap:24px;">
+        <span class="flag-big" id="team-flag"></span>
+        <div>
+          <span class="eyebrow" id="team-conf"></span>
+          <h1 class="text-chalk" id="team-name"></h1>
+          <span class="placing" id="team-placing"></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="shell">
+      <div class="stat-strip" id="team-stats"></div>
+    </section>
+
+    <section class="section" style="border-top:1px solid var(--line);">
+      <div class="shell">
+        <span class="eyebrow">Group stage table</span>
+        <h2 style="margin-bottom:20px;" id="team-group-heading"></h2>
+        <table class="standings" id="team-group-table"></table>
+      </div>
+    </section>
+
+    <section class="section" style="border-top:1px solid var(--line);">
+      <div class="shell">
+        <span class="eyebrow">Every match played</span>
+        <h2 style="margin-bottom:20px;">Results in Qatar</h2>
+        <div id="team-matches"></div>
+      </div>
+    </section>
+
+    <section class="section" style="border-top:1px solid var(--line);">
+      <div class="shell">
+        <span class="eyebrow">Up next</span>
+        <h2 style="margin-bottom:20px;">Other teams</h2>
+        <div class="grid grid-4" id="other-teams"></div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<script src="wc2022.js"></script>
+<script src="app.js"></script>
+<script>
+  renderHeader("archive");
+  renderFooter();
+
+  const params = new URLSearchParams(window.location.search);
+  const teamName = params.get("team");
+  const profile = teamName ? WC2022.teamProfiles[teamName] : null;
+
+  if (!profile) {
+    document.getElementById("not-found-mount").style.display = "block";
+  } else {
+    document.getElementById("team-content").style.display = "block";
+    document.getElementById("page-title").textContent = `${teamName} at the 2022 World Cup — World Cup Hub`;
+    document.getElementById("team-flag").textContent = profile.flag;
+    document.getElementById("team-conf").textContent = profile.confederation + " · Group " + profile.group;
+    document.getElementById("team-name").textContent = teamName;
+    document.getElementById("team-placing").textContent = profile.finalPlacing;
+
+    // Find this team's group entry for full record
+    const groupData = WC2022.groups[profile.group];
+    const teamRecord = groupData.teams.find(t => t.team === teamName);
+
+    document.getElementById("team-stats").innerHTML = `
+      <div class="stat"><div class="num">${teamRecord.W}</div><div class="lbl">Wins</div></div>
+      <div class="stat"><div class="num">${teamRecord.D}</div><div class="lbl">Draws</div></div>
+      <div class="stat"><div class="num">${teamRecord.L}</div><div class="lbl">Losses</div></div>
+      <div class="stat"><div class="num">${teamRecord.GF}</div><div class="lbl">Goals For</div></div>
+      <div class="stat"><div class="num">${teamRecord.GA}</div><div class="lbl">Goals Against</div></div>
+    `;
+
+    document.getElementById("team-group-heading").textContent = `Group ${profile.group} final table`;
+    document.getElementById("team-group-table").innerHTML = `
+      <thead><tr><th>Team</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GD</th><th>Pts</th></tr></thead>
+      <tbody>
+        ${groupData.teams.map(t => `
+          <tr class="${t.result.includes('Advanced') ? 'advanced' : 'eliminated'}" style="${t.team === teamName ? 'background:rgba(232,163,61,0.07);' : ''}">
+            <td>${t.team === teamName ? '<strong>' + t.team + ' (this team)</strong>' : '<a href=\"team.html?team=' + encodeURIComponent(t.team) + '\">' + t.team + '</a>'}</td>
+            <td>${t.P}</td><td>${t.W}</td><td>${t.D}</td><td>${t.L}</td>
+            <td>${t.GD > 0 ? '+' : ''}${t.GD}</td><td><strong>${t.Pts}</strong></td>
+          </tr>`).join("")}
+      </tbody>`;
+
+    // All matches involving this team, in chronological order
+    const teamMatches = WC2022.matches.filter(m => m.home === teamName || m.away === teamName);
+    document.getElementById("team-matches").innerHTML = teamMatches.map(m => {
+      const isHome = m.home === teamName;
+      const result = m.homeScore === m.awayScore
+        ? "draw"
+        : (isHome ? m.homeScore > m.awayScore : m.awayScore > m.homeScore) ? "win" : "loss";
+      const resultColor = result === "win" ? "var(--win)" : result === "loss" ? "var(--loss)" : "var(--draw)";
+      return `
+        <div class="match-row">
+          <span class="date">${m.date}</span>
+          <span class="team home">${m.home}</span>
+          <span class="score" style="border-left:3px solid ${resultColor};">${m.homeScore} – ${m.awayScore}${m.penalties ? ' (p ' + m.penalties + ')' : ''}</span>
+          <span class="team away">${m.away}</span>
+          <span class="stage">${m.stage}</span>
+        </div>`;
+    }).join("") || `<div class="data-block"><div class="overlay-block"><div class="icon">⚽</div><div class="msg"><strong>No matches found</strong>Data not available for this team.</div></div></div>`;
+
+    // Other teams grid (excluding current)
+    const others = Object.keys(WC2022.teamProfiles).filter(t => t !== teamName).sort(() => Math.random() - 0.5).slice(0, 8);
+    document.getElementById("other-teams").innerHTML = others.map(t => teamCardHTML(t, WC2022.teamProfiles[t])).join("");
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>World Cup Hub — Live 2026 &amp; the Real 2022 Archive</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="ticker-mount"></div>
+
+<main>
+  <section class="hero">
+    <div class="shell">
+      <span class="eyebrow">FIFA World Cup 2026 · USA · Mexico · Canada</span>
+      <h1 class="text-chalk">Real results. Real stats. No simulations.</h1>
+      <p class="sub">Live scores when a data source is connected, the complete verified 2022 archive for every one of the 32 teams, and a trivia game built entirely from real tournament facts.</p>
+      <div style="margin-top:24px; display:flex; gap:12px; flex-wrap:wrap;">
+        <a href="archive2022.html" class="btn btn-primary">Browse the 2022 Archive</a>
+        <a href="trivia.html" class="btn">Play Trivia</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="shell">
+      <div class="section-head">
+        <div>
+          <span class="eyebrow">Right now</span>
+          <h2>2026 World Cup — group stage</h2>
+        </div>
+        <span class="badge" id="api-status-badge">Checking data source…</span>
+      </div>
+
+      <div id="live-matches-mount">
+        <div class="data-block"><div class="overlay-block"><div class="icon">⚽</div><div class="msg">Loading…</div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" style="border-top:1px solid var(--line);">
+    <div class="shell">
+      <div class="section-head">
+        <div>
+          <span class="eyebrow">Confirmed so far</span>
+          <h2>2026 results already played</h2>
+        </div>
+      </div>
+      <div id="played-2026-mount"></div>
+      <p style="margin-top:16px; font-size:13px;">These results are independently verified, not pulled live. Connect a live API key in <code>js/live-api.js</code> to get the rest of the tournament automatically as it's played.</p>
+    </div>
+  </section>
+
+  <section class="section" style="border-top:1px solid var(--line);">
+    <div class="shell">
+      <div class="section-head">
+        <div>
+          <span class="eyebrow">Looking back</span>
+          <h2>2022 World Cup champions: Argentina</h2>
+        </div>
+        <a href="archive2022.html" class="btn">Full archive →</a>
+      </div>
+      <div class="grid grid-4" id="featured-teams-2022"></div>
+    </div>
+  </section>
+</main>
+
+<script src="wc2022.js"></script>
+<script src="wc2026seed.js"></script>
+<script src="firebase-auth.js"></script>
+<script src="live-api.js"></script>
+<script src="app.js"></script>
+<script>
+  renderHeader("home");
+  renderFooter();
+
+  // Featured 2022 teams: champion, runner-up, third, fourth
+  const featured = ["Argentina", "France", "Croatia", "Morocco"];
+  document.getElementById("featured-teams-2022").innerHTML =
+    featured.map(t => teamCardHTML(t, WC2022.teamProfiles[t])).join("");
+
+  // 2026 already-played results (real seed data)
+  const playedMount = document.getElementById("played-2026-mount");
+  if (WC2026_SEED.matchesPlayed.length > 0) {
+    playedMount.innerHTML = WC2026_SEED.matchesPlayed.slice().reverse().map(m => `
+      <div class="match-row">
+        <span class="date">${m.date}</span>
+        <span class="team home">${m.home}</span>
+        <span class="score">${m.homeScore} – ${m.awayScore}</span>
+        <span class="team away">${m.away}</span>
+        <span class="stage">${m.stage}</span>
+      </div>`).join("");
+  } else {
+    WCLiveAPI.renderUnavailableOverlay(playedMount, "match");
+  }
+
+  // Ticker from real played 2026 matches
+  renderTicker("ticker-mount", WC2026_SEED.matchesPlayed.map(m => ({
+    home: m.home, away: m.away, homeScore: m.homeScore, awayScore: m.awayScore, stage: m.stage
+  })));
+
+  // Try live API for matches happening right now
+  (async () => {
+    const badge = document.getElementById("api-status-badge");
+    const mount = document.getElementById("live-matches-mount");
+
+    if (!WCLiveAPI.isConfigured) {
+      badge.textContent = "Live API not connected";
+      badge.className = "badge";
+      WCLiveAPI.renderUnavailableOverlay(mount, "live");
+      return;
+    }
+
+    const result = await WCLiveAPI.getLiveMatches();
+    if (!result.ok) {
+      badge.textContent = "Live data unavailable";
+      badge.className = "badge";
+      WCLiveAPI.renderUnavailableOverlay(mount, "live");
+      return;
+    }
+
+    if (result.matches.length === 0) {
+      badge.textContent = "No matches live right now";
+      badge.className = "badge";
+      WCLiveAPI.renderUnavailableOverlay(mount, "live");
+      return;
+    }
+
+    badge.innerHTML = `<span class="badge-live">● LIVE</span>`;
+    mount.innerHTML = result.matches.map(m => `
+      <div class="match-row">
+        <span class="date">${m.minute ? m.minute + "'" : ""}</span>
+        <span class="team home">${m.home}</span>
+        <span class="score">${m.homeScore ?? "-"} – ${m.awayScore ?? "-"}</span>
+        <span class="team away">${m.away}</span>
+        <span class="stage badge badge-live">LIVE</span>
+      </div>`).join("");
+  })();
+</script>
+</body>
+</html>
