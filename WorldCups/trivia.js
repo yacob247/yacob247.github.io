@@ -30,8 +30,8 @@ try {
 // ============================================================================
 // TRIVIA DATABASE (Initial 100 Questions)
 // ============================================================================
-const triviaQuestions = [
-    // --- 2026 Specific ---
+const TRIVIA_QUESTIONS = [
+      // --- 2026 Specific ---
     { q: "Which three countries are jointly hosting the 2026 World Cup?", options: ["USA, Canada, Mexico", "Brazil, Argentina, Chile", "Spain, Portugal, Morocco", "Japan, South Korea, China"], answer: 0 },
     { q: "How many teams will compete in the 2026 World Cup?", options: ["32", "40", "48", "64"], answer: 2 },
     { q: "Which stadium will host the opening match of the 2026 World Cup?", options: ["MetLife Stadium", "Estadio Azteca", "BC Place", "SoFi Stadium"], answer: 1 },
@@ -506,6 +506,7 @@ const triviaQuestions = [
  
 ];
 
+if (typeof module !== "undefined") module.exports = TRIVIA_QUESTIONS;
 
 // ============================================================================
 // TRIVIA GAME LOGIC
