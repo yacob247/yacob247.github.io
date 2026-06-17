@@ -68,3 +68,4 @@ function teamCardHTML(name, profile) {
 
 // Firebase is initialised by firebase-auth.js itself on DOMContentLoaded.
 // Do NOT call initFirebase() here — that caused a double-init and auth race.
+

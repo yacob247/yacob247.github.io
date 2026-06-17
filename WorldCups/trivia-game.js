@@ -1,3 +1,4 @@
+
 // ============================================================================
 // TRIVIA GAME LOGIC
 // ============================================================================
@@ -18,7 +19,7 @@ function shuffle(arr) {
   return a;
 }
 
-function startTrivia(count = 10) {
+function startTrivia(count = 30) {
   triviaState.questions = shuffle(TRIVIA_QUESTIONS).slice(0, count);
   triviaState.current = 0;
   triviaState.score = 0;
