@@ -50,8 +50,8 @@ function renderTicker(containerId, matches) {
       : `${m.home} vs ${m.away}`;
     return `<div class="ticker-item"><span class="live-pulse"></span><span class="score">${scoreStr}</span><span style="color:var(--sage)">${m.stage || ""}</span></div>`;
   }).join("");
-  // duplicate for seamless scroll
-  el.innerHTML = `<div class="ticker-track">${items}${items}</div>`;
+  // Wrap in .ticker-wrap so CSS scroll animation kicks in; duplicate for seamless loop
+  el.innerHTML = `<div class="ticker-wrap"><div class="ticker-track">${items}${items}</div></div>`;
 }
 
 function teamCardHTML(name, profile) {
@@ -66,6 +66,5 @@ function teamCardHTML(name, profile) {
     </a>`;
 }
 
-document.addEventListener("DOMContentLoaded", () => {
-  if (window.WCAuth) window.WCAuth.initFirebase();
-});
+// Firebase is initialised by firebase-auth.js itself on DOMContentLoaded.
+// Do NOT call initFirebase() here — that caused a double-init and auth race.
