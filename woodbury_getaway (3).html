@@ -583,9 +583,10 @@
     const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.1, 180);
     camera.position.set(-2.2, FLOOR_Y_SECOND + EYE_HEIGHT, 11.2);
 
+    // PERFORMANCE FIX: Cap pixel ratio to 1.25 to prevent extremely heavy fills on high res monitors
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25)); 
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -703,7 +704,8 @@
 
     const flashlight = new THREE.SpotLight(0xf7f0d2, 18, 30, Math.PI / 6.5, 0.55, 1.5);
     flashlight.castShadow = true;
-    flashlight.shadow.mapSize.set(1024, 1024);
+    // PERFORMANCE FIX: Reduce spotlight shadow map size from 1024 to 512
+    flashlight.shadow.mapSize.set(512, 512);
     flashlight.shadow.camera.near = 0.2;
     flashlight.shadow.camera.far = 30;
     flashlight.shadow.focus = 0.8;
@@ -1163,12 +1165,11 @@
       return mesh;
     }
 
+    // PERFORMANCE FIX: Disabled default point light shadows.
+    // 10+ overlapping point lights casting 6-way shadow maps was crashing the GPU.
     function createPointLight(color, intensity, distance, position) {
       const light = new THREE.PointLight(color, intensity, distance, 2.2);
       light.position.set(...position);
-      light.castShadow = true;
-      light.shadow.mapSize.set(1024, 1024);
-      light.shadow.bias = -0.0008;
       light.userData.baseIntensity = intensity;
       return light;
     }
@@ -1197,10 +1198,11 @@
     function buildWorld(assets) {
       if (assets.hdri) scene.environment = assets.hdri;
 
-      const moonLight = new THREE.DirectionalLight(0x8fa3c8, 3.0); // TEMPORARY BRIGHTNESS (was 0.42)
+      const moonLight = new THREE.DirectionalLight(0x8fa3c8, 3.0);
       moonLight.position.set(12, 18, 8);
       moonLight.castShadow = true;
-      moonLight.shadow.mapSize.set(2048, 2048);
+      // PERFORMANCE FIX: Reduce moon shadow map size from 2048 to 1024
+      moonLight.shadow.mapSize.set(1024, 1024);
       moonLight.shadow.camera.left = -22;
       moonLight.shadow.camera.right = 22;
       moonLight.shadow.camera.top = 22;
@@ -1208,7 +1210,7 @@
       moonLight.shadow.camera.far = 60;
       scene.add(moonLight);
 
-      const ambient = new THREE.HemisphereLight(0x516487, 0x08090b, 2.5); // TEMPORARY BRIGHTNESS (was 0.24)
+      const ambient = new THREE.HemisphereLight(0x516487, 0x08090b, 2.5);
       scene.add(ambient);
 
       buildArchitecture(assets);
@@ -2409,10 +2411,10 @@
 
       scene.background = new THREE.Color(0x020304);
       scene.fog = new THREE.FogExp2(0x020304, 0.05);
-      const outdoorMoon = new THREE.DirectionalLight(0x4a5d7c, 3.0); // TEMPORARY BRIGHTNESS (was 0.28)
+      const outdoorMoon = new THREE.DirectionalLight(0x4a5d7c, 3.0); 
       outdoorMoon.position.set(-10, 15, -10);
       scene.add(outdoorMoon);
-      const ambient = new THREE.HemisphereLight(0x3b4b67, 0x070809, 2.5); // TEMPORARY BRIGHTNESS (was 0.18)
+      const ambient = new THREE.HemisphereLight(0x3b4b67, 0x070809, 2.5);
       scene.add(ambient);
 
       addFloorRegion({ minX: -6.8, maxX: 6.8, minZ: state.road.roadEndZ - 8, maxZ: 18, type: 'flat', y: FLOOR_Y_FIRST });
@@ -2986,21 +2988,26 @@
       state.isPromptVisible = false;
     }
 
+    // PERFORMANCE FIX: Pre-allocate Box3 vectors to prevent garbage collection spikes every frame
+    const doorExpand = new THREE.Vector3(0.05, 0.02, 0.05);
+    const roomDoorBox = new THREE.Box3();
+    const frontDoorBox = new THREE.Box3();
+
     state.dynamicObstacles.push(Object.assign(() => {
       if (!state.roomDoor || state.roomDoor.openAmount > 0.72) return null;
-      return new THREE.Box3().setFromObject(state.roomDoor.mesh).expandByVector(new THREE.Vector3(0.05, 0.02, 0.05));
+      return roomDoorBox.setFromObject(state.roomDoor.mesh).expandByVector(doorExpand);
     }, { persistent: true }));
 
     state.dynamicObstacles.push(Object.assign(() => {
       if (!state.frontDoor || state.frontDoor.openAmount > 0.72) return null;
-      return new THREE.Box3().setFromObject(state.frontDoor.mesh).expandByVector(new THREE.Vector3(0.05, 0.02, 0.05));
+      return frontDoorBox.setFromObject(state.frontDoor.mesh).expandByVector(doorExpand);
     }, { persistent: true }));
 
     function onResize() {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25));
       composer.setSize(window.innerWidth, window.innerHeight);
       retroPass.uniforms.uResolution.value.set(window.innerWidth, window.innerHeight);
     }
