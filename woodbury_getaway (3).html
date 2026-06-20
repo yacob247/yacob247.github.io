@@ -657,7 +657,8 @@
       cctv: {
         feeds: [],
         screens: [],
-        activeIndex: 0
+        activeIndex: 0,
+        timer: 0
       },
       road: {
         spokenToLiam: false,
@@ -1196,7 +1197,7 @@
     function buildWorld(assets) {
       if (assets.hdri) scene.environment = assets.hdri;
 
-      const moonLight = new THREE.DirectionalLight(0x8fa3c8, 0.42);
+      const moonLight = new THREE.DirectionalLight(0x8fa3c8, 3.0); // TEMPORARY BRIGHTNESS (was 0.42)
       moonLight.position.set(12, 18, 8);
       moonLight.castShadow = true;
       moonLight.shadow.mapSize.set(2048, 2048);
@@ -1207,7 +1208,7 @@
       moonLight.shadow.camera.far = 60;
       scene.add(moonLight);
 
-      const ambient = new THREE.HemisphereLight(0x516487, 0x08090b, 0.24);
+      const ambient = new THREE.HemisphereLight(0x516487, 0x08090b, 2.5); // TEMPORARY BRIGHTNESS (was 0.24)
       scene.add(ambient);
 
       buildArchitecture(assets);
@@ -1974,7 +1975,7 @@
       updateAnimations(delta, elapsed);
       updateScriptedEvents(delta);
       updateAtmosphere(delta, elapsed);
-      updateCCTVFeeds();
+      updateCCTVFeeds(delta);
 
       retroPass.uniforms.uTime.value = elapsed;
       composer.render();
@@ -2408,10 +2409,10 @@
 
       scene.background = new THREE.Color(0x020304);
       scene.fog = new THREE.FogExp2(0x020304, 0.05);
-      const outdoorMoon = new THREE.DirectionalLight(0x4a5d7c, 0.28);
+      const outdoorMoon = new THREE.DirectionalLight(0x4a5d7c, 3.0); // TEMPORARY BRIGHTNESS (was 0.28)
       outdoorMoon.position.set(-10, 15, -10);
       scene.add(outdoorMoon);
-      const ambient = new THREE.HemisphereLight(0x3b4b67, 0x070809, 0.18);
+      const ambient = new THREE.HemisphereLight(0x3b4b67, 0x070809, 2.5); // TEMPORARY BRIGHTNESS (was 0.18)
       scene.add(ambient);
 
       addFloorRegion({ minX: -6.8, maxX: 6.8, minZ: state.road.roadEndZ - 8, maxZ: 18, type: 'flat', y: FLOOR_Y_FIRST });
@@ -2895,8 +2896,14 @@
       flashlight.intensity = state.flashlightOn ? flashlightPulse : 0;
     }
 
-    function updateCCTVFeeds() {
+    function updateCCTVFeeds(delta) {
       if (state.currentAct !== 1 || state.cctv.feeds.length === 0) return;
+      
+      // PERFORMANCE FIX: Throttle CCTV rendering to ~15 FPS instead of every frame
+      state.cctv.timer += delta;
+      if (state.cctv.timer < 0.06) return;
+      state.cctv.timer = 0;
+
       for (const screen of state.cctv.screens) screen.visible = false;
       for (const feed of state.cctv.feeds) {
         renderer.setRenderTarget(feed.target);
