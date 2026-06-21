@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Woodbury Getaway - Visual Level Builder</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #111;
+      display: flex;
+      height: 100vh;
+    }
+    #canvas-container {
+      flex-grow: 1;
+      position: relative;
+    }
+    #sidebar {
+      width: 420px; /* Widened slightly to fit the new code generator box better */
+      background: #1e1e24;
+      border-left: 1px solid #333;
+      display: flex;
+      flex-direction: column;
+      padding: 20px;
+      box-sizing: border-box;
+      z-index: 10;
+      overflow-y: auto;
+    }
+    h2 {
+      margin: 0 0 15px 0;
+      font-size: 16px;
+      color: #a3d4ff;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    h3 {
+      margin: 0 0 10px 0;
+      font-size: 14px;
+      color: #fff;
+      border-bottom: 1px solid #444;
+      padding-bottom: 4px;
+    }
+    .control-group {
+      margin-bottom: 20px;
+    }
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 13px;
+      color: #ccc;
+    }
+    select, button, textarea, input[type="number"] {
+      width: 100%;
+      background: #2a2a32;
+      color: #fff;
+      border: 1px solid #444;
+      padding: 10px;
+      border-radius: 6px;
+      font-family: inherit;
+      box-sizing: border-box;
+    }
+    select:focus, textarea:focus, input[type="number"]:focus {
+      outline: none;
+      border-color: #a3d4ff;
+    }
+    button {
+      background: #34495e;
+      cursor: pointer;
+      font-weight: bold;
+      transition: background 0.2s;
+    }
+    button:hover {
+      background: #415b76;
+    }
+    button.primary {
+      background: #27ae60;
+    }
+    button.primary:hover {
+      background: #2ecc71;
+    }
+    button.danger {
+      background: #c0392b;
+      margin-top: 10px;
+    }
+    button.danger:hover {
+      background: #e74c3c;
+    }
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .toolbar button {
+      flex: 1;
+      padding: 8px;
+      font-size: 12px;
+    }
+    .toolbar button.active {
+      background: #a3d4ff;
+      color: #000;
+    }
+    .prop-row {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      margin-bottom: 8px;
+    }
+    .prop-row label {
+      width: 30px;
+      margin: 0;
+      font-weight: bold;
+      color: #a3d4ff;
+    }
+    .prop-row input {
+      flex: 1;
+      padding: 6px;
+      font-size: 12px;
+      text-align: center;
+    }
+    textarea {
+      flex-grow: 1;
+      resize: vertical;
+      font-family: monospace;
+      font-size: 11px;
+      white-space: pre;
+      margin-top: 10px;
+      min-height: 250px; /* Made the textarea taller */
+    }
+    #loading-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,0.8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: bold;
+      z-index: 100;
+      pointer-events: none;
+      display: none;
+    }
+    .instructions {
+      font-size: 12px;
+      color: #888;
+      margin-bottom: 15px;
+      line-height: 1.5;
+      background: #151518;
+      padding: 10px;
+      border-radius: 6px;
+      border: 1px solid #222;
+    }
+    .file-input-wrapper {
+      position: relative;
+      overflow: hidden;
+      display: inline-block;
+      width: 100%;
+    }
+    .file-input-wrapper input[type=file] {
+      font-size: 100px;
+      position: absolute;
+      left: 0;
+      top: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+    /* History List & Styling */
+    .history-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px;
+      border-bottom: 1px solid #333;
+      gap: 6px;
+    }
+    .history-item:last-child {
+      border-bottom: none;
+    }
+    .history-time {
+      font-size: 11px;
+      color: #ccc;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex-grow: 1;
+    }
+    .history-actions {
+      display: flex;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+    .history-btn {
+      color: white;
+      border: none;
+      padding: 4px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      cursor: pointer;
+      font-weight: bold;
+      width: auto;
+    }
+    .history-btn.load {
+      background: #1e3a8a;
+    }
+    .history-btn.load:hover {
+      background: #2563eb;
+    }
+    .history-btn.export {
+      background: #0f766e;
+    }
+    .history-btn.export:hover {
+      background: #0d9488;
+    }
+    .history-btn.delete {
+      background: #991b1b;
+    }
+    .history-btn.delete:hover {
+      background: #dc2626;
+    }
+
+    /* Custom Toast Notification System */
+    #toast-notification {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: #1e293b;
+      border-left: 4px solid #3b82f6;
+      color: #fff;
+      padding: 12px 20px;
+      border-radius: 6px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+      display: none;
+      z-index: 1000;
+      font-size: 13px;
+      font-weight: 500;
+      pointer-events: none;
+    }
+
+    /* Custom Confirmation Modal */
+    #custom-confirm-modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 999;
+      display: none;
+    }
+    .confirm-box {
+      background: #1e1e24;
+      border: 1px solid #444;
+      padding: 20px;
+      border-radius: 8px;
+      width: 320px;
+      text-align: center;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    }
+    .confirm-box p {
+      margin: 0 0 20px 0;
+      font-size: 14px;
+      color: #fff;
+      line-height: 1.4;
+    }
+    .confirm-buttons {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+    }
+    .confirm-buttons button {
+      padding: 8px 16px;
+      font-size: 12px;
+      width: auto;
+    }
+  </style>
+
+  <!-- Load Three.js and Addons mapping perfectly aligned -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+
+  <!-- Custom Alert/Toast Elements -->
+  <div id="toast-notification">Notification Message</div>
+  
+  <div id="custom-confirm-modal">
+    <div class="confirm-box">
+      <p id="confirm-message">Are you sure you want to proceed?</p>
+      <div class="confirm-buttons">
+        <button id="confirm-yes" class="primary">Yes</button>
+        <button id="confirm-no" style="background: #444;">No</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="canvas-container">
+    <div id="loading-overlay">Loading Asset...</div>
+  </div>
+
+  <div id="sidebar">
+    <h2>Level Builder</h2>
+    
+    <div class="instructions">
+      <b>Controls:</b><br>
+      • <b>Left Click:</b> Select object<br>
+      • <b>Right Click/Drag:</b> Rotate camera<br>
+      • <b>Scroll:</b> Zoom<br>
+      • <b>Delete:</b> Remove selected object
+    </div>
+
+    <!-- Storage Management Panel -->
+    <div class="control-group" style="background: #1e293b; padding: 12px; border-radius: 6px; border: 1px solid #3b82f6;">
+      <h3 style="color: #3b82f6; margin-bottom: 8px;">💾 Save & Load Level</h3>
+      
+      <!-- Quick Save Local Database -->
+      <div style="display: flex; gap: 6px; margin-bottom: 8px;">
+        <button id="btn-quick-save" style="background: #1e3a8a; font-size: 12px; padding: 8px;">Quick Save</button>
+        <button id="btn-quick-load" style="background: #1e3a8a; font-size: 12px; padding: 8px;" title="Load the most recent save">Load Latest</button>
+      </div>
+
+      <!-- History Header with Import Feature -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+        <span style="font-size: 11px; color: #a3d4ff; font-weight: bold; text-transform: uppercase;">Save History (Max 10)</span>
+        <div class="file-input-wrapper" style="width: auto;">
+          <button style="background: #0f766e; font-size: 10px; padding: 4px 8px; width: auto;">+ Import JSON</button>
+          <input type="file" id="file-import-history" accept=".json">
+        </div>
+      </div>
+
+      <!-- Save History List -->
+      <div id="save-history-container" style="background: #151518; border: 1px solid #444; border-radius: 4px; margin-bottom: 8px; max-height: 180px; overflow-y: auto;">
+        <!-- History items will be injected here -->
+      </div>
+
+      <!-- File Export/Import -->
+      <div style="display: flex; gap: 6px; margin-bottom: 8px;">
+        <button id="btn-file-export" style="background: #0f766e; font-size: 12px; padding: 8px;">Export Layout File</button>
+      </div>
+
+      <button id="btn-clear-scene" class="danger" style="margin-top: 4px; padding: 6px; font-size: 11px;">Clear All Objects</button>
+    </div>
+
+    <div class="control-group">
+      <label>Spawn Asset</label>
+      <select id="asset-select"></select>
+      <button id="btn-spawn" style="margin-top: 8px;">Spawn into Scene</button>
+    </div>
+
+    <div class="control-group" style="background: #222228; padding: 10px; border-radius: 6px; border: 1px solid #444;">
+      <label style="color: #a3d4ff; font-weight: bold; margin-bottom: 10px;">Spawn Custom Asset</label>
+      <input type="file" id="file-upload" accept=".glb,.gltf" style="margin-bottom: 8px; font-size: 11px;">
+      <input type="text" id="url-upload" placeholder="Or paste raw GLB URL..." style="margin-bottom: 8px; font-size: 11px;">
+      <button id="btn-spawn-custom" class="primary">Load Custom</button>
+      <div style="font-size: 10px; color: #888; margin-top: 5px;">* Uploads are saved to your browser database.</div>
+    </div>
+
+    <button id="btn-delete" class="danger" style="margin-bottom: 20px;">Delete Selected</button>
+
+    <!-- Properties Panel for Exact Numbers -->
+    <div class="control-group" id="properties-panel" style="display: none; background: #222228; padding: 10px; border-radius: 6px; border: 1px solid #444;">
+      <h3>Exact Properties</h3>
+      
+      <div class="prop-row">
+        <label title="Position">Pos</label>
+        <input type="number" id="prop-px" step="0.1" title="X Position">
+        <input type="number" id="prop-py" step="0.1" title="Y Position">
+        <input type="number" id="prop-pz" step="0.1" title="Z Position">
+      </div>
+      
+      <div class="prop-row">
+        <label title="Rotation (Degrees)">Rot</label>
+        <input type="number" id="prop-rx" step="5" title="X Rotation">
+        <input type="number" id="prop-ry" step="5" title="Y Rotation">
+        <input type="number" id="prop-rz" step="5" title="Z Rotation">
+      </div>
+      
+      <div class="prop-row">
+        <label title="Scale">Scl</label>
+        <input type="number" id="prop-sx" step="0.1" title="X Scale">
+        <input type="number" id="prop-sy" step="0.1" title="Y Scale">
+        <input type="number" id="prop-sz" step="0.1" title="Z Scale">
+      </div>
+    </div>
+
+    <div class="control-group" style="display: flex; flex-direction: column; flex-grow: 1;">
+      <label style="color: #2ecc71; font-weight: bold; font-size: 15px;">FULL GAME EXPORT CODE</label>
+      <button id="btn-export" class="primary" style="padding: 12px; font-size: 14px;">Generate Code</button>
+      <textarea id="export-output" readonly placeholder="Click 'Generate Code' above. The full code with precise placement and loading instructions for test.html will appear here."></textarea>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+
+    // The exact assets from your game
+    const ASSETS = {
+      models: {
+        mansionExterior: 'https://static.seeles.ai/data/asset/export/b41de708-ba2c-43e8-b35b-5d76b571d5c3/950949/threeJs_5f208905-f988-4c9f-adb9-a7b0d21b50ae.glb',
+        bed: 'https://static.seeles.ai/data/asset/export/87762adf-7325-4b27-b439-615308aec2d6/696101/threeJs_f7e63846-c577-4ede-af30-2387d1f8e877.glb',
+        wardrobe: 'https://static.seeles.ai/data/asset/export/75a22e8b-e45c-4324-b0d0-8a4b7be9671a/926000/threeJs_622b582e-8c04-4688-890f-ad2a8049c85d.glb',
+        wardrobeTall: 'https://static.seeles.ai/data/asset/export/96f19401-a309-45ca-8dc4-c9c4c9ac2f73/772062/threeJs_00fd99df-b252-406e-b0af-ff01a7865276.glb',
+        nightstandLamp: 'https://static.seeles.ai/data/asset/export/5e470864-f7dc-4035-8365-cb7fd74a4124/265259/threeJs_de654a49-4afd-4bae-ae72-39206853b2a2.glb',
+        nightstand: 'https://static.seeles.ai/data/asset/export/033c9663-353d-459b-a6e6-a0fe25124369/941322/threeJs_3bb38d97-02b0-40bb-a68e-7aa3972f42bc.glb',
+        door: 'https://static.seeles.ai/data/asset/export/f9ec49c9-4b4d-4e4e-9486-e2cf2a40f2c5/940952/threeJs_2382894d-1c08-44db-bc5e-f523a4200648.glb',
+        cabinet: 'https://static.seeles.ai/data/asset/export/545b587f-51e1-4e67-bd40-ab8e65ffb1c6/801867/threeJs_7998f89c-4810-44ac-9127-1bc17eff7930.glb',
+        staircase: 'https://static.seeles.ai/data/asset/export/72c23955-9776-44ae-9b92-4b3d9c45eba1/990654/threeJs_1ea4dddb-1341-47d6-b082-1c01bd698dcd.glb',
+        sofa: 'https://static.seeles.ai/data/asset/export/856a1fcf-65bd-49b8-8bed-ad25fedb6a2d/952363/threeJs_9524eec5-6042-4bf1-a97a-3495b1fb5ef3.glb',
+        tv: 'https://static.seeles.ai/data/asset/export/4685be39-6fc5-4e11-a805-dac56fdb76e1/1002151/threeJs_47e72340-cf45-4ba0-b680-aacf0254bfea.glb',
+        diningSet: 'https://static.seeles.ai/data/asset/export/21395a31-f8bf-4209-a3af-f3a431d2a5f9/741545/threeJs_4cba11a0-8fb9-4241-a969-ab9ccdda2872.glb',
+        kitchenCounter: 'https://static.seeles.ai/data/asset/export/be7f2cb4-f34b-4ea1-849c-e83b84e29898/651080/threeJs_ac250853-8e8b-4348-a0cc-fcc03b328aea.glb',
+        fridge: 'https://static.seeles.ai/data/asset/export/763c0da0-561f-4e03-9de9-5be3491c9173/947937/threeJs_9909ef65-3cf7-4973-becb-fa900d444074.glb',
+        oven: 'https://static.seeles.ai/data/asset/export/eed90304-0a2c-4a7e-bf76-342d74f35aa7/961961/threeJs_d35fd5ce-4777-46bc-af6e-6f166042c40e.glb',
+        cctv: 'https://static.seeles.ai/data/asset/export/671eae22-d8f3-4a47-a33a-9b26118e89dd/1017881/threeJs_1017881_2892281.glb',
+        umbrella: 'https://static.seeles.ai/data/asset/export/864143a6-3199-4b2c-83bf-2d286c421720/988440/threeJs_b6b5dd6d-be97-4452-818a-97009f898971.glb',
+        sedan: 'https://static.seeles.ai/data/asset/export/3413f54e-8823-4e53-bd7e-4f4842188a2c/926701/threeJs_901136ed-767f-45f7-85fb-9200a8183909.glb',
+        coatRack: 'https://static.seeles.ai/data/asset/export/cfae5b0e-ab83-4164-9d78-a3a700a640fc/916520/threeJs_41e8f957-e670-44df-8066-f7ff60762376.glb',
+        piano: 'https://static.seeles.ai/data/asset/export/0e5d8045-145f-47e1-8746-e37cff00e507/1004953/threeJs_45897f52-d74a-4090-942f-3fc9567149cb.glb',
+        bookcase: 'https://static.seeles.ai/data/asset/export/6d62fd3d-2ad2-43ca-99a3-b5c851236c90/948388/threeJs_95a6ca55-4c21-41b8-9fbb-f6b388c5bf62.glb',
+        loungeSet: 'https://static.seeles.ai/data/asset/export/c3ec7ce1-3ae1-4636-9a98-2fb6fa4ac284/928429/threeJs_fb57af7c-643b-4ae9-bfd4-bbb938dd8950.glb',
+        consoleTable: 'https://static.seeles.ai/data/asset/export/34ddedd0-87b5-455a-96a5-4d022fdb77dc/941072/threeJs_9eff8419-70e5-4e3c-8289-97e61dff85f7.glb',
+        plantStand: 'https://static.seeles.ai/data/asset/export/cff30703-b91c-4c99-9d97-6a8da37b6805/652292/threeJs_a368cc01-4309-4b6b-8fa7-6b6628025587.glb',
+        chandelier: 'https://static.seeles.ai/data/asset/export/d1a8d737-1a51-4089-80b5-99388c4918c8/922373/threeJs_2f19c5e9-3cd9-47c9-ad25-2a80cb52f52c.glb',
+        roadsideShelter: 'https://static.seeles.ai/data/asset/export/04d04503-1ba0-497b-9fda-cddee24d37ab/764936/threeJs_ff802237-ea48-4341-94ca-6ea844ec9374.glb',
+        signpost: 'https://static.seeles.ai/data/asset/export/2723de8d-f08c-4d57-a838-fc4c33edf317/929444/threeJs_c27a3194-da1e-4fc9-8998-b611566b6cf3.glb'
+      }
+    };
+
+    // --- Promise-based IndexedDB wrapper for large GLB file storage ---
+    const DB_NAME = 'WoodburyLevelBuilderDB';
+    const DB_VERSION = 1;
+
+    function openDatabase() {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        request.onupgradeneeded = (e) => {
+          const db = e.target.result;
+          if (!db.objectStoreNames.contains('custom_models')) {
+            db.createObjectStore('custom_models');
+          }
+        };
+        request.onsuccess = (e) => resolve(e.target.result);
+        request.onerror = (e) => reject(e.target.error);
+      });
+    }
+
+    async function storeCustomModel(key, blob) {
+      const db = await openDatabase();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction('custom_models', 'readwrite');
+        const store = tx.objectStore('custom_models');
+        const request = store.put(blob, key);
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
+      });
+    }
+
+    async function retrieveCustomModel(key) {
+      const db = await openDatabase();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction('custom_models', 'readonly');
+        const store = tx.objectStore('custom_models');
+        const request = store.get(key);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+    }
+
+    // Custom Toast Notification Helper
+    function showToast(message, type = 'info') {
+      const toast = document.getElementById('toast-notification');
+      toast.innerText = message;
+      toast.style.display = 'block';
+      toast.style.borderLeftColor = type === 'error' ? '#ef4444' : type === 'success' ? '#10b981' : '#3b82f6';
+      setTimeout(() => toast.style.display = 'none', 3500);
+    }
+
+    // Custom Confirmation Dialog Helper
+    function showConfirm(message, onYes) {
+      const modal = document.getElementById('custom-confirm-modal');
+      const msgEl = document.getElementById('confirm-message');
+      const yesBtn = document.getElementById('confirm-yes');
+      const noBtn = document.getElementById('confirm-no');
+
+      msgEl.innerText = message;
+      modal.style.display = 'flex';
+
+      const cleanup = () => {
+        modal.style.display = 'none';
+        yesBtn.onclick = null;
+        noBtn.onclick = null;
+      };
+
+      yesBtn.onclick = () => { cleanup(); onYes(); };
+      noBtn.onclick = () => cleanup();
+    }
+
+    // DOM Elements
+    const container = document.getElementById('canvas-container');
+    const selectEl = document.getElementById('asset-select');
+    const spawnBtn = document.getElementById('btn-spawn');
+    const spawnCustomBtn = document.getElementById('btn-spawn-custom');
+    const fileUploadEl = document.getElementById('file-upload');
+    const urlUploadEl = document.getElementById('url-upload');
+    const deleteBtn = document.getElementById('btn-delete');
+    const exportBtn = document.getElementById('btn-export');
+    const outputTxt = document.getElementById('export-output');
+    const loadingOverlay = document.getElementById('loading-overlay');
+    const propertiesPanel = document.getElementById('properties-panel');
+
+    const quickSaveBtn = document.getElementById('btn-quick-save');
+    const quickLoadBtn = document.getElementById('btn-quick-load');
+    const saveHistoryContainer = document.getElementById('save-history-container');
+    const fileExportBtn = document.getElementById('btn-file-export');
+    const fileImportHistory = document.getElementById('file-import-history');
+    const clearSceneBtn = document.getElementById('btn-clear-scene');
+
+    const inputs = {
+      px: document.getElementById('prop-px'), py: document.getElementById('prop-py'), pz: document.getElementById('prop-pz'),
+      rx: document.getElementById('prop-rx'), ry: document.getElementById('prop-ry'), rz: document.getElementById('prop-rz'),
+      sx: document.getElementById('prop-sx'), sy: document.getElementById('prop-sy'), sz: document.getElementById('prop-sz')
+    };
+
+    // Populate Asset Dropdown
+    Object.keys(ASSETS.models).forEach(key => {
+      const opt = document.createElement('option');
+      opt.value = key;
+      opt.textContent = key;
+      selectEl.appendChild(opt);
+    });
+
+    // Three.js Setup
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x222226);
+    const gridHelper = new THREE.GridHelper(50, 50, 0x555555, 0x333333);
+    scene.add(gridHelper);
+    const ambient = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
+    scene.add(ambient);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+    dirLight.position.set(10, 20, 10);
+    dirLight.castShadow = true;
+    scene.add(dirLight);
+
+    const camera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.1, 100000);
+    camera.position.set(0, 10, 15);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.shadowMap.enabled = true;
+    container.appendChild(renderer.domElement);
+
+    const orbit = new OrbitControls(camera, renderer.domElement);
+    orbit.enableDamping = true;
+    orbit.dampingFactor = 0.05;
+
+    const selectionBox = new THREE.BoxHelper(undefined, 0xffff00);
+    selectionBox.visible = false;
+    scene.add(selectionBox);
+
+    const dracoLoader = new DRACOLoader();
+    dracoLoader.setDecoderPath('https://www.gstatic.com/draco/v1/decoders/');
+    const gltfLoader = new GLTFLoader();
+    gltfLoader.setDRACOLoader(dracoLoader);
+
+    const placedObjects = [];
+    let selectedObject = null;
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+
+    window.addEventListener('resize', () => {
+      camera.aspect = container.clientWidth / container.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(container.clientWidth, container.clientHeight);
+    });
+
+    renderer.domElement.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0) return; 
+      const rect = renderer.domElement.getBoundingClientRect();
+      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObjects(placedObjects, true);
+
+      if (intersects.length > 0) {
+        let object = intersects[0].object;
+        while (object.parent && object.parent.type !== 'Scene' && !object.userData.isAssetRoot) {
+          object = object.parent;
+        }
+        selectObject(object);
+      } else {
+        selectObject(null);
+      }
+    });
+
+    function updateUIFromObject() {
+      if (!selectedObject) return;
+      inputs.px.value = selectedObject.position.x.toFixed(3);
+      inputs.py.value = selectedObject.position.y.toFixed(3);
+      inputs.pz.value = selectedObject.position.z.toFixed(3);
+      inputs.rx.value = THREE.MathUtils.radToDeg(selectedObject.rotation.x).toFixed(1);
+      inputs.ry.value = THREE.MathUtils.radToDeg(selectedObject.rotation.y).toFixed(1);
+      inputs.rz.value = THREE.MathUtils.radToDeg(selectedObject.rotation.z).toFixed(1);
+      inputs.sx.value = selectedObject.scale.x.toFixed(3);
+      inputs.sy.value = selectedObject.scale.y.toFixed(3);
+      inputs.sz.value = selectedObject.scale.z.toFixed(3);
+    }
+
+    function updateObjectFromUI() {
+      if (!selectedObject) return;
+      selectedObject.position.set(parseFloat(inputs.px.value) || 0, parseFloat(inputs.py.value) || 0, parseFloat(inputs.pz.value) || 0);
+      selectedObject.rotation.set(THREE.MathUtils.degToRad(parseFloat(inputs.rx.value) || 0), THREE.MathUtils.degToRad(parseFloat(inputs.ry.value) || 0), THREE.MathUtils.degToRad(parseFloat(inputs.rz.value) || 0));
+      selectedObject.scale.set(parseFloat(inputs.sx.value) || 1, parseFloat(inputs.sy.value) || 1, parseFloat(inputs.sz.value) || 1);
+      if (selectionBox.visible) selectionBox.update();
+    }
+
+    Object.values(inputs).forEach(input => {
+      input.addEventListener('change', updateObjectFromUI);
+      input.addEventListener('input', updateObjectFromUI);
+    });
+
+    function selectObject(obj) {
+      selectedObject = obj;
+      if (obj) {
+        selectionBox.setFromObject(obj);
+        selectionBox.visible = true;
+        propertiesPanel.style.display = 'block';
+        updateUIFromObject();
+      } else {
+        selectionBox.visible = false;
+        propertiesPanel.style.display = 'none';
+      }
+    }
+
+    function createPlaceholderBox(item) {
+      const geometry = new THREE.BoxGeometry(1.5, 1.5, 1.5);
+      const material = new THREE.MeshBasicMaterial({ color: 0xff3333, wireframe: true });
+      const box = new THREE.Mesh(geometry, material);
+      box.userData.isAssetRoot = true;
+      box.userData.assetKey = item.assetKey;
+      box.userData.isCustom = item.isCustom;
+      box.userData.customUrl = item.customUrl;
+      box.userData.originalFileName = item.originalFileName || null;
+      box.userData.isPlaceholder = true;
+      box.position.set(item.position.x, item.position.y, item.position.z);
+      box.rotation.set(item.rotation.x, item.rotation.y, item.rotation.z);
+      box.scale.set(item.scale.x, item.scale.y, item.scale.z);
+      scene.add(box);
+      placedObjects.push(box);
+      selectObject(box);
+    }
+
+    // Critical update: tracking original file names
+    async function loadAndPlaceModel(url, assetKey, isCustom = false, customUrl = null, customTransform = null, originalFileName = null) {
+      loadingOverlay.style.display = 'flex';
+      try {
+        const gltf = await gltfLoader.loadAsync(url);
+        const model = gltf.scene;
+        model.traverse(child => {
+          if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; }
+        });
+        model.userData.isAssetRoot = true;
+        model.userData.assetKey = assetKey;
+        model.userData.isCustom = isCustom;
+        model.userData.customUrl = customUrl;
+        model.userData.originalFileName = originalFileName; // STORE FILENAME HERE
+        
+        if (customTransform) {
+          model.position.set(customTransform.position.x, customTransform.position.y, customTransform.position.z);
+          model.rotation.set(customTransform.rotation.x, customTransform.rotation.y, customTransform.rotation.z);
+          model.scale.set(customTransform.scale.x, customTransform.scale.y, customTransform.scale.z);
+        } else {
+          model.position.set(0, 0, 0);
+        }
+        scene.add(model);
+        placedObjects.push(model);
+        selectObject(model);
+      } catch (err) {
+        console.error(err);
+        if (customTransform) {
+          createPlaceholderBox({
+            assetKey: assetKey, isCustom: isCustom, customUrl: customUrl,
+            originalFileName: originalFileName,
+            position: customTransform.position, rotation: customTransform.rotation, scale: customTransform.scale
+          });
+        } else {
+          showToast("Failed to load asset: " + err.message, 'error');
+        }
+      }
+      loadingOverlay.style.display = 'none';
+    }
+
+    spawnBtn.addEventListener('click', () => {
+      const assetKey = selectEl.value;
+      const url = ASSETS.models[assetKey];
+      if (url) loadAndPlaceModel(url, assetKey);
+    });
+
+    spawnCustomBtn.addEventListener('click', async () => {
+      const file = fileUploadEl.files[0];
+      const urlVal = urlUploadEl.value.trim();
+
+      if (file) {
+        const key = 'custom_' + file.name.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9]/g, '_');
+        const originalName = file.name; // Keep the literal original name!
+        
+        loadingOverlay.style.display = 'flex';
+        try {
+          await storeCustomModel(key, file);
+          const localUrl = URL.createObjectURL(file);
+          const existingPlaceholder = placedObjects.find(obj => obj.userData.isPlaceholder && obj.userData.assetKey === key);
+          if (existingPlaceholder) {
+            const transform = {
+              position: { x: existingPlaceholder.position.x, y: existingPlaceholder.position.y, z: existingPlaceholder.position.z },
+              rotation: { x: existingPlaceholder.rotation.x, y: existingPlaceholder.rotation.y, z: existingPlaceholder.rotation.z },
+              scale: { x: existingPlaceholder.scale.x, y: existingPlaceholder.scale.y, z: existingPlaceholder.scale.z }
+            };
+            scene.remove(existingPlaceholder);
+            const idx = placedObjects.indexOf(existingPlaceholder);
+            if (idx > -1) placedObjects.splice(idx, 1);
+            await loadAndPlaceModel(localUrl, key, true, null, transform, originalName);
+          } else {
+            await loadAndPlaceModel(localUrl, key, true, null, null, originalName);
+          }
+        } catch (dbError) {
+          showToast("Failed to save custom asset to DB: " + dbError.message, 'error');
+        }
+        loadingOverlay.style.display = 'none';
+        fileUploadEl.value = '';
+      } else if (urlVal) {
+        const key = 'custom_url_' + Date.now();
+        loadAndPlaceModel(urlVal, key, true, urlVal, null, urlVal);
+        urlUploadEl.value = '';
+      } else {
+        showToast("Please select a local .glb file or enter a valid URL.", 'error');
+      }
+    });
+
+    deleteBtn.addEventListener('click', () => {
+      if (selectedObject) {
+        scene.remove(selectedObject);
+        const index = placedObjects.indexOf(selectedObject);
+        if (index > -1) placedObjects.splice(index, 1);
+        selectObject(null);
+      }
+    });
+
+    clearSceneBtn.addEventListener('click', () => {
+      showConfirm("Are you sure you want to clear all objects from the scene?", () => {
+        selectObject(null);
+        const copy = [...placedObjects];
+        copy.forEach(obj => scene.remove(obj));
+        placedObjects.length = 0;
+        showToast("Scene cleared.", 'success');
+      });
+    });
+
+    // Serialization / Deserialization
+    function serializeLayout() {
+      return placedObjects.map(obj => ({
+        assetKey: obj.userData.assetKey,
+        isCustom: obj.userData.isCustom || false,
+        customUrl: obj.userData.customUrl || null,
+        originalFileName: obj.userData.originalFileName || null, // SERIALIZE IT
+        isPlaceholder: obj.userData.isPlaceholder || false,
+        position: { x: obj.position.x, y: obj.position.y, z: obj.position.z },
+        rotation: { x: obj.rotation.x, y: obj.rotation.y, z: obj.rotation.z },
+        scale: { x: obj.scale.x, y: obj.scale.y, z: obj.scale.z }
+      }));
+    }
+
+    async function deserializeLayout(data) {
+      if (!Array.isArray(data)) return;
+      selectObject(null);
+      const copy = [...placedObjects];
+      copy.forEach(obj => scene.remove(obj));
+      placedObjects.length = 0;
+
+      for (const item of data) {
+        let url = null;
+        let isCustom = item.isCustom;
+
+        if (isCustom) {
+          if (item.embeddedData) {
+            url = item.embeddedData;
+            try {
+              const res = await fetch(item.embeddedData);
+              const blob = await res.blob();
+              await storeCustomModel(item.assetKey, blob);
+            } catch(e) {}
+          } else if (item.customUrl) {
+            url = item.customUrl;
+          } else {
+            try {
+              const fileBlob = await retrieveCustomModel(item.assetKey);
+              if (fileBlob) {
+                url = URL.createObjectURL(fileBlob);
+              } else {
+                createPlaceholderBox(item);
+                continue;
+              }
+            } catch (err) {
+              createPlaceholderBox(item);
+              continue;
+            }
+          }
+        } else {
+          url = ASSETS.models[item.assetKey];
+        }
+
+        if (url) {
+          const transform = { position: item.position, rotation: item.rotation, scale: item.scale };
+          await loadAndPlaceModel(url, item.assetKey, isCustom, item.customUrl, transform, item.originalFileName);
+        }
+      }
+    }
+
+    function getSaveHistory() {
+      const historyJson = localStorage.getItem('woodbury_level_history');
+      let history = historyJson ? JSON.parse(historyJson) : [];
+      if (history.length === 0) {
+        const oldSave = localStorage.getItem('woodbury_level_layout');
+        if (oldSave) {
+          history.push({ timestamp: "Legacy Save", data: JSON.parse(oldSave) });
+          localStorage.setItem('woodbury_level_history', JSON.stringify(history));
+          localStorage.removeItem('woodbury_level_layout');
+        }
+      }
+      return history;
+    }
+
+    async function packageAndDownloadLayout(layoutData, filename) {
+      loadingOverlay.style.display = 'flex';
+      try {
+        const dataToExport = JSON.parse(JSON.stringify(layoutData));
+        for (let item of dataToExport) {
+          if (item.isCustom && !item.customUrl && !item.isPlaceholder) {
+            try {
+              const fileBlob = await retrieveCustomModel(item.assetKey);
+              if (fileBlob) {
+                const dataUrl = await new Promise((resolve, reject) => {
+                  const reader = new FileReader();
+                  reader.onloadend = () => resolve(reader.result);
+                  reader.onerror = reject;
+                  reader.readAsDataURL(fileBlob);
+                });
+                item.embeddedData = dataUrl;
+              }
+            } catch (err) {}
+          }
+        }
+        const jsonString = JSON.stringify(dataToExport, null, 2);
+        const blob = new Blob([jsonString], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        showToast("Layout file downloaded successfully!", 'success');
+      } catch (err) {
+        showToast("Export failed: " + err.message, 'error');
+      } finally {
+        loadingOverlay.style.display = 'none';
+      }
+    }
+
+    function renderHistoryUI() {
+      const history = getSaveHistory();
+      saveHistoryContainer.innerHTML = '';
+      if (history.length === 0) {
+        saveHistoryContainer.innerHTML = '<div style="padding: 10px; font-size: 11px; color: #888; text-align: center;">No saves found</div>';
+        return;
+      }
+      history.forEach((save, index) => {
+        const item = document.createElement('div');
+        item.className = 'history-item';
+        const timeSpan = document.createElement('span');
+        timeSpan.className = 'history-time';
+        timeSpan.innerHTML = index === 0 ? `<strong>${save.timestamp} (Latest)</strong>` : save.timestamp;
+
+        const actionsDiv = document.createElement('div');
+        actionsDiv.className = 'history-actions';
+
+        const loadBtn = document.createElement('button');
+        loadBtn.className = 'history-btn load';
+        loadBtn.textContent = 'Load';
+        loadBtn.onclick = () => {
+          showConfirm(`Load layout from ${save.timestamp}? Unsaved edits will be lost.`, async () => {
+            await deserializeLayout(save.data);
+            showToast("Saved point loaded!", 'success');
+          });
+        };
+
+        const exportBtn = document.createElement('button');
+        exportBtn.className = 'history-btn export';
+        exportBtn.textContent = 'Exp';
+        exportBtn.onclick = async () => {
+          const rawTime = save.timestamp.replace(/[^a-zA-Z0-9]/g, '_');
+          await packageAndDownloadLayout(save.data, `woodbury_layout_${rawTime}.json`);
+        };
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'history-btn delete';
+        delBtn.textContent = '×';
+        delBtn.onclick = () => {
+          showConfirm(`Delete the save from ${save.timestamp}?`, () => {
+            const hist = getSaveHistory();
+            hist.splice(index, 1);
+            localStorage.setItem('woodbury_level_history', JSON.stringify(hist));
+            renderHistoryUI();
+            showToast("Save point removed.", 'success');
+          });
+        };
+        actionsDiv.appendChild(loadBtn); actionsDiv.appendChild(exportBtn); actionsDiv.appendChild(delBtn);
+        item.appendChild(timeSpan); item.appendChild(actionsDiv);
+        saveHistoryContainer.appendChild(item);
+      });
+    }
+
+    renderHistoryUI();
+
+    quickSaveBtn.addEventListener('click', () => {
+      const layoutData = serializeLayout();
+      const history = getSaveHistory();
+      history.unshift({ timestamp: new Date().toLocaleString(), data: layoutData });
+      if (history.length > 10) history.length = 10;
+      localStorage.setItem('woodbury_level_history', JSON.stringify(history));
+      renderHistoryUI();
+      quickSaveBtn.innerText = "Saved!"; quickSaveBtn.style.background = "#059669";
+      setTimeout(() => { quickSaveBtn.innerText = "Quick Save"; quickSaveBtn.style.background = "#1e3a8a"; }, 1500);
+      showToast("Layout saved to history!", 'success');
+    });
+
+    quickLoadBtn.addEventListener('click', async () => {
+      const history = getSaveHistory();
+      if (history.length === 0) return showToast("No saved layout found!", 'error');
+      await deserializeLayout(history[0].data);
+      showToast("Latest save loaded!", 'success');
+    });
+
+    fileImportHistory.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        try {
+          const parsed = JSON.parse(event.target.result);
+          const history = getSaveHistory();
+          history.unshift({ timestamp: `Imported: ${file.name.slice(0, 18)}`, data: parsed });
+          if (history.length > 10) history.length = 10;
+          localStorage.setItem('woodbury_level_history', JSON.stringify(history));
+          renderHistoryUI();
+          showToast("Imported to History!", 'success');
+        } catch (err) { showToast("Import failed.", 'error'); }
+        fileImportHistory.value = '';
+      };
+      reader.readAsText(file);
+    });
+    
+    fileExportBtn.addEventListener('click', async () => {
+      const layoutData = serializeLayout();
+      await packageAndDownloadLayout(layoutData, 'woodbury_level_layout.json');
+    });
+
+    window.addEventListener('keydown', (e) => {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && e.target.tagName !== 'INPUT') deleteBtn.click();
+    });
+
+    // ========================================================
+    // NEW POWERFUL CODE GENERATOR (Gives you everything needed)
+    // ========================================================
+    exportBtn.addEventListener('click', () => {
+      let customAssetsMap = {}; 
+      let buildPropsCode = `// ==========================================\n`;
+      buildPropsCode += `// STEP 3: ADD TO buildProps()\n`;
+      buildPropsCode += `// Find the function buildProps(assets) in test.html\n`;
+      buildPropsCode += `// Paste this exactly at the bottom of that function:\n`;
+      buildPropsCode += `// ==========================================\n\n`;
+
+      const counts = {}; 
+
+      placedObjects.forEach((obj) => {
+        const key = obj.userData.assetKey;
+        
+        // Track unique custom files for steps 1 and 2
+        if (obj.userData.isCustom) {
+            let path = obj.userData.customUrl;
+            if (!path) {
+                // Determine exactly what they uploaded
+                const originalName = obj.userData.originalFileName || key + '.glb';
+                // Provide the exact relative path required to load it assuming it's in the same folder
+                path = './' + originalName;
+            }
+            customAssetsMap[key] = path;
+        }
+
+        if (!counts[key]) counts[key] = 0;
+        counts[key]++;
+        
+        const varName = `${key}_${counts[key]}`;
+        const pos = obj.position;
+        
+        const box = new THREE.Box3().setFromObject(obj);
+        const size = new THREE.Vector3();
+        box.getSize(size);
+        const height = size.y || 1.0; 
+        const yaw = obj.rotation.y || 0.0;
+
+        buildPropsCode += `const ${varName} = cloneAsset(assets.${key});\n`;
+        buildPropsCode += `if (${varName}) {\n`;
+        buildPropsCode += `  placeObjectOnFloor(${varName}, new THREE.Vector3(${pos.x.toFixed(3)}, ${pos.y.toFixed(3)}, ${pos.z.toFixed(3)}), { targetHeight: ${height.toFixed(3)}, yaw: ${yaw.toFixed(3)} });\n`;
+        buildPropsCode += `  scene.add(${varName});\n`;
+        if (!['nightstandLamp', 'chandelier', 'mug'].includes(key)) {
+           buildPropsCode += `  registerObstacleObject(${varName}, 0.08, 0.05);\n`;
+        }
+        buildPropsCode += `}\n\n`;
+      });
+
+      // GENERATE STEP 1: ASSETS DICTIONARY
+      let step1 = `// ==========================================\n`;
+      step1 += `// STEP 1: DECLARE YOUR FILES\n`;
+      step1 += `// Find the "const ASSETS = {" object at the top of test.html.\n`;
+      step1 += `// Add these lines inside "models: { ... }":\n`;
+      step1 += `// (Make sure these .glb files are saved in the same folder as test.html!)\n`;
+      step1 += `// ==========================================\n`;
+      const customKeys = Object.keys(customAssetsMap);
+      if (customKeys.length > 0) {
+          customKeys.forEach(k => {
+              step1 += `${k}: '${customAssetsMap[k]}',\n`;
+          });
+      } else {
+          step1 += `// (No custom files were uploaded to the builder.)\n`;
+      }
+      step1 += `\n`;
+
+      // GENERATE STEP 2: loadCriticalAssets()
+      let step2 = `// ==========================================\n`;
+      step2 += `// STEP 2: LOAD YOUR FILES INTO MEMORY\n`;
+      step2 += `// Find the async function loadCriticalAssets() in test.html.\n`;
+      step2 += `// Add these lines inside "const tasks = { ... }":\n`;
+      step2 += `// ==========================================\n`;
+      if (customKeys.length > 0) {
+          customKeys.forEach(k => {
+              step2 += `${k}: withTimeout(loadGLTF(ASSETS.models.${k}), 12000, '${k}'),\n`;
+          });
+      } else {
+          step2 += `// (No custom files were uploaded to the builder.)\n`;
+      }
+      step2 += `\n`;
+
+      outputTxt.value = step1 + step2 + buildPropsCode;
+      
+      exportBtn.innerText = "Code Ready!";
+      exportBtn.style.background = "#2ecc71";
+      setTimeout(() => {
+        exportBtn.innerText = "Generate Code";
+        exportBtn.style.background = "";
+      }, 1500);
+      showToast("Full implementation code generated!", 'success');
+    });
+
+    // Animation Loop
+    function animate() {
+      requestAnimationFrame(animate);
+      orbit.update();
+      if (selectedObject && selectionBox.visible) {
+        selectionBox.update();
+      }
+      renderer.render(scene, camera);
+    }
+    animate();
+
+  </script>
+</body>
+</html>
