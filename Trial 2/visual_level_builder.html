@@ -392,6 +392,36 @@
       </div>
     </div>
 
+    <!-- Interaction Tagging Panel -->
+    <div class="control-group" id="tag-panel" style="display: none; background: #222228; padding: 10px; border-radius: 6px; border: 1px solid #a3d4ff;">
+      <h3 style="color: #a3d4ff;">🏷️ Interaction Tag</h3>
+      <label>Role</label>
+      <select id="tag-role">
+        <option value="none">None (decoration)</option>
+        <option value="hideSpot">Hide Spot (wardrobe-style)</option>
+        <option value="drawer">Drawer (clue)</option>
+        <option value="cctvDesk">CCTV Desk</option>
+      </select>
+
+      <div id="tag-marker-controls" style="display: none; margin-top: 10px;">
+        <div style="font-size: 11px; color: #888; margin-bottom: 6px;">
+          The yellow marker sphere shows where the camera/proxy will sit, relative to this object. Drag its number fields or click "Snap Marker to Orbit Target".
+        </div>
+        <div class="prop-row">
+          <label title="Marker Offset">Mkr</label>
+          <input type="number" id="tag-mx" step="0.05" title="Marker X offset">
+          <input type="number" id="tag-my" step="0.05" title="Marker Y offset">
+          <input type="number" id="tag-mz" step="0.05" title="Marker Z offset">
+        </div>
+        <button id="btn-tag-snap" style="margin-top: 6px; font-size: 11px; padding: 6px;">Snap Marker to Orbit Target</button>
+      </div>
+
+      <div id="tag-label-row" style="margin-top: 10px;">
+        <label>Prompt Label (shown to player)</label>
+        <input type="text" id="tag-prompt" placeholder="e.g. Press E to hide inside" style="font-size: 12px; padding: 6px;">
+      </div>
+    </div>
+
     <div class="control-group" style="display: flex; flex-direction: column; flex-grow: 1;">
       <label style="color: #2ecc71; font-weight: bold; font-size: 15px;">FULL GAME EXPORT CODE</label>
       <button id="btn-export" class="primary" style="padding: 12px; font-size: 14px;">Generate Code</button>
@@ -533,6 +563,96 @@
       sx: document.getElementById('prop-sx'), sy: document.getElementById('prop-sy'), sz: document.getElementById('prop-sz')
     };
 
+    // --- Interaction Tagging Elements ---
+    const tagPanel = document.getElementById('tag-panel');
+    const tagRoleEl = document.getElementById('tag-role');
+    const tagMarkerControls = document.getElementById('tag-marker-controls');
+    const tagPromptEl = document.getElementById('tag-prompt');
+    const tagSnapBtn = document.getElementById('btn-tag-snap');
+    const tagInputs = {
+      mx: document.getElementById('tag-mx'), my: document.getElementById('tag-my'), mz: document.getElementById('tag-mz')
+    };
+    const DEFAULT_PROMPTS = {
+      hideSpot: 'Press E to hide',
+      drawer: 'Press E to inspect the drawer',
+      cctvDesk: 'Press E to check the monitors'
+    };
+
+    function getTagData(obj) {
+      if (!obj.userData.tag) {
+        obj.userData.tag = 'none';
+        obj.userData.tagMarker = { x: 0, y: 1.0, z: 0.6 };
+        obj.userData.tagPrompt = '';
+      }
+      return obj.userData;
+    }
+
+    function refreshTagPanel() {
+      if (!selectedObject) {
+        tagPanel.style.display = 'none';
+        tagMarkerMesh.visible = false;
+        return;
+      }
+      tagPanel.style.display = 'block';
+      const data = getTagData(selectedObject);
+      tagRoleEl.value = data.tag;
+      tagPromptEl.value = data.tagPrompt || '';
+      tagInputs.mx.value = data.tagMarker.x.toFixed(3);
+      tagInputs.my.value = data.tagMarker.y.toFixed(3);
+      tagInputs.mz.value = data.tagMarker.z.toFixed(3);
+      const showMarker = data.tag !== 'none';
+      tagMarkerControls.style.display = showMarker ? 'block' : 'none';
+      tagMarkerMesh.visible = showMarker;
+      if (showMarker) updateTagMarkerMeshPosition();
+    }
+
+    function updateTagMarkerMeshPosition() {
+      if (!selectedObject) return;
+      const data = getTagData(selectedObject);
+      const worldPos = new THREE.Vector3(data.tagMarker.x, data.tagMarker.y, data.tagMarker.z);
+      selectedObject.localToWorld(worldPos);
+      tagMarkerMesh.position.copy(worldPos);
+    }
+
+    tagRoleEl.addEventListener('change', () => {
+      if (!selectedObject) return;
+      const data = getTagData(selectedObject);
+      data.tag = tagRoleEl.value;
+      if (!tagPromptEl.value) tagPromptEl.value = DEFAULT_PROMPTS[data.tag] || '';
+      data.tagPrompt = tagPromptEl.value;
+      refreshTagPanel();
+    });
+
+    tagPromptEl.addEventListener('input', () => {
+      if (!selectedObject) return;
+      getTagData(selectedObject).tagPrompt = tagPromptEl.value;
+    });
+
+    function updateTagMarkerFromUI() {
+      if (!selectedObject) return;
+      const data = getTagData(selectedObject);
+      data.tagMarker.x = parseFloat(tagInputs.mx.value) || 0;
+      data.tagMarker.y = parseFloat(tagInputs.my.value) || 0;
+      data.tagMarker.z = parseFloat(tagInputs.mz.value) || 0;
+      updateTagMarkerMeshPosition();
+    }
+    Object.values(tagInputs).forEach(input => {
+      input.addEventListener('input', updateTagMarkerFromUI);
+      input.addEventListener('change', updateTagMarkerFromUI);
+    });
+
+    tagSnapBtn.addEventListener('click', () => {
+      if (!selectedObject) return;
+      const data = getTagData(selectedObject);
+      const local = orbit.target.clone();
+      selectedObject.worldToLocal(local);
+      data.tagMarker.x = local.x;
+      data.tagMarker.y = local.y;
+      data.tagMarker.z = local.z;
+      refreshTagPanel();
+      showToast('Marker snapped to orbit target.', 'success');
+    });
+
     // Populate Asset Dropdown
     Object.keys(ASSETS.models).forEach(key => {
       const opt = document.createElement('option');
@@ -548,6 +668,15 @@
     scene.add(gridHelper);
     const ambient = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
     scene.add(ambient);
+
+    // Visual marker sphere shown in the builder to represent the tag's relative offset
+    const tagMarkerMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.12, 16, 16),
+      new THREE.MeshBasicMaterial({ color: 0xffff00 })
+    );
+    tagMarkerMesh.visible = false;
+    scene.add(tagMarkerMesh);
+
     const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
     dirLight.position.set(10, 20, 10);
     dirLight.castShadow = true;
@@ -624,6 +753,7 @@
       selectedObject.rotation.set(THREE.MathUtils.degToRad(parseFloat(inputs.rx.value) || 0), THREE.MathUtils.degToRad(parseFloat(inputs.ry.value) || 0), THREE.MathUtils.degToRad(parseFloat(inputs.rz.value) || 0));
       selectedObject.scale.set(parseFloat(inputs.sx.value) || 1, parseFloat(inputs.sy.value) || 1, parseFloat(inputs.sz.value) || 1);
       if (selectionBox.visible) selectionBox.update();
+      if (tagMarkerMesh.visible) updateTagMarkerMeshPosition();
     }
 
     Object.values(inputs).forEach(input => {
@@ -642,6 +772,7 @@
         selectionBox.visible = false;
         propertiesPanel.style.display = 'none';
       }
+      refreshTagPanel();
     }
 
     function createPlaceholderBox(item) {
@@ -777,7 +908,10 @@
         isPlaceholder: obj.userData.isPlaceholder || false,
         position: { x: obj.position.x, y: obj.position.y, z: obj.position.z },
         rotation: { x: obj.rotation.x, y: obj.rotation.y, z: obj.rotation.z },
-        scale: { x: obj.scale.x, y: obj.scale.y, z: obj.scale.z }
+        scale: { x: obj.scale.x, y: obj.scale.y, z: obj.scale.z },
+        tag: obj.userData.tag || 'none',
+        tagMarker: obj.userData.tagMarker || { x: 0, y: 1.0, z: 0.6 },
+        tagPrompt: obj.userData.tagPrompt || ''
       }));
     }
 
@@ -809,10 +943,22 @@
                 url = URL.createObjectURL(fileBlob);
               } else {
                 createPlaceholderBox(item);
+                const placedPh = placedObjects[placedObjects.length - 1];
+                if (placedPh && item.tag) {
+                  placedPh.userData.tag = item.tag;
+                  placedPh.userData.tagMarker = item.tagMarker || { x: 0, y: 1.0, z: 0.6 };
+                  placedPh.userData.tagPrompt = item.tagPrompt || '';
+                }
                 continue;
               }
             } catch (err) {
               createPlaceholderBox(item);
+              const placedPh2 = placedObjects[placedObjects.length - 1];
+              if (placedPh2 && item.tag) {
+                placedPh2.userData.tag = item.tag;
+                placedPh2.userData.tagMarker = item.tagMarker || { x: 0, y: 1.0, z: 0.6 };
+                placedPh2.userData.tagPrompt = item.tagPrompt || '';
+              }
               continue;
             }
           }
@@ -823,6 +969,12 @@
         if (url) {
           const transform = { position: item.position, rotation: item.rotation, scale: item.scale };
           await loadAndPlaceModel(url, item.assetKey, isCustom, item.customUrl, transform, item.originalFileName);
+          const placed = placedObjects[placedObjects.length - 1];
+          if (placed && item.tag) {
+            placed.userData.tag = item.tag;
+            placed.userData.tagMarker = item.tagMarker || { x: 0, y: 1.0, z: 0.6 };
+            placed.userData.tagPrompt = item.tagPrompt || '';
+          }
         }
       }
     }
@@ -992,6 +1144,13 @@
       buildPropsCode += `// Paste this exactly at the bottom of that function:\n`;
       buildPropsCode += `// ==========================================\n\n`;
 
+      let interactCode = `// ==========================================\n`;
+      interactCode += `// STEP 4: INTERACTION TAGS (hide spots, drawers, CCTV desks)\n`;
+      interactCode += `// Paste this AFTER the Step 3 block above, still inside buildProps().\n`;
+      interactCode += `// Each block reuses the variable created right above it in Step 3.\n`;
+      interactCode += `// ==========================================\n\n`;
+      let hasInteracts = false;
+
       const counts = {}; 
 
       placedObjects.forEach((obj) => {
@@ -1029,6 +1188,65 @@
            buildPropsCode += `  registerObstacleObject(${varName}, 0.08, 0.05);\n`;
         }
         buildPropsCode += `}\n\n`;
+
+        // --- Generate interaction code for tagged objects ---
+        const tag = obj.userData.tag;
+        if (tag && tag !== 'none') {
+          hasInteracts = true;
+          const mk = obj.userData.tagMarker || { x: 0, y: 1.0, z: 0.6 };
+          const prompt = (obj.userData.tagPrompt || DEFAULT_PROMPTS[tag] || 'Press E to interact').replace(/'/g, "\\'");
+          // World-space marker position computed at export time (object's current transform)
+          const worldMarker = new THREE.Vector3(mk.x, mk.y, mk.z);
+          obj.localToWorld(worldMarker);
+          const proxyVar = `${varName}_proxy`;
+
+          if (tag === 'hideSpot') {
+            interactCode += `// --- Hide Spot: ${varName} ---\n`;
+            interactCode += `if (${varName}) {\n`;
+            interactCode += `  const ${proxyVar} = createInteractProxy(new THREE.Vector3(${worldMarker.x.toFixed(3)}, ${worldMarker.y.toFixed(3)}, ${worldMarker.z.toFixed(3)}), new THREE.Vector3(1.0, 1.8, 1.0));\n`;
+            interactCode += `  scene.add(${proxyVar});\n`;
+            interactCode += `  const ${varName}_hideSpot = {\n`;
+            interactCode += `    insidePosition: new THREE.Vector3(${worldMarker.x.toFixed(3)}, ${worldMarker.y.toFixed(3)}, ${worldMarker.z.toFixed(3)}),\n`;
+            interactCode += `    insideLookTarget: new THREE.Vector3(${worldMarker.x.toFixed(3)}, ${worldMarker.y.toFixed(3)}, ${(worldMarker.z - 2).toFixed(3)})\n`;
+            interactCode += `  };\n`;
+            interactCode += `  if (!state.customHideSpots) state.customHideSpots = [];\n`;
+            interactCode += `  state.customHideSpots.push(${varName}_hideSpot);\n`;
+            interactCode += `  registerInteractable({\n`;
+            interactCode += `    mesh: ${proxyVar},\n`;
+            interactCode += `    maxDistance: 2.3,\n`;
+            interactCode += `    prompt: () => state.hidePhase === 'outside' ? '${prompt}' : 'Hide spot busy',\n`;
+            interactCode += `    enabled: () => state.hidePhase === 'outside' && !state.inputSuppressed,\n`;
+            interactCode += `    // NOTE: triggerHideSequence() currently targets state.wardrobe by default.\n`;
+            interactCode += `    // To use THIS spot specifically, either set state.wardrobe.insidePosition/insideLookTarget\n`;
+            interactCode += `    // to ${varName}_hideSpot's values before calling triggerHideSequence(), or refactor\n`;
+            interactCode += `    // triggerHideSequence() to accept a hide spot parameter.\n`;
+            interactCode += `    onInteract: () => triggerHideSequence()\n`;
+            interactCode += `  });\n`;
+            interactCode += `}\n\n`;
+          } else if (tag === 'drawer') {
+            interactCode += `// --- Drawer Clue: ${varName} ---\n`;
+            interactCode += `if (${varName}) {\n`;
+            interactCode += `  const ${proxyVar} = createInteractProxy(new THREE.Vector3(${worldMarker.x.toFixed(3)}, ${worldMarker.y.toFixed(3)}, ${worldMarker.z.toFixed(3)}), new THREE.Vector3(0.95, 0.3, 0.3));\n`;
+            interactCode += `  scene.add(${proxyVar});\n`;
+            interactCode += `  // NOTE: reuses the existing state.drawer toggle/animation system.\n`;
+            interactCode += `  // If you want THIS drawer to open independently, give it its own\n`;
+            interactCode += `  // targetOpenAmount state instead of sharing state.drawer.\n`;
+            interactCode += `  registerInteractable({\n`;
+            interactCode += `    mesh: ${proxyVar},\n`;
+            interactCode += `    maxDistance: 1.8,\n`;
+            interactCode += `    prompt: () => state.drawer && state.drawer.targetOpenAmount < 0.5 ? '${prompt}' : 'Press E to close the drawer',\n`;
+            interactCode += `    enabled: () => state.currentAct === 1 && state.hidePhase === 'outside' && !state.inputSuppressed,\n`;
+            interactCode += `    onInteract: () => toggleDrawer()\n`;
+            interactCode += `  });\n`;
+            interactCode += `}\n\n`;
+          } else if (tag === 'cctvDesk') {
+            interactCode += `// --- CCTV Desk: ${varName} ---\n`;
+            interactCode += `// Marker world position for screen/camera placement reference:\n`;
+            interactCode += `// new THREE.Vector3(${worldMarker.x.toFixed(3)}, ${worldMarker.y.toFixed(3)}, ${worldMarker.z.toFixed(3)})\n`;
+            interactCode += `// Use this position inside buildCCTVRig(assets) / buildSecurityDesk(assets)\n`;
+            interactCode += `// when positioning createMonitorScreen(...) calls for this desk.\n\n`;
+          }
+        }
       });
 
       // GENERATE STEP 1: ASSETS DICTIONARY
@@ -1063,7 +1281,7 @@
       }
       step2 += `\n`;
 
-      outputTxt.value = step1 + step2 + buildPropsCode;
+      outputTxt.value = step1 + step2 + buildPropsCode + (hasInteracts ? interactCode : '');
       
       exportBtn.innerText = "Code Ready!";
       exportBtn.style.background = "#2ecc71";
