@@ -827,11 +827,7 @@ fbxLoader.setResourcePath('https://yacob247.github.io/');
         wallMat: withTimeout(loadMaterialSet(ASSETS.materials.wall, { repeat: [3, 2] }), 10000, 'wall material'),
         fabricMat: withTimeout(loadMaterialSet(ASSETS.materials.fabric, { repeat: [2, 2] }), 10000, 'fabric material'),
         plasterMat: withTimeout(loadMaterialSet(ASSETS.materials.plaster, { repeat: [3, 2] }), 10000, 'plaster material'),
-ch41NonpbrCatwalkWalkForwardHighknees: withTimeout(loadGLTF(ASSETS.character.ch41NonpbrCatwalkWalkForwardHighknees), 30000, 'ch41NonpbrCatwalkWalkForwardHighknees'),
-walkMotion: withTimeout(loadGLTFMotion(ASSETS.motions.walk), 30000, 'walkMotion'),
-leftMotion: withTimeout(loadGLTFMotion(ASSETS.motions.left), 30000, 'leftMotion'),
-rightMotion: withTimeout(loadGLTFMotion(ASSETS.motions.right), 30000, 'rightMotion'),
-backMotion: withTimeout(loadGLTFMotion(ASSETS.motions.back), 30000, 'backMotion'),
+ch41NonpbrCatwalkWalkForwardHighknees: withTimeout(loadGLTFFull(ASSETS.character.ch41NonpbrCatwalkWalkForwardHighknees), 30000, 'ch41NonpbrCatwalkWalkForwardHighknees'),
       };
 
       const entries = Object.entries(tasks);
@@ -840,6 +836,20 @@ backMotion: withTimeout(loadGLTFMotion(ASSETS.motions.back), 30000, 'backMotion'
       for (let i = 0; i < entries.length; i++) {
         const key = entries[i][0];
         result[key] = settled[i].status === 'fulfilled' ? settled[i].value : null;
+      }
+      // Extract scene and animations from the full gltf object
+      if (result.ch41NonpbrCatwalkWalkForwardHighknees) {
+        const gltf = result.ch41NonpbrCatwalkWalkForwardHighknees;
+        result.ch41NonpbrCatwalkWalkForwardHighknees = gltf.scene;
+        result.walkMotion = gltf.animations?.[0] || null;
+        result.leftMotion = gltf.animations?.[0] || null;
+        result.rightMotion = gltf.animations?.[0] || null;
+        result.backMotion = gltf.animations?.[0] || null;
+      } else {
+        result.walkMotion = null;
+        result.leftMotion = null;
+        result.rightMotion = null;
+        result.backMotion = null;
       }
       if (result.hdri) result.hdri.mapping = THREE.EquirectangularReflectionMapping;
       return result;
@@ -879,6 +889,17 @@ backMotion: withTimeout(loadGLTFMotion(ASSETS.motions.back), 30000, 'backMotion'
         return gltf.scene;
       } catch (e) {
         console.error('loadGLTF failed for:', url, e);
+        return null;
+      }
+    }
+
+    async function loadGLTFFull(url) {
+      try {
+        const gltf = await gltfLoader.loadAsync(url);
+        prepareShadows(gltf.scene);
+        return gltf; // return full gltf with both .scene and .animations
+      } catch (e) {
+        console.error('loadGLTFFull failed for:', url, e);
         return null;
       }
     }
