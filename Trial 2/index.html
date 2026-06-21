@@ -331,7 +331,9 @@
     phone: 'https://static.seeles.ai/data/asset/export/e8692fb8-551e-4c2a-bae3-4ef7c04318ae/1005929/source.fbx',
     dismiss: 'https://static.seeles.ai/data/asset/export/e56649bd-ce8c-4940-b24f-21590c3da3fa/1006009/source.fbx',
     point: 'https://static.seeles.ai/data/asset/export/c8210b6b-93c5-402b-839c-ba5b9379a448/1005964/source.fbx',
-  
+    left: './assets/Ch41_nonPBR@Catwalk Walk Forward HighKnees.fbx',
+    right: './assets/Ch41_nonPBR@Catwalk Walk Forward HighKnees.fbx',
+    back: './assets/Ch41_nonPBR@Catwalk Walk Forward HighKnees.fbx'
   },
       materials: {
         floor: {
@@ -853,6 +855,9 @@ const loader = new GLTFLoader(manager);
         plasterMat: withTimeout(loadMaterialSet(ASSETS.materials.plaster, { repeat: [3, 2] }), 10000, 'plaster material'),
         ch41NonpbrCatwalkWalkForwardHighknees: withTimeout(loadFBX(ASSETS.character.ch41NonpbrCatwalkWalkForwardHighknees), 14000, 'ch41NonpbrCatwalkWalkForwardHighknees'),
         walkMotion: withTimeout(loadFBXMotion(ASSETS.motions.walk), 12000, 'walkMotion'),
+        leftMotion: withTimeout(loadFBXMotion(ASSETS.motions.left), 12000, 'leftMotion'),
+        rightMotion: withTimeout(loadFBXMotion(ASSETS.motions.right), 12000, 'rightMotion'),
+        backMotion: withTimeout(loadFBXMotion(ASSETS.motions.back), 12000, 'backMotion'),
       };
 
       const entries = Object.entries(tasks);
@@ -1247,9 +1252,12 @@ function buildWorld(assets) {
       function buildInteractivePlayerCharacter(assets) {
         const entity = createCharacterEntity(assets.ch41NonpbrCatwalkWalkForwardHighknees, { targetHeight: 1.8, yawOffset: CHARACTER_YAW_OFFSET });
         if (entity) {
+          tryBindMotion(entity, state.assets.leftMotion, 'left');
+          tryBindMotion(entity, state.assets.rightMotion, 'right');
+          tryBindMotion(entity, state.assets.backMotion, 'back');
           tryBindMotion(entity, state.assets.walkMotion, 'walk');
 
-          setCharacterAction(entity, 'walk');
+          setCharacterAction(entity, 'left');
           entity.root.position.set(0, FLOOR_Y_FIRST || 0, 0);
           scene.add(entity.root);
           state.myCustomEntity = entity;
@@ -2040,6 +2048,39 @@ function updatePlayer(delta) {
       state.velocity.set(0, 0, 0);
       const customEntity = state.myCustomEntity;
 
+      // ── Slot: left ──────────────────────────────────
+      if (customEntity) {
+        let leftTriggered = false;
+        if (state.keys.has('a')) {
+          setCharacterAction(customEntity, 'left');
+          state.velocity.addScaledVector(right,  -3.5);
+          leftTriggered = true;
+        }
+        // no default action for slot 'left'
+      }
+
+      // ── Slot: right ──────────────────────────────────
+      if (customEntity) {
+        let rightTriggered = false;
+        if (state.keys.has('d')) {
+          setCharacterAction(customEntity, 'right');
+          state.velocity.addScaledVector(right,   3.5);
+          rightTriggered = true;
+        }
+        // no default action for slot 'right'
+      }
+
+      // ── Slot: back ──────────────────────────────────
+      if (customEntity) {
+        let backTriggered = false;
+        if (state.keys.has('s')) {
+          setCharacterAction(customEntity, 'back');
+          state.velocity.addScaledVector(forward, -3.5);
+          backTriggered = true;
+        }
+        // no default action for slot 'back'
+      }
+
       // ── Slot: walk ──────────────────────────────────
       if (customEntity) {
         let walkTriggered = false;
@@ -2072,6 +2113,20 @@ function updatePlayer(delta) {
         const lookDir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
         const idealCameraPos = charPos.clone().add(new THREE.Vector3(0, EYE_HEIGHT, 0));
         idealCameraPos.addScaledVector(lookDir, -2.5);
+
+        // ── Head bob: advance timer only while actually moving ──────────
+        const isMoving = state.velocity.lengthSq() > 0.001;
+        if (isMoving) {
+          state.headBobTimer += delta * 9.5; // bob speed
+          const bobY = Math.sin(state.headBobTimer) * 0.045;
+          const bobX = Math.cos(state.headBobTimer * 0.5) * 0.03;
+          idealCameraPos.y += bobY;
+          const camRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+          idealCameraPos.addScaledVector(camRight, bobX);
+        } else {
+          state.headBobTimer = 0;
+        }
+
         camera.position.copy(idealCameraPos);
 
         if (state.currentAct === 1 && !state.eventTriggered && state.zones.upstairsLanding.containsPoint(charPos)) {
@@ -2079,6 +2134,8 @@ function updatePlayer(delta) {
         }
       }
     }
+
+    
 
     
 
