@@ -304,7 +304,6 @@
         sedan: 'https://static.seeles.ai/data/asset/export/3413f54e-8823-4e53-bd7e-4f4842188a2c/926701/threeJs_901136ed-767f-45f7-85fb-9200a8183909.glb',
         roadsideShelter: 'https://static.seeles.ai/data/asset/export/04d04503-1ba0-497b-9fda-cddee24d37ab/764936/threeJs_ff802237-ea48-4341-94ca-6ea844ec9374.glb',
         signpost: 'https://static.seeles.ai/data/asset/export/2723de8d-f08c-4d57-a838-fc4c33edf317/929444/threeJs_c27a3194-da1e-4fc9-8998-b611566b6cf3.glb',
-        // --- Custom level assets ---
         bathroom_floor: 'https://github.com/yacob247/yacob247.github.io/releases/download/v1.0.0/bathroom_floor.glb',
         appartement: 'https://github.com/yacob247/yacob247.github.io/releases/download/v1.0.0/appartement.glb',
         kitchen_v1: 'https://github.com/yacob247/yacob247.github.io/releases/download/v1.0.0/kitchen-v1.glb',
@@ -359,7 +358,7 @@
     };
 
     const FLOOR_Y_FIRST = 0;
-    const FLOOR_Y_SECOND = 0; // Adjusted for new layout tracking
+    const FLOOR_Y_SECOND = 0; 
     const EYE_HEIGHT = 1.68;
     const CHARACTER_YAW_OFFSET = Math.PI;
 
@@ -733,15 +732,12 @@
       bindInput();
       state.assets = await loadCriticalAssets();
 
+      // Gracefully warn instead of crashing completely if specific FBXs fail
       if (!state.assets.ch41NonpbrCatwalkWalkForwardHighknees) {
-        throw new Error(
-          `Player character model failed to load. Make sure the FBX file is at the exact specified path.`
-        );
+        console.warn('Player character model failed to load. Will utilize fallback model.');
       }
       if (!state.assets.walkMotion) {
-        throw new Error(
-          `Player walk animation failed to load. Make sure the FBX file is at the exact specified path.`
-        );
+        console.warn('Player walk animation failed to load.');
       }
 
       await loadOptionalIntruderAssets();
@@ -810,6 +806,7 @@
     }
 
     async function loadCriticalAssets() {
+      // Increased timeouts to 30000ms (30s) to allow larger files time to fetch
       const tasks = {
         hdri: withTimeout(loadHDRI(ASSETS.hdri.nightField), 12000, 'HDRI'),
         mansionExterior: withTimeout(loadGLTF(ASSETS.models.mansionExterior), 12000, 'mansionExterior'),
@@ -828,11 +825,11 @@
         wallMat: withTimeout(loadMaterialSet(ASSETS.materials.wall, { repeat: [3, 2] }), 10000, 'wall material'),
         fabricMat: withTimeout(loadMaterialSet(ASSETS.materials.fabric, { repeat: [2, 2] }), 10000, 'fabric material'),
         plasterMat: withTimeout(loadMaterialSet(ASSETS.materials.plaster, { repeat: [3, 2] }), 10000, 'plaster material'),
-        ch41NonpbrCatwalkWalkForwardHighknees: withTimeout(loadFBX(ASSETS.character.ch41NonpbrCatwalkWalkForwardHighknees), 14000, 'ch41NonpbrCatwalkWalkForwardHighknees'),
-        walkMotion: withTimeout(loadFBXMotion(ASSETS.motions.walk), 12000, 'walkMotion'),
-        leftMotion: withTimeout(loadFBXMotion(ASSETS.motions.left), 12000, 'leftMotion'),
-        rightMotion: withTimeout(loadFBXMotion(ASSETS.motions.right), 12000, 'rightMotion'),
-        backMotion: withTimeout(loadFBXMotion(ASSETS.motions.back), 12000, 'backMotion'),
+        ch41NonpbrCatwalkWalkForwardHighknees: withTimeout(loadFBX(ASSETS.character.ch41NonpbrCatwalkWalkForwardHighknees), 30000, 'ch41NonpbrCatwalkWalkForwardHighknees'),
+        walkMotion: withTimeout(loadFBXMotion(ASSETS.motions.walk), 30000, 'walkMotion'),
+        leftMotion: withTimeout(loadFBXMotion(ASSETS.motions.left), 30000, 'leftMotion'),
+        rightMotion: withTimeout(loadFBXMotion(ASSETS.motions.right), 30000, 'rightMotion'),
+        backMotion: withTimeout(loadFBXMotion(ASSETS.motions.back), 30000, 'backMotion'),
       };
 
       const entries = Object.entries(tasks);
@@ -1063,7 +1060,7 @@
     }
 
     function tryBindMotion(entity, clip, name) {
-      if (!entity || !clip) return false;
+      if (!entity || !clip || !entity.mixer.clipAction) return false;
       try {
         const action = entity.mixer.clipAction(clip);
         action.enabled = true;
@@ -1222,19 +1219,48 @@
       buildIntruder(assets);
       
       function buildInteractivePlayerCharacter(assets) {
-        const entity = createCharacterEntity(assets.ch41NonpbrCatwalkWalkForwardHighknees, { targetHeight: 1.8, yawOffset: CHARACTER_YAW_OFFSET });
-        if (entity) {
+        let entity = createCharacterEntity(assets.ch41NonpbrCatwalkWalkForwardHighknees, { targetHeight: 1.8, yawOffset: CHARACTER_YAW_OFFSET });
+        
+        // Add a guaranteed fallback so the game can always start even if the URL fails.
+        if (!entity) {
+          const root = new THREE.Group();
+          const visualPivot = new THREE.Group();
+          const visual = new THREE.Mesh(
+            new THREE.CapsuleGeometry(0.3, 1.2, 4, 16),
+            new THREE.MeshStandardMaterial({ color: 0x445566, roughness: 0.8 })
+          );
+          visual.position.y = 0.9;
+          visual.castShadow = true;
+          visual.receiveShadow = true;
+          visualPivot.add(visual);
+          root.add(visualPivot);
+
+          entity = {
+            root,
+            visual,
+            visualPivot,
+            yawOffset: CHARACTER_YAW_OFFSET,
+            mixer: { update: () => {} }, // Dummy mixer
+            actions: {},
+            activeAction: null,
+            fallbackMotion: 'idle',
+            moveSpeed: 1,
+            bobPhase: Math.random() * Math.PI * 2,
+            visible: true
+          };
+        } else {
+          // If the model successfully loaded, bind its animations
           tryBindMotion(entity, state.assets.leftMotion, 'left');
           tryBindMotion(entity, state.assets.rightMotion, 'right');
           tryBindMotion(entity, state.assets.backMotion, 'back');
           tryBindMotion(entity, state.assets.walkMotion, 'walk');
           tryBindMotion(entity, state.assets.idleMotion, 'idle');
-
-          setCharacterAction(entity, 'idle');
-          entity.root.position.set(0, FLOOR_Y_FIRST, 9.8);
-          scene.add(entity.root);
-          state.myCustomEntity = entity;
         }
+
+        setCharacterAction(entity, 'idle');
+        entity.root.position.set(0, FLOOR_Y_FIRST, 9.8);
+        scene.add(entity.root);
+        state.myCustomEntity = entity;
       }
       buildInteractivePlayerCharacter(state.assets);
 
