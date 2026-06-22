@@ -581,7 +581,7 @@
 
     const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.1, 500);
     // Position camera inside the appartement
-    camera.position.set(145.5, 2.0 + EYE_HEIGHT, 26.9);
+    camera.position.set(145.5, 4.0 + EYE_HEIGHT, 26.9);
 
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -905,12 +905,13 @@ ch41NonpbrCatwalkWalkForwardHighknees: withTimeout(
       try {
         const gltf = await gltfLoader.loadAsync(url);
         prepareShadows(gltf.scene);
-        // Log bone names vs animation track names to diagnose mismatch
-        const bones = [];
-        gltf.scene.traverse(c => { if (c.isBone) bones.push(c.name); });
-        console.log('Mesh bones (first 5):', bones.slice(0, 5));
-        if (gltf.animations?.[0]) {
-          console.log('Anim tracks (first 5):', gltf.animations[0].tracks.map(t => t.name).slice(0, 5));
+        // Remap animation track names from mixamorig to mixamorig4
+        if (gltf.animations) {
+          for (const clip of gltf.animations) {
+            for (const track of clip.tracks) {
+              track.name = track.name.replace(/mixamorig:/g, 'mixamorig4:').replace(/mixamorig([^4])/g, 'mixamorig4$1');
+            }
+          }
         }
         return gltf;
       } catch (e) {
@@ -932,7 +933,13 @@ ch41NonpbrCatwalkWalkForwardHighknees: withTimeout(
     async function loadFBXMotion(url) {
       try {
         const object = await fbxLoader.loadAsync(url);
-        return object.animations?.[0] || null;
+        const clip = object.animations?.[0] || null;
+        if (clip) {
+          for (const track of clip.tracks) {
+            track.name = track.name.replace(/mixamorig:/g, 'mixamorig4:').replace(/mixamorig([^4])/g, 'mixamorig4$1');
+          }
+        }
+        return clip;
       } catch {
         return null;
       }
@@ -1307,7 +1314,7 @@ ch41NonpbrCatwalkWalkForwardHighknees: withTimeout(
         }
 
         setCharacterAction(entity, 'idle');
-        entity.root.position.set(145.5, 2.0, 26.9);
+        entity.root.position.set(145.5, 4.0, 26.9);
         scene.add(entity.root);
         state.myCustomEntity = entity;
       }
