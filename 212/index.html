@@ -65,7 +65,7 @@
             <div class="flex items-center space-x-2">
                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
                     <span class="w-1.5 h-1.5 mr-1.5 rounded-full bg-indigo-400 animate-pulse"></span>
-                    Federated Network
+                    Multi-Engine Network
                 </span>
             </div>
         </div>
@@ -104,7 +104,7 @@
                                 </svg>
                             </button>
                         </div>
-                        <p class="text-xs text-slate-500 pl-1">Supports all YouTube watch URLs, Shorts, and Music streams natively.</p>
+                        <p class="text-xs text-slate-500 pl-1">Supports all standard YouTube watch links, Shorts, and YouTube Music URLs.</p>
                     </div>
 
                     <!-- Extraction Type Selectors -->
@@ -350,21 +350,21 @@
     <footer class="border-t border-slate-900 bg-slate-950 text-slate-500 text-xs py-6 mt-12">
         <div class="max-w-5xl mx-auto px-4 flex flex-col md:flex-row items-center justify-between gap-4">
             <p>© 2026 SleekStream Extractor. Crafted 100% serverless on federated networks.</p>
-            <p>Direct Google Video stream protocol wrapper.</p>
+            <p>Direct Video stream protocol wrapper.</p>
         </div>
     </footer>
 
     <!-- JavaScript Client-Side Logic -->
     <script>
-        // Preset of active public Piped API nodes which allow clean, high-speed CORS requests
+        // Dual Federated Networks: Combining robust Piped API and Invidious API instances for 100% uptime fallback
         const defaultNodes = [
-            { name: "Piped Kavin (Main)", url: "https://pipedapi.kavin.rocks", status: "checking" },
-            { name: "Piped Lym", url: "https://pipedapi.lymetal.cf", status: "checking" },
-            { name: "Piped Astro", url: "https://pipedapi.astrem.co", status: "checking" },
-            { name: "Piped Sync", url: "https://pipedapi.syncit.group", status: "checking" },
-            { name: "Piped Tokyo", url: "https://pipedapi.tokyo.kappa.host", status: "checking" },
-            { name: "Piped Leptons", url: "https://pipedapi.leptons.xyz", status: "checking" },
-            { name: "Piped Adminforge", url: "https://pipedapi.adminforge.de", status: "checking" }
+            { name: "Invidious Nerdy", url: "https://invidious.nerdvpn.de", type: "invidious", status: "checking" },
+            { name: "Invidious Flokinet", url: "https://invidious.flokinet.to", type: "invidious", status: "checking" },
+            { name: "Invidious No-Project", url: "https://invidious.no-project.xyz", type: "invidious", status: "checking" },
+            { name: "Invidious ProjectSegf", url: "https://invidious.projectsegfaut.im", type: "invidious", status: "checking" },
+            { name: "Piped Kavin", url: "https://pipedapi.kavin.rocks", type: "piped", status: "checking" },
+            { name: "Piped Lym", url: "https://pipedapi.lymetal.cf", type: "piped", status: "checking" },
+            { name: "Piped Adminforge", url: "https://pipedapi.adminforge.de", type: "piped", status: "checking" }
         ];
 
         let state = {
@@ -455,6 +455,11 @@
                     statusBadge = `<span class="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">${node.status} ms</span>`;
                 }
 
+                // Node Type Badge
+                const nodeTypeBadge = `<span class="text-[9px] font-semibold px-1 py-0.5 rounded ml-2 ${
+                    node.type === 'invidious' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/10' : 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/10'
+                }">${node.type.toUpperCase()}</span>`;
+
                 const item = document.createElement('div');
                 item.className = `flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer ${
                     isActive ? 'bg-indigo-500/10 border-indigo-500/40' : 'bg-slate-950/60 border-slate-800/80 hover:bg-slate-900'
@@ -465,7 +470,10 @@
                     <div class="flex items-center space-x-2.5">
                         <div class="w-2 h-2 rounded-full ${isActive ? 'bg-indigo-500 animate-pulse' : 'bg-slate-700'}"></div>
                         <div class="flex flex-col">
-                            <span class="text-xs font-bold ${isActive ? 'text-indigo-300' : 'text-slate-200'}">${node.name}</span>
+                            <span class="text-xs font-bold ${isActive ? 'text-indigo-300' : 'text-slate-200'} flex items-center">
+                                ${node.name}
+                                ${nodeTypeBadge}
+                            </span>
                             <span class="text-[9px] text-slate-500 truncate max-w-[150px] md:max-w-[200px]">${node.url}</span>
                         </div>
                     </div>
@@ -492,9 +500,12 @@
 
             state.nodes.forEach((node, idx) => {
                 const startTime = Date.now();
+                // Pick test endpoint depending on node engine type
+                const testPath = node.type === 'invidious' 
+                    ? `/api/v1/trending` 
+                    : `/instance`;
                 
-                // Fetch basic info to test if the server allows CORS connections and is responsive
-                fetch(`${node.url}/instance`, { 
+                fetch(`${node.url}${testPath}`, { 
                     method: 'GET', 
                     mode: 'cors'
                 })
@@ -589,7 +600,12 @@
                     const controller = new AbortController();
                     const timeoutId = setTimeout(() => controller.abort(), 12000); // 12 second safety limit
                     
-                    const response = await fetch(`${node.url}/streams/${videoId}`, {
+                    // Direct API Endpoint route based on Node engine type
+                    const targetUrl = node.type === 'invidious' 
+                        ? `${node.url}/api/v1/videos/${videoId}`
+                        : `${node.url}/streams/${videoId}`;
+
+                    const response = await fetch(targetUrl, {
                         method: 'GET',
                         mode: 'cors',
                         signal: controller.signal
@@ -603,8 +619,13 @@
 
                     const data = await response.json();
 
-                    // Successful Extraction Parser
-                    processStreamPayload(data, videoId);
+                    // Process stream payloads depending on node source response format
+                    if (node.type === 'invidious') {
+                        processInvidiousPayload(data, videoId);
+                    } else {
+                        processPipedPayload(data, videoId);
+                    }
+
                     updateStatus("Direct stream links resolved!", 100);
                     setTimeout(() => updateStatus("", 0, false), 1500);
                     return;
@@ -629,8 +650,8 @@
             showNotification(`Federated error: "${lastErrorMessage}". Please manually select another online community node on the right sidebar and retry.`);
         }
 
-        // Parse stream payload into correct download links and display preview
-        function processStreamPayload(data, videoId) {
+        // Parser 1: Process Invidious Stream payload (CORS-friendly, highly resilient format)
+        function processInvidiousPayload(data, videoId) {
             const successPanel = document.getElementById('successPanel');
             const formatLabel = document.getElementById('outputFormatLabel');
             const successTitle = document.getElementById('successTitle');
@@ -644,18 +665,89 @@
 
             successPanel.classList.remove('hidden');
 
-            // Set media title
             const mediaTitle = data.title || `Stream_Result_${videoId}`;
             successTitle.innerText = mediaTitle;
 
-            // Set thumbnail preview background
+            const thumbUrl = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+            previewThumbnail.src = thumbUrl;
+            previewThumbnail.classList.remove('hidden');
+
+            if (state.currentFormat === 'mp4') {
+                // Find standard mixed video streams (containing video + audio)
+                let streams = data.formatStreams || [];
+                // Sort by resolution if preferred
+                let bestMuxedStream = streams.find(s => s.container === 'mp4' && s.resolution === '720p');
+                if (!bestMuxedStream) {
+                    bestMuxedStream = streams.find(s => s.container === 'mp4');
+                }
+                if (!bestMuxedStream && streams.length > 0) {
+                    bestMuxedStream = streams[0];
+                }
+
+                if (!bestMuxedStream) {
+                    throw new Error("No compatible direct MP4 video streams found on this Invidious node.");
+                }
+
+                state.lastSuccessUrl = bestMuxedStream.url;
+                downloadBtn.href = bestMuxedStream.url;
+                formatLabel.innerText = 'MP4';
+                badge.innerText = `${bestMuxedStream.qualityLabel || bestMuxedStream.resolution || '720p'} Stream`;
+
+                audioPlaceholder.classList.add('hidden');
+                inlinePlayer.classList.remove('hidden');
+                inlinePlayer.src = bestMuxedStream.url;
+                inlinePlayer.poster = thumbUrl;
+
+            } else {
+                // Find highest quality audio stream (generally adaptive WebM or M4A)
+                let adaptive = data.adaptiveFormats || [];
+                let bestAudio = adaptive.find(a => a.type.includes('audio/mp4') || a.container === 'm4a');
+                
+                if (!bestAudio) {
+                    bestAudio = adaptive.find(a => a.type.includes('audio/'));
+                }
+
+                if (!bestAudio) {
+                    throw new Error("No compatible direct audio stream found on this Invidious node.");
+                }
+
+                state.lastSuccessUrl = bestAudio.url;
+                downloadBtn.href = bestAudio.url;
+                formatLabel.innerText = 'MP3 / M4A';
+                badge.innerText = `${Math.round((bestAudio.bitrate || 128000) / 1000)} kbps Audio`;
+
+                inlinePlayer.classList.add('hidden');
+                audioPlaceholder.classList.remove('hidden');
+                inlineAudio.src = bestAudio.url;
+            }
+
+            saveHistoryItem(document.getElementById('mediaUrl').value, mediaTitle);
+            successPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        // Parser 2: Process standard Piped Stream payload
+        function processPipedPayload(data, videoId) {
+            const successPanel = document.getElementById('successPanel');
+            const formatLabel = document.getElementById('outputFormatLabel');
+            const successTitle = document.getElementById('successTitle');
+            const downloadBtn = document.getElementById('downloadButton');
+            const badge = document.getElementById('streamDetailBadge');
+            
+            const previewThumbnail = document.getElementById('previewThumbnail');
+            const inlinePlayer = document.getElementById('inlinePlayer');
+            const inlineAudio = document.getElementById('inlineAudio');
+            const audioPlaceholder = document.getElementById('audioPlayerPlaceholder');
+
+            successPanel.classList.remove('hidden');
+
+            const mediaTitle = data.title || `Stream_Result_${videoId}`;
+            successTitle.innerText = mediaTitle;
+
             const thumbUrl = data.thumbnailUrl || `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
             previewThumbnail.src = thumbUrl;
             previewThumbnail.classList.remove('hidden');
 
             if (state.currentFormat === 'mp4') {
-                // Find best Video stream that has both video AND audio (muxed/combined)
-                // Filter out video streams without audio track for standard player preview downloads
                 let streams = data.videoStreams || [];
                 let bestMuxedStream = streams.find(s => s.mimeType.includes('video/mp4') && s.videoOnly === false);
                 
@@ -664,27 +756,24 @@
                 }
                 
                 if (!bestMuxedStream && streams.length > 0) {
-                    bestMuxedStream = streams[0]; // fallback
+                    bestMuxedStream = streams[0];
                 }
 
                 if (!bestMuxedStream) {
-                    throw new Error("No compatible direct MP4 video streams could be compiled by this node.");
+                    throw new Error("No compatible direct MP4 video streams found on this Piped node.");
                 }
 
-                // Update download link
                 state.lastSuccessUrl = bestMuxedStream.url;
                 downloadBtn.href = bestMuxedStream.url;
                 formatLabel.innerText = 'MP4';
                 badge.innerText = `${bestMuxedStream.quality || '1080p'} Stream`;
 
-                // Set Player
                 audioPlaceholder.classList.add('hidden');
                 inlinePlayer.classList.remove('hidden');
                 inlinePlayer.src = bestMuxedStream.url;
                 inlinePlayer.poster = thumbUrl;
 
             } else {
-                // Find highest quality audio track
                 let audioStreams = data.audioStreams || [];
                 let bestAudio = audioStreams.find(a => a.mimeType.includes('audio/mp4') || a.mimeType.includes('audio/m4a'));
                 
@@ -693,7 +782,7 @@
                 }
 
                 if (!bestAudio) {
-                    throw new Error("No compatible audio stream could be extracted from this node.");
+                    throw new Error("No compatible audio stream found on this Piped node.");
                 }
 
                 state.lastSuccessUrl = bestAudio.url;
@@ -701,15 +790,12 @@
                 formatLabel.innerText = 'MP3 / M4A';
                 badge.innerText = `${bestAudio.bitrate || 128} kbps Audio`;
 
-                // Set Player
                 inlinePlayer.classList.add('hidden');
                 audioPlaceholder.classList.remove('hidden');
                 inlineAudio.src = bestAudio.url;
             }
 
             saveHistoryItem(document.getElementById('mediaUrl').value, mediaTitle);
-            
-            // Smooth view focus to output panel
             successPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
 
@@ -717,7 +803,6 @@
         function copySuccessLink() {
             if (!state.lastSuccessUrl) return;
             
-            // Standard copy
             const el = document.createElement('textarea');
             el.value = state.lastSuccessUrl;
             document.body.appendChild(el);
