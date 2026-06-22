@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Local Downloader</title>
+    <!-- Using Tailwind CSS via CDN for a modern, clean look -->
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 flex items-center justify-center min-h-screen font-sans">
+    <div class="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md">
+        
+        <div class="text-center mb-8">
+            <h1 class="text-3xl font-extrabold text-slate-800">YT Downloader</h1>
+            <p class="text-slate-500 text-sm mt-2">100% Local & Private</p>
+        </div>
+
+        <div class="space-y-5">
+            <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-1">YouTube URL</label>
+                <input type="text" id="url" placeholder="https://www.youtube.com/watch?v=..." 
+                       class="w-full border border-slate-300 p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all">
+            </div>
+            
+            <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-1">Format</label>
+                <select id="format" class="w-full border border-slate-300 p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all bg-white">
+                    <option value="mp3">MP3 (Audio Only)</option>
+                    <option value="mp4">MP4 (Video + Audio)</option>
+                </select>
+            </div>
+
+            <button id="downloadBtn" onclick="startDownload()" 
+                    class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-4 rounded-lg transition-colors duration-200 shadow-md">
+                Download Now
+            </button>
+        </div>
+
+        <!-- Status message container -->
+        <div id="status" class="mt-6 text-center text-sm font-medium hidden p-3 rounded-lg"></div>
+    </div>
+
+    <script>
+        async function startDownload() {
+            const url = document.getElementById('url').value.trim();
+            const format = document.getElementById('format').value;
+            const statusDiv = document.getElementById('status');
+            const btn = document.getElementById('downloadBtn');
+
+            if (!url) {
+                showStatus('Please enter a valid YouTube URL.', 'bg-red-50 text-red-600 border border-red-200');
+                return;
+            }
+
+            // Disable button to prevent multiple rapid clicks
+            btn.disabled = true;
+            btn.classList.add('opacity-70', 'cursor-not-allowed');
+            btn.innerText = 'Extracting & Downloading...';
+            showStatus('Connecting to your local server...', 'bg-blue-50 text-blue-600 border border-blue-200');
+
+            try {
+                // Send the request to your local Python engine
+                const response = await fetch('http://127.0.0.1:5000/download', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url, format })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showStatus(data.message, 'bg-green-50 text-green-700 border border-green-200');
+                    document.getElementById('url').value = ''; // Clear input on success
+                } else {
+                    showStatus('Error: ' + data.message, 'bg-red-50 text-red-600 border border-red-200');
+                }
+            } catch (error) {
+                showStatus('Connection failed. Is your Python server (server.py) running?', 'bg-red-50 text-red-600 border border-red-200');
+            } finally {
+                // Re-enable button
+                btn.disabled = false;
+                btn.classList.remove('opacity-70', 'cursor-not-allowed');
+                btn.innerText = 'Download Now';
+            }
+        }
+
+        function showStatus(message, classes) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerText = message;
+            statusDiv.className = `mt-6 text-center text-sm font-medium block p-3 rounded-lg ${classes}`;
+        }
+    </script>
+</body>
+</html>
