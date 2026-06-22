@@ -1303,7 +1303,7 @@ ch41NonpbrCatwalkWalkForwardHighknees: loadFBX(ASSETS.character.ch41NonpbrCatwal
       buildIntruder(assets);
       
       function buildInteractivePlayerCharacter(assets) {
-        let entity = createCharacterEntity(assets.ch41NonpbrCatwalkWalkForwardHighknees, { targetHeight: 2.2, yawOffset: CHARACTER_YAW_OFFSET });
+        let entity = createCharacterEntity(assets.ch41NonpbrCatwalkWalkForwardHighknees, { targetHeight: 3.0, yawOffset: CHARACTER_YAW_OFFSET });
         
         // Add a guaranteed fallback so the game can always start even if the URL fails.
         if (!entity) {
@@ -1898,7 +1898,7 @@ ch41NonpbrCatwalkWalkForwardHighknees: loadFBX(ASSETS.character.ch41NonpbrCatwal
       state.velocity.set(0, 0, 0);
       const customEntity = state.myCustomEntity;
 
-      // Handle translation inputs — no movement while crouching or jumping
+      // Handle translation inputs — allow diagonal movement
       const isCrouching = state.isCrouching || false;
       const isJumping = state.isJumping || false;
       if (!isCrouching && !isJumping) {
@@ -1906,11 +1906,26 @@ ch41NonpbrCatwalkWalkForwardHighknees: loadFBX(ASSETS.character.ch41NonpbrCatwal
         if (state.keys.has('s')) state.velocity.addScaledVector(forward, -4.0);
         if (state.keys.has('a')) state.velocity.addScaledVector(right, -4.0);
         if (state.keys.has('d')) state.velocity.addScaledVector(right, 4.0);
+        // Normalize diagonal so speed is consistent
+        if (state.velocity.lengthSq() > 0) state.velocity.normalize().multiplyScalar(4.0);
       }
 
-      // Apply physical movement and check collision boundaries
+      // Apply movement
       movePlayerAxis('x', state.velocity.x * delta);
       movePlayerAxis('z', state.velocity.z * delta);
+
+      // Always move camera to follow character
+      if (customEntity) {
+        const charPos = customEntity.root.position;
+        const floorY = getFloorHeightAt(charPos.x, charPos.z);
+        if (floorY !== null) {
+          state.playerFloorY = floorY;
+          charPos.y = floorY;
+        }
+        camera.position.x = charPos.x;
+        camera.position.z = charPos.z;
+        camera.position.y = charPos.y + EYE_HEIGHT;
+      }
 
       if (customEntity) {
         const isMoving = state.velocity.lengthSq() > 0.001;
@@ -1919,51 +1934,38 @@ ch41NonpbrCatwalkWalkForwardHighknees: loadFBX(ASSETS.character.ch41NonpbrCatwal
         } else if (state.isJumping) {
           setCharacterAction(customEntity, 'jump');
         } else if (isMoving) {
-          if (state.keys.has('a')) {
+          if (state.keys.has('a') && !state.keys.has('d')) {
             setCharacterAction(customEntity, 'left');
-          } else if (state.keys.has('d')) {
+          } else if (state.keys.has('d') && !state.keys.has('a')) {
             setCharacterAction(customEntity, 'right');
-          } else if (state.keys.has('s')) {
+          } else if (state.keys.has('s') && !state.keys.has('w')) {
             setCharacterAction(customEntity, 'back');
           } else {
             setCharacterAction(customEntity, 'walk');
           }
-
           const moveDir = state.velocity.clone().normalize();
           customEntity.root.rotation.y = Math.atan2(moveDir.x, moveDir.z);
         } else {
           setCharacterAction(customEntity, 'idle');
         }
 
-        const charPos = customEntity.root.position;
-        const floorY = getFloorHeightAt(charPos.x, charPos.z);
-        if (floorY !== null) {
-          state.playerFloorY = floorY;
-          charPos.y = floorY;
-        }
-
-        // Camera sits on player at eye height (first-person)
-        const eyePos = charPos.clone();
-        eyePos.y += EYE_HEIGHT;
-
+        // Head bob
         if (isMoving) {
           state.headBobTimer += delta * 9.5;
           const bobY = Math.sin(state.headBobTimer) * 0.045;
-          const bobX = Math.cos(state.headBobTimer * 0.5) * 0.03;
-          eyePos.y += bobY;
-          const camRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
-          eyePos.addScaledVector(camRight, bobX);
+          camera.position.y += bobY;
         } else {
           state.headBobTimer = 0;
         }
-
-        camera.position.copy(eyePos);
+      }
 
         // Act 1 Landing boundary trigger
-        if (state.currentAct === 1 && !state.eventTriggered && state.zones.upstairsLanding.containsPoint(charPos)) {
-          triggerIntruderSequence();
+        if (state.currentAct === 1 && !state.eventTriggered && state.myCustomEntity) {
+          const charPos = state.myCustomEntity.root.position;
+          if (state.zones.upstairsLanding.containsPoint(charPos)) {
+            triggerIntruderSequence();
+          }
         }
-      }
     }
 
     function movePlayerAxis(axis, amount) {
