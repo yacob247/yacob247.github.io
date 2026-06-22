@@ -611,8 +611,9 @@
     
     const manager = new THREE.LoadingManager();
     manager.onProgress = (url, itemsLoaded, itemsTotal) => {
-      const percent = (itemsLoaded / itemsTotal) * 100;
-      document.getElementById('loading-status').innerText = `Loading: ${Math.round(percent)}%`;
+      const percent = Math.round((itemsLoaded / itemsTotal) * 100);
+      const label = url.startsWith('blob:') ? '(cached)' : '';
+      document.getElementById('loading-status').innerText = `Loading: ${percent}% ${label}`;
     };
 
 const fbxLoader = new FBXLoader(manager);
@@ -909,9 +910,61 @@ ch41NonpbrCatwalkWalkForwardHighknees: loadFBX(ASSETS.character.ch41NonpbrCatwal
       ]);
     }
 
+    // ─── IndexedDB Asset Cache ────────────────────────────────────────────────
+    // On first visit assets download normally. On every subsequent visit they
+    // load instantly from the browser's local IndexedDB — no network needed.
+    const IDB_NAME = 'woodbury-assets-v1';
+    const IDB_STORE = 'blobs';
+    let _idb = null;
+
+    async function openIDB() {
+      if (_idb) return _idb;
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open(IDB_NAME, 1);
+        req.onupgradeneeded = e => e.target.result.createObjectStore(IDB_STORE);
+        req.onsuccess = e => { _idb = e.target.result; resolve(_idb); };
+        req.onerror = () => resolve(null); // Fail gracefully — don't crash game
+      });
+    }
+
+    async function idbGet(key) {
+      try {
+        const db = await openIDB();
+        if (!db) return null;
+        return new Promise(resolve => {
+          const tx = db.transaction(IDB_STORE, 'readonly');
+          const req = tx.objectStore(IDB_STORE).get(key);
+          req.onsuccess = () => resolve(req.result ?? null);
+          req.onerror = () => resolve(null);
+        });
+      } catch { return null; }
+    }
+
+    async function idbSet(key, value) {
+      try {
+        const db = await openIDB();
+        if (!db) return;
+        const tx = db.transaction(IDB_STORE, 'readwrite');
+        tx.objectStore(IDB_STORE).put(value, key);
+      } catch {}
+    }
+
+    async function fetchCached(url) {
+      const cached = await idbGet(url);
+      if (cached) return URL.createObjectURL(cached);
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
+      const blob = await res.blob();
+      idbSet(url, blob); // Store in background — don't await
+      return URL.createObjectURL(blob);
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     async function loadGLTF(url) {
       try {
-        const gltf = await gltfLoader.loadAsync(url);
+        const localUrl = await fetchCached(url);
+        const gltf = await gltfLoader.loadAsync(localUrl);
+        URL.revokeObjectURL(localUrl);
         prepareShadows(gltf.scene);
         return gltf.scene;
       } catch (e) {
@@ -922,9 +975,10 @@ ch41NonpbrCatwalkWalkForwardHighknees: loadFBX(ASSETS.character.ch41NonpbrCatwal
 
     async function loadGLTFFull(url) {
       try {
-        const gltf = await gltfLoader.loadAsync(url);
+        const localUrl = await fetchCached(url);
+        const gltf = await gltfLoader.loadAsync(localUrl);
+        URL.revokeObjectURL(localUrl);
         prepareShadows(gltf.scene);
-        // Remap animation track names from mixamorig to mixamorig4
         if (gltf.animations) {
           for (const clip of gltf.animations) {
             for (const track of clip.tracks) {
@@ -940,6 +994,8 @@ ch41NonpbrCatwalkWalkForwardHighknees: loadFBX(ASSETS.character.ch41NonpbrCatwal
     }
 
     async function loadFBX(url) {
+      // FBX files must load from their original URL — blob:// URLs break the
+      // FBXLoader's internal texture resolver (it needs the base path).
       try {
         const object = await fbxLoader.loadAsync(url);
         prepareShadows(object);
@@ -950,6 +1006,7 @@ ch41NonpbrCatwalkWalkForwardHighknees: loadFBX(ASSETS.character.ch41NonpbrCatwal
     }
 
     async function loadFBXMotion(url) {
+      // Same reason as loadFBX — keep original URL for FBX.
       try {
         const object = await fbxLoader.loadAsync(url);
         const clip = object.animations?.[0] || null;
@@ -1260,6 +1317,8 @@ ch41NonpbrCatwalkWalkForwardHighknees: loadFBX(ASSETS.character.ch41NonpbrCatwal
     }
 
     function registerObstacleObject(object, padding = 0.08, yPadding = 0.05) {
+      // Registers a single bounding box for the whole object.
+      // Only used for hand-built props (wardrobe, desk, car, etc.) — not GLB models.
       object.updateMatrixWorld(true);
       const box = new THREE.Box3().setFromObject(object);
       box.expandByVector(new THREE.Vector3(padding, yPadding, padding));
@@ -1517,7 +1576,7 @@ ch41NonpbrCatwalkWalkForwardHighknees: loadFBX(ASSETS.character.ch41NonpbrCatwal
       if (mansionExterior_1) {
         placeObjectOnFloor(mansionExterior_1, new THREE.Vector3(0.000, 0.000, 0.000), { targetHeight: 240.000, yaw: 0.000 });
         scene.add(mansionExterior_1);
-        registerObstacleObject(mansionExterior_1, 0.08, 0.05);
+        // GLB model — no obstacle box (player can walk through floors freely)
       }
 
       const bathroom_floor_1 = cloneAsset(assets.bathroom_floor);
@@ -1536,35 +1595,35 @@ ch41NonpbrCatwalkWalkForwardHighknees: loadFBX(ASSETS.character.ch41NonpbrCatwal
       if (appartement_1) {
         placeObjectOnFloor(appartement_1, new THREE.Vector3(145.500, 0.400, 26.900), { targetHeight: 47.689, yaw: 0.000 });
         scene.add(appartement_1);
-        registerObstacleObject(appartement_1, 0.08, 0.05);
+        // GLB model — no obstacle box (player can walk through floors freely)
       }
 
       const kitchen_v1_1 = cloneAsset(assets.kitchen_v1);
       if (kitchen_v1_1) {
         placeObjectOnFloor(kitchen_v1_1, new THREE.Vector3(69.300, 63.700, -110.200), { targetHeight: 61.313, yaw: 0.000 });
         scene.add(kitchen_v1_1);
-        registerObstacleObject(kitchen_v1_1, 0.08, 0.05);
+        // GLB model — no obstacle box (player can walk through floors freely)
       }
 
       const learney_1 = cloneAsset(assets.learney);
       if (learney_1) {
         placeObjectOnFloor(learney_1, new THREE.Vector3(-85.300, 0.000, -166.000), { targetHeight: 86.117, yaw: -1.571 });
         scene.add(learney_1);
-        registerObstacleObject(learney_1, 0.08, 0.05);
+        // GLB model — no obstacle box (player can walk through floors freely)
       }
 
       const Kitchen_Floor_Tile_pearl_square_1 = cloneAsset(assets.Kitchen_Floor_Tile_pearl_square);
       if (Kitchen_Floor_Tile_pearl_square_1) {
         placeObjectOnFloor(Kitchen_Floor_Tile_pearl_square_1, new THREE.Vector3(-60.100, 62.470, -149.300), { targetHeight: 0.153, yaw: -1.609 });
         scene.add(Kitchen_Floor_Tile_pearl_square_1);
-        registerObstacleObject(Kitchen_Floor_Tile_pearl_square_1, 0.08, 0.05);
+        // GLB model — no obstacle box (player can walk through floors freely)
       }
 
       const comfy_living_interior___cgt_345_final_v1_1 = cloneAsset(assets.comfy_living_interior___cgt_345_final_v1);
       if (comfy_living_interior___cgt_345_final_v1_1) {
         placeObjectOnFloor(comfy_living_interior___cgt_345_final_v1_1, new THREE.Vector3(-175.900, 62.300, 44.900), { targetHeight: 76.796, yaw: 0.000 });
         scene.add(comfy_living_interior___cgt_345_final_v1_1);
-        registerObstacleObject(comfy_living_interior___cgt_345_final_v1_1, 0.08, 0.05);
+        // GLB model — no obstacle box (player can walk through floors freely)
       }
 
       // ==========================================
@@ -1977,16 +2036,14 @@ ch41NonpbrCatwalkWalkForwardHighknees: loadFBX(ASSETS.character.ch41NonpbrCatwal
     }
 
     function isBlocked(position) {
-      const floorY = getFloorHeightAt(position.x, position.z);
-      if (floorY === null) return true;
+      // Wall-only collision — checks XZ against staticObstacles using a
+      // mid-body player box. Only called for door/dynamic obstacles, NOT
+      // for general player movement (GLB obstacle boxes are unreliable).
+      const entityY = state.myCustomEntity ? state.myCustomEntity.root.position.y : 0;
       const playerBox = new THREE.Box3(
-        new THREE.Vector3(position.x - state.collisionRadius, floorY + 0.02, position.z - state.collisionRadius),
-        new THREE.Vector3(position.x + state.collisionRadius, floorY + 1.82, position.z + state.collisionRadius)
+        new THREE.Vector3(position.x - state.collisionRadius, entityY + 0.1,  position.z - state.collisionRadius),
+        new THREE.Vector3(position.x + state.collisionRadius, entityY + 1.75, position.z + state.collisionRadius)
       );
-
-      for (const box of state.staticObstacles) {
-        if (box.intersectsBox(playerBox)) return true;
-      }
       for (const obstacle of state.dynamicObstacles) {
         const box = obstacle();
         if (box && box.intersectsBox(playerBox)) return true;
