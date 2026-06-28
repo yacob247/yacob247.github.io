@@ -2131,95 +2131,21 @@ document.querySelectorAll('.btn-read').forEach(btn => {
     const title = modal.querySelector('.modal-header h2').innerText;
     const body = modal.querySelector('.modal-body').innerHTML;
     
-    // Construct a fully self-contained HTML string code for the new tab
-    const htmlContent = `
-      <!DOCTYPE html>
-      <html lang="en">
-      <head>
-        <meta charset="UTF-8">
-        <title>${title}</title>
-        <style>
-          body { font-family: 'Inter', sans-serif; background: #0d1117; color: #f0f6fc; padding: 40px; max-width: 800px; margin: auto; line-height: 1.6; }
-          h2 { color: #fff; font-size: 2rem; border-bottom: 1px solid #30363d; padding-bottom: 10px; }
-          h3 { color: #39d4ff; margin-top: 30px; }
-          p, ul { color: #b4bac2; }
-          li { margin-bottom: 8px; }
-          .code-block { background: #060810; border: 1px solid #30363d; border-radius: 8px; margin: 15px 0; overflow: hidden; }
-          .code-top { background: #1a1e2c; padding: 8px 12px; font-size: 0.8rem; font-family: monospace; color: #7d8590; text-transform: uppercase; border-bottom: 1px solid #30363d; display: flex; justify-content: space-between; align-items: center; }
-          .btn-group { display: flex; gap: 6px; }
-          .copy-btn { background: #161b22; border: 1px solid #30363d; color: #7d8590; font-family: monospace; font-size: .7rem; cursor: pointer; padding: 4px 10px; border-radius: 4px; transition: all .2s; }
-          .copy-btn:hover { color: #f0f6fc; border-color: #f0f6fc; background: rgba(255,255,255,0.1); }
-          .copy-btn.copied { color: #22d3a0; border-color: #22d3a0; background: rgba(34, 211, 160, 0.1); }
-          pre { padding: 15px; margin: 0; overflow-x: auto; font-family: monospace; color: #c0ccd8; font-size: 0.9rem; }
-          .c { color: #7d8590; font-style: italic; } .k { color: #ff7b72; } .s { color: #a5d6ff; } .v { color: #39d4ff; }
-        </style>
-      </head>
-      <body>
-        <h2>${title}</h2>
-        ${body}
-        <script>
-          window.copyCode = function(button) {
-            const codeBlock = button.closest('.code-block');
-            if (!codeBlock) return;
-            const pre = codeBlock.querySelector('pre');
-            if (!pre) return;
-            const textToCopy = pre.innerText || pre.textContent;
-            
-            if (navigator.clipboard && window.isSecureContext) {
-              navigator.clipboard.writeText(textToCopy)
-                .then(function() { handleCopySuccess(button); })
-                .catch(function() { fallbackCopyExecution(textToCopy, button); });
-            } else {
-              fallbackCopyExecution(textToCopy, button);
-            }
-          };
-
-          function fallbackCopyExecution(text, button) {
-            const textArea = document.createElement('textarea');
-            textArea.value = text;
-            textArea.style.position = 'fixed';
-            textArea.style.opacity = '0';
-            document.body.appendChild(textArea);
-            textArea.focus();
-            textArea.select();
-            try {
-              document.execCommand('copy');
-              handleCopySuccess(button);
-            } catch (err) {
-              console.error('Copy execution failed entirely:', err);
-            }
-            document.body.removeChild(textArea);
-          }
-
-          function handleCopySuccess(button) {
-            const originalText = button.textContent || 'Copy';
-            button.textContent = 'Copied! ✓';
-            button.style.color = '#39d4ff';
-            button.style.fontWeight = 'bold';
-            button.classList.add('copied');
-
-            setTimeout(function() {
-              button.textContent = originalText;
-              button.style.color = '';
-              button.style.fontWeight = '';
-              button.classList.remove('copied');
-            }, 2000);
-          }
-        ` + `<\/script>` + `
-      </body>
-      </html>
-    `;
+    // Package the payload into a clean object
+    const payload = {
+      title: title,
+      body: body
+    };
     
-    // Open a blank tab/window under your domain context
-    const newWindow = window.open('about:blank', '_blank');
-    if (newWindow) {
-      // Inject the HTML string stream directly into the document
-      newWindow.document.open();
-      newWindow.document.write(htmlContent);
-      newWindow.document.close();
-    } else {
-      alert('Pop-up blocked! Please allow pop-ups for this domain to open guides.');
-    }
+    // Safely convert to a string and encode it for a URL context
+    const jsonString = JSON.stringify(payload);
+    const encodedData = encodeURIComponent(btoa(unescape(encodeURIComponent(jsonString))));
+    
+    // Construct the destination URL targeting your domain structure
+    const targetUrl = `https://envizion.work/CodeWeb.html?guide=${encodedData}`;
+    
+    // Open the page directly under your domain tab
+    window.open(targetUrl, '_blank');
   });
 });
 
@@ -2519,7 +2445,6 @@ function addDockItem(w) {
   dockEl.appendChild(item);
 }
 
-// Unified feedback handler for all buttons across the 100 pages
 function removeDockItem(w) {
   if (!dockEl) return;
   const item = dockEl.querySelector('[data-win-id="' + w.id + '"]');
@@ -2714,6 +2639,38 @@ window.downloadCode = function(btn, filename) {
   a.click();
   URL.revokeObjectURL(a.href);
 };
+
+
+  window.addEventListener('DOMContentLoaded', () => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const encodedGuide = urlParams.get('guide');
+    
+    if (encodedGuide) {
+      try {
+        // Decode the data safely from Base64 back to JSON
+        const jsonString = decodeURIComponent(atob(decodeURIComponent(encodedGuide)));
+        const guideData = JSON.parse(jsonString);
+        
+        // Inject values into the DOM elements on CodeWeb.html
+        document.title = guideData.title;
+        
+        // Target container elements inside CodeWeb.html to receive the layout data
+        const titleContainer = document.getElementById('guide-title') || document.querySelector('h2');
+        const bodyContainer = document.getElementById('guide-body') || document.body;
+        
+        if (titleContainer) titleContainer.innerText = guideData.title;
+        if (bodyContainer) {
+          // If bodyContainer points to document.body, append instead of overwrite to keep your copy scripts alive
+          const rawDiv = document.createElement('div');
+          rawDiv.innerHTML = guideData.body;
+          bodyContainer.appendChild(rawDiv);
+        }
+      } catch (e) {
+        console.error("Failed to safely parse incoming guide data:", e);
+      }
+    }
+  });
+
 </script>
 
 
