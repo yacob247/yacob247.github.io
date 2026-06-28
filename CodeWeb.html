@@ -2120,111 +2120,146 @@ setInterval(() => {
 <!-- Dock for minimised windows -->
 <div id="mac-dock"></div>
 <script>
-/* ── 0. New Tab / Read Guide Logic ────────────────────── */
-document.querySelectorAll('.btn-read').forEach(btn => {
-  btn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const targetId = btn.closest('.hub-card').getAttribute('data-modal');
-    const modal = document.getElementById(targetId);
-    if (!modal) return;
-    
-    const title = modal.querySelector('.modal-header h2').innerText;
-    const body = modal.querySelector('.modal-body').innerHTML;
-    
-    // Generate a URL-friendly slug name from the title string
-    const stringSlug = title.toLowerCase()
-      .replace(/[^a-z0-9\s-]/g, '') // strip special characters
-      .replace(/\s+/g, '-');         // convert spaces to dashes
-    
-    // Target your exact string path format under your domain
-    const targetUrl = `https://envizion.work/CodeWeb.html/${stringSlug}`;
-    
-    // Construct the fully self-contained HTML payload
-    const htmlContent = `
-      <!DOCTYPE html>
-      <html lang="en">
-      <head>
-        <meta charset="UTF-8">
-        <title>${title}</title>
-        <style>
-          body { font-family: 'Inter', sans-serif; background: #0d1117; color: #f0f6fc; padding: 40px; max-width: 800px; margin: auto; line-height: 1.6; }
-          h2 { color: #fff; font-size: 2rem; border-bottom: 1px solid #30363d; padding-bottom: 10px; }
-          h3 { color: #39d4ff; margin-top: 30px; }
-          p, ul { color: #b4bac2; }
-          li { margin-bottom: 8px; }
-          .code-block { background: #060810; border: 1px solid #30363d; border-radius: 8px; margin: 15px 0; overflow: hidden; }
-          .code-top { background: #1a1e2c; padding: 8px 12px; font-size: 0.8rem; font-family: monospace; color: #7d8590; text-transform: uppercase; border-bottom: 1px solid #30363d; display: flex; justify-content: space-between; align-items: center; }
-          .btn-group { display: flex; gap: 6px; }
-          .copy-btn { background: #161b22; border: 1px solid #30363d; color: #7d8590; font-family: monospace; font-size: .7rem; cursor: pointer; padding: 4px 10px; border-radius: 4px; transition: all .2s; }
-          .copy-btn:hover { color: #f0f6fc; border-color: #f0f6fc; background: rgba(255,255,255,0.1); }
-          .copy-btn.copied { color: #22d3a0; border-color: #22d3a0; background: rgba(34, 211, 160, 0.1); }
-          pre { padding: 15px; margin: 0; overflow-x: auto; font-family: monospace; color: #c0ccd8; font-size: 0.9rem; }
-          .c { color: #7d8590; font-style: italic; } .k { color: #ff7b72; } .s { color: #a5d6ff; } .v { color: #39d4ff; }
-        </style>
-      </head>
-      <body>
-        <h2>${title}</h2>
-        ${body}
-        <script>
-          window.copyCode = function(button) {
-            const codeBlock = button.closest('.code-block');
-            if (!codeBlock) return;
-            const pre = codeBlock.querySelector('pre');
-            if (!pre) return;
-            const textToCopy = pre.innerText || pre.textContent;
-            
-            if (navigator.clipboard && window.isSecureContext) {
-              navigator.clipboard.writeText(textToCopy)
-                .then(function() { handleCopySuccess(button); })
-                .catch(function() { fallbackCopyExecution(textToCopy, button); });
-            } else {
-              fallbackCopyExecution(textToCopy, button);
-            }
-          };
+/* ── UNIFIED URL ROUTER & standalone GUIDE POPULATOR ────────────────────── */
+document.addEventListener("DOMContentLoaded", () => {
 
-          function fallbackCopyExecution(text, button) {
-            const textArea = document.createElement('textarea');
-            textArea.value = text;
-            textArea.style.position = 'fixed';
-            textArea.style.opacity = '0';
-            document.body.appendChild(textArea);
-            textArea.focus();
-            textArea.select();
-            try {
-              document.execCommand('copy');
-              handleCopySuccess(button);
-            } catch (err) {
-              console.error('Copy execution failed entirely:', err);
-            }
-            document.body.removeChild(textArea);
-          }
-
-          function handleCopySuccess(button) {
-            const originalText = button.textContent || 'Copy';
-            button.textContent = 'Copied! ✓';
-            button.style.color = '#39d4ff';
-            button.style.fontWeight = 'bold';
-            button.classList.add('copied');
-
-            setTimeout(function() {
-              button.textContent = originalText;
-              button.style.color = '';
-              button.style.fontWeight = '';
-              button.classList.remove('copied');
-            }, 2000);
-          }
-        ` + `<\/script>` + `
-      </body>
-      </html>
-    `;
-    
-    // Open a blank tab under your custom path title to establish domain origin
-    const newWindow = window.open(targetUrl, '_blank');
-    if (newWindow) {
-      // Store the dynamic guide content directly into the opened window context storage
-      newWindow.payloadHTML = htmlContent;
-    }
+  // --- PART 1: Handle User Clicking "Read Guide ↗" on a Hub Card ---
+  document.querySelectorAll('.btn-read').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      
+      // Get the target modal ID from the card element
+      const targetId = btn.getAttribute('data-target') || btn.closest('.hub-card').getAttribute('data-modal');
+      const modal = document.getElementById(targetId);
+      if (!modal) return;
+      
+      const titleEl = modal.querySelector('.modal-header h2');
+      if (!titleEl) return;
+      
+      // Generate a beautiful, clean URL string slug from the actual title text
+      const stringSlug = titleEl.innerText.toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, '') // strip special characters
+        .replace(/\s+/g, '-');         // convert spaces to clean dashes
+      
+      // Construct the clean URL using a client-safe hash route
+      const targetUrl = `https://envizion.work/CodeWeb.html#${stringSlug}`;
+      
+      // Open the new tab cleanly using the shareable hash link
+      window.open(targetUrl, '_blank');
+    });
   });
+
+  // --- PART 2: Handle Page Load & Direct Link Refresh Router ---
+  const currentHash = window.location.hash.replace('#', '');
+  
+  if (currentHash) {
+    let matchedModal = null;
+    
+    // Scan all hidden modals inside CodeWeb.html to find the matching title slug
+    document.querySelectorAll('.modal-overlay').forEach(modal => {
+      const titleEl = modal.querySelector('.modal-header h2');
+      if (titleEl) {
+        const slug = titleEl.innerText.toLowerCase()
+          .replace(/[^a-z0-9\s-]/g, '')
+          .replace(/\s+/g, '-');
+        
+        if (slug === currentHash) {
+          matchedModal = modal;
+        }
+      }
+    });
+
+    // If a match is found (on click or deep link refresh), draw the isolated template
+    if (matchedModal) {
+      const title = matchedModal.querySelector('.modal-header h2').innerText;
+      const bodyContent = matchedModal.querySelector('.modal-body').innerHTML;
+
+      const standaloneHTML = `
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+          <meta charset="UTF-8">
+          <title>${title}</title>
+          <style>
+            body { font-family: 'Inter', sans-serif; background: #0d1117; color: #f0f6fc; padding: 40px; max-width: 800px; margin: auto; line-height: 1.6; }
+            h2 { color: #fff; font-size: 2rem; border-bottom: 1px solid #30363d; padding-bottom: 10px; margin-bottom: 20px; }
+            h3 { color: #39d4ff; margin-top: 30px; margin-bottom: 10px; }
+            p, ul { color: #b4bac2; margin-bottom: 15px; }
+            li { margin-bottom: 8px; margin-left: 20px; }
+            .code-block { background: #060810; border: 1px solid #30363d; border-radius: 8px; margin: 15px 0; overflow: hidden; }
+            .code-top { background: #1a1e2c; padding: 8px 12px; font-size: 0.8rem; font-family: monospace; color: #7d8590; text-transform: uppercase; border-bottom: 1px solid #30363d; display: flex; justify-content: space-between; align-items: center; }
+            .btn-group { display: flex; gap: 6px; }
+            .copy-btn { background: #161b22; border: 1px solid #30363d; color: #7d8590; font-family: monospace; font-size: .7rem; cursor: pointer; padding: 4px 10px; border-radius: 4px; transition: all .2s; }
+            .copy-btn:hover { color: #f0f6fc; border-color: #f0f6fc; background: rgba(255,255,255,0.1); }
+            .copy-btn.copied { color: #22d3a0; border-color: #22d3a0; background: rgba(34, 211, 160, 0.1); }
+            pre { padding: 15px; margin: 0; overflow-x: auto; font-family: monospace; color: #c0ccd8; font-size: 0.9rem; }
+            .c { color: #7d8590; font-style: italic; } .k { color: #ff7b72; } .s { color: #a5d6ff; } .v { color: #39d4ff; }
+            .info-box { background: rgba(57, 212, 255, 0.05); border-left: 3px solid #39d4ff; padding: 12px 16px; border-radius: 0 8px 8px 0; font-size: .9rem; color: #7d8590; margin: 20px 0; }
+          </style>
+        </head>
+        <body>
+          <h2>${title}</h2>
+          ${bodyContent}
+          <script>
+            // Native clipboard handling inside the new page shell instance
+            window.copyCode = function(button) {
+              const codeBlock = button.closest('.code-block');
+              if (!codeBlock) return;
+              const pre = codeBlock.querySelector('pre');
+              if (!pre) return;
+              const textToCopy = pre.innerText || pre.textContent;
+              
+              if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(textToCopy)
+                  .then(function() { handleCopySuccess(button); })
+                  .catch(function() { fallbackCopyExecution(textToCopy, button); });
+              } else {
+                fallbackCopyExecution(textToCopy, button);
+              }
+            };
+
+            function fallbackCopyExecution(text, button) {
+              const textArea = document.createElement('textarea');
+              textArea.value = text;
+              textArea.style.position = 'fixed';
+              textArea.style.opacity = '0';
+              document.body.appendChild(textArea);
+              textArea.focus();
+              textArea.select();
+              try {
+                document.execCommand('copy');
+                handleCopySuccess(button);
+              } catch (err) {
+                console.error('Copy execution failed entirely:', err);
+              }
+              document.body.removeChild(textArea);
+            }
+
+            function handleCopySuccess(button) {
+              const originalText = button.textContent || 'Copy';
+              button.textContent = 'Copied! ✓';
+              button.style.color = '#39d4ff';
+              button.style.fontWeight = 'bold';
+              button.classList.add('copied');
+
+              setTimeout(function() {
+                button.textContent = originalText;
+                button.style.color = '';
+                button.style.fontWeight = '';
+                button.classList.remove('copied');
+              }, 2000);
+            }
+          <\/script>
+        </body>
+        </html>
+      `;
+
+      // Overwrite current layout instance with the customized individual view
+      document.open();
+      document.write(standaloneHTML);
+      document.close();
+    }
+  }
 });
 
 /* ── 1. Mouse Glow Effect ───────────────────────────── */
