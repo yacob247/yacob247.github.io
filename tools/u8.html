@@ -1,0 +1,1503 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Surgical Spectrogram Eraser - Advanced Vocal Remover & Spectral Audio Editor</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Lucide Icons Browser Wrapper -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  
+  <!-- WaveSurfer.js v7 and Spectrogram Plugin -->
+  <script src="https://unpkg.com/wavesurfer.js@7"></script>
+  <script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/spectrogram.min.js"></script>
+
+  <style>
+    /* Custom thin scrollbar styling */
+    .custom-scrollbar::-webkit-scrollbar {
+      height: 6px;
+      width: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #0a0a0a;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #262626;
+      border-radius: 3px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: #404040;
+    }
+    /* Grid styling for the spectator overlay coordinate grid lines */
+    .grid-lines {
+      background-size: 40px 40px;
+      background-image: linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                        linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+    }
+    /* Style for active selected elements */
+    .selected-region {
+      border-color: #818cf8 !important;
+      background-color: rgba(99, 102, 241, 0.25) !important;
+      box-shadow: 0 0 12px rgba(99, 102, 241, 0.5);
+    }
+  </style>
+</head>
+<body class="bg-neutral-950 text-neutral-100 font-sans antialiased selection:bg-indigo-500/30">
+
+  <!-- Main Navigation Bar -->
+  <nav class="border-b border-neutral-900 bg-neutral-950/80 backdrop-blur sticky top-0 z-50 px-6 py-4">
+    <div class="max-w-7xl mx-auto flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="p-2 bg-indigo-500/10 rounded-lg border border-indigo-500/20 text-indigo-400">
+          <i data-lucide="sliders-horizontal" class="w-6 h-6"></i>
+        </div>
+        <span class="font-bold text-lg tracking-wider text-white bg-gradient-to-r from-neutral-50 to-neutral-400 bg-clip-text text-transparent">SPECTRUM_ERASER</span>
+      </div>
+      <div class="flex items-center gap-6 text-sm text-neutral-400 font-medium">
+        <a href="#how-it-works" class="hover:text-white transition-colors">How it Works</a>
+        <a href="#dsp-theory" class="hover:text-white transition-colors">DSP Theory</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="max-w-7xl mx-auto px-6 py-8">
+    <!-- Header Hero Section -->
+    <header class="mb-8 text-center space-y-2">
+      <div class="inline-flex items-center justify-center p-2 rounded-full bg-indigo-500/10 mb-1 border border-indigo-500/20">
+        <i data-lucide="music-4" class="w-6 h-6 text-indigo-400 animate-pulse"></i>
+      </div>
+      <h1 class="text-3xl md:text-4xl font-black tracking-tight text-white">
+        Manual Spectrogram Eraser Pro
+      </h1>
+      <p class="text-neutral-400 max-w-2xl mx-auto text-sm leading-relaxed">
+        Upload audio, select and drag boxes directly, and modify frequency properties with instantaneous live sound feedback as you edit.
+      </p>
+    </header>
+
+    <!-- MAIN APPLICATION PANEL -->
+    <main class="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 md:p-8 shadow-2xl relative overflow-hidden mb-12">
+      
+      <!-- STEP 1: Upload State -->
+      <div id="upload-state" class="space-y-8">
+        <div class="border-2 border-dashed border-neutral-800 hover:border-indigo-500/50 transition-all rounded-xl p-16 text-center relative group bg-neutral-950/40">
+          <input 
+            type="file" 
+            id="audio-file-input"
+            accept="audio/mp3, audio/wav, audio/mpeg, audio/ogg" 
+            class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+          />
+          <div class="flex flex-col items-center justify-center space-y-4">
+            <div class="p-5 bg-neutral-800 rounded-full group-hover:scale-110 transition-transform duration-300 border border-neutral-700/50 group-hover:bg-indigo-950/20 group-hover:border-indigo-500/30">
+              <i data-lucide="upload" class="w-8 h-8 text-neutral-400 group-hover:text-indigo-400 transition-colors"></i>
+            </div>
+            <div>
+              <p class="text-xl font-bold text-white group-hover:text-indigo-300 transition-colors">Import your audio track</p>
+              <p class="text-neutral-500 mt-2 text-sm">Supports WAV, MP3, and OGG formats up to 48kHz sampling rate</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Error Toast UI (Hidden by default) -->
+      <div id="error-container" class="hidden flex items-center gap-3 p-4 bg-red-500/10 text-red-400 rounded-xl border border-red-500/20 mb-6">
+        <i data-lucide="alert-triangle" class="w-5 h-5 flex-shrink-0"></i>
+        <p class="text-sm font-medium" id="error-message"></p>
+      </div>
+
+      <!-- STEP 2: Main Active Interactive Area (Hidden on start) -->
+      <div id="interactive-state" class="hidden space-y-6">
+        
+        <!-- Header & Control Bar -->
+        <div class="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 border-b border-neutral-800/80 pb-4">
+          <div>
+            <h3 class="text-xl font-extrabold text-white flex items-center gap-2">
+              <span>Spectral Workspace</span>
+              <span id="file-name-badge" class="text-xs px-2 py-1 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-md font-mono max-w-[200px] truncate">track.mp3</span>
+            </h3>
+            <p class="text-neutral-400 text-xs mt-1">
+              Select any box to move or drag-resize it. Hold <kbd class="px-1 bg-neutral-800 border border-neutral-700 text-white rounded text-[10px]">Shift</kbd> to select multiple boxes.
+            </p>
+          </div>
+          
+          <!-- History and Management Buttons -->
+          <div class="flex flex-wrap items-center gap-2 w-full lg:w-auto">
+            <button 
+              id="btn-auto-detect"
+              class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-300 hover:text-white bg-indigo-900/30 hover:bg-indigo-800/50 rounded-lg transition-colors border border-indigo-500/30"
+              title="Auto-detect 300Hz-3000Hz vocal activity per second"
+            >
+              <i data-lucide="scan-line" class="w-4 h-4"></i> Auto-Detect (Beta)
+            </button>
+            <div class="h-6 w-px bg-neutral-800 mx-1"></div>
+            <button 
+              id="btn-undo"
+              disabled
+              class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-neutral-300 hover:text-white bg-neutral-800 hover:bg-neutral-700 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg transition-colors border border-neutral-700/50"
+              title="Undo Action"
+            >
+              <i data-lucide="undo" class="w-4 h-4"></i> Undo
+            </button>
+            <button 
+              id="btn-redo"
+              disabled
+              class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-neutral-300 hover:text-white bg-neutral-800 hover:bg-neutral-700 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg transition-colors border border-neutral-700/50"
+              title="Redo Action"
+            >
+              <i data-lucide="redo" class="w-4 h-4"></i> Redo
+            </button>
+            
+            <button 
+              id="btn-clear"
+              class="hidden flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 rounded-lg transition-colors border border-red-500/20"
+            >
+              <i data-lucide="trash-2" class="w-4 h-4"></i> Clear All
+            </button>
+
+            <button 
+              id="btn-restart"
+              class="text-xs font-semibold text-neutral-400 hover:text-white transition-colors px-3 py-1.5 bg-neutral-950 border border-neutral-800 rounded-lg ml-2"
+            >
+              New File
+            </button>
+          </div>
+        </div>
+
+        <!-- TWO COLUMN LAYOUT: Spectrogram left, Real-time Inspector right -->
+        <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          
+          <!-- Workspace and Playback Area -->
+          <div class="lg:col-span-3 space-y-4">
+            <div class="p-4 bg-neutral-950 rounded-xl border border-neutral-800/80 space-y-4">
+              
+              <!-- Waveform & Spectrogram Scrollable Container -->
+              <div 
+                id="scroll-container" 
+                class="w-full overflow-x-auto rounded-lg border border-neutral-900 bg-neutral-950 pb-2 custom-scrollbar"
+              >
+                <!-- Zoom wrapper -->
+                <div id="zoom-container" class="relative min-w-full" style="width: 100%;">
+                  
+                  <!-- Waveform Viewport -->
+                  <div id="waveform-viewport" class="w-full"></div>
+                  
+                  <!-- Spectrogram + Interactive Drawing Canvas Overlay Container -->
+                  <div class="relative w-full select-none mt-1">
+                    <div id="spectrogram-viewport" class="w-full"></div>
+                    
+                    <!-- SVG Draw Layer for exact coordinate matching -->
+                    <div 
+                      id="drawing-overlay" 
+                      class="absolute inset-0 z-10 cursor-crosshair grid-lines"
+                    ></div>
+
+                    <!-- Detailed Spectral Readout Tooltip -->
+                    <div id="spectral-tooltip" class="absolute z-20 bg-neutral-900/95 border border-neutral-700 backdrop-blur-md rounded-md p-2.5 text-[11px] font-mono text-neutral-300 pointer-events-none hidden shadow-2xl transition-opacity">
+                      <div class="flex gap-4">
+                        <div><span class="text-neutral-500 font-semibold">TIME:</span> <span id="tooltip-time" class="text-indigo-400 font-bold">0.00s</span></div>
+                        <div><span class="text-neutral-500 font-semibold">FREQ:</span> <span id="tooltip-freq" class="text-emerald-400 font-bold">0 Hz</span></div>
+                      </div>
+                      <div id="tooltip-selection" class="hidden mt-1.5 border-t border-neutral-700 pt-1.5">
+                        <span class="text-neutral-500 font-semibold">BANDWIDTH RANGE:</span> <br/>
+                        <span id="tooltip-band" class="text-red-400 font-bold text-xs">0 Hz - 0 Hz</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Live Playback Controls & Zoom -->
+              <div class="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2 border-t border-neutral-900">
+                <div class="flex items-center gap-4 w-full sm:w-auto">
+                  <button
+                    id="btn-play-pause"
+                    class="w-12 h-12 flex items-center justify-center bg-indigo-600 hover:bg-indigo-500 text-white rounded-full transition-all hover:scale-105 active:scale-95 flex-shrink-0 shadow-lg shadow-indigo-500/20"
+                  >
+                    <i data-lucide="play" class="w-5 h-5 ml-0.5" id="play-icon"></i>
+                  </button>
+                  
+                  <div class="flex flex-col">
+                    <span id="current-playback-time" class="text-sm font-mono text-white font-bold">0:00.00</span>
+                    <span id="total-playback-duration" class="text-[10px] text-neutral-500 font-mono">/ 0:00.00</span>
+                  </div>
+                </div>
+                
+                <div class="flex items-center gap-6 w-full sm:w-auto justify-end">
+                  <!-- SPEED CONTROL -->
+                  <div class="flex items-center gap-2 bg-neutral-900 px-3 py-1.5 rounded-lg border border-neutral-800">
+                    <i data-lucide="gauge" class="w-4 h-4 text-neutral-400"></i>
+                    <select id="playback-speed" class="bg-transparent text-white text-xs font-semibold outline-none cursor-pointer">
+                      <option value="0.25">0.25x</option>
+                      <option value="0.5">0.50x</option>
+                      <option value="0.75">0.75x</option>
+                      <option value="1" selected>1.00x</option>
+                      <option value="1.25">1.25x</option>
+                      <option value="1.5">1.50x</option>
+                    </select>
+                  </div>
+
+                  <!-- ZOOM CONTROL -->
+                  <div class="flex items-center gap-3">
+                    <span class="text-xs text-neutral-400 font-semibold uppercase tracking-wider">H-Zoom</span>
+                    <input 
+                      type="range" 
+                      id="zoom-slider"
+                      min="1" 
+                      max="8" 
+                      step="0.05" 
+                      value="1" 
+                      class="w-24 sm:w-32 h-1 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                    />
+                    <span id="zoom-value" class="text-xs font-mono text-neutral-400 w-8 text-right">1.0x</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Parameter Editor Inspector Panel -->
+          <div class="lg:col-span-1 space-y-4">
+            <div class="bg-neutral-950 p-5 rounded-xl border border-neutral-800 h-full flex flex-col justify-between min-h-[350px]">
+              
+              <!-- Selected State Inspector -->
+              <div id="inspector-active" class="hidden space-y-5">
+                <div class="flex items-center justify-between border-b border-neutral-800 pb-3">
+                  <span class="text-xs font-bold text-indigo-400 uppercase tracking-widest flex items-center gap-1.5">
+                    <span class="w-2 h-2 rounded-full bg-indigo-500 animate-ping"></span>
+                    Box Parameter Tuning
+                  </span>
+                  <button id="btn-deselect" class="text-neutral-500 hover:text-white transition-colors text-xs font-semibold">Deselect</button>
+                </div>
+
+                <!-- Live Depth Slider -->
+                <div class="space-y-1.5">
+                  <div class="flex items-center justify-between text-xs">
+                    <span class="text-neutral-400 font-medium">Cut Depth (Gain)</span>
+                    <span id="label-gain" class="font-mono text-red-400 font-bold">-60 dB</span>
+                  </div>
+                  <input 
+                    type="range" 
+                    id="slider-gain" 
+                    min="-80" 
+                    max="0" 
+                    step="1" 
+                    value="-60"
+                    class="w-full h-1 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-red-500"
+                  />
+                  <p class="text-[10px] text-neutral-500">Lower depth retains harmonic content; -80dB is maximum erase.</p>
+                </div>
+
+                <!-- Live Q-Factor Slider -->
+                <div class="space-y-1.5">
+                  <div class="flex items-center justify-between text-xs">
+                    <span class="text-neutral-400 font-medium">Q-Factor (Bandwidth)</span>
+                    <span id="label-q" class="font-mono text-indigo-400 font-bold">5.0</span>
+                  </div>
+                  <input 
+                    type="range" 
+                    id="slider-q" 
+                    min="0.1" 
+                    max="40" 
+                    step="0.1" 
+                    value="5.0"
+                    class="w-full h-1 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-indigo-400"
+                  />
+                  <p class="text-[10px] text-neutral-500">Higher Q targets a narrower notch, preserving sidebands.</p>
+                </div>
+
+                <!-- Center Freq Fine Tune -->
+                <div class="space-y-1.5">
+                  <div class="flex items-center justify-between text-xs">
+                    <span class="text-neutral-400 font-medium">Center Frequency</span>
+                    <span id="label-freq" class="font-mono text-emerald-400 font-bold">1200 Hz</span>
+                  </div>
+                  <input 
+                    type="range" 
+                    id="slider-freq" 
+                    min="50" 
+                    max="22000" 
+                    step="1" 
+                    class="w-full h-1 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                  />
+                </div>
+
+                <div class="pt-2">
+                  <button 
+                    id="btn-delete-selected"
+                    class="w-full flex items-center justify-center gap-1.5 py-2 text-xs font-semibold text-red-400 hover:text-red-300 bg-red-900/10 hover:bg-red-900/20 rounded-lg border border-red-500/20 transition-all"
+                  >
+                    <i data-lucide="trash" class="w-3.5 h-3.5"></i>
+                    Erase Selected Box
+                  </button>
+                </div>
+              </div>
+
+              <!-- Default Empty State -->
+              <div id="inspector-empty" class="flex flex-col items-center justify-center text-center py-12 px-2 space-y-3">
+                <div class="p-3 bg-neutral-900 rounded-full border border-neutral-800/80 text-neutral-500">
+                  <i data-lucide="info" class="w-6 h-6"></i>
+                </div>
+                <div class="space-y-1">
+                  <p class="text-xs font-bold text-neutral-300">Live Parameter Tuning</p>
+                  <p class="text-[11px] text-neutral-500 leading-relaxed">
+                    Click any drawn box on the spectrogram to select it and tune its bandwidth, depth, and notch frequencies in real-time.
+                  </p>
+                </div>
+              </div>
+
+              <!-- Extra Technical Metadata -->
+              <div class="border-t border-neutral-900 pt-3 text-[10px] text-neutral-500 font-mono space-y-1">
+                <div>Selected Boxes: <span id="meta-selected-count" class="text-neutral-300 font-bold">0</span></div>
+                <div>Total Active Cuts: <span id="meta-total-count" class="text-neutral-300 font-bold">0</span></div>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+
+        <!-- PROCESS / ACTION STEPS -->
+        <div class="space-y-4 pt-4" id="action-wrapper">
+          <button
+            id="btn-process-audio"
+            disabled
+            class="w-full flex items-center justify-center gap-3 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 disabled:from-neutral-800 disabled:to-neutral-800 disabled:opacity-40 disabled:cursor-not-allowed text-white py-4 rounded-xl font-bold tracking-wide transition-all shadow-lg shadow-indigo-500/15"
+          >
+            <i data-lucide="sparkles" class="w-5 h-5"></i>
+            Render Cleaned Instrumental Audio
+          </button>
+        </div>
+
+        <!-- Render / Processing Phase -->
+        <div id="processing-state" class="hidden w-full p-6 bg-neutral-950 rounded-xl border border-neutral-800/80 text-center space-y-4">
+          <div class="flex items-center justify-center gap-3 text-indigo-400 font-bold tracking-wide text-sm">
+            <i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i>
+            <span>RUNNING MATRIX DSP CORRECTION... <span id="progress-percent">0%</span></span>
+          </div>
+          <div class="w-full bg-neutral-800 rounded-full h-2 overflow-hidden">
+            <div 
+              id="progress-bar-fill"
+              class="bg-indigo-500 h-full transition-all duration-300"
+              style="width: 5%"
+            ></div>
+          </div>
+          <p class="text-[11px] text-neutral-500 max-w-md mx-auto">
+            Decoding bitstream, allocating offline filter array, and generating localized attenuation channels using the Web Audio offline system.
+          </p>
+        </div>
+
+        <!-- Export & Downloader UI (Visible once rendering finishes) -->
+        <div id="result-state" class="hidden p-6 bg-emerald-950/20 rounded-xl border border-emerald-500/20 text-center space-y-4">
+          <div class="flex items-center justify-center gap-2 text-emerald-400 font-bold text-lg">
+            <i data-lucide="check-circle-2" class="w-6 h-6"></i>
+            <span>Extraction Successful!</span>
+          </div>
+          <p class="text-neutral-400 text-sm">
+            Surgical audio attenuation applied to the specified regions. Your output file has been synthesized locally in the browser cache.
+          </p>
+          <div class="flex items-center justify-center gap-4">
+            <a
+              id="btn-download-link"
+              href="#"
+              download="instrumental-track.wav"
+              class="flex items-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold transition-all shadow-lg shadow-emerald-600/20 hover:scale-105"
+            >
+              <i data-lucide="download" class="w-5 h-5"></i>
+              Download Cleaned Audio (WAV)
+            </a>
+          </div>
+        </div>
+
+      </div>
+    </main>
+
+    <!-- IN-DEPTH SCIENTIFIC & TECHNICAL DOCUMENTATION -->
+    <section class="space-y-12 border-t border-neutral-900 pt-16" id="documentation">
+      
+      <!-- Section 1: How it Works / Core DSP Concept -->
+      <article class="space-y-4" id="how-it-works">
+        <h2 class="text-2xl md:text-3xl font-bold text-white tracking-tight">
+          How Visual Spectrogram Editing Works: A Deep Dive
+        </h2>
+        <p class="text-neutral-400 leading-relaxed text-sm md:text-base">
+          Unlike traditional vocal removers that rely on simple out-of-phase stereo cancellation (which damages spatial stereo signals and wipes out drum transients panned dead-center), our <strong>Manual Spectrogram Eraser</strong> uses multi-dimensional <strong>Short-Time Fourier Transforms (STFT)</strong> to convert raw, time-domain audio wave structures into visually identifiable frequency spectra.
+        </p>
+      </article>
+
+      <!-- Section 2: Mathematical / DSP Theory Block -->
+      <article class="space-y-6" id="dsp-theory">
+        <h2 class="text-2xl md:text-3xl font-bold text-white tracking-tight">
+          Digital Signal Processing (DSP) & Fourier Mathematics
+        </h2>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <div class="space-y-4">
+            <h3 class="text-lg font-bold text-indigo-400">The Mathematics of the Short-Time Fourier Transform (STFT)</h3>
+            <p class="text-neutral-400 text-sm leading-relaxed">
+              To convert a continuous time-varying audio signal $x(t)$ into its mathematical spectrogram layout, we break down the signal into finite, overlapping windows. Each localized window undergoes a discrete Fourier transform computation:
+            </p>
+            <div class="p-4 bg-neutral-950 rounded-lg font-mono text-xs text-indigo-300 border border-neutral-900 overflow-x-auto">
+              STFT{x[n]}(m, w) = &sum; [ x[n] &middot; w[n - m] &middot; e^(-j &middot; w &middot; n) ]
+            </div>
+          </div>
+
+          <div class="space-y-4">
+            <h3 class="text-lg font-bold text-indigo-400">Auto-Detect Heuristics & Filtering</h3>
+            <p class="text-neutral-400 text-sm leading-relaxed">
+              The <strong>Auto-Detect (Beta)</strong> feature utilizes a localized offline audio context to apply a bandpass biquad filter focusing exclusively on fundamental vocal formants ($300\text{Hz}$ to $3000\text{Hz}$). It calculates Root Mean Square (RMS) energy densities at $1\text{fps}$ granularity to map potential vocal regions.
+            </p>
+          </div>
+        </div>
+      </article>
+      
+      <!-- Footer Area -->
+      <footer class="border-t border-neutral-900 pt-8 pb-12 text-center text-neutral-500 text-xs space-y-4">
+        <p>&copy; 2026 Manual Spectrogram Eraser Project. Synthesized entirely in local RAM using Web Audio DSP APIs.</p>
+      </footer>
+    </section>
+  </div>
+
+  <!-- JAVASCRIPT LOGIC IMPLEMENTATION (Including OfflineAudioContext, WaveSurfer drawing overlay, and WAV encoder) -->
+  <script>
+    // System Constants
+    const NYQUIST = 22050; // typical max frequency standard mapping
+    
+    // Core Application State
+    let originalFile = null;
+    let wavesurfer = null;
+    let isPlaying = false;
+    let zoomLevel = 1.0;
+    
+    // History stack (Visual regions arrays)
+    let regionsHistory = [[]];
+    let historyIndex = 0;
+
+    // Selection State
+    let selectedRegionIds = []; // Holds selected region IDs (Multi-selection enabled)
+
+    // Drawing, Dragging and Resizing variables
+    let isDrawing = false;
+    let isDragging = false;
+    let isResizing = false;
+    let activeDragRegionId = null;
+    let resizeDirection = null; // 'nw', 'ne', 'se', 'sw'
+    let startX = 0;
+    let startY = 0;
+    let dragStartX = 0;
+    let dragStartY = 0;
+    let activeRegionEl = null;
+
+    // Web Audio Node Cache for Live Preview (Real-time Filter Cascade)
+    let audioCtx = null;
+    let sourceNode = null;
+    let gainNode = null;
+    let activeFilters = [];
+
+    // Color Map generation for Spectrogram Plugin (Magma Heat palette)
+    function generateColormap() {
+      const cmap = [];
+      for (let i = 0; i < 256; i++) {
+        const t = i / 255;
+        const r = Math.min(255, Math.max(0, Math.round(255 * (3 * t - 0.1))));
+        const g = Math.min(255, Math.max(0, Math.round(255 * (3 * t - 1.1))));
+        const b = Math.min(255, Math.max(0, Math.round(255 * (1.2 * t + 0.2 - 2 * t * t))));
+        cmap.push([r / 255, g / 255, b / 255, 1]);
+      }
+      return cmap;
+    }
+
+    // UI Elements Selection
+    const uploadState = document.getElementById('upload-state');
+    const interactiveState = document.getElementById('interactive-state');
+    const audioFileInput = document.getElementById('audio-file-input');
+    const errorContainer = document.getElementById('error-container');
+    const errorMessage = document.getElementById('error-message');
+    const fileNameBadge = document.getElementById('file-name-badge');
+    const btnPlayPause = document.getElementById('btn-play-pause');
+    const playIcon = document.getElementById('play-icon');
+    const zoomSlider = document.getElementById('zoom-slider');
+    const zoomValue = document.getElementById('zoom-value');
+    const playbackSpeedSelect = document.getElementById('playback-speed'); // Speed Select Element
+    const zoomContainer = document.getElementById('zoom-container');
+    const scrollContainer = document.getElementById('scroll-container');
+    const drawingOverlay = document.getElementById('drawing-overlay');
+    const btnProcessAudio = document.getElementById('btn-process-audio');
+    const processingState = document.getElementById('processing-state');
+    const resultState = document.getElementById('result-state');
+    const btnDownloadLink = document.getElementById('btn-download-link');
+    const btnUndo = document.getElementById('btn-undo');
+    const btnRedo = document.getElementById('btn-redo');
+    const btnClear = document.getElementById('btn-clear');
+    const btnRestart = document.getElementById('btn-restart');
+    const btnAutoDetect = document.getElementById('btn-auto-detect'); // Auto-Detect Button
+    const currentPlaybackTime = document.getElementById('current-playback-time');
+    const totalPlaybackDuration = document.getElementById('total-playback-duration');
+    const progressPercent = document.getElementById('progress-percent');
+    const progressBarFill = document.getElementById('progress-bar-fill');
+
+    // Inspector Elements
+    const inspectorActive = document.getElementById('inspector-active');
+    const inspectorEmpty = document.getElementById('inspector-empty');
+    const sliderGain = document.getElementById('slider-gain');
+    const labelGain = document.getElementById('label-gain');
+    const sliderQ = document.getElementById('slider-q');
+    const labelQ = document.getElementById('label-q');
+    const sliderFreq = document.getElementById('slider-freq');
+    const labelFreq = document.getElementById('label-freq');
+    const btnDeselect = document.getElementById('btn-deselect');
+    const btnDeleteSelected = document.getElementById('btn-delete-selected');
+    const metaSelectedCount = document.getElementById('meta-selected-count');
+    const metaTotalCount = document.getElementById('meta-total-count');
+
+    // Tooltip UI Elements
+    const tooltip = document.getElementById('spectral-tooltip');
+    const tooltipTime = document.getElementById('tooltip-time');
+    const tooltipFreq = document.getElementById('tooltip-freq');
+    const tooltipSelection = document.getElementById('tooltip-selection');
+    const tooltipBand = document.getElementById('tooltip-band');
+
+    // Init Lucide Web Icons on load
+    document.addEventListener("DOMContentLoaded", () => {
+      lucide.createIcons();
+    });
+
+    // Handle Upload / File Change
+    audioFileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        originalFile = file;
+        fileNameBadge.textContent = file.name;
+        uploadState.classList.add('hidden');
+        interactiveState.classList.remove('hidden');
+        errorContainer.classList.add('hidden');
+        
+        // Reset state
+        regionsHistory = [[]];
+        historyIndex = 0;
+        selectedRegionIds = [];
+        playbackSpeedSelect.value = "1";
+        updateUndoRedoButtons();
+        syncInspector();
+        
+        const fileUrl = URL.createObjectURL(file);
+        initWaveSurfer(fileUrl);
+      }
+    });
+
+    // Start over helper
+    btnRestart.addEventListener('click', () => {
+      destroyWaveSurfer();
+      uploadState.classList.remove('hidden');
+      interactiveState.classList.add('hidden');
+      resultState.classList.add('hidden');
+      processingState.classList.add('hidden');
+      audioFileInput.value = '';
+      originalFile = null;
+    });
+
+    // WaveSurfer initialization
+    function initWaveSurfer(audioUrl) {
+      destroyWaveSurfer();
+
+      // Create new WaveSurfer instance
+      wavesurfer = WaveSurfer.create({
+        container: '#waveform-viewport',
+        waveColor: '#4f46e5',
+        progressColor: '#818cf8',
+        cursorColor: '#c7d2fe',
+        barWidth: 2,
+        barGap: 1,
+        barRadius: 2,
+        height: 60,
+        plugins: [
+          WaveSurfer.Spectrogram.create({
+            container: '#spectrogram-viewport',
+            labels: true,
+            height: 350, // Increased height for better vertical detail
+            fftSamples: 2048, // Increased FFT resolution for sharper frequency breakdown
+            labelsBackground: 'rgba(0, 0, 0, 0.7)',
+            labelsColor: '#a3a3a3',
+            frequencyMax: NYQUIST,
+            colorMap: generateColormap()
+          })
+        ]
+      });
+
+      wavesurfer.on('ready', () => {
+        const duration = formatTime(wavesurfer.getDuration());
+        totalPlaybackDuration.textContent = `/ ${duration}`;
+        currentPlaybackTime.textContent = '0:00.00';
+        
+        // Audio Node setup for live preview filters
+        try {
+          const media = wavesurfer.getMediaElement();
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+          sourceNode = audioCtx.createMediaElementSource(media);
+          gainNode = audioCtx.createGain();
+          
+          sourceNode.connect(gainNode);
+          gainNode.connect(audioCtx.destination);
+          
+          updateLivePreviewFilters();
+        } catch (err) {
+          console.warn("Could not bind Web Audio preview context: ", err);
+        }
+      });
+
+      wavesurfer.on('play', () => {
+        isPlaying = true;
+        playIcon.setAttribute('data-lucide', 'pause');
+        lucide.createIcons();
+      });
+
+      wavesurfer.on('pause', () => {
+        isPlaying = false;
+        playIcon.setAttribute('data-lucide', 'play');
+        lucide.createIcons();
+      });
+
+      wavesurfer.on('finish', () => {
+        isPlaying = false;
+        playIcon.setAttribute('data-lucide', 'play');
+        lucide.createIcons();
+      });
+
+      wavesurfer.on('timeupdate', (time) => {
+        currentPlaybackTime.textContent = formatTime(time);
+        
+        if (scrollContainer) {
+          const duration = wavesurfer.getDuration();
+          if (duration > 0) {
+            const progress = time / duration;
+            const contentWidth = scrollContainer.scrollWidth;
+            const viewportWidth = scrollContainer.clientWidth;
+            const targetScrollLeft = (progress * contentWidth) - (viewportWidth / 2);
+            if (Math.abs(scrollContainer.scrollLeft - targetScrollLeft) > viewportWidth * 0.4) {
+              scrollContainer.scrollTo({ left: targetScrollLeft, behavior: 'smooth' });
+            }
+          }
+        }
+        updateFilterGains(time);
+      });
+
+      wavesurfer.load(audioUrl);
+    }
+
+    function destroyWaveSurfer() {
+      if (wavesurfer) {
+        wavesurfer.destroy();
+        wavesurfer = null;
+      }
+      if (audioCtx) {
+        audioCtx.close();
+        audioCtx = null;
+        sourceNode = null;
+        gainNode = null;
+        activeFilters = [];
+      }
+      drawingOverlay.innerHTML = '';
+    }
+
+    // Playback Speed Adjustment Event Listener
+    playbackSpeedSelect.addEventListener('change', (e) => {
+      if (wavesurfer) {
+        wavesurfer.setPlaybackRate(parseFloat(e.target.value));
+      }
+    });
+
+    // 1fps Auto-Detect Vocal Regions (Beta Feature)
+    btnAutoDetect.addEventListener('click', async () => {
+      if (!originalFile || !wavesurfer) return;
+      const duration = wavesurfer.getDuration();
+      if (duration === 0) return;
+
+      const originalHtml = btnAutoDetect.innerHTML;
+      btnAutoDetect.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> Scanning...';
+      btnAutoDetect.disabled = true;
+      lucide.createIcons();
+
+      try {
+        const arrayBuffer = await originalFile.arrayBuffer();
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+
+        const offlineCtx = new OfflineAudioContext(1, audioBuffer.length, audioBuffer.sampleRate);
+        const source = offlineCtx.createBufferSource();
+        source.buffer = audioBuffer;
+
+        const filter = offlineCtx.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.frequency.value = 1650; 
+        filter.Q.value = 0.5;
+
+        source.connect(filter);
+        filter.connect(offlineCtx.destination);
+        source.start(0);
+
+        const renderedBuffer = await offlineCtx.startRendering();
+        const channelData = renderedBuffer.getChannelData(0);
+        
+        const fps = 1; 
+        const frameSamples = renderedBuffer.sampleRate / fps;
+        const numFrames = Math.floor(channelData.length / frameSamples);
+
+        let totalEnergy = 0;
+        const frameEnergies = [];
+
+        for (let i = 0; i < numFrames; i++) {
+          let energy = 0;
+          const start = i * frameSamples;
+          for (let j = 0; j < frameSamples; j += 10) {
+            energy += Math.abs(channelData[start + j]);
+          }
+          frameEnergies.push(energy);
+          totalEnergy += energy;
+        }
+
+        const avgEnergy = totalEnergy / numFrames;
+        const threshold = avgEnergy * 1.5; 
+
+        const vocalMinFreq = 300;
+        const vocalMaxFreq = 3000;
+        const startY = 1 - (vocalMaxFreq / NYQUIST);
+        const height = (vocalMaxFreq - vocalMinFreq) / NYQUIST;
+        
+        let newRegions = [...getCurrentRegions()];
+
+        for (let i = 0; i < numFrames; i++) {
+          if (frameEnergies[i] > threshold) {
+            const frameStartTime = i / fps;
+            const startX = frameStartTime / duration;
+            const width = (1 / fps) / duration;
+
+            if (startX + width <= 1) {
+              newRegions.push({
+                id: Math.random().toString(36).substring(7),
+                startX: startX,
+                startY: startY,
+                width: width,
+                height: height,
+                gain: -60, // Custom default gain
+                q: 5.0     // Custom default Q factor
+              });
+            }
+          }
+        }
+
+        if (newRegions.length > getCurrentRegions().length) {
+          pushRegionsHistory(newRegions);
+        }
+
+      } catch (err) {
+        console.error("Auto-detect logic failed:", err);
+        errorContainer.classList.remove('hidden');
+        errorMessage.textContent = 'Auto-detect failed. Audio too large or incompatible.';
+      } finally {
+        btnAutoDetect.innerHTML = originalHtml;
+        btnAutoDetect.disabled = false;
+        lucide.createIcons();
+      }
+    });
+
+    // Interactive Drawing/Dragging/Resizing Overlay Handlers
+    drawingOverlay.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      const rect = drawingOverlay.getBoundingClientRect();
+      const clickX = (e.clientX - rect.left) / rect.width;
+      const clickY = (e.clientY - rect.top) / rect.height;
+
+      // Check if clicked inside or on borders of existing regions
+      const regions = getCurrentRegions();
+      let clickedRegion = null;
+      let targetDirection = null;
+
+      // Scan reverse order to select top-most drawn item first
+      for (let i = regions.length - 1; i >= 0; i--) {
+        const r = regions[i];
+        const insideX = clickX >= r.startX && clickX <= r.startX + r.width;
+        const insideY = clickY >= r.startY && clickY <= r.startY + r.height;
+
+        if (insideX && insideY) {
+          clickedRegion = r;
+          
+          // Check corner-resize handle closeness (5% threshold boundary)
+          const pxThresholdX = 12 / rect.width;
+          const pxThresholdY = 12 / rect.height;
+          const nearLeft = Math.abs(clickX - r.startX) < pxThresholdX;
+          const nearRight = Math.abs(clickX - (r.startX + r.width)) < pxThresholdX;
+          const nearTop = Math.abs(clickY - r.startY) < pxThresholdY;
+          const nearBottom = Math.abs(clickY - (r.startY + r.height)) < pxThresholdY;
+
+          if (nearTop && nearLeft) targetDirection = 'nw';
+          else if (nearTop && nearRight) targetDirection = 'ne';
+          else if (nearBottom && nearLeft) targetDirection = 'sw';
+          else if (nearBottom && nearRight) targetDirection = 'se';
+          break;
+        }
+      }
+
+      if (clickedRegion) {
+        if (targetDirection) {
+          // Resize state
+          isResizing = true;
+          activeDragRegionId = clickedRegion.id;
+          resizeDirection = targetDirection;
+          dragStartX = clickX;
+          dragStartY = clickY;
+        } else {
+          // Drag position state
+          isDragging = true;
+          activeDragRegionId = clickedRegion.id;
+          dragStartX = clickX - clickedRegion.startX;
+          dragStartY = clickY - clickedRegion.startY;
+        }
+
+        // Multi-select key handle
+        if (e.shiftKey) {
+          if (selectedRegionIds.includes(clickedRegion.id)) {
+            selectedRegionIds = selectedRegionIds.filter(id => id !== clickedRegion.id);
+          } else {
+            selectedRegionIds.push(clickedRegion.id);
+          }
+        } else {
+          selectedRegionIds = [clickedRegion.id];
+        }
+        renderStoredRegions();
+        syncInspector();
+      } else {
+        // Normal Canvas drawing initiation
+        isDrawing = true;
+        startX = clickX;
+        startY = clickY;
+        
+        // Remove selections if clicking empty spectrum space (unless holding Shift)
+        if (!e.shiftKey) {
+          selectedRegionIds = [];
+          renderStoredRegions();
+          syncInspector();
+        }
+
+        activeRegionEl = document.createElement('div');
+        activeRegionEl.className = 'absolute border-2 border-indigo-400 bg-indigo-500/20 shadow-lg';
+        activeRegionEl.style.left = `${startX * 100}%`;
+        activeRegionEl.style.top = `${startY * 100}%`;
+        activeRegionEl.style.width = '0%';
+        activeRegionEl.style.height = '0%';
+        drawingOverlay.appendChild(activeRegionEl);
+      }
+    });
+
+    drawingOverlay.addEventListener('mousemove', (e) => {
+      const rect = drawingOverlay.getBoundingClientRect();
+      const currentX = (e.clientX - rect.left) / rect.width;
+      const currentY = (e.clientY - rect.top) / rect.height;
+
+      // Real-time Tooltip Tracking Logic (Always runs on hover)
+      if (wavesurfer && wavesurfer.getDuration() > 0) {
+        tooltip.classList.remove('hidden');
+        
+        const clampedX = Math.max(0, Math.min(1, currentX));
+        const clampedY = Math.max(0, Math.min(1, currentY));
+        const time = clampedX * wavesurfer.getDuration();
+        const freq = (1 - clampedY) * NYQUIST;
+        
+        tooltipTime.textContent = time.toFixed(3) + 's';
+        tooltipFreq.textContent = Math.round(freq) + ' Hz';
+        
+        tooltip.style.left = (e.clientX - rect.left + 15) + 'px';
+        tooltip.style.top = (e.clientY - rect.top + 15) + 'px';
+
+        if (isDrawing) {
+           let y1 = startY;
+           let y2 = currentY;
+           let maxFreq = (1 - Math.min(y1, y2)) * NYQUIST;
+           let minFreq = (1 - Math.max(y1, y2)) * NYQUIST;
+           tooltipSelection.classList.remove('hidden');
+           tooltipBand.textContent = `${Math.round(minFreq)} Hz - ${Math.round(maxFreq)} Hz`;
+        } else {
+           tooltipSelection.classList.add('hidden');
+        }
+      }
+
+      if (isDrawing && activeRegionEl) {
+        let displayX = startX;
+        let displayY = startY;
+        let width = currentX - startX;
+        let height = currentY - startY;
+
+        if (width < 0) { displayX = currentX; width = Math.abs(width); }
+        if (height < 0) { displayY = currentY; height = Math.abs(height); }
+
+        displayX = Math.max(0, Math.min(1, displayX));
+        displayY = Math.max(0, Math.min(1, displayY));
+        width = Math.min(1 - displayX, width);
+        height = Math.min(1 - displayY, height);
+
+        activeRegionEl.style.left = `${displayX * 100}%`;
+        activeRegionEl.style.top = `${displayY * 100}%`;
+        activeRegionEl.style.width = `${width * 100}%`;
+        activeRegionEl.style.height = `${height * 100}%`;
+        return;
+      }
+
+      if (isDragging && activeDragRegionId) {
+        const regions = getCurrentRegions();
+        const updated = regions.map(r => {
+          if (r.id === activeDragRegionId) {
+            let newX = currentX - dragStartX;
+            let newY = currentY - dragStartY;
+
+            // Boundary constraints mapping
+            newX = Math.max(0, Math.min(1 - r.width, newX));
+            newY = Math.max(0, Math.min(1 - r.height, newY));
+
+            return { ...r, startX: newX, startY: newY };
+          }
+          return r;
+        });
+        
+        // Dynamic push to history & immediately update audio nodes as they drag
+        replaceCurrentRegionsState(updated);
+        renderStoredRegions();
+        syncInspector();
+        updateLivePreviewFilters();
+        return;
+      }
+
+      if (isResizing && activeDragRegionId) {
+        const regions = getCurrentRegions();
+        const updated = regions.map(r => {
+          if (r.id === activeDragRegionId) {
+            let startX = r.startX;
+            let startY = r.startY;
+            let endX = r.startX + r.width;
+            let endY = r.startY + r.height;
+
+            if (resizeDirection.includes('w')) startX = Math.max(0, Math.min(endX - 0.01, currentX));
+            if (resizeDirection.includes('e')) endX = Math.max(startX + 0.01, Math.min(1, currentX));
+            if (resizeDirection.includes('n')) startY = Math.max(0, Math.min(endY - 0.01, currentY));
+            if (resizeDirection.includes('s')) endY = Math.max(startY + 0.01, Math.min(1, currentY));
+
+            return {
+              ...r,
+              startX: startX,
+              startY: startY,
+              width: endX - startX,
+              height: endY - startY
+            };
+          }
+          return r;
+        });
+
+        replaceCurrentRegionsState(updated);
+        renderStoredRegions();
+        syncInspector();
+        updateLivePreviewFilters();
+        return;
+      }
+    });
+
+    drawingOverlay.addEventListener('mouseup', (e) => {
+      if (isDrawing) {
+        isDrawing = false;
+        const rect = drawingOverlay.getBoundingClientRect();
+        const currentX = (e.clientX - rect.left) / rect.width;
+        const currentY = (e.clientY - rect.top) / rect.height;
+
+        let finalX = Math.min(startX, currentX);
+        let finalY = Math.min(startY, currentY);
+        let width = Math.abs(currentX - startX);
+        let height = Math.abs(currentY - startY);
+
+        if (width > 0.005 && height > 0.005) {
+          const newRegion = {
+            id: Math.random().toString(36).substring(7),
+            startX: finalX,
+            startY: finalY,
+            width: width,
+            height: height,
+            gain: -60, // default -60dB attenuation cut
+            q: 5.0     // default surgical quality factor
+          };
+          pushRegionsHistory([...getCurrentRegions(), newRegion]);
+          selectedRegionIds = [newRegion.id];
+          renderStoredRegions();
+          syncInspector();
+        } else {
+          if (activeRegionEl) activeRegionEl.remove();
+        }
+        activeRegionEl = null;
+      }
+
+      isDragging = false;
+      isResizing = false;
+      activeDragRegionId = null;
+      resizeDirection = null;
+    });
+
+    drawingOverlay.addEventListener('mouseleave', () => {
+      tooltip.classList.add('hidden'); 
+      if (isDrawing) {
+        isDrawing = false;
+        if (activeRegionEl) activeRegionEl.remove();
+        activeRegionEl = null;
+      }
+      isDragging = false;
+      isResizing = false;
+      activeDragRegionId = null;
+    });
+
+    // History & State Control Stack
+    function getCurrentRegions() {
+      return regionsHistory[historyIndex] || [];
+    }
+
+    function pushRegionsHistory(newRegions) {
+      const updatedHistory = regionsHistory.slice(0, historyIndex + 1);
+      updatedHistory.push(newRegions);
+      regionsHistory = updatedHistory;
+      historyIndex = regionsHistory.length - 1;
+      
+      renderStoredRegions();
+      updateUndoRedoButtons();
+      updateLivePreviewFilters();
+    }
+
+    // Directly updates current history state index when dragging/resizing for high performance
+    function replaceCurrentRegionsState(updatedRegions) {
+      regionsHistory[historyIndex] = updatedRegions;
+    }
+
+    function renderStoredRegions() {
+      drawingOverlay.innerHTML = '';
+      const current = getCurrentRegions();
+
+      current.forEach(r => {
+        const isSelected = selectedRegionIds.includes(r.id);
+        const rEl = document.createElement('div');
+        
+        rEl.className = `absolute border-2 rounded ${
+          isSelected 
+            ? 'selected-region border-indigo-400 bg-indigo-500/25 z-20' 
+            : 'border-red-500 bg-red-500/15'
+        } cursor-move flex items-center justify-center`;
+        
+        rEl.style.left = `${r.startX * 100}%`;
+        rEl.style.top = `${r.startY * 100}%`;
+        rEl.style.width = `${r.width * 100}%`;
+        rEl.style.height = `${r.height * 100}%`;
+
+        // Add corner resize indicator visual guides
+        const corners = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
+        const cornerStyles = {
+          'top-left': 'top-0 left-0 cursor-nwse-resize',
+          'top-right': 'top-0 right-0 cursor-nesw-resize',
+          'bottom-left': 'bottom-0 left-0 cursor-nesw-resize',
+          'bottom-right': 'bottom-0 right-0 cursor-nwse-resize'
+        };
+
+        corners.forEach(c => {
+          const handle = document.createElement('div');
+          handle.className = `absolute w-2 h-2 bg-white border border-neutral-900 rounded-full opacity-0 group-hover:opacity-100 ${cornerStyles[c]}`;
+          rEl.appendChild(handle);
+        });
+
+        const dBadge = document.createElement('div');
+        dBadge.className = 'absolute bottom-1 bg-neutral-900 text-red-400 text-[9px] py-0.5 px-1 rounded border border-red-500/30 opacity-0 hover:opacity-100 transition-opacity font-bold cursor-pointer';
+        dBadge.innerHTML = 'Remove';
+        dBadge.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          const filtered = getCurrentRegions().filter(item => item.id !== r.id);
+          selectedRegionIds = selectedRegionIds.filter(id => id !== r.id);
+          pushRegionsHistory(filtered);
+          syncInspector();
+        });
+        rEl.appendChild(dBadge);
+        
+        drawingOverlay.appendChild(rEl);
+      });
+
+      // Update counters
+      metaSelectedCount.textContent = selectedRegionIds.length;
+      metaTotalCount.textContent = current.length;
+
+      if (current.length > 0) {
+        btnClear.classList.remove('hidden');
+        btnProcessAudio.removeAttribute('disabled');
+      } else {
+        btnClear.classList.add('hidden');
+        btnProcessAudio.setAttribute('disabled', 'true');
+      }
+    }
+
+    // Inspector Synchronization Logic
+    function syncInspector() {
+      if (selectedRegionIds.length === 1) {
+        const regions = getCurrentRegions();
+        const active = regions.find(r => r.id === selectedRegionIds[0]);
+
+        if (active) {
+          inspectorActive.classList.remove('hidden');
+          inspectorEmpty.classList.add('hidden');
+
+          sliderGain.value = active.gain !== undefined ? active.gain : -60;
+          labelGain.textContent = `${sliderGain.value} dB`;
+
+          sliderQ.value = active.q !== undefined ? active.q : 5.0;
+          labelQ.textContent = parseFloat(sliderQ.value).toFixed(1);
+
+          // Map vertical Y coords to exact Hz
+          const maxFreq = (1 - active.startY) * NYQUIST;
+          const minFreq = (1 - (active.startY + active.height)) * NYQUIST;
+          const centerFreq = Math.round((minFreq + maxFreq) / 2);
+          
+          sliderFreq.value = centerFreq;
+          labelFreq.textContent = `${centerFreq} Hz`;
+          return;
+        }
+      }
+
+      // No select or multi select state active
+      inspectorActive.classList.add('hidden');
+      inspectorEmpty.classList.remove('hidden');
+    }
+
+    // Real-Time Slider Editing Logic & Immediate Web Audio Feedback Loop
+    sliderGain.addEventListener('input', (e) => {
+      const val = parseInt(e.target.value);
+      labelGain.textContent = `${val} dB`;
+      updateSelectedRegionParameter('gain', val);
+    });
+
+    sliderQ.addEventListener('input', (e) => {
+      const val = parseFloat(e.target.value);
+      labelQ.textContent = val.toFixed(1);
+      updateSelectedRegionParameter('q', val);
+    });
+
+    sliderFreq.addEventListener('input', (e) => {
+      const targetCenter = parseInt(e.target.value);
+      labelFreq.textContent = `${targetCenter} Hz`;
+      
+      // Keep height intact, move center frequency to new box bounds
+      const regions = getCurrentRegions();
+      const active = regions.find(r => r.id === selectedRegionIds[0]);
+      if (active) {
+        const bandwidth = active.height * NYQUIST;
+        const newMinFreq = targetCenter - (bandwidth / 2);
+        const newMaxFreq = targetCenter + (bandwidth / 2);
+        
+        let newStartY = 1 - (newMaxFreq / NYQUIST);
+        let newHeight = (newMaxFreq - newMinFreq) / NYQUIST;
+
+        // Constraints clamp bounds
+        if (newStartY < 0) newStartY = 0;
+        if (newStartY + newHeight > 1) newHeight = 1 - newStartY;
+
+        const updated = regions.map(r => {
+          if (r.id === active.id) {
+            return { ...r, startY: newStartY, height: newHeight };
+          }
+          return r;
+        });
+
+        replaceCurrentRegionsState(updated);
+        renderStoredRegions();
+        updateLivePreviewFilters();
+      }
+    });
+
+    function updateSelectedRegionParameter(key, value) {
+      if (selectedRegionIds.length === 1) {
+        const regions = getCurrentRegions();
+        const updated = regions.map(r => {
+          if (r.id === selectedRegionIds[0]) {
+            return { ...r, [key]: value };
+          }
+          return r;
+        });
+        replaceCurrentRegionsState(updated);
+        updateLivePreviewFilters();
+      }
+    }
+
+    btnDeselect.addEventListener('click', () => {
+      selectedRegionIds = [];
+      renderStoredRegions();
+      syncInspector();
+    });
+
+    btnDeleteSelected.addEventListener('click', () => {
+      if (selectedRegionIds.length > 0) {
+        const filtered = getCurrentRegions().filter(r => !selectedRegionIds.includes(r.id));
+        selectedRegionIds = [];
+        pushRegionsHistory(filtered);
+        syncInspector();
+      }
+    });
+
+    btnUndo.addEventListener('click', () => {
+      if (historyIndex > 0) {
+        historyIndex--;
+        selectedRegionIds = [];
+        renderStoredRegions();
+        updateUndoRedoButtons();
+        syncInspector();
+        updateLivePreviewFilters();
+      }
+    });
+
+    btnRedo.addEventListener('click', () => {
+      if (historyIndex < regionsHistory.length - 1) {
+        historyIndex++;
+        selectedRegionIds = [];
+        renderStoredRegions();
+        updateUndoRedoButtons();
+        syncInspector();
+        updateLivePreviewFilters();
+      }
+    });
+
+    btnClear.addEventListener('click', () => {
+      selectedRegionIds = [];
+      pushRegionsHistory([]);
+      syncInspector();
+    });
+
+    function updateUndoRedoButtons() {
+      btnUndo.disabled = historyIndex === 0;
+      btnRedo.disabled = historyIndex === regionsHistory.length - 1;
+    }
+
+    // Zooming mechanics
+    zoomSlider.addEventListener('input', (e) => {
+      zoomLevel = parseFloat(e.target.value);
+      zoomValue.textContent = `${zoomLevel.toFixed(1)}x`;
+      zoomContainer.style.width = `${zoomLevel * 100}%`;
+      if (wavesurfer) {
+        wavesurfer.zoom(zoomLevel * 10);
+      }
+    });
+
+    // Real-Time Preview Live Filter Setup
+    function updateLivePreviewFilters() {
+      if (!audioCtx || !sourceNode || !gainNode) return;
+
+      sourceNode.disconnect();
+      activeFilters.forEach(f => f.filter.disconnect()); // Bug fixed here: targeted .filter child node disconnect
+      activeFilters = [];
+
+      let lastNode = sourceNode;
+      const current = getCurrentRegions();
+
+      current.forEach(region => {
+        const maxFreq = (1 - region.startY) * NYQUIST;
+        const minFreq = (1 - (region.startY + region.height)) * NYQUIST;
+        const centerFreq = Math.max(50, (minFreq + maxFreq) / 2);
+        
+        // Use user-defined Q factor or calculate dynamic fallback
+        const customQ = region.q !== undefined ? region.q : 5.0;
+
+        const filter = audioCtx.createBiquadFilter();
+        filter.type = 'peaking';
+        filter.frequency.value = centerFreq;
+        filter.Q.value = customQ;
+        filter.gain.value = 0; // Starts clean, gains applied inside playhead active window frame
+
+        lastNode.connect(filter);
+        lastNode = filter;
+        activeFilters.push({
+          filter: filter,
+          region: region
+        });
+      });
+
+      lastNode.connect(gainNode);
+    }
+
+    function updateFilterGains(currentTime) {
+      if (!audioCtx || activeFilters.length === 0) return;
+      const duration = wavesurfer.getDuration();
+      if (duration <= 0) return;
+      const now = audioCtx.currentTime;
+
+      activeFilters.forEach(({ filter, region }) => {
+        const startTime = region.startX * duration;
+        const endTime = (region.startX + region.width) * duration;
+        const targetGain = region.gain !== undefined ? region.gain : -60;
+
+        if (currentTime >= startTime && currentTime <= endTime) {
+          filter.gain.setTargetAtTime(targetGain, now, 0.01);
+        } else {
+          filter.gain.setTargetAtTime(0, now, 0.01);
+        }
+      });
+    }
+
+    btnPlayPause.addEventListener('click', () => {
+      if (wavesurfer) {
+        if (audioCtx && audioCtx.state === 'suspended') {
+          audioCtx.resume();
+        }
+        wavesurfer.playPause();
+      }
+    });
+
+    function formatTime(seconds) {
+      const mins = Math.floor(seconds / 60);
+      const secs = Math.floor(seconds % 60);
+      const ms = Math.floor((seconds % 1) * 100);
+      return `${mins}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(2, '0')}`;
+    }
+
+    // AUDIO RENDERING ENGINE: Local Web Audio Offline Rendering Loop
+    btnProcessAudio.addEventListener('click', async () => {
+      if (!originalFile || !wavesurfer) return;
+
+      document.getElementById('action-wrapper').classList.add('hidden');
+      processingState.classList.remove('hidden');
+      resultState.classList.add('hidden');
+      progressBarFill.style.width = '10%';
+      progressPercent.textContent = '10%';
+
+      try {
+        const duration = wavesurfer.getDuration();
+        const currentRegions = getCurrentRegions();
+
+        const logicalRegions = currentRegions.map(r => {
+          const startTime = r.startX * duration;
+          const endTime = (r.startX + r.width) * duration;
+          const maxFreq = (1 - r.startY) * NYQUIST;
+          const minFreq = (1 - (r.startY + r.height)) * NYQUIST;
+          return {
+            startTime, 
+            endTime, 
+            minFreq: Math.max(0, minFreq), 
+            maxFreq: Math.max(0, maxFreq),
+            gain: r.gain !== undefined ? r.gain : -60,
+            q: r.q !== undefined ? r.q : 5.0
+          };
+        });
+
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        progressBarFill.style.width = '30%';
+        progressPercent.textContent = '30%';
+
+        const arrayBuffer = await originalFile.arrayBuffer();
+        const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+        
+        progressBarFill.style.width = '50%';
+        progressPercent.textContent = '50%';
+
+        const sampleRate = audioBuffer.sampleRate;
+        const numberOfChannels = audioBuffer.numberOfChannels;
+        const offlineCtx = new OfflineAudioContext(numberOfChannels, audioBuffer.length, sampleRate);
+        const source = offlineCtx.createBufferSource();
+        source.buffer = audioBuffer;
+
+        let lastNode = source;
+
+        logicalRegions.forEach(region => {
+          const centerFreq = (region.minFreq + region.maxFreq) / 2;
+          const customQ = region.q;
+
+          const filter = offlineCtx.createBiquadFilter();
+          filter.type = 'peaking';
+          filter.frequency.setValueAtTime(centerFreq, 0);
+          filter.Q.setValueAtTime(customQ, 0);
+          
+          filter.gain.setValueAtTime(0, 0);
+          filter.gain.setValueAtTime(0, region.startTime);
+          filter.gain.linearRampToValueAtTime(region.gain, region.startTime + 0.02);
+          filter.gain.setValueAtTime(region.gain, region.endTime - 0.02);
+          filter.gain.linearRampToValueAtTime(0, region.endTime);
+
+          lastNode.connect(filter);
+          lastNode = filter;
+        });
+
+        lastNode.connect(offlineCtx.destination);
+        source.start(0);
+
+        progressBarFill.style.width = '70%';
+        progressPercent.textContent = '70%';
+
+        const renderedBuffer = await offlineCtx.startRendering();
+        
+        progressBarFill.style.width = '90%';
+        progressPercent.textContent = '90%';
+
+        const wavBlob = audioBufferToWav(renderedBuffer);
+        
+        progressBarFill.style.width = '100%';
+        progressPercent.textContent = '100%';
+
+        const finalUrl = URL.createObjectURL(wavBlob);
+        
+        setTimeout(() => {
+          processingState.classList.add('hidden');
+          resultState.classList.remove('hidden');
+          btnDownloadLink.href = finalUrl;
+          btnDownloadLink.download = `instrumental-${originalFile.name.split('.')[0] || 'track'}.wav`;
+          document.getElementById('action-wrapper').classList.remove('hidden');
+        }, 300);
+
+      } catch (err) {
+        console.error(err);
+        processingState.classList.add('hidden');
+        document.getElementById('action-wrapper').classList.remove('hidden');
+        errorContainer.classList.remove('hidden');
+        errorMessage.textContent = 'Could not process audio track. Verify file format or reduce size.';
+      }
+    });
+
+    function audioBufferToWav(buffer) {
+      let numOfChan = buffer.numberOfChannels,
+          length = buffer.length * numOfChan * 2 + 44,
+          bufferArr = new ArrayBuffer(length),
+          view = new DataView(bufferArr),
+          channels = [], i, sample,
+          offset = 0,
+          pos = 0;
+
+      setUint32(0x46464952); // "RIFF"
+      setUint32(length - 8); 
+      setUint32(0x45564157); // "WAVE"
+
+      setUint32(0x20746d66); // "fmt " 
+      setUint32(16);         
+      setUint16(1);          
+      setUint16(numOfChan);
+      setUint32(buffer.sampleRate);
+      setUint32(buffer.sampleRate * 2 * numOfChan); 
+      setUint16(numOfChan * 2);                    
+      setUint16(16);                                
+
+      setUint32(0x61746164);                        // "data" 
+      setUint32(length - pos - 4);                  
+
+      for (i = 0; i < buffer.numberOfChannels; i++) {
+        channels.push(buffer.getChannelData(i));
+      }
+
+      while (pos < length) {
+        for (i = 0; i < numOfChan; i++) {
+          sample = Math.max(-1, Math.min(1, channels[i][offset]));
+          sample = (sample < 0 ? sample * 0x8000 : sample * 0x7FFF); 
+          view.setInt16(pos, sample, true); 
+          pos += 2;
+        }
+        offset++;
+      }
+
+      return new Blob([bufferArr], { type: "audio/wav" });
+
+      // Utility helpers to write data to buffer safely
+      function setUint16(data) { view.setUint16(pos, data, true); pos += 2; }
+      function setUint32(data) { view.setUint32(pos, data, true); pos += 4; }
+    }
+  </script>
+</body>
+</html>
