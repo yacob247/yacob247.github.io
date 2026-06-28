@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PureMusic - Mathematical Spectral Vocal Eradicator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0b0f19; /* Deep Space Slate */
+            color: #f8fafc;
+            overflow-x: hidden;
+        }
+        
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #ef4444; border-radius: 4px; }
+
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(239, 68, 68, 0.15);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+        }
+
+        .gradient-text {
+            background: linear-gradient(to right, #ef4444, #f43f5e, #ec4899);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 0 15px rgba(239, 68, 68, 0.3); }
+            50% { box-shadow: 0 0 30px rgba(236, 72, 153, 0.6); }
+        }
+        .processing-pulse {
+            animation: pulse-glow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+
+        audio {
+            width: 100%;
+            height: 40px;
+            border-radius: 8px;
+            outline: none;
+        }
+        audio::-webkit-media-controls-panel {
+            background-color: #1e293b;
+            color: #fff;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-center p-4">
+
+    <main class="w-full max-w-3xl glass-panel rounded-3xl p-8 flex flex-col gap-8 relative">
+        
+        <!-- Header -->
+        <div class="text-center space-y-3">
+            <div class="inline-flex items-center justify-center p-3 bg-red-500/10 rounded-2xl mb-2 border border-red-500/20">
+                <svg class="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
+                </svg>
+            </div>
+            <h1 class="text-4xl md:text-5xl font-extrabold tracking-tight">Pure<span class="gradient-text">Music</span></h1>
+            <p class="text-slate-400 font-medium">Mathematical FFT Spectrogram Vocal Eradicator</p>
+        </div>
+
+        <!-- Eradication Controls -->
+        <div class="bg-slate-900/60 p-5 rounded-2xl border border-slate-800/80 space-y-4">
+            <div class="flex justify-between items-center">
+                <label class="text-sm font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                    ⚡ DSP Spectral Suppression Strength
+                </label>
+                <span id="aggressionVal" class="text-xs font-mono px-2.5 py-1 bg-red-500/20 text-red-400 rounded-lg border border-red-500/30">MAX SPECTRUM WIPE (Eradicated)</span>
+            </div>
+            <input type="range" id="intensitySlider" min="1" max="3" value="3" class="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-red-500">
+            <div class="flex justify-between text-[10px] text-slate-500 font-semibold uppercase tracking-wider px-1">
+                <span>Natural (Center Only)</span>
+                <span>Deep Clean</span>
+                <span>Absolute Spectral Eradication</span>
+            </div>
+        </div>
+
+        <!-- Upload Zone -->
+        <div id="dropZone" class="border-2 border-dashed border-red-900/40 rounded-2xl p-10 md:p-16 text-center hover:border-red-500 hover:bg-red-950/10 transition-all cursor-pointer group">
+            <input type="file" id="fileInput" class="hidden" accept="audio/*, video/*">
+            <div class="space-y-4 pointer-events-none flex flex-col items-center">
+                <div class="p-4 bg-slate-900 rounded-full group-hover:bg-red-500/20 transition-colors duration-300 border border-slate-800">
+                    <svg class="w-10 h-10 text-slate-400 group-hover:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                </div>
+                <div>
+                    <p class="text-xl font-bold text-slate-200 group-hover:text-white transition-colors">Select a Target Music File</p>
+                    <p class="text-sm text-slate-500 mt-1">Surgical browser-based math separation (MP3, WAV, M4A)</p>
+                </div>
+            </div>
+            <button onclick="document.getElementById('fileInput').click()" class="mt-8 bg-gradient-to-r from-red-600 to-pink-600 hover:from-red-500 hover:to-pink-500 text-white px-8 py-3 rounded-xl font-bold transition-all shadow-lg shadow-red-500/25 pointer-events-auto transform active:scale-95">
+                Choose Track File
+            </button>
+        </div>
+
+        <!-- Processing State (Hidden by default) -->
+        <div id="processingState" class="hidden flex-col items-center justify-center py-12 space-y-6">
+            <div class="w-16 h-16 border-4 border-red-500 border-t-transparent rounded-full animate-spin"></div>
+            <h3 class="text-xl font-bold text-slate-200" id="processingText">Loading Track Matrix...</h3>
+            <p class="text-slate-400 text-sm text-center max-w-md">Running Overlapping Fast Fourier Transforms (FFT). Separating vocal frequencies from music harmonics...</p>
+            <div class="w-full max-w-md bg-slate-850 rounded-full h-2.5 mt-4 overflow-hidden border border-slate-800">
+                <div class="bg-red-600 h-2.5 rounded-full w-0 transition-all duration-100" id="progressBar"></div>
+            </div>
+        </div>
+
+        <!-- Results Zone (Hidden by default) -->
+        <div id="resultsZone" class="hidden flex-col gap-8 animate-fade-in">
+            <div class="bg-slate-900/90 rounded-2xl p-6 border border-slate-800 shadow-xl">
+                
+                <div class="flex items-center gap-4 mb-6 pb-4 border-b border-slate-800">
+                    <div class="bg-red-500/20 p-3 rounded-lg text-red-400 border border-red-500/30">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>
+                    </div>
+                    <div>
+                        <h4 class="font-bold text-lg">Eradicated Instrumental</h4>
+                        <p class="text-xs text-slate-400">1024-Pt Overlapping Fourier Spectrogram Carver</p>
+                    </div>
+                </div>
+
+                <div class="flex flex-col md:flex-row items-center gap-6 mb-6">
+                    <div class="flex-1 w-full">
+                        <audio id="audioInst" controls class="w-full"></audio>
+                    </div>
+                    <div class="w-full md:w-auto flex-1 flex justify-center">
+                        <a id="downloadInst" class="w-full text-center bg-white text-slate-900 hover:bg-slate-200 px-6 py-3 rounded-xl font-bold transition-colors shadow-lg cursor-pointer flex items-center justify-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                            Download Extirpated WAV
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Analysis Log Panel (Transcript style) -->
+                <div class="space-y-3">
+                    <h5 class="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-red-500 animate-ping"></span>
+                        Real-Time Spectrogram Frequency Log
+                    </h5>
+                    <div id="timelineGrid" class="font-mono text-[11px] bg-black/50 text-slate-400 rounded-xl p-4 border border-slate-800 h-36 overflow-y-auto space-y-1">
+                        <!-- Filled by JS scanner dynamically -->
+                    </div>
+                </div>
+            </div>
+
+            <button onclick="resetApp()" class="text-slate-400 hover:text-white font-medium transition-colors flex items-center justify-center gap-2 self-center">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                Load Another Track
+            </button>
+        </div>
+    </main>
+
+    <!-- Toast Message Box -->
+    <div id="messageBox" class="fixed bottom-6 right-6 bg-slate-900 border-l-4 border-red-500 text-white p-4 rounded shadow-2xl transform translate-x-[150%] transition-transform duration-300 z-50 max-w-sm">
+        <div class="flex items-start gap-3">
+            <svg id="msgIcon" class="w-6 h-6 text-red-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            <p id="messageText" class="font-medium text-sm mt-0.5"></p>
+        </div>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const processingState = document.getElementById('processingState');
+        const processingText = document.getElementById('processingText');
+        const progressBar = document.getElementById('progressBar');
+        const resultsZone = document.getElementById('resultsZone');
+        const messageBox = document.getElementById('messageBox');
+        const messageText = document.getElementById('messageText');
+        const msgIcon = document.getElementById('msgIcon');
+        const timelineGrid = document.getElementById('timelineGrid');
+        const intensitySlider = document.getElementById('intensitySlider');
+        const aggressionVal = document.getElementById('aggressionVal');
+        
+        const audioInst = document.getElementById('audioInst');
+        const downloadInst = document.getElementById('downloadInst');
+
+        // Aggression indicator updates
+        intensitySlider.addEventListener('input', () => {
+            const val = parseInt(intensitySlider.value);
+            if (val === 1) {
+                aggressionVal.innerText = "NATURAL (Center Only)";
+                aggressionVal.className = "text-xs font-mono px-2.5 py-1 bg-yellow-500/20 text-yellow-400 rounded-lg border border-yellow-500/30";
+            } else if (val === 2) {
+                aggressionVal.innerText = "DEEP CLEAN (Sides Masked)";
+                aggressionVal.className = "text-xs font-mono px-2.5 py-1 bg-orange-500/20 text-orange-400 rounded-lg border border-orange-500/30";
+            } else {
+                aggressionVal.innerText = "MAX SPECTRUM WIPE (Eradicated)";
+                aggressionVal.className = "text-xs font-mono px-2.5 py-1 bg-red-500/20 text-red-400 rounded-lg border border-red-500/30";
+            }
+        });
+
+        function showMessage(text, isError = false) {
+            messageText.innerText = text;
+            messageBox.style.borderLeftColor = isError ? '#ef4444' : '#10b981';
+            msgIcon.classList.toggle('text-red-400', isError);
+            msgIcon.classList.toggle('text-emerald-400', !isError);
+            messageBox.style.transform = 'translateX(0)';
+            setTimeout(() => {
+                messageBox.style.transform = 'translateX(150%)';
+            }, 5000);
+        }
+
+        function logConsole(msg, isSuccess = false) {
+            const p = document.createElement('p');
+            p.className = isSuccess ? "text-emerald-400" : "text-slate-400";
+            p.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            timelineGrid.appendChild(p);
+            timelineGrid.scrollTop = timelineGrid.scrollHeight;
+        }
+
+        // Drag & drop configuration
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => dropZone.classList.add('border-red-500', 'bg-red-950/10'), false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => dropZone.classList.remove('border-red-500', 'bg-red-950/10'), false);
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            handleFiles(e.dataTransfer.files);
+        });
+
+        fileInput.addEventListener('change', function() {
+            handleFiles(this.files);
+        });
+
+        async function handleFiles(files) {
+            if (files.length === 0) return;
+            const file = files[0];
+            
+            if (!file.type.startsWith('audio/') && !file.type.startsWith('video/')) {
+                showMessage("Invalid file format. Provide a compatible audio file.", true);
+                return;
+            }
+
+            dropZone.classList.add('hidden');
+            processingState.classList.remove('hidden');
+            processingState.classList.add('flex');
+            processingText.innerText = "Extracting raw track bytes...";
+            progressBar.style.width = '5%';
+            
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                processingText.innerText = "Analyzing soundstage spectra...";
+                progressBar.style.width = '15%';
+                
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const audioBuffer = await new Promise((resolve, reject) => {
+                    ctx.decodeAudioData(arrayBuffer, resolve, reject);
+                });
+                
+                ctx.close();
+
+                await processSpectrogramEradication(audioBuffer, file.name);
+                
+            } catch (err) {
+                console.error(err);
+                processingState.classList.add('hidden');
+                processingState.classList.remove('flex');
+                dropZone.classList.remove('hidden');
+                showMessage("Could not extract audio track. Ensure the format is standard.", true);
+                fileInput.value = "";
+            }
+        }
+
+        // --- MATH LIBRARY: BIT REVERSAL & FAST FOURIER TRANSFORM (FFT) ---
+        const N = 1024;
+        const revTable = new Int32Array(N);
+        const cosTable = new Float32Array(N);
+        const sinTable = new Float32Array(N);
+        
+        // Precompute Trigonometric and Bit Reversal Tables for speed-of-light operation
+        (function precomputeFFT() {
+            const m = Math.log2(N);
+            for (let i = 0; i < N; i++) {
+                let j = 0;
+                let temp = i;
+                for (let bit = 0; bit < m; bit++) {
+                    j = (j << 1) | (temp & 1);
+                    temp >>= 1;
+                }
+                revTable[i] = j;
+            }
+            for (let i = 0; i < N; i++) {
+                cosTable[i] = Math.cos(2 * Math.PI * i / N);
+                sinTable[i] = Math.sin(2 * Math.PI * i / N);
+            }
+        })();
+
+        // Cooley-Tukey Radix-2 FFT/IFFT algorithm 
+        function fft(re, im, inverse = false) {
+            // Bit-reversal permutation
+            for (let i = 0; i < N; i++) {
+                const r = revTable[i];
+                if (i < r) {
+                    let temp = re[i]; re[i] = re[r]; re[r] = temp;
+                    temp = im[i]; im[i] = im[r]; im[r] = temp;
+                }
+            }
+
+            // Stage loops
+            for (let len = 2; len <= N; len <<= 1) {
+                const step = N / len;
+                for (let i = 0; i < N; i += len) {
+                    const half = len >> 1;
+                    for (let j = 0; j < half; j++) {
+                        const k = i + j + half;
+                        const wIdx = (inverse ? (N - j * step) : (j * step)) % N;
+                        const w_re = cosTable[wIdx];
+                        const w_im = sinTable[wIdx];
+
+                        const t_re = re[k] * w_re - im[k] * w_im;
+                        const t_im = re[k] * w_im + im[k] * w_re;
+
+                        re[k] = re[i + j] - t_re;
+                        im[k] = im[i + j] - t_im;
+                        re[i + j] += t_re;
+                        im[i + j] += t_im;
+                    }
+                }
+            }
+
+            if (inverse) {
+                for (let i = 0; i < N; i++) {
+                    re[i] /= N;
+                    im[i] /= N;
+                }
+            }
+        }
+
+        async function processSpectrogramEradication(audioBuffer, originalName) {
+            processingText.innerText = "Processing spectral math cells...";
+            timelineGrid.innerHTML = '';
+            logConsole("Initializing Spectrogram DSP Crossover.");
+
+            const sampleRate = audioBuffer.sampleRate;
+            const length = audioBuffer.length;
+            const numCh = audioBuffer.numberOfChannels;
+
+            const originalL = audioBuffer.getChannelData(0);
+            const originalR = numCh > 1 ? audioBuffer.getChannelData(1) : originalL;
+
+            // Prepare overlapping reconstruction arrays
+            const outputL = new Float32Array(length);
+            const outputR = new Float32Array(length);
+            const winSum = new Float32Array(length);
+
+            // 75% Overlap-Add Hanning Window Configuration (Standard for perfect reconstruction)
+            const hopSize = 256; 
+            const window = new Float32Array(N);
+            for (let i = 0; i < N; i++) {
+                window[i] = 0.5 * (1.0 - Math.cos(2.0 * Math.PI * i / (N - 1)));
+            }
+
+            const intensity = parseInt(intensitySlider.value);
+            // Suppression settings
+            const suppressionThreshold = 0.15; // Phase alignment trigger sensitivity
+            const attenuationFactor = intensity === 1 ? 0.8 : (intensity === 2 ? 0.95 : 0.999); // Up to 99.9% complete mid-mute
+            const sideVocalAtt = intensity === 3 ? 0.85 : (intensity === 2 ? 0.4 : 0.0); // Side-reverb eradication
+
+            logConsole(`Configuration loaded. Intensity: ${intensity}. Scanning hops.`);
+
+            // FFT Real/Imaginary buffers
+            const reL = new Float32Array(N);
+            const imL = new Float32Array(N);
+            const reR = new Float32Array(N);
+            const imR = new Float32Array(N);
+
+            let offset = 0;
+            const totalHops = Math.floor((length - N) / hopSize);
+            let hopCount = 0;
+
+            // Batch-process the frames asynchronously to prevent UI freeze and animate progress
+            return new Promise((resolve) => {
+                function processBatch() {
+                    const batchSize = 120; // Fast processing segments
+                    const endHop = Math.min(hopCount + batchSize, totalHops);
+
+                    for (; hopCount < endHop; hopCount++) {
+                        const startSample = hopCount * hopSize;
+
+                        // 1. Gather overlapping frames and apply Hanning window
+                        for (let i = 0; i < N; i++) {
+                            const sampleIdx = startSample + i;
+                            if (sampleIdx < length) {
+                                reL[i] = originalL[sampleIdx] * window[i];
+                                reR[i] = originalR[sampleIdx] * window[i];
+                            } else {
+                                reL[i] = 0;
+                                reR[i] = 0;
+                            }
+                            imL[i] = 0;
+                            imR[i] = 0;
+                        }
+
+                        // 2. Perform forward Fast Fourier Transform (Time Domain -> Frequency Domain)
+                        fft(reL, imL, false);
+                        fft(reR, imR, false);
+
+                        // 3. Apply Pixel-by-Pixel Phase-Coherence Vocal Carving on Bins
+                        // Human vocal sweet-spot lives strictly between 150Hz and 5000Hz.
+                        for (let f = 0; f < N / 2; f++) {
+                            const freq = f * sampleRate / N;
+
+                            // Protect low bass (< 150Hz) and high sizzle (> 5000Hz) completely!
+                            if (freq > 150 && freq < 5000) {
+                                const magL = Math.sqrt(reL[f] * reL[f] + imL[f] * imL[f]);
+                                const magR = Math.sqrt(reR[f] * reR[f] + imR[f] * imR[f]);
+
+                                if (magL > 1e-8 && magR > 1e-8) {
+                                    // Complex Normalized Cross-Correlation (Phase Coherence / Center channel locator)
+                                    const dotProduct = reL[f] * reR[f] + imL[f] * imR[f];
+                                    const coherence = dotProduct / (magL * magR);
+
+                                    // If coherence is high, this "spectral pixel" belongs to the center-panned vocals
+                                    if (coherence > suppressionThreshold) {
+                                        const suppressionMask = 1.0 - (coherence * attenuationFactor);
+                                        reL[f] *= suppressionMask;
+                                        imL[f] *= suppressionMask;
+                                        reR[f] *= suppressionMask;
+                                        imR[f] *= suppressionMask;
+
+                                        // Mirror processing on symmetric FFT upper half
+                                        const symIdx = N - f;
+                                        if (symIdx < N) {
+                                            reL[symIdx] *= suppressionMask;
+                                            imL[symIdx] *= suppressionMask;
+                                            reR[symIdx] *= suppressionMask;
+                                            imR[symIdx] *= suppressionMask;
+                                        }
+                                    } 
+                                    // If coherence is negative or low, it represents wide stereo delays/backing vocal reverbs
+                                    else if (coherence < -0.1 && sideVocalAtt > 0) {
+                                        const sideMask = 1.0 - (Math.abs(coherence) * sideVocalAtt);
+                                        reL[f] *= sideMask;
+                                        imL[f] *= sideMask;
+                                        reR[f] *= sideMask;
+                                        imR[f] *= sideMask;
+
+                                        const symIdx = N - f;
+                                        if (symIdx < N) {
+                                            reL[symIdx] *= sideMask;
+                                            imL[symIdx] *= sideMask;
+                                            reR[symIdx] *= sideMask;
+                                            imR[symIdx] *= sideMask;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // 4. Perform Inverse FFT (Frequency Domain -> Time Domain)
+                        fft(reL, imL, true);
+                        fft(reR, imR, true);
+
+                        // 5. Overlap-Add reconstruction with standard Constant Overlap-Add scaling
+                        for (let i = 0; i < N; i++) {
+                            const sampleIdx = startSample + i;
+                            if (sampleIdx < length) {
+                                outputL[sampleIdx] += reL[i] * window[i];
+                                outputR[sampleIdx] += reR[i] * window[i];
+                                winSum[sampleIdx] += window[i] * window[i];
+                            }
+                        }
+                    }
+
+                    // Progress animation handling
+                    const pct = Math.floor((hopCount / totalHops) * 80) + 15;
+                    progressBar.style.width = `${pct}%`;
+                    if (hopCount % 3 === 0) {
+                        logConsole(`Analyzing spectral frame cluster: ${hopCount}/${totalHops} (${pct}%)`);
+                    }
+
+                    if (hopCount < totalHops) {
+                        setTimeout(processBatch, 0);
+                    } else {
+                        // 6. Perfect amplitude normalization over overlap windows
+                        logConsole("Normalizing overlapping Hanning matrices...");
+                        for (let i = 0; i < length; i++) {
+                            if (winSum[i] > 1e-4) {
+                                outputL[i] /= winSum[i];
+                                outputR[i] /= winSum[i];
+                            }
+                        }
+
+                        logConsole("Extirpation complete. Encoding output WAV stream.", true);
+                        
+                        // Assemble rendering output
+                        const renderedCtx = new (window.AudioContext || window.webkitAudioContext)();
+                        const renderedBuffer = renderedCtx.createBuffer(2, length, sampleRate);
+                        renderedBuffer.copyToChannel(outputL, 0);
+                        renderedBuffer.copyToChannel(outputR, 1);
+                        renderedCtx.close();
+
+                        finalizeOutput(renderedBuffer, originalName);
+                        resolve();
+                    }
+                }
+                processBatch();
+            });
+        }
+
+        function formatTime(secs) {
+            const m = Math.floor(secs / 60).toString().padStart(2, '0');
+            const s = Math.floor(secs % 60).toString().padStart(2, '0');
+            return `${m}:${s}`;
+        }
+
+        function finalizeOutput(audioBuffer, originalName) {
+            const wavBlob = createWavFile(audioBuffer);
+            const wavUrl = URL.createObjectURL(wavBlob);
+
+            audioInst.src = wavUrl;
+            downloadInst.href = wavUrl;
+            
+            let baseName = originalName.substring(0, originalName.lastIndexOf('.')) || originalName;
+            downloadInst.download = `${baseName}_Eradicated.wav`;
+
+            processingState.classList.add('hidden');
+            processingState.classList.remove('flex');
+            resultsZone.classList.remove('hidden');
+            resultsZone.classList.add('flex');
+            
+            showMessage("Spectral separation completed successfully!");
+        }
+
+        function createWavFile(audioBuffer) {
+            const numChannels = audioBuffer.numberOfChannels;
+            const sampleRate = audioBuffer.sampleRate;
+            const format = 1; // Uncompressed Linear PCM
+            const bitDepth = 16;
+            const bytesPerSample = bitDepth / 8;
+            const blockAlign = numChannels * bytesPerSample;
+            const byteRate = sampleRate * blockAlign;
+            const dataSize = audioBuffer.length * blockAlign;
+            const bufferSize = 44 + dataSize;
+            
+            const arrayBuffer = new ArrayBuffer(bufferSize);
+            const view = new DataView(arrayBuffer);
+
+            let offset = 0;
+            const writeString = (str) => {
+                for (let i = 0; i < str.length; i++) {
+                    view.setUint8(offset + i, str.charCodeAt(i));
+                }
+                offset += str.length;
+            };
+
+            // WAV Container header
+            writeString('RIFF');
+            view.setUint32(offset, 36 + dataSize, true); offset += 4;
+            writeString('WAVE');
+            writeString('fmt ');
+            view.setUint32(offset, 16, true); offset += 4; 
+            view.setUint16(offset, format, true); offset += 2;
+            view.setUint16(offset, numChannels, true); offset += 2;
+            view.setUint32(offset, sampleRate, true); offset += 4;
+            view.setUint32(offset, byteRate, true); offset += 4;
+            view.setUint16(offset, blockAlign, true); offset += 2;
+            view.setUint16(offset, bitDepth, true); offset += 2;
+            writeString('data');
+            view.setUint32(offset, dataSize, true); offset += 4;
+
+            const channels = [];
+            for (let i = 0; i < numChannels; i++) {
+                channels.push(audioBuffer.getChannelData(i));
+            }
+
+            for (let i = 0; i < audioBuffer.length; i++) {
+                for (let channel = 0; channel < numChannels; channel++) {
+                    let sample = Math.max(-1, Math.min(1, channels[channel][i]));
+                    sample = sample < 0 ? sample * 32768 : sample * 32767; 
+                    view.setInt16(offset, sample, true);
+                    offset += 2;
+                }
+            }
+
+            return new Blob([view], { type: 'audio/wav' });
+        }
+
+        function resetApp() {
+            audioInst.pause();
+            audioInst.src = "";
+            fileInput.value = "";
+            
+            resultsZone.classList.add('hidden');
+            resultsZone.classList.remove('flex');
+            processingState.classList.add('hidden');
+            processingState.classList.remove('flex');
+            dropZone.classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>
