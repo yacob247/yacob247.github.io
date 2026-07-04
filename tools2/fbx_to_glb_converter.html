@@ -1,0 +1,365 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Local FBX to GLB Converter</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js Import Map for modern module loading -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #2f2f2f;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+        .drop-zone {
+            transition: all 0.2s ease;
+        }
+        .drop-zone.dragover {
+            background-color: #2f2f2f;
+            border-color: rgba(255, 255, 255, 0.12);
+        }
+        .loader {
+            border: 4px solid rgba(255, 255, 255, 0.12);
+            border-top: 4px solid rgba(255, 255, 255, 0.12);
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+  <meta name="description" content="Convert FBX assets into portable GLB files locally for web, game, Three.js, and modern 3D workflows.">
+  <meta name="robots" content="index, follow, max-image-preview:large">
+  <link rel="canonical" href="https://envizion.work/tools2/fbx_to_glb_converter.html">
+  <meta property="og:title" content="Local FBX to GLB Converter - Envizion Tools">
+  <meta property="og:description" content="Convert FBX assets into portable GLB files locally for web, game, Three.js, and modern 3D workflows.">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="toolkit-common.css">
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5812524294035974" crossorigin="anonymous"></script>
+  <script type="application/ld+json" id="envizion-tool-schema">{"@context":"https://schema.org","@type":"WebApplication","name":"Local FBX to GLB Converter","applicationCategory":"3D converter","operatingSystem":"Any modern browser","url":"https://envizion.work/tools2/fbx_to_glb_converter.html","description":"Convert FBX assets into portable GLB files locally for web, game, Three.js, and modern 3D workflows.","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"publisher":{"@type":"Organization","name":"Envizion Tools"}}</script>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+<div class="envizion-tool-app-shell min-h-screen flex items-center justify-center p-4">
+
+    <div class="bg-neutral-800 rounded-2xl shadow-xl w-full max-w-lg p-8">
+        <div class="text-center mb-8">
+            <h1 class="text-2xl font-bold text-neutral-400 mb-2">FBX to GLB Converter</h1>
+            <p class="text-sm text-neutral-400">100% Local processing. Files never leave your device.</p>
+        </div>
+
+        <div id="drop-zone" class="drop-zone border-2 border-dashed border-neutral-600 rounded-xl p-10 flex flex-col items-center justify-center cursor-pointer hover:bg-neutral-800 mb-6">
+            <svg class="w-12 h-12 text-neutral-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+            <p class="text-neutral-400 font-medium mb-1">Click to browse or drag & drop</p>
+            <p class="text-xs text-neutral-300">Supports .fbx files (Embedded textures recommended)</p>
+            <input type="file" id="file-input" class="hidden" accept=".fbx" />
+        </div>
+
+        <!-- Status Area -->
+        <div id="status-container" class="hidden flex-col items-center justify-center space-y-3 p-4 bg-neutral-800 rounded-lg">
+            <div id="spinner" class="loader hidden"></div>
+            <p id="status-text" class="text-sm font-medium text-neutral-400"></p>
+            <p id="progress-text" class="text-xs text-neutral-400 hidden"></p>
+            <div id="progress-bar-container" class="w-full bg-neutral-800 rounded-full h-2 mt-2 hidden">
+                <div id="progress-bar" class="bg-neutral-600 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+            </div>
+        </div>
+
+        <div id="error-container" class="hidden mt-4 p-4 bg-neutral-800 text-neutral-400 text-sm rounded-lg border border-neutral-600">
+            <span class="font-bold">Error:</span> <span id="error-text"></span>
+        </div>
+        
+        <div id="success-container" class="hidden mt-4 p-4 bg-neutral-800 text-neutral-400 text-sm rounded-lg border border-neutral-600 text-center">
+            <span class="font-bold">Success!</span> Your download should start automatically.
+            <button id="convert-another" class="mt-3 bg-neutral-800 text-neutral-400 font-semibold py-1 px-4 border border-neutral-600 rounded shadow-sm hover:bg-neutral-800 transition-colors text-xs">Convert Another</button>
+        </div>
+
+    </div>
+
+    <!-- Main Logic -->
+    <script type="module">
+        import * as THREE from 'three';
+        import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+        import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+
+        // UI Elements
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const statusContainer = document.getElementById('status-container');
+        const statusText = document.getElementById('status-text');
+        const progressText = document.getElementById('progress-text');
+        const progressBarContainer = document.getElementById('progress-bar-container');
+        const progressBar = document.getElementById('progress-bar');
+        const spinner = document.getElementById('spinner');
+        const errorContainer = document.getElementById('error-container');
+        const errorText = document.getElementById('error-text');
+        const successContainer = document.getElementById('success-container');
+        const convertAnotherBtn = document.getElementById('convert-another');
+
+        // Drag and Drop Events
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => dropZone.classList.add('dragover'), false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => dropZone.classList.remove('dragover'), false);
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            let dt = e.dataTransfer;
+            let files = dt.files;
+            if (files.length > 0) {
+                handleFile(files[0]);
+            }
+        });
+
+        dropZone.addEventListener('click', () => {
+            fileInput.click();
+        });
+
+        fileInput.addEventListener('change', function() {
+            if (this.files.length > 0) {
+                handleFile(this.files[0]);
+            }
+        });
+
+        convertAnotherBtn.addEventListener('click', resetUI);
+
+        function resetUI() {
+            dropZone.classList.remove('hidden');
+            statusContainer.classList.add('hidden');
+            errorContainer.classList.add('hidden');
+            successContainer.classList.add('hidden');
+            fileInput.value = '';
+        }
+
+        function setStatus(text, showSpinner = true, showProgress = false) {
+            statusContainer.classList.remove('hidden');
+            statusContainer.classList.add('flex');
+            statusText.textContent = text;
+            
+            if (showSpinner) spinner.classList.remove('hidden');
+            else spinner.classList.add('hidden');
+
+            if (showProgress) {
+                progressText.classList.remove('hidden');
+                progressBarContainer.classList.remove('hidden');
+            } else {
+                progressText.classList.add('hidden');
+                progressBarContainer.classList.add('hidden');
+            }
+        }
+
+        function showError(msg) {
+            dropZone.classList.remove('hidden');
+            statusContainer.classList.add('hidden');
+            errorContainer.classList.remove('hidden');
+            errorText.textContent = msg;
+        }
+
+        function showSuccess() {
+            statusContainer.classList.add('hidden');
+            successContainer.classList.remove('hidden');
+        }
+
+        // Conversion Logic
+        function handleFile(file) {
+            if (!file.name.toLowerCase().endsWith('.fbx')) {
+                showError("Please upload a valid .fbx file.");
+                return;
+            }
+
+            dropZone.classList.add('hidden');
+            errorContainer.classList.add('hidden');
+            successContainer.classList.add('hidden');
+            
+            setStatus('Loading FBX...', true, true);
+
+            const url = URL.createObjectURL(file);
+            const loader = new FBXLoader();
+
+            loader.load(
+                url,
+                // onSuccess
+                (object) => {
+                    URL.revokeObjectURL(url); // Clean up memory
+                    setStatus('Converting to GLB...', true, false);
+                    
+                    // Give UI a tiny moment to update before freezing the thread with exporter
+                    setTimeout(() => exportToGLB(object, file.name), 100);
+                },
+                // onProgress
+                (xhr) => {
+                    if (xhr.lengthComputable) {
+                        const percentComplete = (xhr.loaded / xhr.total) * 100;
+                        progressBar.style.width = percentComplete + '%';
+                        progressText.textContent = Math.round(percentComplete) + '% loaded';
+                    } else {
+                        progressText.textContent = (xhr.loaded / 1024 / 1024).toFixed(2) + ' MB loaded';
+                    }
+                },
+                // onError
+                (error) => {
+                    URL.revokeObjectURL(url);
+                    console.error(error);
+                    showError("Failed to parse FBX. The file might be corrupted or an unsupported FBX version.");
+                }
+            );
+        }
+
+        function exportToGLB(scene, originalFileName) {
+            const exporter = new GLTFExporter();
+            
+            exporter.parse(
+                scene,
+                (gltf) => {
+                    // Export successful
+                    const blob = new Blob([gltf], { type: 'application/octet-stream' });
+                    const downloadUrl = URL.createObjectURL(blob);
+                    
+                    // Trigger download
+                    const link = document.createElement('a');
+                    link.style.display = 'none';
+                    link.href = downloadUrl;
+                    
+                    // Change extension from .fbx to .glb
+                    const newFileName = originalFileName.replace(/\.[^/.]+$/, "") + ".glb";
+                    link.download = newFileName;
+                    
+                    document.body.appendChild(link);
+                    link.click();
+                    
+                    // Cleanup
+                    document.body.removeChild(link);
+                    setTimeout(() => URL.revokeObjectURL(downloadUrl), 100);
+
+                    showSuccess();
+                },
+                (error) => {
+                    console.error("Export Error:", error);
+                    showError("An error occurred while converting the model to GLB.");
+                },
+                { binary: true } // Export as .glb instead of .gltf
+            );
+        }
+    </script>
+</div>
+
+<!-- ENVIZION_AD_SLOT_START -->
+<section class="envizion-ad-slot" aria-label="Advertisement" style="--toolkit-seo-accent:#10a37f;--toolkit-seo-accent-2:#0d8f6f;--toolkit-seo-bg:#212121;--toolkit-seo-accent-soft:rgba(16, 163, 127, 0.14);--toolkit-seo-accent-border:rgba(16, 163, 127, 0.28);--toolkit-seo-surface:#2f2f2f;--toolkit-seo-text:#ececec;--toolkit-seo-muted:#b4b4b4;--toolkit-seo-line:rgba(255, 255, 255, 0.12)">
+  <div class="envizion-ad-box">
+    <span class="envizion-ad-label">Advertisement</span>
+    <ins class="adsbygoogle"
+         style="display:block"
+         data-ad-client="ca-pub-5812524294035974"
+         data-ad-slot="9312358743"
+         data-ad-format="auto"
+         data-full-width-responsive="true"></ins>
+  </div>
+</section>
+<!-- ENVIZION_AD_SLOT_END -->
+
+<!-- ENVIZION_STATIC_SEO_START -->
+<section class="envizion-static-seo" id="envizion-page-guide" aria-label="Local FBX to GLB Converter explanation" style="--toolkit-seo-accent:#10a37f;--toolkit-seo-accent-2:#0d8f6f;--toolkit-seo-bg:#212121;--toolkit-seo-accent-soft:rgba(16, 163, 127, 0.14);--toolkit-seo-accent-border:rgba(16, 163, 127, 0.28);--toolkit-seo-surface:#2f2f2f;--toolkit-seo-text:#ececec;--toolkit-seo-muted:#b4b4b4;--toolkit-seo-line:rgba(255, 255, 255, 0.12)">
+  <div class="envizion-static-seo__shell">
+    <div class="envizion-static-seo__hero">
+      <div>
+        <p class="envizion-static-seo__kicker">3D converter</p>
+        <h2>Local FBX to GLB Converter</h2>
+        <p>Convert FBX assets into portable GLB files locally for web, game, Three.js, and modern 3D workflows.</p>
+      </div>
+      <div class="envizion-static-seo__badges">
+        <span class="envizion-static-seo__badge">Envizion Tools</span>
+        <span class="envizion-static-seo__badge">Local browser workflow</span>
+        <span class="envizion-static-seo__badge">Tool guide</span>
+      </div>
+    </div>
+    <div class="envizion-static-seo__grid">
+      <article class="envizion-static-seo__panel">
+        <h3>What this tool does</h3>
+        <ul><li>Load FBX assets in the browser.</li><li>Prepare GLB output for modern 3D pipelines.</li><li>Useful for web and game prototypes.</li></ul>
+      </article>
+      <article class="envizion-static-seo__panel">
+        <h3>How to use it</h3>
+        <ol><li>Choose an FBX file.</li><li>Wait for parsing and conversion.</li><li>Download the GLB output.</li></ol>
+      </article>
+      <article class="envizion-static-seo__panel">
+        <h3>Helpful notes</h3>
+        <ul><li>This page is intentionally centered on the working tool first, then the guide below documents what the tool does, what it does not promise, and how to verify the output.</li><li>The safest workflow is to keep original files, test settings on a small sample, and inspect the exported result before replacing anything important.</li><li>3D previews depend on WebGL support, model scale, texture paths, and browser memory; inspect materials, animation clips, and orientation before using the asset elsewhere.</li></ul>
+      </article>
+    </div>
+    <div class="envizion-static-seo__body">
+      <h3>Detailed explanation</h3>
+      <div class="envizion-static-seo__article">
+        <p>Local FBX to GLB Converter is part of the Envizion Tools collection, a set of focused browser-based utilities for practical file preparation, editing, conversion, compression, previewing, and creative production.</p>
+        <p>Convert FBX assets into portable GLB files locally for web, game, Three.js, and modern 3D workflows. The working controls stay at the top of the page, while this guide gives visitors and search engines clear context about what the tool does, when it is useful, and how to approach the workflow.</p>
+        <p>The normal workflow is straightforward: Choose an FBX file. Wait for parsing and conversion. Download the GLB output. For best results, test with a small file first, inspect the output, and then process larger or more important files once the settings look correct.</p>
+        <p>Many Envizion tools run directly in the browser, which helps keep everyday work fast and private. Some tools still depend on browser APIs, local device performance, media encoders, canvas features, PDF handling, or WebGL support, so behavior can differ between browsers.</p>
+      </div>
+      <h3>Best use cases</h3>
+      <ul><li>Use Local FBX to GLB Converter when you need a focused 3D asset review task without opening a large desktop suite.</li><li>Use it as a quick verification step before sending files to a client, teammate, upload portal, chat app, or production workflow.</li><li>Use the page for repeatable local work where privacy, speed, and predictable browser controls matter more than cloud storage.</li></ul>
+      <h3>Before you export</h3>
+      <ul><li>This page is intentionally centered on the working tool first, then the guide below documents what the tool does, what it does not promise, and how to verify the output.</li><li>The safest workflow is to keep original files, test settings on a small sample, and inspect the exported result before replacing anything important.</li><li>3D previews depend on WebGL support, model scale, texture paths, and browser memory; inspect materials, animation clips, and orientation before using the asset elsewhere.</li></ul>
+      <h3>Troubleshooting</h3>
+      <ul><li>Confirm that textures are embedded or available beside the model file.</li><li>Reset the camera if a model opens very small, very large, or off-center.</li><li>Try GLB for the most portable web preview workflow.</li></ul>
+      <h3>Common questions</h3>
+      <dl class="envizion-static-seo__faq">
+        <div><dt>How do I use this tool?</dt><dd>Choose an FBX file. Wait for parsing and conversion. Download the GLB output.</dd></div>
+        <div><dt>What is this page best for?</dt><dd>Convert FBX assets into portable GLB files locally for web, game, Three.js, and modern 3D workflows.</dd></div>
+        <div><dt>Are my files uploaded?</dt><dd>These tools are designed around local browser workflows where supported. If a page uses a third-party library or browser API, review your browser permissions and keep sensitive originals until you have verified the output.</dd></div>
+        <div><dt>Does this page include ads?</dt><dd>Yes. The page includes a restrained AdSense slot using the configured Envizion publisher client and shared ad styling.</dd></div>
+        <div><dt>Where is the published page?</dt><dd>https://envizion.work/tools2/fbx_to_glb_converter.html</dd></div>
+      </dl>
+      <h3>Publisher and privacy links</h3>
+      <div class="envizion-static-seo__links">
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/about.html">About Envizion Tools</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/privacy.html">Privacy and cookies</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/contact.html">Contact and corrections</a>
+      </div>
+      <h3>Related Envizion tools</h3>
+      <div class="envizion-static-seo__links">
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/index.html">Envizion Tools</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/advanced_editor_converter.html">Advanced Paste, Edit and Convert</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/animator_studio.html">Mixamo Animator Studio</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/bulk_webp_converter.html">Local WebP Converter</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/CodeWeb.html">Localhost Server Manager</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/envizion_editor.html">Envizion Studio Editor</a>
+      </div>
+    </div>
+  </div>
+</section>
+<!-- ENVIZION_STATIC_SEO_END -->
+
+<!-- ENVIZION_TRUST_FOOTER_START -->
+<footer class="envizion-trust-footer" aria-label="Envizion site links">
+  <a href="https://envizion.work/tools2/index.html">Tools</a>
+  <a href="https://envizion.work/tools2/about.html">About</a>
+  <a href="https://envizion.work/tools2/privacy.html">Privacy</a>
+  <a href="https://envizion.work/tools2/contact.html">Contact</a>
+</footer>
+<!-- ENVIZION_TRUST_FOOTER_END -->
+  <script src="toolkit-enhance.js"></script>
+</body>
+</html>
+
+

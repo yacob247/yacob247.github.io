@@ -1,0 +1,1476 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Envizion Studio Editor</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.js"></script>
+  <style>
+    /* Premium custom styling and scrollbars */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #2f2f2f; }
+    ::-webkit-scrollbar-thumb { background: #2f2f2f; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #2f2f2f; }
+
+    html, body { height: 100%; overflow: hidden; }
+
+    /* ---- Timeline ---- */
+    #timelineTracks { position: relative; }
+    .track-row {
+      position: relative;
+      height: 56px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+      background: #2f2f2f;
+    }
+    .track-row.drop-hover { background: #2f2f2f; }
+    .clip-block {
+      position: absolute;
+      top: 4px; bottom: 4px;
+      border-radius: 8px;
+      cursor: grab;
+      overflow: hidden;
+      user-select: none;
+      border: 1.5px solid rgba(255, 255, 255, 0.12);
+      background: linear-gradient(135deg, #212121, #2f2f2f);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+    }
+    .clip-block.selected { border-color: rgba(255, 255, 255, 0.12); box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.28); }
+    .clip-block.video { background: linear-gradient(135deg, #212121, #2f2f2f); }
+    .clip-block.image { background: linear-gradient(135deg, #212121, #2f2f2f); }
+    .clip-block.text { background: linear-gradient(135deg, #212121, #2f2f2f); }
+    .clip-block.gif { background: linear-gradient(135deg, #212121, #2f2f2f); }
+    .clip-handle {
+      position: absolute; top: 0; bottom: 0; width: 8px; cursor: ew-resize; z-index: 5;
+    }
+    .clip-handle.left { left: 0; } .clip-handle.right { right: 0; }
+    .clip-label {
+      position: absolute; inset: 0; display: flex; align-items: center; padding: 0 8px;
+      font-size: 10.5px; font-weight: 600; color: #ececec; pointer-events: none;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    #playhead {
+      position: absolute; top: 0; bottom: 0; width: 2px; background: #2f2f2f;
+      z-index: 20; pointer-events: none;
+    }
+    #playhead::before {
+      content: ''; position: absolute; top: -6px; left: -5px; width: 12px; height: 12px;
+      background: #2f2f2f; border-radius: 3px 3px 3px 0; transform: rotate(45deg);
+    }
+    .ruler-tick { position: absolute; top: 0; height: 100%; border-left: 1px solid rgba(255, 255, 255, 0.12); }
+    .ruler-tick span { position: absolute; top: 2px; left: 4px; font-size: 9px; color: #ececec; }
+
+    /* ---- Canvas selection overlay handles ---- */
+    .xform-handle {
+      position: absolute; width: 12px; height: 12px; background: #2f2f2f;
+      border: 2px solid white; border-radius: 3px; z-index: 30; cursor: nwse-resize;
+    }
+    .xform-rotate {
+      position: absolute; width: 14px; height: 14px; background: #2f2f2f;
+      border: 2px solid white; border-radius: 50%; z-index: 30; cursor: grab;
+    }
+
+    .asset-thumb { aspect-ratio: 16/10; }
+
+    .tool-btn { transition: all .15s ease; }
+    .tool-btn.active { background: #2f2f2f; color: white; }
+  </style>
+  <meta name="description" content="Merge video, image, and mask layers in a local browser workspace for quick compositing and visual experiments.">
+  <meta name="robots" content="index, follow, max-image-preview:large">
+  <link rel="canonical" href="https://envizion.work/tools2/local_video_image_mask_merger.html">
+  <meta property="og:title" content="Local Video Image Mask Merger - Envizion Tools">
+  <meta property="og:description" content="Merge video, image, and mask layers in a local browser workspace for quick compositing and visual experiments.">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="toolkit-common.css">
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5812524294035974" crossorigin="anonymous"></script>
+  <script type="application/ld+json" id="envizion-tool-schema">{"@context":"https://schema.org","@type":"WebApplication","name":"Local Video Image Mask Merger","applicationCategory":"Video compositor","operatingSystem":"Any modern browser","url":"https://envizion.work/tools2/local_video_image_mask_merger.html","description":"Merge video, image, and mask layers in a local browser workspace for quick compositing and visual experiments.","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"publisher":{"@type":"Organization","name":"Envizion Tools"}}</script>
+</head>
+<body class="bg-neutral-950 text-neutral-300 h-screen flex flex-col font-sans selection:bg-neutral-700 selection:text-neutral-100 overflow-hidden">
+<div class="envizion-tool-app-shell bg-neutral-950 text-neutral-300 h-screen flex flex-col font-sans selection:bg-neutral-700 selection:text-neutral-100 overflow-hidden">
+
+  <!-- Header -->
+  <header class="border-b border-neutral-600 bg-neutral-900/80 backdrop-blur shrink-0 px-4 py-2.5 flex items-center justify-between">
+    <div class="flex items-center space-x-3">
+      <div class="bg-neutral-600 p-1.5 rounded-lg text-neutral-100 shadow-lg shadow-black/20">
+        <i data-lucide="clapperboard" class="w-5 h-5"></i>
+      </div>
+      <div>
+        <h1 class="text-sm font-bold tracking-tight text-neutral-100 flex items-center gap-2">
+          Envizion Studio Editor
+          <span class="text-[10px] bg-neutral-700/20 text-neutral-300 px-1.5 py-0.5 rounded-full font-normal border border-neutral-600/30">100% Local</span>
+        </h1>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <span class="flex items-center gap-1 text-[11px] text-neutral-300 mr-2"><i data-lucide="shield" class="w-3.5 h-3.5 text-neutral-300"></i> Client-Side Only</span>
+      <button id="btnExport" class="bg-neutral-600 hover:bg-neutral-700 text-neutral-100 text-xs font-semibold px-3.5 py-2 rounded-lg transition flex items-center gap-1.5 shadow-lg shadow-black/20">
+        <i data-lucide="download" class="w-3.5 h-3.5"></i> Export
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Body: 3 columns (asset bin / stage / properties) over timeline -->
+  <main class="flex-1 min-h-0 flex flex-col">
+    <div class="flex-1 min-h-0 flex overflow-hidden">
+
+      <!-- Left: Asset Bin -->
+      <aside class="w-60 shrink-0 border-r border-neutral-600 bg-neutral-900/40 flex flex-col">
+        <div class="p-3 border-b border-neutral-600">
+          <button id="btnImportMedia" class="w-full bg-neutral-800 hover:bg-neutral-600 text-neutral-300 hover:text-neutral-100 text-xs font-semibold py-2.5 rounded-lg transition flex items-center justify-center gap-1.5">
+            <i data-lucide="upload" class="w-3.5 h-3.5"></i> Import Media
+          </button>
+          <input type="file" id="mediaInput" accept="video/*,image/*,.gif" multiple class="hidden" />
+          <p class="text-[10px] text-neutral-400 mt-2 text-center">Drop files anywhere, or <kbd class="bg-neutral-800 px-1 rounded">Ctrl+V</kbd> to paste</p>
+        </div>
+        <div id="assetList" class="flex-1 overflow-y-auto p-2 space-y-2">
+          <!-- asset cards injected here -->
+        </div>
+        <div class="p-2 border-t border-neutral-600 grid grid-cols-2 gap-1.5">
+          <button id="btnAddText" class="bg-neutral-800 hover:bg-neutral-700 text-[11px] font-medium py-2 rounded-lg flex items-center justify-center gap-1">
+            <i data-lucide="type" class="w-3.5 h-3.5"></i> Text
+          </button>
+          <button id="btnAddTrack" class="bg-neutral-800 hover:bg-neutral-700 text-[11px] font-medium py-2 rounded-lg flex items-center justify-center gap-1">
+            <i data-lucide="rows-3" class="w-3.5 h-3.5"></i> Track
+          </button>
+        </div>
+      </aside>
+
+      <!-- Center: Stage + Tool rail -->
+      <section class="flex-1 min-w-0 flex flex-col bg-neutral-950">
+        <!-- Tool rail -->
+        <div class="flex items-center gap-1 px-3 py-2 border-b border-neutral-600 bg-neutral-900/40 overflow-x-auto shrink-0">
+          <button data-tool="select" class="tool-btn active px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-neutral-300 hover:bg-neutral-800 flex items-center gap-1"><i data-lucide="mouse-pointer-2" class="w-3.5 h-3.5"></i> Select</button>
+          <button data-tool="freeform-cut" class="tool-btn px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-neutral-300 hover:bg-neutral-800 flex items-center gap-1"><i data-lucide="scissors" class="w-3.5 h-3.5"></i> Draw Cutout</button>
+          <button data-tool="rotoscope" class="tool-btn px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-neutral-300 hover:bg-neutral-800 flex items-center gap-1"><i data-lucide="pen-tool" class="w-3.5 h-3.5"></i> Rotoscope</button>
+          <button data-tool="chromakey" class="tool-btn px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-neutral-300 hover:bg-neutral-800 flex items-center gap-1"><i data-lucide="pipette" class="w-3.5 h-3.5"></i> Chroma Key</button>
+          <button data-tool="bend" class="tool-btn px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-neutral-300 hover:bg-neutral-800 flex items-center gap-1"><i data-lucide="spline" class="w-3.5 h-3.5"></i> Bend / Warp</button>
+          <div class="flex-1"></div>
+          <span id="resBadge" class="text-[10px] bg-neutral-800 px-2 py-1 rounded text-neutral-300">Resolution: 0x0</span>
+        </div>
+
+        <!-- Stage -->
+        <div class="flex-1 min-h-0 flex items-center justify-center p-4 relative overflow-hidden">
+          <div id="stageWrap" class="relative max-w-full max-h-full shadow-2xl">
+            <canvas id="displayCanvas" class="max-w-full max-h-full block bg-neutral-950 rounded"></canvas>
+            <div id="canvasPlaceholder" class="absolute inset-0 flex flex-col items-center justify-center text-center p-6 space-y-3 bg-neutral-900 rounded border border-neutral-600">
+              <div class="w-14 h-14 rounded-full bg-neutral-900 flex items-center justify-center border border-neutral-600">
+                <i data-lucide="monitor-play" class="w-7 h-7 text-neutral-400"></i>
+              </div>
+              <div>
+                <h3 class="font-semibold text-neutral-300 text-sm">Empty Timeline</h3>
+                <p class="text-xs text-neutral-400 max-w-xs mt-1">Import media, then drag it onto the timeline below to start building your composition.</p>
+              </div>
+            </div>
+            <div id="xformOverlay" class="absolute inset-0 pointer-events-none"></div>
+          </div>
+        </div>
+
+        <!-- Transport -->
+        <div class="shrink-0 border-t border-neutral-600 bg-neutral-900/40 px-4 py-2 flex items-center gap-3">
+          <button id="btnPlay" class="bg-neutral-600 hover:bg-neutral-700 text-neutral-100 p-2 rounded-lg transition flex items-center justify-center">
+            <i data-lucide="play" class="w-3.5 h-3.5" id="playIcon"></i>
+          </button>
+          <span id="currentTime" class="text-[11px] text-neutral-300 w-10 text-right">0:00</span>
+          <div class="flex-1 h-1 bg-neutral-800 rounded-full relative">
+            <div id="transportProgress" class="h-full bg-neutral-700 rounded-full w-0"></div>
+          </div>
+          <span id="totalDuration" class="text-[11px] text-neutral-300 w-10">0:00</span>
+        </div>
+      </section>
+
+      <!-- Right: Properties -->
+      <aside id="propsPanel" class="w-72 shrink-0 border-l border-neutral-600 bg-neutral-900/40 overflow-y-auto p-4 space-y-5">
+        <div id="propsEmpty" class="text-center py-10">
+          <i data-lucide="sliders" class="w-8 h-8 text-neutral-400 mx-auto mb-2"></i>
+          <p class="text-xs text-neutral-400">Select a clip to edit its properties.</p>
+        </div>
+        <!-- Populated dynamically per-clip in later stages -->
+      </aside>
+    </div>
+
+    <!-- Timeline -->
+    <div class="h-52 shrink-0 border-t border-neutral-600 bg-neutral-900/60 flex flex-col">
+      <div class="flex items-center gap-2 px-3 py-1.5 border-b border-neutral-600 shrink-0">
+        <button id="btnSplitClip" class="text-[11px] text-neutral-300 hover:text-neutral-100 bg-neutral-800 hover:bg-neutral-700 px-2 py-1 rounded flex items-center gap-1"><i data-lucide="scissors" class="w-3 h-3"></i> Split</button>
+        <button id="btnDeleteClip" class="text-[11px] text-neutral-300 hover:text-neutral-100 bg-neutral-800 hover:bg-neutral-600 px-2 py-1 rounded flex items-center gap-1"><i data-lucide="trash-2" class="w-3 h-3"></i> Delete</button>
+        <div class="flex-1"></div>
+        <button id="btnZoomOut" class="text-neutral-300 hover:text-neutral-100 p-1"><i data-lucide="zoom-out" class="w-3.5 h-3.5"></i></button>
+        <span id="zoomLabel" class="text-[10px] text-neutral-400 w-10 text-center">60px/s</span>
+        <button id="btnZoomIn" class="text-neutral-300 hover:text-neutral-100 p-1"><i data-lucide="zoom-in" class="w-3.5 h-3.5"></i></button>
+      </div>
+      <div id="timelineScroll" class="flex-1 overflow-auto relative">
+        <div id="rulerRow" class="h-6 sticky top-0 z-10 bg-neutral-900 border-b border-neutral-600 relative"></div>
+        <div id="timelineTracks"></div>
+        <div id="playhead" style="left:0"></div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Custom Alert System (No window.alert fallback) -->
+  <div id="customAlert" class="fixed top-6 left-1/2 -translate-x-1/2 bg-neutral-900 border-2 border-neutral-600/30 text-neutral-300 px-5 py-3 rounded-xl shadow-2xl z-[150] flex items-center gap-3 transition-all duration-300 opacity-0 pointer-events-none transform -translate-y-4">
+    <div class="bg-neutral-700/15 p-1.5 rounded-lg text-neutral-300">
+      <i data-lucide="alert-circle" class="w-5 h-5"></i>
+    </div>
+    <div>
+      <h4 class="font-bold text-sm" id="alertTitle">Attention Required</h4>
+      <p class="text-xs text-neutral-300 mt-0.5" id="alertMessage">Please provide all necessary media first.</p>
+    </div>
+    <button onclick="dismissAlert()" class="text-neutral-400 hover:text-neutral-300 ml-2 focus:outline-none">
+      <i data-lucide="x" class="w-4 h-4"></i>
+    </button>
+  </div>
+
+  <!-- Export Overlay Progress Modal -->
+  <div id="exportModal" class="hidden fixed inset-0 bg-neutral-950/90 backdrop-blur z-[140] items-center justify-center">
+    <div class="bg-neutral-900 border border-neutral-600 rounded-2xl p-6 w-80 text-center space-y-4">
+      <i data-lucide="loader-2" class="w-8 h-8 text-neutral-300 mx-auto animate-spin"></i>
+      <div>
+        <p id="renderFrameText" class="text-xs text-neutral-300">Preparing encoder...</p>
+        <div class="h-1.5 bg-neutral-800 rounded-full mt-3 overflow-hidden">
+          <div id="renderProgressBar" class="h-full bg-neutral-700 w-0"></div>
+        </div>
+        <p id="renderProgressPercent" class="text-[11px] text-neutral-400 mt-1">0%</p>
+      </div>
+      <button id="btnAbortExport" class="text-xs text-neutral-300 hover:text-neutral-100">Cancel</button>
+    </div>
+  </div>
+
+  <script>
+    if (window.lucide) { try { lucide.createIcons(); } catch (e) {} }
+
+    // ============================================================
+    // DATA MODEL
+    // ============================================================
+    // assets: imported source files (video/image/gif), kept once, referenced by clips
+    // tracks: ordered list of track objects, each with an array of clip ids (z-order = track index, later = on top)
+    // clips: individual placed instances on the timeline referencing an asset (or raw text)
+
+    let assets = [];      // { id, kind: 'video'|'image'|'gif', name, url, el (media element), width, height, duration }
+    let tracks = [];      // { id, name }
+    let clips = [];       // { id, trackId, assetId|null, kind, start, duration, x,y,scale,rotation, opacity, text?, cutout?, chroma?, bend? }
+    let selectedClipId = null;
+    let playheadTime = 0;
+    let isPlaying = false;
+    let pxPerSecond = 60;
+    let timelineDuration = 30; // grows as clips are added
+
+    const canvas = document.getElementById('displayCanvas');
+    const ctx = canvas.getContext('2d');
+    let canvasW = 1280, canvasH = 720;
+    canvas.width = canvasW; canvas.height = canvasH;
+
+    const canvasPlaceholder = document.getElementById('canvasPlaceholder');
+    const resBadge = document.getElementById('resBadge');
+    const assetList = document.getElementById('assetList');
+    const timelineTracks = document.getElementById('timelineTracks');
+    const rulerRow = document.getElementById('rulerRow');
+    const playheadEl = document.getElementById('playhead');
+    const timelineScroll = document.getElementById('timelineScroll');
+    const propsPanel = document.getElementById('propsPanel');
+    const propsEmpty = document.getElementById('propsEmpty');
+
+    function uid(prefix) { return prefix + '-' + Date.now().toString(36) + '-' + Math.floor(Math.random() * 9999); }
+    function formatDuration(t) {
+      if (!isFinite(t) || t < 0) t = 0;
+      const m = Math.floor(t / 60);
+      const s = Math.floor(t % 60);
+      return `${m}:${s < 10 ? '0' : ''}${s}`;
+    }
+
+    // ============================================================
+    // ASSET IMPORT
+    // ============================================================
+    function addAssetFromFile(file) {
+      const url = URL.createObjectURL(file);
+      const isVideo = file.type.startsWith('video');
+      const isGif = file.type === 'image/gif';
+      const kind = isVideo ? 'video' : (isGif ? 'gif' : 'image');
+
+      const asset = { id: uid('asset'), kind, name: file.name, url, el: null, width: 0, height: 0, duration: 0 };
+      assets.push(asset);
+
+      if (kind === 'video') {
+        const v = document.createElement('video');
+        v.src = url; v.muted = true; v.playsInline = true; v.crossOrigin = 'anonymous';
+        v.onloadedmetadata = () => {
+          asset.width = v.videoWidth; asset.height = v.videoHeight; asset.duration = v.duration || 5;
+          asset.el = v;
+          renderAssetList();
+        };
+      } else {
+        const img = new Image();
+        img.src = url; img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          asset.width = img.naturalWidth; asset.height = img.naturalHeight; asset.duration = 5;
+          asset.el = img;
+          renderAssetList();
+        };
+      }
+      renderAssetList();
+      return asset;
+    }
+
+    function addAssetFromDataUrl(dataUrl, kind, name) {
+      const asset = { id: uid('asset'), kind, name: name || kind, url: dataUrl, el: null, width: 0, height: 0, duration: 0 };
+      assets.push(asset);
+      if (kind === 'video') {
+        const v = document.createElement('video');
+        v.src = dataUrl; v.muted = true; v.playsInline = true; v.crossOrigin = 'anonymous';
+        v.onloadedmetadata = () => { asset.width = v.videoWidth; asset.height = v.videoHeight; asset.duration = v.duration || 5; asset.el = v; renderAssetList(); };
+      } else {
+        const img = new Image();
+        img.src = dataUrl; img.crossOrigin = 'anonymous';
+        img.onload = () => { asset.width = img.naturalWidth; asset.height = img.naturalHeight; asset.duration = 5; asset.el = img; renderAssetList(); };
+      }
+      renderAssetList();
+      return asset;
+    }
+
+    function renderAssetList() {
+      assetList.innerHTML = '';
+      assets.forEach(asset => {
+        const card = document.createElement('div');
+        card.className = 'bg-neutral-800/60 rounded-lg overflow-hidden border border-neutral-600/60 cursor-grab hover:border-neutral-600 transition group';
+        card.draggable = true;
+        card.dataset.assetId = asset.id;
+
+        const iconName = asset.kind === 'video' ? 'clapperboard' : asset.kind === 'gif' ? 'image-play' : 'image';
+        card.innerHTML = `
+          <div class="asset-thumb bg-neutral-950 flex items-center justify-center relative">
+            ${asset.el && asset.kind !== 'video' ? `<img src="${asset.url}" class="w-full h-full object-cover" />` : `<i data-lucide="${iconName}" class="w-6 h-6 text-neutral-400"></i>`}
+            <span class="absolute bottom-1 right-1 bg-neutral-950/60 text-[8px] px-1 rounded text-neutral-300 uppercase">${asset.kind}</span>
+          </div>
+          <div class="px-2 py-1.5 text-[10px] text-neutral-300 truncate">${asset.name}</div>
+        `;
+        card.addEventListener('dragstart', (e) => {
+          e.dataTransfer.setData('text/asset-id', asset.id);
+        });
+        card.addEventListener('dblclick', () => {
+          // Quick-add: drop onto first track at playhead
+          if (tracks.length === 0) addTrack();
+          addClipToTrack(asset.id, tracks[0].id, playheadTime);
+        });
+        assetList.appendChild(card);
+      });
+      if (window.lucide) { try { lucide.createIcons(); } catch (e) {} }
+    }
+
+    document.getElementById('btnImportMedia').addEventListener('click', () => {
+      document.getElementById('mediaInput').click();
+    });
+    document.getElementById('mediaInput').addEventListener('change', (e) => {
+      [...e.target.files].forEach(addAssetFromFile);
+      e.target.value = '';
+    });
+
+    // Drag-and-drop import anywhere on the page
+    ['dragover', 'drop'].forEach(evt => {
+      window.addEventListener(evt, (e) => { e.preventDefault(); });
+    });
+    window.addEventListener('drop', (e) => {
+      if (e.dataTransfer.files && e.dataTransfer.files.length) {
+        [...e.dataTransfer.files].forEach(f => {
+          if (f.type.startsWith('video') || f.type.startsWith('image')) addAssetFromFile(f);
+        });
+      }
+    });
+
+    // Ctrl+V paste import
+    window.addEventListener('paste', (e) => {
+      if (document.activeElement && ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+      const items = e.clipboardData ? e.clipboardData.items : [];
+      for (const item of items) {
+        if (item.type.startsWith('image') || item.type.startsWith('video')) {
+          const file = item.getAsFile();
+          if (file) addAssetFromFile(file);
+        }
+      }
+    });
+
+    // ============================================================
+    // TRACKS + CLIPS
+    // ============================================================
+    function addTrack(name) {
+      const track = { id: uid('track'), name: name || `Track ${tracks.length + 1}` };
+      tracks.push(track);
+      renderTimeline();
+      return track;
+    }
+
+    function addClipToTrack(assetId, trackId, startTime) {
+      const asset = assets.find(a => a.id === assetId);
+      if (!asset) return;
+      const clip = {
+        id: uid('clip'),
+        trackId,
+        assetId,
+        kind: asset.kind,
+        start: Math.max(0, startTime),
+        duration: asset.duration || 5,
+        x: canvasW / 2, y: canvasH / 2,
+        scale: 1, rotation: 0, opacity: 100,
+        text: null,
+        cutout: null,   // freeform-cut shape, set in later stage
+        chroma: null,   // chroma-key settings, set in later stage
+        bend: null       // bend/warp settings, set in later stage
+      };
+      clips.push(clip);
+      timelineDuration = Math.max(timelineDuration, clip.start + clip.duration + 10);
+      selectClip(clip.id);
+      renderTimeline();
+      canvasPlaceholder.classList.add('hidden');
+      requestFrameRedraw();
+      return clip;
+    }
+
+    function addTextClip(trackId, startTime) {
+      const clip = {
+        id: uid('clip'), trackId, assetId: null, kind: 'text',
+        start: Math.max(0, startTime), duration: 4,
+        x: canvasW / 2, y: canvasH / 2, scale: 1, rotation: 0, opacity: 100,
+        text: { content: 'Your Text', color: '#ececec', size: 64, font: 'Arial', bend: 0 },
+        cutout: null, chroma: null, bend: null
+      };
+      clips.push(clip);
+      timelineDuration = Math.max(timelineDuration, clip.start + clip.duration + 10);
+      selectClip(clip.id);
+      renderTimeline();
+      canvasPlaceholder.classList.add('hidden');
+      requestFrameRedraw();
+      return clip;
+    }
+
+    document.getElementById('btnAddTrack').addEventListener('click', () => addTrack());
+    document.getElementById('btnAddText').addEventListener('click', () => {
+      if (tracks.length === 0) addTrack();
+      addTextClip(tracks[tracks.length - 1].id, playheadTime);
+    });
+
+    function selectClip(id) {
+      selectedClipId = id;
+      renderTimeline();
+      renderPropsPanel();
+      renderXformOverlay();
+    }
+
+    document.getElementById('btnDeleteClip').addEventListener('click', () => {
+      if (!selectedClipId) return;
+      clips = clips.filter(c => c.id !== selectedClipId);
+      selectedClipId = null;
+      renderTimeline();
+      renderPropsPanel();
+      requestFrameRedraw();
+    });
+
+    document.getElementById('btnSplitClip').addEventListener('click', () => {
+      const clip = clips.find(c => c.id === selectedClipId);
+      if (!clip) return;
+      if (playheadTime <= clip.start || playheadTime >= clip.start + clip.duration) return;
+      const splitAt = playheadTime - clip.start;
+      const newClip = JSON.parse(JSON.stringify(clip));
+      newClip.id = uid('clip');
+      newClip.start = playheadTime;
+      newClip.duration = clip.duration - splitAt;
+      clip.duration = splitAt;
+      clips.push(newClip);
+      renderTimeline();
+    });
+
+    // ============================================================
+    // TIMELINE RENDERING
+    // ============================================================
+    function renderRuler() {
+      rulerRow.innerHTML = '';
+      rulerRow.style.width = (timelineDuration * pxPerSecond) + 'px';
+      const step = pxPerSecond < 40 ? 5 : 1;
+      for (let t = 0; t <= timelineDuration; t += step) {
+        const tick = document.createElement('div');
+        tick.className = 'ruler-tick';
+        tick.style.left = (t * pxPerSecond) + 'px';
+        tick.innerHTML = `<span>${formatDuration(t)}</span>`;
+        rulerRow.appendChild(tick);
+      }
+    }
+
+    function renderTimeline() {
+      renderRuler();
+      timelineTracks.innerHTML = '';
+      timelineTracks.style.width = (timelineDuration * pxPerSecond) + 'px';
+
+      tracks.forEach(track => {
+        const row = document.createElement('div');
+        row.className = 'track-row';
+        row.dataset.trackId = track.id;
+        row.style.width = (timelineDuration * pxPerSecond) + 'px';
+
+        row.addEventListener('dragover', (e) => { e.preventDefault(); row.classList.add('drop-hover'); });
+        row.addEventListener('dragleave', () => row.classList.remove('drop-hover'));
+        row.addEventListener('drop', (e) => {
+          e.preventDefault();
+          row.classList.remove('drop-hover');
+          const assetId = e.dataTransfer.getData('text/asset-id');
+          if (!assetId) return;
+          const rect = row.getBoundingClientRect();
+          const startTime = Math.max(0, (e.clientX - rect.left) / pxPerSecond);
+          addClipToTrack(assetId, track.id, startTime);
+        });
+
+        clips.filter(c => c.trackId === track.id).forEach(clip => {
+          row.appendChild(renderClipBlock(clip));
+        });
+
+        timelineTracks.appendChild(row);
+      });
+
+      const ph = playheadTime * pxPerSecond;
+      playheadEl.style.left = ph + 'px';
+      if (window.lucide) { try { lucide.createIcons(); } catch (e) {} }
+    }
+
+    function renderClipBlock(clip) {
+      const el = document.createElement('div');
+      el.className = 'clip-block ' + clip.kind + (clip.id === selectedClipId ? ' selected' : '');
+      el.style.left = (clip.start * pxPerSecond) + 'px';
+      el.style.width = Math.max(20, clip.duration * pxPerSecond) + 'px';
+      el.dataset.clipId = clip.id;
+
+      const label = clip.kind === 'text' ? (clip.text ? clip.text.content : 'Text') :
+        (assets.find(a => a.id === clip.assetId) || {}).name || clip.kind;
+      el.innerHTML = `
+        <div class="clip-handle left"></div>
+        <div class="clip-label">${label}</div>
+        <div class="clip-handle right"></div>
+      `;
+
+      el.addEventListener('mousedown', (e) => {
+        if (e.target.classList.contains('clip-handle')) return; // handled separately below
+        e.stopPropagation();
+        selectClip(clip.id);
+        startClipDrag(e, clip);
+      });
+
+      el.querySelector('.clip-handle.left').addEventListener('mousedown', (e) => {
+        e.stopPropagation(); selectClip(clip.id); startClipTrim(e, clip, 'left');
+      });
+      el.querySelector('.clip-handle.right').addEventListener('mousedown', (e) => {
+        e.stopPropagation(); selectClip(clip.id); startClipTrim(e, clip, 'right');
+      });
+
+      return el;
+    }
+
+    function startClipDrag(e, clip) {
+      const startX = e.clientX;
+      const origStart = clip.start;
+      function onMove(ev) {
+        const dx = (ev.clientX - startX) / pxPerSecond;
+        clip.start = Math.max(0, origStart + dx);
+        timelineDuration = Math.max(timelineDuration, clip.start + clip.duration + 10);
+        renderTimeline();
+      }
+      function onUp() {
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+      }
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    }
+
+    function startClipTrim(e, clip, side) {
+      const startX = e.clientX;
+      const origStart = clip.start;
+      const origDuration = clip.duration;
+      function onMove(ev) {
+        const dx = (ev.clientX - startX) / pxPerSecond;
+        if (side === 'left') {
+          const newStart = Math.min(origStart + origDuration - 0.2, Math.max(0, origStart + dx));
+          clip.duration = origDuration + (origStart - newStart);
+          clip.start = newStart;
+        } else {
+          clip.duration = Math.max(0.2, origDuration + dx);
+        }
+        timelineDuration = Math.max(timelineDuration, clip.start + clip.duration + 10);
+        renderTimeline();
+      }
+      function onUp() {
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+      }
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    }
+
+    // Playhead scrubbing via ruler + track area click
+    function scrubToClientX(clientX) {
+      const rect = timelineTracks.getBoundingClientRect();
+      const t = Math.max(0, (clientX - rect.left) / pxPerSecond);
+      playheadTime = t;
+      playheadEl.style.left = (t * pxPerSecond) + 'px';
+      updateTransportUI();
+      requestFrameRedraw();
+    }
+    [rulerRow, timelineTracks].forEach(elm => {
+      elm.addEventListener('mousedown', (e) => {
+        if (e.target.closest('.clip-block')) return;
+        scrubToClientX(e.clientX);
+        function onMove(ev) { scrubToClientX(ev.clientX); }
+        function onUp() { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); }
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+      });
+    });
+
+    document.getElementById('btnZoomIn').addEventListener('click', () => { pxPerSecond = Math.min(400, pxPerSecond * 1.4); document.getElementById('zoomLabel').textContent = Math.round(pxPerSecond) + 'px/s'; renderTimeline(); });
+    document.getElementById('btnZoomOut').addEventListener('click', () => { pxPerSecond = Math.max(10, pxPerSecond / 1.4); document.getElementById('zoomLabel').textContent = Math.round(pxPerSecond) + 'px/s'; renderTimeline(); });
+
+    // ============================================================
+    // PROPERTIES PANEL (basic transform â€” extended in later stage)
+    // ============================================================
+    function renderPropsPanel() {
+      const clip = clips.find(c => c.id === selectedClipId);
+      propsPanel.querySelectorAll('.dyn-prop').forEach(n => n.remove());
+      if (!clip) {
+        propsEmpty.classList.remove('hidden');
+        return;
+      }
+      propsEmpty.classList.add('hidden');
+
+      const wrap = document.createElement('div');
+      wrap.className = 'dyn-prop space-y-4';
+      wrap.innerHTML = `
+        <div>
+          <h3 class="text-xs font-semibold text-neutral-100 uppercase tracking-wide mb-2">Transform</h3>
+          <div class="space-y-3">
+            <div>
+              <div class="flex justify-between text-[10px] text-neutral-300 mb-1"><span>Rotation</span><span id="valRotation">${clip.rotation}Â°</span></div>
+              <input type="range" id="sliderRotation" min="-180" max="180" value="${clip.rotation}" class="w-full accent-neutral-500">
+            </div>
+            <div>
+              <div class="flex justify-between text-[10px] text-neutral-300 mb-1"><span>Scale</span><span id="valScale">${clip.scale.toFixed(2)}x</span></div>
+              <input type="range" id="sliderScale" min="0.1" max="3" step="0.01" value="${clip.scale}" class="w-full accent-neutral-500">
+            </div>
+            <div>
+              <div class="flex justify-between text-[10px] text-neutral-300 mb-1"><span>Opacity</span><span id="valOpacity">${clip.opacity}%</span></div>
+              <input type="range" id="sliderOpacity" min="0" max="100" value="${clip.opacity}" class="w-full accent-neutral-500">
+            </div>
+          </div>
+        </div>
+        ${clip.kind === 'text' ? `
+        <div>
+          <h3 class="text-xs font-semibold text-neutral-100 uppercase tracking-wide mb-2">Text</h3>
+          <textarea id="textContentInput" class="w-full bg-neutral-800 border border-neutral-600 rounded-lg text-xs p-2 text-neutral-300" rows="2">${clip.text.content}</textarea>
+          <div class="flex items-center gap-2 mt-2">
+            <input type="color" id="textColorInput" value="${clip.text.color}" class="w-8 h-8 rounded bg-neutral-800 border border-neutral-600">
+            <input type="range" id="textSizeInput" min="12" max="200" value="${clip.text.size}" class="flex-1 accent-neutral-500">
+          </div>
+        </div>` : ''}
+      `;
+      propsPanel.appendChild(wrap);
+
+      document.getElementById('sliderRotation').addEventListener('input', (e) => {
+        clip.rotation = parseFloat(e.target.value);
+        document.getElementById('valRotation').textContent = clip.rotation + 'Â°';
+        requestFrameRedraw();
+      });
+      document.getElementById('sliderScale').addEventListener('input', (e) => {
+        clip.scale = parseFloat(e.target.value);
+        document.getElementById('valScale').textContent = clip.scale.toFixed(2) + 'x';
+        requestFrameRedraw();
+      });
+      document.getElementById('sliderOpacity').addEventListener('input', (e) => {
+        clip.opacity = parseFloat(e.target.value);
+        document.getElementById('valOpacity').textContent = clip.opacity + '%';
+        requestFrameRedraw();
+      });
+
+      if (clip.kind === 'text') {
+        document.getElementById('textContentInput').addEventListener('input', (e) => { clip.text.content = e.target.value; renderTimeline(); requestFrameRedraw(); });
+        document.getElementById('textColorInput').addEventListener('input', (e) => { clip.text.color = e.target.value; requestFrameRedraw(); });
+        document.getElementById('textSizeInput').addEventListener('input', (e) => { clip.text.size = parseFloat(e.target.value); requestFrameRedraw(); });
+      }
+    }
+
+    // ============================================================
+    // PLAYBACK + RENDER LOOP (base pass â€” real multi-layer compositor lands Stage 2)
+    // ============================================================
+    const btnPlay = document.getElementById('btnPlay');
+    const playIcon = document.getElementById('playIcon');
+    const currentTimeText = document.getElementById('currentTime');
+    const totalDurationText = document.getElementById('totalDuration');
+    const transportProgress = document.getElementById('transportProgress');
+
+    function updateTransportUI() {
+      currentTimeText.textContent = formatDuration(playheadTime);
+      totalDurationText.textContent = formatDuration(timelineDuration);
+      transportProgress.style.width = Math.min(100, (playheadTime / timelineDuration) * 100) + '%';
+      const ph = playheadTime * pxPerSecond;
+      playheadEl.style.left = ph + 'px';
+    }
+
+    btnPlay.addEventListener('click', () => {
+      isPlaying = !isPlaying;
+      playIcon.setAttribute('data-lucide', isPlaying ? 'pause' : 'play');
+      if (window.lucide) { try { lucide.createIcons(); } catch (e) {} }
+      if (isPlaying) {
+        clips.forEach(c => {
+          if (c.kind === 'video') {
+            const asset = assets.find(a => a.id === c.assetId);
+            if (asset && asset.el) { /* per-clip playback sync handled in render loop */ }
+          }
+        });
+        requestAnimationFrame(playLoop);
+      }
+    });
+
+    let lastTick = null;
+    function playLoop(ts) {
+      if (!isPlaying) { lastTick = null; return; }
+      if (lastTick === null) lastTick = ts;
+      const dt = (ts - lastTick) / 1000;
+      lastTick = ts;
+      playheadTime += dt;
+      if (playheadTime > timelineDuration) { playheadTime = 0; }
+      updateTransportUI();
+      renderComposerFrame();
+      requestAnimationFrame(playLoop);
+    }
+
+    let frameRequest;
+    function requestFrameRedraw() {
+      if (frameRequest) cancelAnimationFrame(frameRequest);
+      frameRequest = requestAnimationFrame(renderComposerFrame);
+    }
+
+    // Base compositor: draws active clips in track order (z-order), transform-aware.
+    // Cutout / chroma-key / bend visual effects are layered on in later stages.
+    function renderComposerFrame() {
+      ctx.clearRect(0, 0, canvasW, canvasH);
+      ctx.fillStyle = '#171717';
+      ctx.fillRect(0, 0, canvasW, canvasH);
+
+      tracks.forEach(track => {
+        clips.filter(c => c.trackId === track.id).forEach(clip => {
+          const active = playheadTime >= clip.start && playheadTime <= clip.start + clip.duration;
+          if (!active) {
+            if (clip.kind === 'video') {
+              const asset = assets.find(a => a.id === clip.assetId);
+              if (asset && asset.el && !asset.el.paused) asset.el.pause();
+            }
+            return;
+          }
+          drawClip(clip);
+        });
+      });
+
+      renderXformOverlay();
+    }
+
+    function drawClip(clip) {
+      ctx.save();
+      ctx.globalAlpha = clip.opacity / 100;
+      ctx.translate(clip.x, clip.y);
+      ctx.rotate(clip.rotation * Math.PI / 180);
+      ctx.scale(clip.scale, clip.scale);
+
+      // Apply freeform cutout clip path (Stage: Draw Cutout tool) before drawing content
+      if (clip.cutout && clip.cutout.points && clip.cutout.points.length > 2) {
+        ctx.beginPath();
+        const pts = clip.cutout.points;
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+        ctx.closePath();
+        ctx.clip();
+      }
+
+      if (clip.kind === 'text' && clip.text) {
+        ctx.fillStyle = clip.text.color;
+        ctx.font = `bold ${clip.text.size}px ${clip.text.font}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        if (clip.bend && clip.bend.amount) {
+          drawBentText(ctx, clip.text, clip.bend.amount);
+        } else {
+          ctx.fillText(clip.text.content, 0, 0);
+        }
+      } else {
+        const asset = assets.find(a => a.id === clip.assetId);
+        if (asset && asset.el) {
+          if (clip.kind === 'video') {
+            const localT = playheadTime - clip.start;
+            if (Math.abs(asset.el.currentTime - localT) > 0.15) {
+              try { asset.el.currentTime = Math.min(localT, asset.el.duration || localT); } catch (e) {}
+            }
+            if (isPlaying && asset.el.paused) asset.el.play().catch(() => {});
+            if (!isPlaying && !asset.el.paused) asset.el.pause();
+          }
+          const w = asset.width || 200, h = asset.height || 200;
+
+          if (clip.bend && clip.bend.amount) {
+            drawBentImage(ctx, asset.el, w, h, clip.bend.amount);
+          } else if (clip.chroma && clip.chroma.enabled) {
+            drawChromaKeyed(ctx, asset.el, w, h, clip.chroma);
+          } else {
+            ctx.drawImage(asset.el, -w / 2, -h / 2, w, h);
+          }
+        }
+      }
+      ctx.restore();
+    }
+
+    // ---- Bend/Warp effect (curve inward/outward) ----
+    // amount: -100..100, negative curves inward (concave), positive bulges outward (convex)
+    function drawBentImage(targetCtx, img, w, h, amount) {
+      const strips = 40;
+      const maxOffset = (amount / 100) * (h * 0.35);
+      for (let i = 0; i < strips; i++) {
+        const sx = (i / strips) * w;
+        const sw = w / strips + 1;
+        const t = (i / (strips - 1)) - 0.5; // -0.5..0.5
+        const bow = Math.cos(t * Math.PI) ; // 1 at center, 0 at edges
+        const yOffset = -maxOffset * bow;
+        targetCtx.drawImage(img, sx * (img.naturalWidth || img.videoWidth || w) / w, 0, (img.naturalWidth || img.videoWidth || w) / strips, (img.naturalHeight || img.videoHeight || h),
+          -w / 2 + sx, -h / 2 + yOffset, sw, h);
+      }
+    }
+    function drawBentText(targetCtx, text, amount) {
+      const chars = text.content.split('');
+      const total = chars.length;
+      const spread = Math.min(text.size * total * 0.6, 900);
+      const radius = 300 - (amount * 2); // higher |amount| = tighter curve
+      targetCtx.save();
+      chars.forEach((ch, i) => {
+        const t = (i / Math.max(1, total - 1)) - 0.5;
+        const angle = t * (amount / 100) * 1.2;
+        const x = Math.sin(angle) * spread / 2;
+        const y = -Math.cos(angle) * (amount >= 0 ? 1 : -1) * Math.abs(amount) * 1.2 + (amount >= 0 ? Math.abs(amount) * 1.2 : -Math.abs(amount)*1.2);
+        targetCtx.save();
+        targetCtx.translate(x, y * 0.4);
+        targetCtx.rotate(angle);
+        targetCtx.fillText(ch, 0, 0);
+        targetCtx.restore();
+      });
+      targetCtx.restore();
+    }
+
+    // ---- Chroma Key (color-based cutout, no AI/ML) ----
+    const chromaScratch = document.createElement('canvas');
+    const chromaScratchCtx = chromaScratch.getContext('2d', { willReadFrequently: true });
+    function drawChromaKeyed(targetCtx, mediaEl, w, h, chroma) {
+      chromaScratch.width = w; chromaScratch.height = h;
+      chromaScratchCtx.clearRect(0, 0, w, h);
+      chromaScratchCtx.drawImage(mediaEl, 0, 0, w, h);
+      const frame = chromaScratchCtx.getImageData(0, 0, w, h);
+      const data = frame.data;
+      const keyR = chroma.r, keyG = chroma.g, keyB = chroma.b;
+      const tolerance = chroma.tolerance != null ? chroma.tolerance : 40;
+      for (let i = 0; i < data.length; i += 4) {
+        const dr = data[i] - keyR, dg = data[i+1] - keyG, db = data[i+2] - keyB;
+        const dist = Math.sqrt(dr*dr + dg*dg + db*db);
+        if (dist < tolerance) {
+          data[i+3] = 0;
+        } else if (dist < tolerance + 30) {
+          data[i+3] = Math.round(((dist - tolerance) / 30) * 255);
+        }
+      }
+      chromaScratchCtx.putImageData(frame, 0, 0);
+      targetCtx.drawImage(chromaScratch, -w / 2, -h / 2, w, h);
+    }
+
+    // ============================================================
+    // ON-CANVAS TRANSFORM OVERLAY (move / rotate / resize by dragging)
+    // ============================================================
+    const xformOverlay = document.getElementById('xformOverlay');
+    const stageWrap = document.getElementById('stageWrap');
+
+    function canvasToScreenScale() {
+      const rect = canvas.getBoundingClientRect();
+      return { sx: rect.width / canvasW, sy: rect.height / canvasH, rect };
+    }
+
+    function renderXformOverlay() {
+      xformOverlay.innerHTML = '';
+      const clip = clips.find(c => c.id === selectedClipId);
+      if (!clip) return;
+      const { sx, sy } = canvasToScreenScale();
+
+      const asset = clip.kind === 'text' ? null : assets.find(a => a.id === clip.assetId);
+      const baseW = clip.kind === 'text' ? (clip.text.size * (clip.text.content.length || 1) * 0.55) : ((asset && asset.width) || 200);
+      const baseH = clip.kind === 'text' ? (clip.text.size * 1.2) : ((asset && asset.height) || 200);
+      const w = baseW * clip.scale * sx;
+      const h = baseH * clip.scale * sy;
+      const cx = clip.x * sx;
+      const cy = clip.y * sy;
+
+      const box = document.createElement('div');
+      box.style.cssText = `position:absolute; left:${cx - w/2}px; top:${cy - h/2}px; width:${w}px; height:${h}px; border:1.5px dashed rgba(255, 255, 255, 0.12); pointer-events:auto; cursor:move; transform: rotate(${clip.rotation}deg); transform-origin: center center;`;
+      box.addEventListener('mousedown', (e) => { e.stopPropagation(); startCanvasMove(e, clip); });
+
+      const resizeHandle = document.createElement('div');
+      resizeHandle.className = 'xform-handle';
+      resizeHandle.style.cssText += `right:-6px; bottom:-6px;`;
+      resizeHandle.addEventListener('mousedown', (e) => { e.stopPropagation(); startCanvasResize(e, clip); });
+
+      const rotateHandle = document.createElement('div');
+      rotateHandle.className = 'xform-rotate';
+      rotateHandle.style.cssText += `left:50%; top:-28px; margin-left:-7px;`;
+      rotateHandle.addEventListener('mousedown', (e) => { e.stopPropagation(); startCanvasRotate(e, clip); });
+
+      box.appendChild(resizeHandle);
+      box.appendChild(rotateHandle);
+      xformOverlay.appendChild(box);
+    }
+
+    function startCanvasMove(e, clip) {
+      const { sx, sy } = canvasToScreenScale();
+      const startX = e.clientX, startY = e.clientY;
+      const origX = clip.x, origY = clip.y;
+      function onMove(ev) {
+        clip.x = origX + (ev.clientX - startX) / sx;
+        clip.y = origY + (ev.clientY - startY) / sy;
+        renderXformOverlay();
+        requestFrameRedraw();
+      }
+      function onUp() { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); }
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    }
+
+    function startCanvasResize(e, clip) {
+      const startX = e.clientX;
+      const origScale = clip.scale;
+      function onMove(ev) {
+        const dx = (ev.clientX - startX) / 150;
+        clip.scale = Math.max(0.05, origScale + dx);
+        renderXformOverlay();
+        renderPropsPanel();
+        requestFrameRedraw();
+      }
+      function onUp() { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); }
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    }
+
+    function startCanvasRotate(e, clip) {
+      const rect = canvas.getBoundingClientRect();
+      const { sx, sy } = canvasToScreenScale();
+      const cx = rect.left + clip.x * sx;
+      const cy = rect.top + clip.y * sy;
+      function onMove(ev) {
+        const angle = Math.atan2(ev.clientY - cy, ev.clientX - cx) * 180 / Math.PI;
+        clip.rotation = Math.round(angle + 90);
+        renderXformOverlay();
+        renderPropsPanel();
+        requestFrameRedraw();
+      }
+      function onUp() { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); }
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    }
+
+    // ============================================================
+    // FREEFORM DRAW-CUTOUT TOOL â€” draw any shape on the stage, resizable,
+    // clips the selected layer's content to that path (background stays
+    // separate underneath, e.g. for placing text behind a subject).
+    // ============================================================
+    let isDrawingCutout = false;
+    let cutoutPoints = [];
+    const cutoutSvgLayer = document.createElement('div');
+    cutoutSvgLayer.style.cssText = 'position:absolute; inset:0; pointer-events:none;';
+    stageWrap.appendChild(cutoutSvgLayer);
+
+    stageWrap.addEventListener('mousedown', (e) => {
+      if (activeTool !== 'freeform-cut' && activeTool !== 'rotoscope') return;
+      if (!selectedClipId) {
+        triggerAlert('Select A Clip First', 'Choose a clip on the timeline before drawing a cutout shape for it.');
+        return;
+      }
+      isDrawingCutout = true;
+      cutoutPoints = [];
+      const { rect } = canvasToScreenScale();
+      addCutoutPoint(e, rect);
+      e.preventDefault();
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (!isDrawingCutout) return;
+      const { rect } = canvasToScreenScale();
+      addCutoutPoint(e, rect);
+    });
+    window.addEventListener('mouseup', () => {
+      if (!isDrawingCutout) return;
+      isDrawingCutout = false;
+      finalizeCutout();
+    });
+
+    function addCutoutPoint(e, rect) {
+      const sx = canvasW / rect.width, sy = canvasH / rect.height;
+      const x = (e.clientX - rect.left) * sx;
+      const y = (e.clientY - rect.top) * sy;
+      cutoutPoints.push({ x, y });
+      drawCutoutPreview();
+    }
+
+    function drawCutoutPreview() {
+      const { rect } = canvasToScreenScale();
+      const sx = rect.width / canvasW, sy = rect.height / canvasH;
+      if (cutoutPoints.length < 2) { cutoutSvgLayer.innerHTML = ''; return; }
+      const pathD = 'M ' + cutoutPoints.map(p => `${p.x * sx},${p.y * sy}`).join(' L ');
+      cutoutSvgLayer.innerHTML = `<svg width="100%" height="100%" style="position:absolute; inset:0;">
+        <path d="${pathD}" fill="rgba(255, 255, 255,0.15)" stroke="rgb(180, 180, 180)" stroke-width="2" stroke-dasharray="6,4" />
+      </svg>`;
+    }
+
+    function finalizeCutout() {
+      const clip = clips.find(c => c.id === selectedClipId);
+      if (!clip || cutoutPoints.length < 3) { cutoutSvgLayer.innerHTML = ''; cutoutPoints = []; return; }
+
+      // Store points relative to the clip's local (untransformed) space so the
+      // cutout path travels with the clip when it's moved/rotated/scaled.
+      const local = cutoutPoints.map(p => ({
+        x: (p.x - clip.x) / clip.scale,
+        y: (p.y - clip.y) / clip.scale
+      }));
+
+      if (activeTool === 'freeform-cut') {
+        clip.cutout = { points: local };
+        triggerAlert('Cutout Applied', 'The drawn shape now clips this clip\u2019s visible area. Draw again to redo, or select another clip.');
+      } else if (activeTool === 'rotoscope') {
+        clip.cutout = { points: local, rotoscoped: true };
+        triggerAlert('Rotoscope Outline Set', 'Manual subject outline applied as a clip mask for this clip.');
+      }
+
+      cutoutSvgLayer.innerHTML = '';
+      cutoutPoints = [];
+      requestFrameRedraw();
+    }
+
+    // ============================================================
+    // CHROMA KEY TOOL â€” pick a key color (eyedropper on canvas or swatch),
+    // set tolerance, apply to selected clip. No AI/ML â€” pure color distance.
+    // ============================================================
+    function openChromaKeyPicker() {
+      const clip = clips.find(c => c.id === selectedClipId);
+      if (!clip) {
+        triggerAlert('Select A Clip First', 'Choose a video or image clip to apply chroma key to.');
+        return;
+      }
+      if (clip.kind === 'text') {
+        triggerAlert('Not Applicable', 'Chroma key applies to video or image clips, not text.');
+        return;
+      }
+
+      closeToolPopover();
+      const pop = document.createElement('div');
+      pop.id = 'toolPopover';
+      pop.className = 'fixed bottom-24 left-1/2 -translate-x-1/2 bg-neutral-900 border border-neutral-600 rounded-xl p-4 shadow-2xl z-[130] w-72 space-y-3';
+      const current = clip.chroma || { r: 0, g: 255, b: 0, tolerance: 40, enabled: false };
+      const hex = '#' + [current.r, current.g, current.b].map(v => v.toString(16).padStart(2, '0')).join('');
+      pop.innerHTML = `
+        <div class="flex items-center justify-between">
+          <h4 class="text-xs font-semibold text-neutral-100">Chroma Key</h4>
+          <button id="closeChromaPop" class="text-neutral-400 hover:text-neutral-100"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
+        </div>
+        <div class="flex items-center gap-2">
+          <input type="color" id="chromaColorInput" value="${hex}" class="w-9 h-9 rounded bg-neutral-800 border border-neutral-600">
+          <button id="chromaEyedrop" class="flex-1 text-[11px] bg-neutral-800 hover:bg-neutral-700 py-2 rounded-lg flex items-center justify-center gap-1"><i data-lucide="pipette" class="w-3.5 h-3.5"></i> Pick From Stage</button>
+        </div>
+        <div>
+          <div class="flex justify-between text-[10px] text-neutral-300 mb-1"><span>Tolerance</span><span id="chromaTolVal">${current.tolerance}</span></div>
+          <input type="range" id="chromaTolInput" min="5" max="150" value="${current.tolerance}" class="w-full accent-neutral-500">
+        </div>
+        <button id="chromaApplyBtn" class="w-full bg-neutral-600 hover:bg-neutral-700 text-neutral-100 text-xs font-semibold py-2 rounded-lg">${current.enabled ? 'Update' : 'Apply'} Chroma Key</button>
+        ${current.enabled ? `<button id="chromaRemoveBtn" class="w-full text-[11px] text-neutral-300 hover:text-neutral-300">Remove Chroma Key</button>` : ''}
+      `;
+      document.body.appendChild(pop);
+      if (window.lucide) { try { lucide.createIcons(); } catch (e) {} }
+
+      let pending = { ...current };
+
+      document.getElementById('closeChromaPop').addEventListener('click', closeToolPopover);
+      document.getElementById('chromaColorInput').addEventListener('input', (e) => {
+        const v = e.target.value;
+        pending.r = parseInt(v.substr(1,2), 16);
+        pending.g = parseInt(v.substr(3,2), 16);
+        pending.b = parseInt(v.substr(5,2), 16);
+      });
+      document.getElementById('chromaTolInput').addEventListener('input', (e) => {
+        pending.tolerance = parseInt(e.target.value);
+        document.getElementById('chromaTolVal').textContent = pending.tolerance;
+      });
+      document.getElementById('chromaEyedrop').addEventListener('click', () => {
+        triggerAlert('Pick A Color', 'Click anywhere on the stage to sample that pixel as the key color.');
+        const handler = (e) => {
+          const rect = canvas.getBoundingClientRect();
+          const sx = canvasW / rect.width, sy = canvasH / rect.height;
+          const x = Math.round((e.clientX - rect.left) * sx);
+          const y = Math.round((e.clientY - rect.top) * sy);
+          const px = ctx.getImageData(x, y, 1, 1).data;
+          pending.r = px[0]; pending.g = px[1]; pending.b = px[2];
+          document.getElementById('chromaColorInput').value = '#' + [px[0],px[1],px[2]].map(v => v.toString(16).padStart(2,'0')).join('');
+          canvas.removeEventListener('click', handler);
+        };
+        canvas.addEventListener('click', handler, { once: true });
+      });
+      document.getElementById('chromaApplyBtn').addEventListener('click', () => {
+        pending.enabled = true;
+        clip.chroma = { ...pending };
+        requestFrameRedraw();
+        triggerAlert('Chroma Key Applied', 'The key color is now transparent on this clip.');
+        closeToolPopover();
+      });
+      const removeBtn = document.getElementById('chromaRemoveBtn');
+      if (removeBtn) removeBtn.addEventListener('click', () => {
+        clip.chroma = null;
+        requestFrameRedraw();
+        closeToolPopover();
+      });
+    }
+
+    // ============================================================
+    // BEND / WARP TOOL â€” curve text or media inward/outward
+    // ============================================================
+    function openBendControls() {
+      const clip = clips.find(c => c.id === selectedClipId);
+      if (!clip) {
+        triggerAlert('Select A Clip First', 'Choose a clip to apply the bend/warp effect to.');
+        return;
+      }
+      closeToolPopover();
+      const pop = document.createElement('div');
+      pop.id = 'toolPopover';
+      pop.className = 'fixed bottom-24 left-1/2 -translate-x-1/2 bg-neutral-900 border border-neutral-600 rounded-xl p-4 shadow-2xl z-[130] w-72 space-y-3';
+      const current = clip.bend || { amount: 0 };
+      pop.innerHTML = `
+        <div class="flex items-center justify-between">
+          <h4 class="text-xs font-semibold text-neutral-100">Bend / Warp</h4>
+          <button id="closeBendPop" class="text-neutral-400 hover:text-neutral-100"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
+        </div>
+        <p class="text-[10px] text-neutral-400">Negative curves inward, positive bulges outward.</p>
+        <div>
+          <div class="flex justify-between text-[10px] text-neutral-300 mb-1"><span>Amount</span><span id="bendVal">${current.amount}</span></div>
+          <input type="range" id="bendInput" min="-100" max="100" value="${current.amount}" class="w-full accent-neutral-500">
+        </div>
+        <button id="bendResetBtn" class="w-full text-[11px] text-neutral-300 hover:text-neutral-100">Reset to Flat</button>
+      `;
+      document.body.appendChild(pop);
+      if (window.lucide) { try { lucide.createIcons(); } catch (e) {} }
+
+      document.getElementById('closeBendPop').addEventListener('click', closeToolPopover);
+      document.getElementById('bendInput').addEventListener('input', (e) => {
+        const amt = parseInt(e.target.value);
+        document.getElementById('bendVal').textContent = amt;
+        clip.bend = { amount: amt };
+        requestFrameRedraw();
+      });
+      document.getElementById('bendResetBtn').addEventListener('click', () => {
+        clip.bend = { amount: 0 };
+        document.getElementById('bendInput').value = 0;
+        document.getElementById('bendVal').textContent = 0;
+        requestFrameRedraw();
+      });
+    }
+
+    function closeToolPopover() {
+      const existing = document.getElementById('toolPopover');
+      if (existing) existing.remove();
+    }
+
+    // ============================================================
+    // TOOL RAIL
+    // ============================================================
+    let activeTool = 'select';
+    document.querySelectorAll('.tool-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        activeTool = btn.dataset.tool;
+        closeToolPopover();
+
+        if (activeTool === 'chromakey') {
+          openChromaKeyPicker();
+        } else if (activeTool === 'bend') {
+          openBendControls();
+        } else if (activeTool === 'freeform-cut' || activeTool === 'rotoscope') {
+          if (!selectedClipId) {
+            triggerAlert('Select A Clip First', 'Choose a clip on the timeline, then draw your shape directly on the stage.');
+          } else {
+            triggerAlert(activeTool === 'freeform-cut' ? 'Draw Cutout' : 'Rotoscope', 'Click and drag on the stage to trace the region. Release to apply.');
+          }
+        }
+      });
+    });
+
+    // ============================================================
+    // ALERT UI
+    // ============================================================
+    function triggerAlert(title, message) {
+      const customAlert = document.getElementById('customAlert');
+      document.getElementById('alertTitle').textContent = title;
+      document.getElementById('alertMessage').textContent = message;
+      customAlert.classList.remove('opacity-0', 'pointer-events-none', '-translate-y-4');
+      customAlert.classList.add('opacity-100', 'translate-y-0');
+      setTimeout(dismissAlert, 6000);
+    }
+    function dismissAlert() {
+      const customAlert = document.getElementById('customAlert');
+      customAlert.classList.add('opacity-0', 'pointer-events-none', '-translate-y-4');
+      customAlert.classList.remove('opacity-100', 'translate-y-0');
+    }
+
+    // ============================================================
+    // EXPORT (MediaRecorder real-time capture of the composited canvas)
+    // ============================================================
+    let mediaRecorder = null;
+    let recordedChunks = [];
+    let isExporting = false;
+    const exportModal = document.getElementById('exportModal');
+    const renderProgressBar = document.getElementById('renderProgressBar');
+    const renderProgressPercent = document.getElementById('renderProgressPercent');
+    const renderFrameText = document.getElementById('renderFrameText');
+
+    document.getElementById('btnExport').addEventListener('click', startExport);
+    document.getElementById('btnAbortExport').addEventListener('click', abortExport);
+
+    function startExport() {
+      if (clips.length === 0) {
+        triggerAlert('Nothing To Export', 'Add at least one clip to the timeline first.');
+        return;
+      }
+      recordedChunks = [];
+      isExporting = true;
+      playheadTime = 0;
+      exportModal.classList.remove('hidden');
+      exportModal.classList.add('flex');
+
+      const stream = canvas.captureStream(30);
+      let options = { mimeType: 'video/webm; codecs=vp9' };
+      if (!MediaRecorder.isTypeSupported(options.mimeType)) options = { mimeType: 'video/webm; codecs=vp8' };
+      if (!MediaRecorder.isTypeSupported(options.mimeType)) options = { mimeType: 'video/webm' };
+
+      try {
+        mediaRecorder = new MediaRecorder(stream, options);
+      } catch (err) {
+        triggerAlert('Codec Exception', 'Failed to initiate browser MediaRecorder codecs.');
+        abortExport();
+        return;
+      }
+
+      mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) recordedChunks.push(e.data); };
+      mediaRecorder.onstop = () => {
+        if (recordedChunks.length > 0) {
+          const blob = new Blob(recordedChunks, { type: 'video/webm' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url; a.download = `envizion_export_${Date.now()}.webm`;
+          document.body.appendChild(a); a.click();
+          setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
+        }
+        exportModal.classList.add('hidden');
+        exportModal.classList.remove('flex');
+        isExporting = false;
+      };
+
+      mediaRecorder.start();
+      trackExportProgress();
+    }
+
+    function trackExportProgress() {
+      if (!isExporting) return;
+      playheadTime += 1 / 30;
+      renderComposerFrame();
+      updateTransportUI();
+      const pct = Math.min(100, Math.floor((playheadTime / timelineDuration) * 100));
+      renderProgressBar.style.width = pct + '%';
+      renderProgressPercent.textContent = pct + '%';
+      renderFrameText.textContent = `Compiling: ${formatDuration(playheadTime)} / ${formatDuration(timelineDuration)}`;
+
+      if (playheadTime >= timelineDuration) {
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+      } else {
+        requestAnimationFrame(trackExportProgress);
+      }
+    }
+
+    function abortExport() {
+      isExporting = false;
+      exportModal.classList.add('hidden');
+      exportModal.classList.remove('flex');
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+    }
+
+    // ============================================================
+    // BOARD HANDOFF â€” auto-import assets sent from the infinite board
+    // Adapted from the single-slot version: now creates an asset + a
+    // clip on a fresh track per item, instead of filling 1 video/1 image slot.
+    // ============================================================
+    (function initBoardHandoff() {
+      function extractHandoffId() {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('handoff')) return params.get('handoff');
+        const path = window.location.pathname;
+        const marker = 'local_video_image_mask_merger.html/';
+        const idx = path.indexOf(marker);
+        if (idx !== -1) {
+          const rest = path.slice(idx + marker.length).replace(/\/+$/, '');
+          if (rest) return decodeURIComponent(rest);
+        }
+        return null;
+      }
+
+      const handoffId = extractHandoffId();
+      if (!handoffId) return;
+
+      const req = indexedDB.open('envizion_studio_db', 1);
+      req.onupgradeneeded = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains('handoffs')) db.createObjectStore('handoffs', { keyPath: 'id' });
+      };
+      req.onerror = () => triggerAlert('Handoff Unavailable', 'Could not open local storage to retrieve items sent from the board.');
+      req.onsuccess = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains('handoffs')) {
+          triggerAlert('Nothing To Load', 'No board handoff data found in local storage.');
+          return;
+        }
+        const tx = db.transaction('handoffs', 'readonly');
+        const getReq = tx.objectStore('handoffs').get(handoffId);
+        getReq.onsuccess = () => {
+          const record = getReq.result;
+          if (!record || !Array.isArray(record.assets) || record.assets.length === 0) {
+            triggerAlert('Nothing To Load', 'That board handoff had no usable media in it.');
+            return;
+          }
+          const usable = record.assets.filter(a => (a.type === 'video' || a.type === 'image') && a.url);
+          if (usable.length === 0) {
+            triggerAlert('Unsupported Layers', 'The sent items were text/sticky notes, not video or image â€” nothing to load here.');
+            return;
+          }
+          const track = addTrack('From Board');
+          let cursor = 0;
+          usable.forEach(item => {
+            const asset = addAssetFromDataUrl(item.url, item.type, `Board ${item.type}`);
+            const watcher = setInterval(() => {
+              if (asset.el) {
+                clearInterval(watcher);
+                addClipToTrack(asset.id, track.id, cursor);
+                cursor += asset.duration || 5;
+              }
+            }, 80);
+          });
+          triggerAlert('Loaded From Board', `Imported ${usable.length} item(s) onto a new track.`);
+        };
+        getReq.onerror = () => triggerAlert('Handoff Unavailable', 'Could not read the sent items from local storage.');
+      };
+    })();
+
+    // ============================================================
+    // INIT
+    // ============================================================
+    addTrack('Track 1');
+    renderTimeline();
+    updateTransportUI();
+    resBadge.textContent = `Resolution: ${canvasW}x${canvasH}`;
+  </script>
+</div>
+
+<!-- ENVIZION_AD_SLOT_START -->
+<section class="envizion-ad-slot" aria-label="Advertisement" style="--toolkit-seo-accent:#10a37f;--toolkit-seo-accent-2:#0d8f6f;--toolkit-seo-bg:#212121;--toolkit-seo-accent-soft:rgba(16, 163, 127, 0.14);--toolkit-seo-accent-border:rgba(16, 163, 127, 0.28);--toolkit-seo-surface:#2f2f2f;--toolkit-seo-text:#ececec;--toolkit-seo-muted:#b4b4b4;--toolkit-seo-line:rgba(255, 255, 255, 0.12)">
+  <div class="envizion-ad-box">
+    <span class="envizion-ad-label">Advertisement</span>
+    <ins class="adsbygoogle"
+         style="display:block"
+         data-ad-client="ca-pub-5812524294035974"
+         data-ad-slot="9312358743"
+         data-ad-format="auto"
+         data-full-width-responsive="true"></ins>
+  </div>
+</section>
+<!-- ENVIZION_AD_SLOT_END -->
+
+<!-- ENVIZION_STATIC_SEO_START -->
+<section class="envizion-static-seo" id="envizion-page-guide" aria-label="Local Video Image Mask Merger explanation" style="--toolkit-seo-accent:#10a37f;--toolkit-seo-accent-2:#0d8f6f;--toolkit-seo-bg:#212121;--toolkit-seo-accent-soft:rgba(16, 163, 127, 0.14);--toolkit-seo-accent-border:rgba(16, 163, 127, 0.28);--toolkit-seo-surface:#2f2f2f;--toolkit-seo-text:#ececec;--toolkit-seo-muted:#b4b4b4;--toolkit-seo-line:rgba(255, 255, 255, 0.12)">
+  <div class="envizion-static-seo__shell">
+    <div class="envizion-static-seo__hero">
+      <div>
+        <p class="envizion-static-seo__kicker">Video compositor</p>
+        <h2>Local Video Image Mask Merger</h2>
+        <p>Merge video, image, and mask layers in a local browser workspace for quick compositing and visual experiments.</p>
+      </div>
+      <div class="envizion-static-seo__badges">
+        <span class="envizion-static-seo__badge">Envizion Tools</span>
+        <span class="envizion-static-seo__badge">Local browser workflow</span>
+        <span class="envizion-static-seo__badge">Tool guide</span>
+      </div>
+    </div>
+    <div class="envizion-static-seo__grid">
+      <article class="envizion-static-seo__panel">
+        <h3>What this tool does</h3>
+        <ul><li>Combine videos and image masks.</li><li>Preview layered media locally.</li><li>Test overlays and masking workflows.</li></ul>
+      </article>
+      <article class="envizion-static-seo__panel">
+        <h3>How to use it</h3>
+        <ol><li>Import media layers.</li><li>Position and configure overlays.</li><li>Preview and export using the controls.</li></ol>
+      </article>
+      <article class="envizion-static-seo__panel">
+        <h3>Helpful notes</h3>
+        <ul><li>This page is intentionally centered on the working tool first, then the guide below documents what the tool does, what it does not promise, and how to verify the output.</li><li>The safest workflow is to keep original files, test settings on a small sample, and inspect the exported result before replacing anything important.</li><li>Media exports depend on browser codec support, hardware acceleration, memory, and file duration, so very large files may need a smaller test run or a desktop encoder.</li></ul>
+      </article>
+    </div>
+    <div class="envizion-static-seo__body">
+      <h3>Detailed explanation</h3>
+      <div class="envizion-static-seo__article">
+        <p>Local Video Image Mask Merger is part of the Envizion Tools collection, a set of focused browser-based utilities for practical file preparation, editing, conversion, compression, previewing, and creative production.</p>
+        <p>Merge video, image, and mask layers in a local browser workspace for quick compositing and visual experiments. The working controls stay at the top of the page, while this guide gives visitors and search engines clear context about what the tool does, when it is useful, and how to approach the workflow.</p>
+        <p>The normal workflow is straightforward: Import media layers. Position and configure overlays. Preview and export using the controls. For best results, test with a small file first, inspect the output, and then process larger or more important files once the settings look correct.</p>
+        <p>Many Envizion tools run directly in the browser, which helps keep everyday work fast and private. Some tools still depend on browser APIs, local device performance, media encoders, canvas features, PDF handling, or WebGL support, so behavior can differ between browsers.</p>
+      </div>
+      <h3>Best use cases</h3>
+      <ul><li>Use Local Video Image Mask Merger when you need a focused media compression task without opening a large desktop suite.</li><li>Use it as a quick verification step before sending files to a client, teammate, upload portal, chat app, or production workflow.</li><li>Use the page for repeatable local work where privacy, speed, and predictable browser controls matter more than cloud storage.</li></ul>
+      <h3>Before you export</h3>
+      <ul><li>This page is intentionally centered on the working tool first, then the guide below documents what the tool does, what it does not promise, and how to verify the output.</li><li>The safest workflow is to keep original files, test settings on a small sample, and inspect the exported result before replacing anything important.</li><li>Media exports depend on browser codec support, hardware acceleration, memory, and file duration, so very large files may need a smaller test run or a desktop encoder.</li></ul>
+      <h3>Troubleshooting</h3>
+      <ul><li>Close other heavy tabs before processing long media.</li><li>Use shorter clips to test the chosen bitrate or quality level.</li><li>If export fails, try a more common input format or a smaller resolution.</li></ul>
+      <h3>Common questions</h3>
+      <dl class="envizion-static-seo__faq">
+        <div><dt>How do I use this tool?</dt><dd>Import media layers. Position and configure overlays. Preview and export using the controls.</dd></div>
+        <div><dt>What is this page best for?</dt><dd>Merge video, image, and mask layers in a local browser workspace for quick compositing and visual experiments.</dd></div>
+        <div><dt>Are my files uploaded?</dt><dd>These tools are designed around local browser workflows where supported. If a page uses a third-party library or browser API, review your browser permissions and keep sensitive originals until you have verified the output.</dd></div>
+        <div><dt>Does this page include ads?</dt><dd>Yes. The page includes a restrained AdSense slot using the configured Envizion publisher client and shared ad styling.</dd></div>
+        <div><dt>Where is the published page?</dt><dd>https://envizion.work/tools2/local_video_image_mask_merger.html</dd></div>
+      </dl>
+      <h3>Publisher and privacy links</h3>
+      <div class="envizion-static-seo__links">
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/about.html">About Envizion Tools</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/privacy.html">Privacy and cookies</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/contact.html">Contact and corrections</a>
+      </div>
+      <h3>Related Envizion tools</h3>
+      <div class="envizion-static-seo__links">
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/index.html">Envizion Tools</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/advanced_editor_converter.html">Advanced Paste, Edit and Convert</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/animator_studio.html">Mixamo Animator Studio</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/bulk_webp_converter.html">Local WebP Converter</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/CodeWeb.html">Localhost Server Manager</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/envizion_editor.html">Envizion Studio Editor</a>
+      </div>
+    </div>
+  </div>
+</section>
+<!-- ENVIZION_STATIC_SEO_END -->
+
+<!-- ENVIZION_TRUST_FOOTER_START -->
+<footer class="envizion-trust-footer" aria-label="Envizion site links">
+  <a href="https://envizion.work/tools2/index.html">Tools</a>
+  <a href="https://envizion.work/tools2/about.html">About</a>
+  <a href="https://envizion.work/tools2/privacy.html">Privacy</a>
+  <a href="https://envizion.work/tools2/contact.html">Contact</a>
+</footer>
+<!-- ENVIZION_TRUST_FOOTER_END -->
+  <script src="toolkit-enhance.js"></script>
+</body>
+</html>
+
+
+

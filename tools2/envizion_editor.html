@@ -1,0 +1,611 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Envizion Studio Editor</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.js"></script>
+  <style>
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #2f2f2f; }
+    ::-webkit-scrollbar-thumb { background: #2f2f2f; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #2f2f2f; }
+    html, body { height: 100%; overflow: hidden; }
+
+    /* ---- Timeline ---- */
+    #timelineTracks { position: relative; min-width: 100%; }
+    .track-row { position: relative; height: 56px; border-bottom: 1px solid rgba(255, 255, 255, 0.12); background: #2f2f2f; transition: background 0.2s; }
+    .track-row.drop-hover { background: #2f2f2f; }
+    .clip-block { position: absolute; top: 4px; bottom: 4px; border-radius: 8px; cursor: grab; overflow: hidden; user-select: none; border: 1.5px solid rgba(255, 255, 255, 0.12); background: linear-gradient(135deg, #212121, #2f2f2f); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28); }
+    .clip-block.selected { border-color: rgba(255, 255, 255, 0.12); box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.28); z-index: 10; }
+    .clip-block.video { background: linear-gradient(135deg, #212121, #2f2f2f); }
+    .clip-block.image { background: linear-gradient(135deg, #212121, #2f2f2f); }
+    .clip-block.audio { background: linear-gradient(135deg, #212121, #2f2f2f); }
+    .clip-handle { position: absolute; top: 0; bottom: 0; width: 8px; cursor: ew-resize; z-index: 5; background: #2f2f2f; }
+    .clip-handle:hover { background: #2f2f2f; }
+    .clip-handle.left { left: 0; } .clip-handle.right { right: 0; }
+    .clip-label { position: absolute; inset: 0; display: flex; align-items: center; padding: 0 12px; font-size: 10.5px; font-weight: 600; color: #ececec; pointer-events: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    
+    #playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: #2f2f2f; z-index: 20; pointer-events: none; }
+    #playhead::before { content: ''; position: absolute; top: -6px; left: -5px; width: 12px; height: 12px; background: #2f2f2f; border-radius: 3px 3px 3px 0; transform: rotate(45deg); }
+    .ruler-tick { position: absolute; top: 0; height: 100%; border-left: 1px solid rgba(255, 255, 255, 0.12); }
+    .ruler-tick span { position: absolute; top: 2px; left: 4px; font-size: 9px; color: #ececec; }
+
+    .xform-handle { position: absolute; width: 12px; height: 12px; background: #2f2f2f; border: 2px solid rgba(255, 255, 255, 0.12); border-radius: 3px; z-index: 30; cursor: nwse-resize; }
+    .xform-rotate { position: absolute; width: 14px; height: 14px; background: #2f2f2f; border: 2px solid rgba(255, 255, 255, 0.12); border-radius: 50%; z-index: 30; cursor: grab; }
+  </style>
+  <meta name="description" content="Edit video and image layers in a local timeline-style Envizion workspace for quick browser-based media composition.">
+  <meta name="robots" content="index, follow, max-image-preview:large">
+  <link rel="canonical" href="https://envizion.work/tools2/envizion_editor.html">
+  <meta property="og:title" content="Envizion Studio Editor - Envizion Tools">
+  <meta property="og:description" content="Edit video and image layers in a local timeline-style Envizion workspace for quick browser-based media composition.">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="toolkit-common.css">
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5812524294035974" crossorigin="anonymous"></script>
+  <script type="application/ld+json" id="envizion-tool-schema">{"@context":"https://schema.org","@type":"WebApplication","name":"Envizion Studio Editor","applicationCategory":"Media editor","operatingSystem":"Any modern browser","url":"https://envizion.work/tools2/envizion_editor.html","description":"Edit video and image layers in a local timeline-style Envizion workspace for quick browser-based media composition.","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"publisher":{"@type":"Organization","name":"Envizion Tools"}}</script>
+</head>
+<body class="bg-neutral-950 text-neutral-300 h-screen flex flex-col font-sans selection:bg-neutral-800 selection:text-neutral-100 overflow-hidden">
+<div class="envizion-tool-app-shell bg-neutral-950 text-neutral-300 h-screen flex flex-col font-sans selection:bg-neutral-800 selection:text-neutral-100 overflow-hidden">
+
+  <!-- Header -->
+  <header class="border-b border-neutral-600 bg-neutral-900/80 shrink-0 px-4 py-2.5 flex items-center justify-between z-10 relative">
+    <div class="flex items-center gap-3">
+      <a href="luma_dashboard_clone.html" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-neutral-800/10 text-neutral-300 hover:text-neutral-100"><i data-lucide="arrow-left" class="w-4 h-4"></i></a>
+      <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-neutral-800 shadow-[0_0_8px_#ececec]"></span><span class="text-xs font-bold text-neutral-100 tracking-wider">envizion editor</span></div>
+    </div>
+    <div class="flex items-center gap-2">
+      <a href="envizion_playground.html" class="text-[11px] text-neutral-300 hover:text-neutral-100 border border-neutral-600/10 rounded-lg px-3 py-1.5 hover:bg-neutral-800/5 mr-2">Playground</a>
+      <button onclick="alert('Export module ready. Click play to render.')" class="bg-neutral-800 text-neutral-100 hover:bg-neutral-800 text-xs font-semibold px-4 py-1.5 rounded-lg transition shadow-lg">Export</button>
+    </div>
+  </header>
+
+  <main class="flex-1 min-h-0 flex flex-col">
+    <div class="flex-1 min-h-0 flex overflow-hidden">
+
+      <!-- Left: Asset Bin with Folders & Preview -->
+      <aside class="w-64 shrink-0 border-r border-neutral-600 bg-neutral-900/40 flex flex-col">
+        <!-- Asset Preview Monitor -->
+        <div class="h-36 bg-neutral-950 border-b border-neutral-600 flex items-center justify-center relative p-1 shrink-0" id="assetPreviewContainer">
+            <span class="text-[10px] text-neutral-400 font-medium">Select asset to preview</span>
+        </div>
+
+        <div class="p-3 border-b border-neutral-600 flex gap-2">
+          <button id="btnImportMedia" class="flex-1 bg-neutral-800 hover:bg-neutral-800 text-neutral-100 text-xs font-semibold py-2 rounded-lg transition flex items-center justify-center gap-1.5">
+            <i data-lucide="upload" class="w-3.5 h-3.5"></i> Import
+          </button>
+          <input type="file" id="mediaInput" accept="video/*,image/*,audio/*,.gif" multiple class="hidden" />
+        </div>
+        
+        <!-- Folder View -->
+        <div class="flex-1 overflow-y-auto p-2 space-y-3" id="assetFolders">
+          <!-- Folders injected dynamically -->
+        </div>
+      </aside>
+
+      <!-- Center: Stage -->
+      <section class="flex-1 min-w-0 flex flex-col bg-neutral-950 relative">
+        <div class="flex-1 flex items-center justify-center p-4 overflow-hidden">
+          <div id="stageWrap" class="relative shadow-2xl border border-neutral-600 bg-neutral-950" style="aspect-ratio: 16/9; max-height: 100%; width: auto;">
+            <canvas id="displayCanvas" class="w-full h-full block rounded"></canvas>
+            <div id="xformOverlay" class="absolute inset-0 pointer-events-none"></div>
+          </div>
+        </div>
+
+        <!-- Transport controls -->
+        <div class="shrink-0 border-t border-neutral-600 bg-neutral-900/40 px-4 py-2 flex items-center gap-3">
+          <button id="btnPlay" class="w-8 h-8 bg-neutral-800 hover:bg-neutral-800 text-neutral-100 rounded-lg transition flex items-center justify-center"><i data-lucide="play" class="w-4 h-4" id="playIcon"></i></button>
+          <span id="currentTime" class="text-[11px] text-neutral-300 w-10 text-right font-mono">0:00</span>
+          <div class="flex-1 h-1.5 bg-neutral-800 rounded-full relative cursor-pointer" id="transportBar">
+            <div id="transportProgress" class="h-full bg-neutral-800 rounded-full w-0 pointer-events-none"></div>
+          </div>
+          <span id="totalDuration" class="text-[11px] text-neutral-300 w-10 font-mono">0:00</span>
+        </div>
+      </section>
+
+      <!-- Right: Properties -->
+      <aside id="propsPanel" class="w-64 shrink-0 border-l border-neutral-600 bg-neutral-900/40 overflow-y-auto p-4">
+        <div id="propsEmpty" class="text-center py-10 opacity-50"><i data-lucide="sliders" class="w-6 h-6 mx-auto mb-2"></i><p class="text-[10px]">Select a clip</p></div>
+      </aside>
+    </div>
+
+    <!-- Timeline -->
+    <div class="h-60 shrink-0 border-t border-neutral-600 bg-neutral-900/60 flex flex-col" id="timelineContainer">
+      <div class="flex items-center gap-2 px-3 py-1.5 border-b border-neutral-600 shrink-0 bg-neutral-900">
+        <button id="btnSplitClip" class="text-[11px] text-neutral-300 hover:text-neutral-100 bg-neutral-800 px-2 py-1 rounded"><i data-lucide="scissors" class="w-3 h-3 inline"></i> Split</button>
+        <button id="btnDeleteClip" class="text-[11px] text-neutral-300 hover:text-neutral-100 bg-neutral-800 px-2 py-1 rounded"><i data-lucide="trash-2" class="w-3 h-3 inline"></i> Delete</button>
+        <button id="btnAddTrack" class="text-[11px] text-neutral-300 hover:text-neutral-100 bg-neutral-800 px-2 py-1 rounded ml-4">+ Track</button>
+        <div class="flex-1"></div>
+        <button id="btnZoomOut" class="text-neutral-300 hover:text-neutral-100 p-1"><i data-lucide="zoom-out" class="w-3.5 h-3.5"></i></button>
+        <button id="btnZoomIn" class="text-neutral-300 hover:text-neutral-100 p-1"><i data-lucide="zoom-in" class="w-3.5 h-3.5"></i></button>
+      </div>
+      <div id="timelineScroll" class="flex-1 overflow-auto relative">
+        <div id="rulerRow" class="h-6 sticky top-0 z-10 bg-neutral-900 border-b border-neutral-600 relative w-full"></div>
+        <div id="timelineTracks" class="pb-10"></div>
+        <div id="playhead" style="left:0"></div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    if (window.lucide) lucide.createIcons();
+
+    // Data Models
+    let assets = []; 
+    let tracks = [];      
+    let clips = [];       
+    let selectedClipId = null;
+    let playheadTime = 0;
+    let isPlaying = false;
+    let pxPerSecond = 80;
+    let timelineDuration = 60; // Auto-expands
+
+    const canvas = document.getElementById('displayCanvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = 1280; canvas.height = 720;
+
+    const timelineTracks = document.getElementById('timelineTracks');
+    const rulerRow = document.getElementById('rulerRow');
+    const playheadEl = document.getElementById('playhead');
+    const assetFolders = document.getElementById('assetFolders');
+    const assetPreviewContainer = document.getElementById('assetPreviewContainer');
+
+    function uid(p) { return p + '-' + Math.random().toString(36).substr(2, 9); }
+    function fmt(t) { const m = Math.floor(t/60), s = Math.floor(t%60); return `${m}:${s<10?'0':''}${s}`; }
+
+    // --- Asset Management (Folders & Preview) ---
+    function addAssetFromFile(file) {
+      const url = URL.createObjectURL(file);
+      let kind = 'other';
+      if(file.type.startsWith('video')) kind = 'video';
+      else if(file.type.startsWith('image')) kind = 'image';
+      else if(file.type.startsWith('audio')) kind = 'audio';
+
+      const asset = { id: uid('ast'), kind, name: file.name, url, el: null, w: 0, h: 0, dur: 5 };
+      assets.push(asset);
+
+      if (kind === 'video' || kind === 'audio') {
+        const media = document.createElement(kind);
+        media.src = url; media.muted = (kind==='video'); // video muted for bg render, audio not
+        media.onloadedmetadata = () => { asset.w = media.videoWidth||0; asset.h = media.videoHeight||0; asset.dur = media.duration||5; asset.el = media; renderFolders(); };
+      } else if (kind === 'image') {
+        const img = new Image(); img.src = url;
+        img.onload = () => { asset.w = img.naturalWidth; asset.h = img.naturalHeight; asset.el = img; renderFolders(); };
+      }
+      renderFolders();
+    }
+
+    function renderFolders() {
+        const categories = { 'video': [], 'image': [], 'audio': [] };
+        assets.forEach(a => { if(categories[a.kind]) categories[a.kind].push(a); });
+
+        assetFolders.innerHTML = '';
+        Object.keys(categories).forEach(cat => {
+            if(categories[cat].length === 0) return;
+            const fold = document.createElement('div');
+            fold.innerHTML = `<div class="text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1 px-1 flex items-center gap-1"><i data-lucide="folder" class="w-3 h-3"></i> ${cat}s</div>`;
+            
+            const grid = document.createElement('div'); grid.className = "space-y-1";
+            categories[cat].forEach(ast => {
+                const item = document.createElement('div');
+                item.className = "flex items-center justify-between p-1.5 bg-neutral-800/50 rounded hover:bg-neutral-700 cursor-grab group text-xs border border-transparent hover:border-neutral-600";
+                item.draggable = true; item.dataset.id = ast.id;
+                
+                let icon = cat === 'video' ? 'film' : cat === 'audio' ? 'music' : 'image';
+                item.innerHTML = `
+                    <div class="flex items-center gap-2 truncate flex-1" onclick="previewAsset('${ast.id}')">
+                        <i data-lucide="${icon}" class="w-3.5 h-3.5 text-neutral-300"></i>
+                        <span class="truncate text-neutral-300 group-hover:text-neutral-100">${ast.name}</span>
+                    </div>
+                    <button class="opacity-0 group-hover:opacity-100 text-neutral-300 hover:text-neutral-300 px-1" onclick="deleteAsset('${ast.id}')"><i data-lucide="x" class="w-3 h-3"></i></button>
+                `;
+                item.addEventListener('dragstart', (e) => e.dataTransfer.setData('text/plain', ast.id));
+                grid.appendChild(item);
+            });
+            fold.appendChild(grid);
+            assetFolders.appendChild(fold);
+        });
+        if(window.lucide) lucide.createIcons();
+    }
+
+    function previewAsset(id) {
+        const ast = assets.find(a => a.id === id);
+        if(!ast) return;
+        assetPreviewContainer.innerHTML = '';
+        if(ast.kind === 'video' || ast.kind === 'audio') {
+            const el = document.createElement(ast.kind);
+            el.src = ast.url; el.controls = true; el.className = "w-full h-full object-contain";
+            assetPreviewContainer.appendChild(el);
+        } else if (ast.kind === 'image') {
+            const el = document.createElement('img');
+            el.src = ast.url; el.className = "w-full h-full object-contain";
+            assetPreviewContainer.appendChild(el);
+        }
+    }
+
+    function deleteAsset(id) {
+        assets = assets.filter(a => a.id !== id);
+        clips = clips.filter(c => c.assetId !== id);
+        renderFolders(); renderTimeline(); requestAnimationFrame(renderFrame);
+    }
+
+    document.getElementById('btnImportMedia').onclick = () => document.getElementById('mediaInput').click();
+    document.getElementById('mediaInput').onchange = (e) => { [...e.target.files].forEach(addAssetFromFile); e.target.value=''; };
+
+    // --- Timeline & Clips (Seamless Drag) ---
+    function addTrack() {
+        const trk = { id: uid('trk') }; tracks.push(trk); renderTimeline(); return trk;
+    }
+    document.getElementById('btnAddTrack').onclick = addTrack;
+
+    function addClip(assetId, trackId, time) {
+        const ast = assets.find(a => a.id === assetId); if(!ast) return;
+        const clip = { id: uid('clp'), trackId, assetId, kind: ast.kind, start: time, dur: ast.dur, x: canvas.width/2, y: canvas.height/2, scale: 1, rot: 0, opacity: 1 };
+        clips.push(clip);
+        checkTimelineExpansion(clip.start + clip.dur);
+        selectClip(clip.id); renderTimeline(); requestAnimationFrame(renderFrame);
+    }
+
+    function checkTimelineExpansion(time) {
+        if(time > timelineDuration - 10) { timelineDuration = Math.ceil(time + 30); renderTimeline(); }
+    }
+
+    function renderTimeline() {
+        rulerRow.innerHTML = ''; rulerRow.style.width = (timelineDuration * pxPerSecond) + 'px';
+        for(let t=0; t<=timelineDuration; t+= (pxPerSecond<40?5:1)) {
+            const tk = document.createElement('div'); tk.className='ruler-tick'; tk.style.left=(t*pxPerSecond)+'px';
+            tk.innerHTML=`<span>${fmt(t)}</span>`; rulerRow.appendChild(tk);
+        }
+
+        timelineTracks.innerHTML = ''; timelineTracks.style.width = (timelineDuration * pxPerSecond) + 'px';
+        
+        tracks.forEach((trk, idx) => {
+            const row = document.createElement('div'); row.className = 'track-row'; row.dataset.id = trk.id;
+            
+            // Fix duplicate drops: prevent bubbling, clearly check if adding new or moving
+            row.ondragover = e => { e.preventDefault(); row.classList.add('drop-hover'); };
+            row.ondragleave = () => row.classList.remove('drop-hover');
+            row.ondrop = e => {
+                e.preventDefault(); e.stopPropagation(); row.classList.remove('drop-hover');
+                const astId = e.dataTransfer.getData('text/plain');
+                if(!astId || astId.startsWith('clp')) return; // handled by clip drag
+                const rect = row.getBoundingClientRect();
+                addClip(astId, trk.id, Math.max(0, (e.clientX - rect.left) / pxPerSecond));
+            };
+
+            clips.filter(c => c.trackId === trk.id).forEach(c => row.appendChild(createClipBlock(c, row)));
+            timelineTracks.appendChild(row);
+        });
+        
+        document.getElementById('playhead').style.left = (playheadTime * pxPerSecond) + 'px';
+        updateTransportUI();
+    }
+
+    function createClipBlock(clip, parentRow) {
+        const el = document.createElement('div');
+        el.className = `clip-block ${clip.kind} ${clip.id===selectedClipId?'selected':''}`;
+        el.style.left = (clip.start * pxPerSecond) + 'px';
+        el.style.width = Math.max(10, clip.dur * pxPerSecond) + 'px';
+        
+        const ast = assets.find(a => a.id === clip.assetId);
+        el.innerHTML = `<div class="clip-handle left"></div><div class="clip-label">${ast?ast.name:'Clip'}</div><div class="clip-handle right"></div>`;
+        
+        el.onmousedown = e => {
+            if(e.target.classList.contains('clip-handle')) return;
+            e.stopPropagation(); selectClip(clip.id); startClipDrag(e, clip);
+        };
+        el.querySelector('.left').onmousedown = e => { e.stopPropagation(); selectClip(clip.id); startTrim(e, clip, 'left'); };
+        el.querySelector('.right').onmousedown = e => { e.stopPropagation(); selectClip(clip.id); startTrim(e, clip, 'right'); };
+        return el;
+    }
+
+    // Seamless CapCut style drag (X for time, Y for track)
+    function startClipDrag(e, clip) {
+        const startX = e.clientX, startY = e.clientY;
+        const origStart = clip.start, origTrackId = clip.trackId;
+        
+        function onMove(ev) {
+            clip.start = Math.max(0, origStart + (ev.clientX - startX) / pxPerSecond);
+            checkTimelineExpansion(clip.start + clip.dur);
+            
+            // Determine vertical track drop
+            const trackRows = Array.from(document.querySelectorAll('.track-row'));
+            let targetTrackId = origTrackId;
+            trackRows.forEach(row => {
+                const rect = row.getBoundingClientRect();
+                if(ev.clientY >= rect.top && ev.clientY <= rect.bottom) targetTrackId = row.dataset.id;
+            });
+            clip.trackId = targetTrackId;
+            renderTimeline();
+        }
+        function onUp() { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); }
+        window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp);
+    }
+
+    function startTrim(e, clip, side) {
+        const startX = e.clientX, origStart = clip.start, origDur = clip.dur;
+        function onMove(ev) {
+            const dx = (ev.clientX - startX) / pxPerSecond;
+            if(side === 'left') {
+                const maxD = origDur - 0.1; const shift = Math.min(maxD, Math.max(-origStart, dx));
+                clip.start = origStart + shift; clip.dur = origDur - shift;
+            } else { clip.dur = Math.max(0.1, origDur + dx); }
+            checkTimelineExpansion(clip.start + clip.dur); renderTimeline();
+        }
+        function onUp() { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); }
+        window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp);
+    }
+
+    function selectClip(id) { selectedClipId = id; renderTimeline(); renderProps(); renderOverlay(); }
+    
+    document.getElementById('btnDeleteClip').onclick = () => { if(selectedClipId) { clips = clips.filter(c => c.id !== selectedClipId); selectedClipId=null; renderTimeline(); renderProps(); renderOverlay(); requestAnimationFrame(renderFrame); }};
+    document.getElementById('btnSplitClip').onclick = () => {
+        const c = clips.find(x => x.id === selectedClipId); if(!c) return;
+        if(playheadTime > c.start && playheadTime < c.start + c.dur) {
+            const newC = {...c, id: uid('clp'), start: playheadTime, dur: c.dur - (playheadTime - c.start)};
+            c.dur = playheadTime - c.start; clips.push(newC); renderTimeline();
+        }
+    };
+
+    // Zoom
+    document.getElementById('btnZoomIn').onclick = () => { pxPerSecond*=1.2; renderTimeline(); };
+    document.getElementById('btnZoomOut').onclick = () => { pxPerSecond/=1.2; renderTimeline(); };
+
+    // Scrubbing
+    document.getElementById('timelineScroll').onmousedown = e => {
+        if(e.target.closest('.clip-block') || e.target.closest('.clip-handle')) return;
+        const updatePh = ev => {
+            const rect = timelineTracks.getBoundingClientRect();
+            playheadTime = Math.max(0, (ev.clientX - rect.left) / pxPerSecond);
+            if(playheadTime > timelineDuration) timelineDuration = playheadTime + 10;
+            renderTimeline(); requestAnimationFrame(renderFrame);
+        };
+        updatePh(e);
+        const up = () => { window.removeEventListener('mousemove', updatePh); window.removeEventListener('mouseup', up); };
+        window.addEventListener('mousemove', updatePh); window.addEventListener('mouseup', up);
+    };
+
+    // --- Properties ---
+    function renderProps() {
+        const pnl = document.getElementById('propsPanel');
+        pnl.innerHTML = '';
+        const c = clips.find(x => x.id === selectedClipId);
+        if(!c) { pnl.innerHTML = '<div class="text-center py-10 opacity-50"><p class="text-[10px]">Select a clip</p></div>'; return; }
+        
+        pnl.innerHTML = `
+            <h3 class="text-xs font-bold text-neutral-100 mb-4">Properties</h3>
+            <div class="space-y-4">
+                <div><label class="text-[10px] text-neutral-300">Scale</label><input type="range" min="0.1" max="3" step="0.05" value="${c.scale}" oninput="updateProp('scale', this.value)" class="w-full"></div>
+                <div><label class="text-[10px] text-neutral-300">Rotation</label><input type="range" min="-180" max="180" value="${c.rot}" oninput="updateProp('rot', this.value)" class="w-full"></div>
+                <div><label class="text-[10px] text-neutral-300">Opacity</label><input type="range" min="0" max="1" step="0.05" value="${c.opacity}" oninput="updateProp('opacity', this.value)" class="w-full"></div>
+            </div>
+        `;
+    }
+    window.updateProp = (key, val) => { const c=clips.find(x=>x.id===selectedClipId); if(c){ c[key]=parseFloat(val); requestAnimationFrame(renderFrame); renderOverlay(); }};
+
+    // --- Transport & Render ---
+    function updateTransportUI() {
+        document.getElementById('currentTime').textContent = fmt(playheadTime);
+        document.getElementById('totalDuration').textContent = fmt(timelineDuration);
+        document.getElementById('transportProgress').style.width = (playheadTime/timelineDuration*100) + '%';
+    }
+
+    let lastT = null;
+    function loop(ts) {
+        if(!isPlaying) { lastT = null; return; }
+        if(!lastT) lastT = ts; const dt = (ts - lastT)/1000; lastT = ts;
+        playheadTime += dt;
+        if(playheadTime > timelineDuration) { playheadTime = 0; isPlaying = false; document.getElementById('playIcon').setAttribute('data-lucide','play'); if(window.lucide) lucide.createIcons(); }
+        renderTimeline(); renderFrame();
+        requestAnimationFrame(loop);
+    }
+
+    document.getElementById('btnPlay').onclick = () => {
+        isPlaying = !isPlaying;
+        document.getElementById('playIcon').setAttribute('data-lucide', isPlaying?'pause':'play');
+        if(window.lucide) lucide.createIcons();
+        if(isPlaying) requestAnimationFrame(loop);
+        else {
+            // pause media
+            clips.forEach(c => { const a = assets.find(x=>x.id===c.assetId); if(a && a.el && typeof a.el.pause==='function') a.el.pause(); });
+        }
+    };
+
+    function renderFrame() {
+        ctx.fillStyle = '#171717'; ctx.fillRect(0,0, canvas.width, canvas.height);
+        
+        // Z-order by track index
+        tracks.forEach(trk => {
+            clips.filter(c => c.trackId === trk.id).forEach(c => {
+                const a = assets.find(x => x.id === c.assetId);
+                if(!a || !a.el) return;
+                
+                const active = playheadTime >= c.start && playheadTime <= c.start + c.dur;
+                
+                if(c.kind === 'video' || c.kind === 'audio') {
+                    if(active) {
+                        const localT = playheadTime - c.start;
+                        if(Math.abs(a.el.currentTime - localT) > 0.2) a.el.currentTime = localT;
+                        if(isPlaying && a.el.paused) a.el.play().catch(e=>{});
+                        if(!isPlaying && !a.el.paused) a.el.pause();
+                    } else {
+                        if(!a.el.paused) a.el.pause();
+                    }
+                }
+
+                if(active && c.kind !== 'audio') {
+                    ctx.save();
+                    ctx.globalAlpha = c.opacity;
+                    ctx.translate(c.x, c.y); ctx.rotate(c.rot * Math.PI/180); ctx.scale(c.scale, c.scale);
+                    ctx.drawImage(a.el, -a.w/2, -a.h/2, a.w, a.h);
+                    ctx.restore();
+                }
+            });
+        });
+        renderOverlay();
+    }
+
+    function renderOverlay() {
+        const ov = document.getElementById('xformOverlay'); ov.innerHTML = '';
+        const c = clips.find(x => x.id === selectedClipId);
+        const a = c ? assets.find(x => x.id === c.assetId) : null;
+        if(!c || !a || c.kind === 'audio') return;
+        
+        const rect = canvas.getBoundingClientRect();
+        const sx = rect.width / canvas.width, sy = rect.height / canvas.height;
+        const w = a.w * c.scale * sx, h = a.h * c.scale * sy;
+        const cx = c.x * sx, cy = c.y * sy;
+        
+        const box = document.createElement('div');
+        box.style.cssText = `position:absolute; left:${cx-w/2}px; top:${cy-h/2}px; width:${w}px; height:${h}px; border:1px solid rgba(255, 255, 255, 0.12); pointer-events:auto; cursor:move; transform:rotate(${c.rot}deg);`;
+        
+        box.onmousedown = e => {
+            e.stopPropagation(); const stX=e.clientX, stY=e.clientY, oX=c.x, oY=c.y;
+            const mv=ev=>{ c.x = oX+(ev.clientX-stX)/sx; c.y = oY+(ev.clientY-stY)/sy; renderOverlay(); requestAnimationFrame(renderFrame); };
+            const up=()=>{ window.removeEventListener('mousemove',mv); window.removeEventListener('mouseup',up); };
+            window.addEventListener('mousemove',mv); window.addEventListener('mouseup',up);
+        };
+        
+        const res = document.createElement('div'); res.className='xform-handle'; res.style.cssText='right:-6px; bottom:-6px;';
+        res.onmousedown = e => {
+            e.stopPropagation(); const stX=e.clientX, oS=c.scale;
+            const mv=ev=>{ c.scale=Math.max(0.1, oS + (ev.clientX-stX)/150); renderOverlay(); requestAnimationFrame(renderFrame); renderProps();};
+            const up=()=>{ window.removeEventListener('mousemove',mv); window.removeEventListener('mouseup',up); };
+            window.addEventListener('mousemove',mv); window.addEventListener('mouseup',up);
+        };
+        box.appendChild(res); ov.appendChild(box);
+    }
+
+    // Process Playground Handoff
+    (async function init() {
+        addTrack(); addTrack(); renderTimeline();
+        
+        const p = new URLSearchParams(window.location.search);
+        const handoff = p.get('handoff');
+        if(handoff) {
+            const req = indexedDB.open("envizion_studio_db", 1);
+            req.onsuccess = e => {
+                const db = e.target.result;
+                if(!db.objectStoreNames.contains("handoffs")) return;
+                db.transaction("handoffs").objectStore("handoffs").get(handoff).onsuccess = res => {
+                    const rec = res.target.result;
+                    if(rec && rec.assets) {
+                        let tOffset = 0;
+                        rec.assets.forEach(ast => {
+                            if(ast.type==='image' || ast.type==='video' || ast.type==='audio') {
+                                fetch(ast.url).then(r=>r.blob()).then(b=>{
+                                    const f = new File([b], ast.fileName||`Imported.${ast.type==='image'?'png':ast.type==='video'?'mp4':'mp3'}`, {type:b.type});
+                                    addAssetFromFile(f);
+                                    // Optionally auto-add to timeline:
+                                    // setTimeout(()=> addClip(assets[assets.length-1].id, tracks[0].id, tOffset), 500);
+                                    // tOffset += 5;
+                                });
+                            }
+                        });
+                    }
+                };
+            };
+        }
+    })();
+  </script>
+</div>
+
+<!-- ENVIZION_AD_SLOT_START -->
+<section class="envizion-ad-slot" aria-label="Advertisement" style="--toolkit-seo-accent:#10a37f;--toolkit-seo-accent-2:#0d8f6f;--toolkit-seo-bg:#212121;--toolkit-seo-accent-soft:rgba(16, 163, 127, 0.14);--toolkit-seo-accent-border:rgba(16, 163, 127, 0.28);--toolkit-seo-surface:#2f2f2f;--toolkit-seo-text:#ececec;--toolkit-seo-muted:#b4b4b4;--toolkit-seo-line:rgba(255, 255, 255, 0.12)">
+  <div class="envizion-ad-box">
+    <span class="envizion-ad-label">Advertisement</span>
+    <ins class="adsbygoogle"
+         style="display:block"
+         data-ad-client="ca-pub-5812524294035974"
+         data-ad-slot="9312358743"
+         data-ad-format="auto"
+         data-full-width-responsive="true"></ins>
+  </div>
+</section>
+<!-- ENVIZION_AD_SLOT_END -->
+
+<!-- ENVIZION_STATIC_SEO_START -->
+<section class="envizion-static-seo" id="envizion-page-guide" aria-label="Envizion Studio Editor explanation" style="--toolkit-seo-accent:#10a37f;--toolkit-seo-accent-2:#0d8f6f;--toolkit-seo-bg:#212121;--toolkit-seo-accent-soft:rgba(16, 163, 127, 0.14);--toolkit-seo-accent-border:rgba(16, 163, 127, 0.28);--toolkit-seo-surface:#2f2f2f;--toolkit-seo-text:#ececec;--toolkit-seo-muted:#b4b4b4;--toolkit-seo-line:rgba(255, 255, 255, 0.12)">
+  <div class="envizion-static-seo__shell">
+    <div class="envizion-static-seo__hero">
+      <div>
+        <p class="envizion-static-seo__kicker">Media editor</p>
+        <h2>Envizion Studio Editor</h2>
+        <p>Edit video and image layers in a local timeline-style Envizion workspace for quick browser-based media composition.</p>
+      </div>
+      <div class="envizion-static-seo__badges">
+        <span class="envizion-static-seo__badge">Envizion Tools</span>
+        <span class="envizion-static-seo__badge">Local browser workflow</span>
+        <span class="envizion-static-seo__badge">Tool guide</span>
+      </div>
+    </div>
+    <div class="envizion-static-seo__grid">
+      <article class="envizion-static-seo__panel">
+        <h3>What this tool does</h3>
+        <ul><li>Edit video and image layers locally.</li><li>Use timeline controls for creative assembly.</li><li>Preview media workflows in the browser.</li></ul>
+      </article>
+      <article class="envizion-static-seo__panel">
+        <h3>How to use it</h3>
+        <ol><li>Import media files.</li><li>Arrange and edit them in the workspace.</li><li>Preview and export when ready.</li></ol>
+      </article>
+      <article class="envizion-static-seo__panel">
+        <h3>Helpful notes</h3>
+        <ul><li>This page is intentionally centered on the working tool first, then the guide below documents what the tool does, what it does not promise, and how to verify the output.</li><li>The safest workflow is to keep original files, test settings on a small sample, and inspect the exported result before replacing anything important.</li><li>Because the tool runs in a browser page, performance can vary by browser, device memory, and file size.</li></ul>
+      </article>
+    </div>
+    <div class="envizion-static-seo__body">
+      <h3>Detailed explanation</h3>
+      <div class="envizion-static-seo__article">
+        <p>Envizion Studio Editor is part of the Envizion Tools collection, a set of focused browser-based utilities for practical file preparation, editing, conversion, compression, previewing, and creative production.</p>
+        <p>Edit video and image layers in a local timeline-style Envizion workspace for quick browser-based media composition. The working controls stay at the top of the page, while this guide gives visitors and search engines clear context about what the tool does, when it is useful, and how to approach the workflow.</p>
+        <p>The normal workflow is straightforward: Import media files. Arrange and edit them in the workspace. Preview and export when ready. For best results, test with a small file first, inspect the output, and then process larger or more important files once the settings look correct.</p>
+        <p>Many Envizion tools run directly in the browser, which helps keep everyday work fast and private. Some tools still depend on browser APIs, local device performance, media encoders, canvas features, PDF handling, or WebGL support, so behavior can differ between browsers.</p>
+      </div>
+      <h3>Best use cases</h3>
+      <ul><li>Use Envizion Studio Editor when you need a focused browser-based file work task without opening a large desktop suite.</li><li>Use it as a quick verification step before sending files to a client, teammate, upload portal, chat app, or production workflow.</li><li>Use the page for repeatable local work where privacy, speed, and predictable browser controls matter more than cloud storage.</li></ul>
+      <h3>Before you export</h3>
+      <ul><li>This page is intentionally centered on the working tool first, then the guide below documents what the tool does, what it does not promise, and how to verify the output.</li><li>The safest workflow is to keep original files, test settings on a small sample, and inspect the exported result before replacing anything important.</li><li>Because the tool runs in a browser page, performance can vary by browser, device memory, and file size.</li></ul>
+      <h3>Troubleshooting</h3>
+      <ul><li>Refresh the page if browser state gets stuck.</li><li>Try a smaller input to confirm the workflow.</li><li>Use a current browser when a local API is unavailable.</li></ul>
+      <h3>Common questions</h3>
+      <dl class="envizion-static-seo__faq">
+        <div><dt>How do I use this tool?</dt><dd>Import media files. Arrange and edit them in the workspace. Preview and export when ready.</dd></div>
+        <div><dt>What is this page best for?</dt><dd>Edit video and image layers in a local timeline-style Envizion workspace for quick browser-based media composition.</dd></div>
+        <div><dt>Are my files uploaded?</dt><dd>These tools are designed around local browser workflows where supported. If a page uses a third-party library or browser API, review your browser permissions and keep sensitive originals until you have verified the output.</dd></div>
+        <div><dt>Does this page include ads?</dt><dd>Yes. The page includes a restrained AdSense slot using the configured Envizion publisher client and shared ad styling.</dd></div>
+        <div><dt>Where is the published page?</dt><dd>https://envizion.work/tools2/envizion_editor.html</dd></div>
+      </dl>
+      <h3>Publisher and privacy links</h3>
+      <div class="envizion-static-seo__links">
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/about.html">About Envizion Tools</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/privacy.html">Privacy and cookies</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/contact.html">Contact and corrections</a>
+      </div>
+      <h3>Related Envizion tools</h3>
+      <div class="envizion-static-seo__links">
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/index.html">Envizion Tools</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/advanced_editor_converter.html">Advanced Paste, Edit and Convert</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/animator_studio.html">Mixamo Animator Studio</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/bulk_webp_converter.html">Local WebP Converter</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/CodeWeb.html">Localhost Server Manager</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/envizion_playground.html">Envizion Playground</a>
+      </div>
+    </div>
+  </div>
+</section>
+<!-- ENVIZION_STATIC_SEO_END -->
+
+<!-- ENVIZION_TRUST_FOOTER_START -->
+<footer class="envizion-trust-footer" aria-label="Envizion site links">
+  <a href="https://envizion.work/tools2/index.html">Tools</a>
+  <a href="https://envizion.work/tools2/about.html">About</a>
+  <a href="https://envizion.work/tools2/privacy.html">Privacy</a>
+  <a href="https://envizion.work/tools2/contact.html">Contact</a>
+</footer>
+<!-- ENVIZION_TRUST_FOOTER_END -->
+  <script src="toolkit-enhance.js"></script>
+</body>
+</html>
+
+

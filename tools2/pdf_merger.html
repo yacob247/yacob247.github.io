@@ -1,0 +1,213 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Local PDF Merger</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+  <style>
+    body { font-family: 'Inter', sans-serif; background: #2f2f2f; }
+    .dropzone { border: 2px dashed rgba(255, 255, 255, 0.12); transition: all 0.2s; }
+  </style>
+  <meta name="description" content="Merge multiple PDF files into one document directly in the browser with a simple private local workflow.">
+  <meta name="robots" content="index, follow, max-image-preview:large">
+  <link rel="canonical" href="https://envizion.work/tools2/pdf_merger.html">
+  <meta property="og:title" content="Local PDF Merger - Envizion Tools">
+  <meta property="og:description" content="Merge multiple PDF files into one document directly in the browser with a simple private local workflow.">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="toolkit-common.css">
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5812524294035974" crossorigin="anonymous"></script>
+  <script type="application/ld+json" id="envizion-tool-schema">{"@context":"https://schema.org","@type":"WebApplication","name":"Local PDF Merger","applicationCategory":"PDF tool","operatingSystem":"Any modern browser","url":"https://envizion.work/tools2/pdf_merger.html","description":"Merge multiple PDF files into one document directly in the browser with a simple private local workflow.","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"publisher":{"@type":"Organization","name":"Envizion Tools"}}</script>
+</head>
+<body class="p-4 md:p-8 max-w-4xl mx-auto flex flex-col gap-8">
+<div class="envizion-tool-app-shell p-4 md:p-8 max-w-4xl mx-auto flex flex-col gap-8">
+  
+  <div class="bg-neutral-800 p-6 md:p-10 rounded-2xl shadow-sm border border-neutral-600">
+    <div class="mb-6 border-b border-neutral-600 pb-4">
+      <h1 class="text-3xl font-bold mb-2">Local PDF Merger</h1>
+      <p class="text-neutral-400 text-sm">Combine multiple PDF files into a single document without uploading them to any server.</p>
+    </div>
+
+    <div id="dropzone" class="dropzone p-8 rounded-xl text-center cursor-pointer mb-6 flex flex-col items-center justify-center bg-neutral-800 hover:bg-neutral-800">
+      <svg class="w-10 h-10 text-neutral-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+      <p class="text-neutral-400 font-medium">Select multiple PDFs to Merge</p>
+      <input type="file" id="fileInput" multiple accept="application/pdf" class="hidden" />
+    </div>
+
+    <ul id="fileList" class="space-y-2 mb-6 empty:hidden"></ul>
+
+    <button id="mergeBtn" class="w-full bg-neutral-600 hover:bg-neutral-700 text-neutral-100 px-8 py-3 rounded-lg font-medium disabled:opacity-50 hidden">
+      Merge PDFs Now
+    </button>
+  </div>
+
+  <script>
+    const { PDFDocument } = PDFLib;
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('fileInput');
+    const fileList = document.getElementById('fileList');
+    const mergeBtn = document.getElementById('mergeBtn');
+
+    let pdfFiles = [];
+
+    dropzone.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files) {
+        Array.from(e.target.files).forEach(f => {
+           if(f.type === 'application/pdf') pdfFiles.push(f);
+        });
+        renderList();
+      }
+      fileInput.value = '';
+    });
+
+    function renderList() {
+      fileList.innerHTML = '';
+      pdfFiles.forEach((f, idx) => {
+        const li = document.createElement('li');
+        li.className = 'flex justify-between p-3 bg-neutral-800 border rounded text-sm';
+        li.innerHTML = `<span>${idx + 1}. ${f.name}</span> <button onclick="removeFile(${idx})" class="text-neutral-400 hover:underline">Remove</button>`;
+        fileList.appendChild(li);
+      });
+      mergeBtn.style.display = pdfFiles.length > 1 ? 'block' : 'none';
+    }
+
+    window.removeFile = (idx) => {
+      pdfFiles.splice(idx, 1);
+      renderList();
+    };
+
+    mergeBtn.addEventListener('click', async () => {
+      if(pdfFiles.length < 2) return;
+      mergeBtn.innerText = 'Merging...';
+      mergeBtn.disabled = true;
+
+      try {
+        const mergedPdf = await PDFDocument.create();
+        for (const file of pdfFiles) {
+          const arrayBuffer = await file.arrayBuffer();
+          const pdfDoc = await PDFDocument.load(arrayBuffer);
+          const copiedPages = await mergedPdf.copyPages(pdfDoc, pdfDoc.getPageIndices());
+          copiedPages.forEach((page) => mergedPdf.addPage(page));
+        }
+        
+        const mergedPdfBytes = await mergedPdf.save();
+        const blob = new Blob([mergedPdfBytes], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
+        
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'merged-document.pdf';
+        link.click();
+        
+      } catch (err) {
+        console.error(err);
+        alert('An error occurred while merging the PDFs.');
+      } finally {
+        mergeBtn.innerText = 'Merge PDFs Now';
+        mergeBtn.disabled = false;
+      }
+    });
+  </script>
+</div>
+
+<!-- ENVIZION_AD_SLOT_START -->
+<section class="envizion-ad-slot" aria-label="Advertisement" style="--toolkit-seo-accent:#10a37f;--toolkit-seo-accent-2:#0d8f6f;--toolkit-seo-bg:#212121;--toolkit-seo-accent-soft:rgba(16, 163, 127, 0.14);--toolkit-seo-accent-border:rgba(16, 163, 127, 0.28);--toolkit-seo-surface:#2f2f2f;--toolkit-seo-text:#ececec;--toolkit-seo-muted:#b4b4b4;--toolkit-seo-line:rgba(255, 255, 255, 0.12)">
+  <div class="envizion-ad-box">
+    <span class="envizion-ad-label">Advertisement</span>
+    <ins class="adsbygoogle"
+         style="display:block"
+         data-ad-client="ca-pub-5812524294035974"
+         data-ad-slot="9312358743"
+         data-ad-format="auto"
+         data-full-width-responsive="true"></ins>
+  </div>
+</section>
+<!-- ENVIZION_AD_SLOT_END -->
+
+<!-- ENVIZION_STATIC_SEO_START -->
+<section class="envizion-static-seo" id="envizion-page-guide" aria-label="Local PDF Merger explanation" style="--toolkit-seo-accent:#10a37f;--toolkit-seo-accent-2:#0d8f6f;--toolkit-seo-bg:#212121;--toolkit-seo-accent-soft:rgba(16, 163, 127, 0.14);--toolkit-seo-accent-border:rgba(16, 163, 127, 0.28);--toolkit-seo-surface:#2f2f2f;--toolkit-seo-text:#ececec;--toolkit-seo-muted:#b4b4b4;--toolkit-seo-line:rgba(255, 255, 255, 0.12)">
+  <div class="envizion-static-seo__shell">
+    <div class="envizion-static-seo__hero">
+      <div>
+        <p class="envizion-static-seo__kicker">PDF tool</p>
+        <h2>Local PDF Merger</h2>
+        <p>Merge multiple PDF files into one document directly in the browser with a simple private local workflow.</p>
+      </div>
+      <div class="envizion-static-seo__badges">
+        <span class="envizion-static-seo__badge">Envizion Tools</span>
+        <span class="envizion-static-seo__badge">Local browser workflow</span>
+        <span class="envizion-static-seo__badge">Tool guide</span>
+      </div>
+    </div>
+    <div class="envizion-static-seo__grid">
+      <article class="envizion-static-seo__panel">
+        <h3>What this tool does</h3>
+        <ul><li>Combine multiple PDFs locally.</li><li>Remove files before export.</li><li>Download one merged PDF.</li></ul>
+      </article>
+      <article class="envizion-static-seo__panel">
+        <h3>How to use it</h3>
+        <ol><li>Select two or more PDF files.</li><li>Review their order.</li><li>Merge and download the combined document.</li></ol>
+      </article>
+      <article class="envizion-static-seo__panel">
+        <h3>Helpful notes</h3>
+        <ul><li>This page is intentionally centered on the working tool first, then the guide below documents what the tool does, what it does not promise, and how to verify the output.</li><li>The safest workflow is to keep original files, test settings on a small sample, and inspect the exported result before replacing anything important.</li><li>PDF output can change text selection, metadata, page dimensions, or image sharpness depending on the operation, so compare the exported PDF against the source before sharing it.</li></ul>
+      </article>
+    </div>
+    <div class="envizion-static-seo__body">
+      <h3>Detailed explanation</h3>
+      <div class="envizion-static-seo__article">
+        <p>Local PDF Merger is part of the Envizion Tools collection, a set of focused browser-based utilities for practical file preparation, editing, conversion, compression, previewing, and creative production.</p>
+        <p>Merge multiple PDF files into one document directly in the browser with a simple private local workflow. The working controls stay at the top of the page, while this guide gives visitors and search engines clear context about what the tool does, when it is useful, and how to approach the workflow.</p>
+        <p>The normal workflow is straightforward: Select two or more PDF files. Review their order. Merge and download the combined document. For best results, test with a small file first, inspect the output, and then process larger or more important files once the settings look correct.</p>
+        <p>Many Envizion tools run directly in the browser, which helps keep everyday work fast and private. Some tools still depend on browser APIs, local device performance, media encoders, canvas features, PDF handling, or WebGL support, so behavior can differ between browsers.</p>
+      </div>
+      <h3>Best use cases</h3>
+      <ul><li>Use Local PDF Merger when you need a focused document preparation task without opening a large desktop suite.</li><li>Use it as a quick verification step before sending files to a client, teammate, upload portal, chat app, or production workflow.</li><li>Use the page for repeatable local work where privacy, speed, and predictable browser controls matter more than cloud storage.</li></ul>
+      <h3>Before you export</h3>
+      <ul><li>This page is intentionally centered on the working tool first, then the guide below documents what the tool does, what it does not promise, and how to verify the output.</li><li>The safest workflow is to keep original files, test settings on a small sample, and inspect the exported result before replacing anything important.</li><li>PDF output can change text selection, metadata, page dimensions, or image sharpness depending on the operation, so compare the exported PDF against the source before sharing it.</li></ul>
+      <h3>Troubleshooting</h3>
+      <ul><li>Try a smaller PDF first if the browser tab becomes slow.</li><li>Re-export source scans at a lower resolution if the final file is still too large.</li><li>Use a current Chromium, Firefox, or Safari build for best PDF library support.</li></ul>
+      <h3>Common questions</h3>
+      <dl class="envizion-static-seo__faq">
+        <div><dt>How do I use this tool?</dt><dd>Select two or more PDF files. Review their order. Merge and download the combined document.</dd></div>
+        <div><dt>What is this page best for?</dt><dd>Merge multiple PDF files into one document directly in the browser with a simple private local workflow.</dd></div>
+        <div><dt>Are my files uploaded?</dt><dd>These tools are designed around local browser workflows where supported. If a page uses a third-party library or browser API, review your browser permissions and keep sensitive originals until you have verified the output.</dd></div>
+        <div><dt>Does this page include ads?</dt><dd>Yes. The page includes a restrained AdSense slot using the configured Envizion publisher client and shared ad styling.</dd></div>
+        <div><dt>Where is the published page?</dt><dd>https://envizion.work/tools2/pdf_merger.html</dd></div>
+      </dl>
+      <h3>Publisher and privacy links</h3>
+      <div class="envizion-static-seo__links">
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/about.html">About Envizion Tools</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/privacy.html">Privacy and cookies</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/contact.html">Contact and corrections</a>
+      </div>
+      <h3>Related Envizion tools</h3>
+      <div class="envizion-static-seo__links">
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/index.html">Envizion Tools</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/advanced_editor_converter.html">Advanced Paste, Edit and Convert</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/animator_studio.html">Mixamo Animator Studio</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/bulk_webp_converter.html">Local WebP Converter</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/CodeWeb.html">Localhost Server Manager</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/envizion_editor.html">Envizion Studio Editor</a>
+      </div>
+    </div>
+  </div>
+</section>
+<!-- ENVIZION_STATIC_SEO_END -->
+
+<!-- ENVIZION_TRUST_FOOTER_START -->
+<footer class="envizion-trust-footer" aria-label="Envizion site links">
+  <a href="https://envizion.work/tools2/index.html">Tools</a>
+  <a href="https://envizion.work/tools2/about.html">About</a>
+  <a href="https://envizion.work/tools2/privacy.html">Privacy</a>
+  <a href="https://envizion.work/tools2/contact.html">Contact</a>
+</footer>
+<!-- ENVIZION_TRUST_FOOTER_END -->
+  <script src="toolkit-enhance.js"></script>
+</body>
+</html>
+
+

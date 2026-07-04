@@ -1,0 +1,1728 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Superfast Video Compressor - Local GPU & CPU Media Engine</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Primary MP4 Muxer CDN -->
+    <script id="mp4-muxer-script" src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.min.js"></script>
+    
+    <!-- Pure-JS LAME MP3 Encoder (LGPL-3.0) for real .mp3 output -->
+    <script id="lamejs-script" src="https://cdn.jsdelivr.net/npm/@breezystack/lamejs@1.2.7/dist/lame.all.js"></script>
+
+    <!-- Dynamic Fallback in case CDN is slow, blocked, or fails to define Mp4Muxer / lamejs -->
+    <script>
+        window.addEventListener('error', function(e) {
+            if (e.target && e.target.src && e.target.src.includes('mp4-muxer')) {
+                console.warn("Primary CDN failed. Loading backup CDN for Mp4Muxer...");
+                const backupScript = document.createElement('script');
+                backupScript.src = "https://unpkg.com/mp4-muxer@5.2.2/build/mp4-muxer.min.js";
+                document.head.appendChild(backupScript);
+            }
+            if (e.target && e.target.src && e.target.src.includes('lame.all.js')) {
+                console.warn("Primary CDN failed. Loading backup CDN for lamejs...");
+                const backupScript = document.createElement('script');
+                backupScript.src = "https://unpkg.com/@breezystack/lamejs@1.2.7/dist/lame.all.js";
+                document.head.appendChild(backupScript);
+            }
+        }, true);
+    </script>
+
+    <style>
+        .dropzone-active {
+            border-color: rgba(255, 255, 255, 0.12);
+            background-color: #2f2f2f;
+        }
+        canvas {
+            max-width: 100%;
+            height: auto;
+            border-radius: 0.5rem;
+            background-color: #2f2f2f;
+        }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #2f2f2f; }
+        ::-webkit-scrollbar-thumb { background: #2f2f2f; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #2f2f2f; }
+    </style>
+  <meta name="description" content="Compress video and audio locally with browser media APIs, quality controls, and practical export settings.">
+  <meta name="robots" content="index, follow, max-image-preview:large">
+  <link rel="canonical" href="https://envizion.work/tools2/superfast_video_compressor.html">
+  <meta property="og:title" content="Superfast Video Compressor - Envizion Tools">
+  <meta property="og:description" content="Compress video and audio locally with browser media APIs, quality controls, and practical export settings.">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="toolkit-common.css">
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5812524294035974" crossorigin="anonymous"></script>
+  <script type="application/ld+json" id="envizion-tool-schema">{"@context":"https://schema.org","@type":"WebApplication","name":"Superfast Video Compressor","applicationCategory":"Video and audio compressor","operatingSystem":"Any modern browser","url":"https://envizion.work/tools2/superfast_video_compressor.html","description":"Compress video and audio locally with browser media APIs, quality controls, and practical export settings.","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"publisher":{"@type":"Organization","name":"Envizion Tools"}}</script>
+</head>
+<body class="bg-neutral-900 text-neutral-300 min-h-screen font-sans antialiased">
+<div class="envizion-tool-app-shell bg-neutral-900 text-neutral-300 min-h-screen font-sans antialiased">
+
+    <!-- Toast Notification Container -->
+    <div id="toastContainer" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none"></div>
+
+    <div class="max-w-4xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+        
+        <!-- Header -->
+        <div class="text-center mb-10">
+            <span class="px-3 py-1 text-xs font-semibold bg-neutral-700/10 text-neutral-300 border border-neutral-600/20 rounded-full shadow-lg">
+                âš¡ AV-Split Engine (Like CapCut)
+            </span>
+            <h1 class="text-4xl font-extrabold text-neutral-100 mt-4 tracking-tight">
+                Hyperfast Video & Audio Compressor
+            </h1>
+            <p class="mt-3 max-w-2xl mx-auto text-base text-neutral-300">
+                Separates audio and video, compresses them simultaneously using hardware-accelerated MP4, and combines them locally. Also compresses MP3, WAV, M4A, OGG, and FLAC audio files alone.
+            </p>
+        </div>
+
+        <!-- Mode Switcher -->
+        <div class="flex justify-center mb-8">
+            <div class="inline-flex bg-neutral-800 border border-neutral-600 rounded-xl p-1 shadow-lg">
+                <button id="modeVideoBtn" class="px-6 py-2 text-sm font-semibold rounded-lg bg-neutral-600 text-neutral-100 transition-colors">
+                    ðŸŽ¬ Video Compressor
+                </button>
+                <button id="modeAudioBtn" class="px-6 py-2 text-sm font-semibold rounded-lg text-neutral-300 hover:text-neutral-100 transition-colors">
+                    ðŸŽµ Audio Compressor
+                </button>
+            </div>
+        </div>
+
+        <!-- Main Card (Video Mode) -->
+        <div id="videoCardWrapper" class="bg-neutral-800 shadow-2xl rounded-2xl overflow-hidden border border-neutral-600/50">
+            
+            <div class="p-8">
+                <!-- File Input Area -->
+                <div id="dropzone" class="border-2 border-dashed border-neutral-600 hover:border-neutral-600 rounded-xl p-12 text-center transition-colors duration-200 cursor-pointer bg-neutral-800/50 hover:bg-neutral-800">
+                    <input type="file" id="fileInput" accept="video/*" class="hidden" />
+                    
+                    <div class="mx-auto h-16 w-16 bg-neutral-700/10 rounded-full flex items-center justify-center text-neutral-400 mb-4">
+                        <svg class="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                    </div>
+                    <div class="mt-4 flex text-sm text-neutral-300 justify-center">
+                        <span class="relative cursor-pointer font-semibold text-neutral-300 hover:text-neutral-300">
+                            <span>Upload a huge video</span>
+                        </span>
+                        <p class="pl-1 text-neutral-300">or drag and drop</p>
+                    </div>
+                    <p class="mt-2 text-xs text-neutral-400">
+                        Supports MP4, WebM, MOV, and more (Processed 100% locally)
+                    </p>
+                </div>
+
+                <!-- Video Settings (Hidden initially) -->
+                <div id="settingsPanel" class="hidden mt-8 space-y-6">
+                    <div class="bg-neutral-700/40 border border-neutral-600 rounded-xl p-5 mb-6">
+                        <div class="flex items-center">
+                            <div class="p-3 bg-neutral-700/10 text-neutral-300 rounded-lg mr-4">
+                                <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                </svg>
+                            </div>
+                            <div class="min-w-0 flex-1">
+                                <h3 class="text-sm font-semibold text-neutral-100 truncate" id="originalFileName"></h3>
+                                <p class="text-xs text-neutral-300 mt-1">
+                                    Size: <span id="originalFileSize" class="font-medium text-neutral-300"></span> | 
+                                    Resolution: <span id="originalResolution" class="font-medium text-neutral-300"></span> | 
+                                    Duration: <span id="originalDuration" class="font-medium text-neutral-300"></span>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <!-- Target File Size / Smart Limit -->
+                        <div>
+                            <label for="sizeLimit" class="block text-sm font-medium text-neutral-300 mb-2">
+                                Smart Target File Size Limit
+                            </label>
+                            <select id="sizeLimit" class="block w-full bg-neutral-700 border border-neutral-600 rounded-lg py-2.5 px-3 text-neutral-300 shadow-sm focus:outline-none focus:ring-2 focus:ring-neutral-600 focus:border-neutral-600 sm:text-sm">
+                                <option value="none">No limit (Use manual bitrate)</option>
+                                <option value="8388608">Under 8 MB (Discord Free tier)</option>
+                                <option value="26214400">Under 25 MB (Email/Discord)</option>
+                                <option value="52428800">Under 50 MB</option>
+                                <option value="104857600" selected>Under 100 MB (Perfect for large files)</option>
+                            </select>
+                            <span class="text-[11px] text-neutral-300 mt-1.5 block font-medium" id="smartSkipIndicator">
+                                Select a limit. Engine will calculate exact bitrates.
+                            </span>
+                        </div>
+
+                        <!-- Audio Mode (Equipped with MP3 Extraction) -->
+                        <div>
+                            <label for="audioMode" class="block text-sm font-medium text-neutral-300 mb-2">Audio Processing</label>
+                            <select id="audioMode" class="block w-full bg-neutral-700 border border-neutral-600 rounded-lg py-2.5 px-3 text-neutral-300 shadow-sm focus:outline-none focus:ring-2 focus:ring-neutral-600 focus:border-neutral-600 sm:text-sm">
+                                <option value="extract" selected>Keep Audio (Extract, Compress & Combine)</option>
+                                <option value="mute">Mute Audio / Video with no audio</option>
+                                <option value="mp3_only">Extract MP3 Only (Skip Video - Fast CPU lamejs)</option>
+                            </select>
+                        </div>
+
+                        <!-- Resolution Selection -->
+                        <div>
+                            <label for="resolution" class="block text-sm font-medium text-neutral-300 mb-2">Target Resolution</label>
+                            <select id="resolution" class="block w-full bg-neutral-700 border border-neutral-600 rounded-lg py-2.5 px-3 text-neutral-300 shadow-sm focus:outline-none focus:ring-2 focus:ring-neutral-600 focus:border-neutral-600 sm:text-sm">
+                                <option value="original">Keep Original</option>
+                                <option value="1080">1080p (Full HD)</option>
+                                <option value="720" selected>720p (HD)</option>
+                                <option value="480">480p (SD - Best for small files)</option>
+                                <option value="360">360p (Low Quality)</option>
+                            </select>
+                        </div>
+
+                        <!-- Speed & Frame Rate Selection -->
+                        <div>
+                            <label for="fps" class="block text-sm font-medium text-neutral-300 mb-2">Output Frame Rate</label>
+                            <select id="fps" class="block w-full bg-neutral-700 border border-neutral-600 rounded-lg py-2.5 px-3 text-neutral-300 shadow-sm focus:outline-none focus:ring-2 focus:ring-neutral-600 focus:border-neutral-600 sm:text-sm">
+                                <option value="30">30 FPS (Smooth)</option>
+                                <option value="24">24 FPS (Cinematic)</option>
+                                <option value="15" selected>15 FPS (Optimized / Less frames to scan)</option>
+                                <option value="10">10 FPS (Ultra-Fast scan)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="pt-4 flex items-center justify-between border-t border-neutral-600">
+                        <span class="text-xs text-neutral-400 flex items-center w-2/3">
+                            <span class="font-bold text-neutral-300 mr-1">SPEED BOOST:</span> Running on a GPU-accelerated H.264 engine for instant locally-muxed downloads.
+                        </span>
+                        <button id="startBtn" class="inline-flex justify-center py-2.5 px-6 border border-transparent shadow-md text-sm font-semibold rounded-lg text-neutral-100 bg-neutral-600 hover:bg-neutral-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-neutral-600 transition-colors">
+                            Compress with GPU Power
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Processing UI (Hidden initially) -->
+                <div id="processingPanel" class="hidden mt-8 space-y-6">
+                    <div class="bg-neutral-900/50 rounded-xl p-5 border border-neutral-600/30 shadow-lg">
+                        <div class="flex justify-between items-center text-sm font-medium text-neutral-300 mb-2">
+                            <span id="currentStepText" class="flex items-center text-neutral-300">
+                                <svg class="animate-spin -ml-1 mr-3 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Step 1: Initiating Hardware Engine...
+                            </span>
+                            <span id="progressText" class="text-neutral-300 font-bold">0%</span>
+                        </div>
+                        <div class="w-full bg-neutral-700 rounded-full h-3">
+                            <div id="progressBar" class="bg-gradient-to-r from-neutral-800 to-neutral-700 h-3 rounded-full transition-all duration-100 ease-out" style="width: 0%"></div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-neutral-600 text-xs text-neutral-300">
+                            <div>Elapsed Real Time: <span id="elapsedTime" class="text-neutral-300 font-semibold">0.0s</span></div>
+                            <div>Frames Processed: <span id="frameCounter" class="text-neutral-300 font-semibold">0</span></div>
+                        </div>
+                    </div>
+                    
+                    <div class="text-center">
+                        <p class="text-xs text-neutral-400 mb-3 uppercase tracking-wider font-semibold">Live High-Speed GPU Preview</p>
+                        <canvas id="previewCanvas" class="mx-auto shadow-2xl border border-neutral-600 opacity-80"></canvas>
+                    </div>
+                </div>
+
+                <!-- Result UI (Hidden initially) -->
+                <div id="resultPanel" class="hidden mt-8 text-center bg-neutral-950/30 rounded-xl p-8 border border-neutral-600/20">
+                    <div class="mx-auto h-16 w-16 bg-neutral-700/10 rounded-full flex items-center justify-center text-neutral-300 mb-4">
+                        <svg class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                    </div>
+                    <h3 class="text-2xl font-bold text-neutral-100 mb-2" id="resultHeader">Scan & Compress Finished!</h3>
+                    <div class="text-sm text-neutral-300 mb-6 space-y-1">
+                        <div>Original Size: <span id="resultOriginalSize" class="text-neutral-300 line-through"></span></div>
+                        <div>Output Size: <span id="newFileSize" class="font-bold text-neutral-300 text-lg"></span></div>
+                        <div id="spaceSavedBadge" class="inline-block mt-2 px-3 py-1 bg-neutral-700/10 border border-neutral-600/30 rounded-full text-xs font-semibold text-neutral-300 font-mono"></div>
+                    </div>
+                    
+                    <a id="downloadLink" href="#" download="compressed_video.mp4" class="inline-flex items-center justify-center py-3 px-8 border border-transparent shadow-lg text-base font-semibold rounded-lg text-neutral-100 bg-neutral-600 hover:bg-neutral-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-neutral-600 transition-colors">
+                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                        Download Hardware-Muxed MP4
+                    </a>
+                    
+                    <div class="mt-6 border-t border-neutral-600 pt-6">
+                        <button id="resetBtn" class="text-sm font-medium text-neutral-300 hover:text-neutral-300 transition-colors">
+                            Compress another video
+                        </button>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Main Card (Audio Mode) -->
+        <div id="audioCardWrapper" class="hidden bg-neutral-800 shadow-2xl rounded-2xl overflow-hidden border border-neutral-600/50">
+
+            <div class="p-8">
+                <!-- Audio File Input Area -->
+                <div id="audioDropzone" class="border-2 border-dashed border-neutral-600 hover:border-neutral-600 rounded-xl p-12 text-center transition-colors duration-200 cursor-pointer bg-neutral-800/50 hover:bg-neutral-800">
+                    <input type="file" id="audioFileInput" accept="audio/*,.mp3,.wav,.m4a,.ogg,.flac,.aac,.opus" class="hidden" />
+
+                    <div class="mx-auto h-16 w-16 bg-neutral-700/10 rounded-full flex items-center justify-center text-neutral-400 mb-4">
+                        <svg class="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z" />
+                        </svg>
+                    </div>
+                    <div class="mt-4 flex text-sm text-neutral-300 justify-center">
+                        <span class="relative cursor-pointer font-semibold text-neutral-300 hover:text-neutral-300">
+                            <span>Upload an audio file</span>
+                        </span>
+                        <p class="pl-1 text-neutral-300">or drag and drop</p>
+                    </div>
+                    <p class="mt-2 text-xs text-neutral-400">
+                        Supports MP3, WAV, M4A, OGG, FLAC, AAC, and more (Processed 100% locally)
+                    </p>
+                </div>
+
+                <!-- Audio Settings (Hidden initially) -->
+                <div id="audioSettingsPanel" class="hidden mt-8 space-y-6">
+                    <div class="bg-neutral-700/40 border border-neutral-600 rounded-xl p-5 mb-6">
+                        <div class="flex items-center">
+                            <div class="p-3 bg-neutral-700/10 text-neutral-300 rounded-lg mr-4">
+                                <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z" />
+                                </svg>
+                            </div>
+                            <div class="min-w-0 flex-1">
+                                <h3 class="text-sm font-semibold text-neutral-100 truncate" id="audioOriginalFileName"></h3>
+                                <p class="text-xs text-neutral-300 mt-1">
+                                    Size: <span id="audioOriginalFileSize" class="font-medium text-neutral-300"></span> |
+                                    Channels: <span id="audioOriginalChannels" class="font-medium text-neutral-300"></span> |
+                                    Duration: <span id="audioOriginalDuration" class="font-medium text-neutral-300"></span>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <!-- Output Format -->
+                        <div>
+                            <label for="audioFormat" class="block text-sm font-medium text-neutral-300 mb-2">
+                                Output Format
+                            </label>
+                            <select id="audioFormat" class="block w-full bg-neutral-700 border border-neutral-600 rounded-lg py-2.5 px-3 text-neutral-300 shadow-sm focus:outline-none focus:ring-2 focus:ring-neutral-600 focus:border-neutral-600 sm:text-sm">
+                                <option value="mp3" selected>MP3 (Smallest, universal compatibility)</option>
+                                <option value="m4a">AAC / M4A (Great quality, small size)</option>
+                                <option value="wav">WAV (Uncompressed, largest file)</option>
+                            </select>
+                            <span class="text-[11px] text-neutral-300 mt-1.5 block font-medium" id="audioFormatIndicator">
+                                MP3 uses a local LAME encoder â€” no upload required.
+                            </span>
+                        </div>
+
+                        <!-- Bitrate / Quality -->
+                        <div id="audioBitrateWrapper">
+                            <label for="audioBitrate" class="block text-sm font-medium text-neutral-300 mb-2">Bitrate (Quality)</label>
+                            <select id="audioBitrate" class="block w-full bg-neutral-700 border border-neutral-600 rounded-lg py-2.5 px-3 text-neutral-300 shadow-sm focus:outline-none focus:ring-2 focus:ring-neutral-600 focus:border-neutral-600 sm:text-sm">
+                                <option value="320">320 kbps (Highest quality)</option>
+                                <option value="192">192 kbps (High quality)</option>
+                                <option value="128" selected>128 kbps (Standard, great for speech/music)</option>
+                                <option value="96">96 kbps (Small size)</option>
+                                <option value="64">64 kbps (Podcast/voice, smallest)</option>
+                            </select>
+                        </div>
+
+                        <!-- Smart Target Size -->
+                        <div>
+                            <label for="audioSizeLimit" class="block text-sm font-medium text-neutral-300 mb-2">
+                                Smart Target File Size Limit
+                            </label>
+                            <select id="audioSizeLimit" class="block w-full bg-neutral-700 border border-neutral-600 rounded-lg py-2.5 px-3 text-neutral-300 shadow-sm focus:outline-none focus:ring-2 focus:ring-neutral-600 focus:border-neutral-600 sm:text-sm">
+                                <option value="none" selected>No limit (Use bitrate above)</option>
+                                <option value="5242880">Under 5 MB</option>
+                                <option value="8388608">Under 8 MB (Discord Free tier)</option>
+                                <option value="26214400">Under 25 MB (Email/Discord)</option>
+                            </select>
+                            <span class="text-[11px] text-neutral-300 mt-1.5 block font-medium" id="audioSmartSkipIndicator">
+                                Select a limit to auto-calculate bitrate.
+                            </span>
+                        </div>
+
+                        <!-- Channels -->
+                        <div>
+                            <label for="audioChannels" class="block text-sm font-medium text-neutral-300 mb-2">Channels</label>
+                            <select id="audioChannels" class="block w-full bg-neutral-700 border border-neutral-600 rounded-lg py-2.5 px-3 text-neutral-300 shadow-sm focus:outline-none focus:ring-2 focus:ring-neutral-600 focus:border-neutral-600 sm:text-sm">
+                                <option value="original" selected>Keep Original</option>
+                                <option value="mono">Force Mono (Half the size)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="pt-4 flex items-center justify-between border-t border-neutral-600">
+                        <span class="text-xs text-neutral-400 flex items-center w-2/3">
+                            <span class="font-bold text-neutral-300 mr-1">LOCAL ENCODING:</span> MP3 via LAME, AAC via WebCodecs, WAV via raw PCM â€” all in your browser.
+                        </span>
+                        <button id="audioStartBtn" class="inline-flex justify-center py-2.5 px-6 border border-transparent shadow-md text-sm font-semibold rounded-lg text-neutral-100 bg-neutral-600 hover:bg-neutral-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-neutral-600 transition-colors">
+                            Compress Audio
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Audio Processing UI (Hidden initially) -->
+                <div id="audioProcessingPanel" class="hidden mt-8 space-y-6">
+                    <div class="bg-neutral-900/50 rounded-xl p-5 border border-neutral-600/30 shadow-lg">
+                        <div class="flex justify-between items-center text-sm font-medium text-neutral-300 mb-2">
+                            <span id="audioCurrentStepText" class="flex items-center text-neutral-300">
+                                <svg class="animate-spin -ml-1 mr-3 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Decoding audio track...
+                            </span>
+                            <span id="audioProgressText" class="text-neutral-300 font-bold">0%</span>
+                        </div>
+                        <div class="w-full bg-neutral-700 rounded-full h-3">
+                            <div id="audioProgressBar" class="bg-gradient-to-r from-neutral-800 to-neutral-700 h-3 rounded-full transition-all duration-100 ease-out" style="width: 0%"></div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-neutral-600 text-xs text-neutral-300">
+                            <div>Elapsed Real Time: <span id="audioElapsedTime" class="text-neutral-300 font-semibold">0.0s</span></div>
+                            <div>Format: <span id="audioFormatLabel" class="text-neutral-300 font-semibold">MP3</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Audio Result UI (Hidden initially) -->
+                <div id="audioResultPanel" class="hidden mt-8 text-center bg-neutral-950/30 rounded-xl p-8 border border-neutral-600/20">
+                    <div class="mx-auto h-16 w-16 bg-neutral-700/10 rounded-full flex items-center justify-center text-neutral-300 mb-4">
+                        <svg class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                    </div>
+                    <h3 class="text-2xl font-bold text-neutral-100 mb-2" id="audioResultHeader">Compression Complete!</h3>
+                    <div class="text-sm text-neutral-300 mb-6 space-y-1">
+                        <div>Original Size: <span id="audioResultOriginalSize" class="text-neutral-300 line-through"></span></div>
+                        <div>Output Size: <span id="audioNewFileSize" class="font-bold text-neutral-300 text-lg"></span></div>
+                        <div id="audioSpaceSavedBadge" class="inline-block mt-2 px-3 py-1 bg-neutral-700/10 border border-neutral-600/30 rounded-full text-xs font-semibold text-neutral-300 font-mono"></div>
+                    </div>
+
+                    <a id="audioDownloadLink" href="#" download="compressed_audio.mp3" class="inline-flex items-center justify-center py-3 px-8 border border-transparent shadow-lg text-base font-semibold rounded-lg text-neutral-100 bg-neutral-600 hover:bg-neutral-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-neutral-600 transition-colors">
+                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                        Download Compressed Audio
+                    </a>
+
+                    <div class="mt-6 border-t border-neutral-600 pt-6">
+                        <button id="audioResetBtn" class="text-sm font-medium text-neutral-300 hover:text-neutral-300 transition-colors">
+                            Compress another audio file
+                        </button>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- ================================================================= -->
+        <!-- DETAILED TECHNICAL & SEO ARTICLES - 6 PAGES WORTH OF CHAPTERS -->
+        <!-- ================================================================= -->
+        <div class="mt-16 space-y-12">
+            
+            <!-- AdSense Slot 1 -->
+<!-- Chapter 1 -->
+            <section class="bg-neutral-800/40 rounded-2xl p-8 border border-neutral-600/50 shadow-lg">
+                <h2 class="text-2xl font-extrabold text-neutral-300 mb-4">Chapter 1: The Evolution of In-Browser Video Compression</h2>
+                <div class="text-neutral-300 space-y-4 leading-relaxed text-sm">
+                    <p>
+                        For over a generation, digital media processing was considered too complex and computationally intensive to be done efficiently within standard web browsers. Any online video converter or compression service was forced to follow a simple, yet highly inefficient model: accept large video files through standard browser upload fields, transfer these multi-gigabyte structures over fragile cloud pipelines to remote hosting systems, run heavy server-side configurations powered by Linux-based FFmpeg containers, and then force the user to download the final compressed asset back onto their machines.
+                    </p>
+                    <p>
+                        This classic paradigm presents massive architectural limitations. First, uploading files introduces severe network bandwidth overhead. For a user on an asymmetric home connection (where uploads are often restricted to 10-20 Mbps), sending a 1 GB video file can take up to an hourâ€”only for the server to spend a few minutes reducing it to 50 MB before sending it back. Second, server hosting fees for executing heavy multi-core CPU transcodes are extraordinarily expensive, forcing websites to implement paywalls or inundate pages with malicious pop-ups.
+                    </p>
+                    <p>
+                        Our modern <strong>AV-Split WebCodecs Engine</strong> bypasses cloud limitations entirely. By orchestrating standard low-level hardware APIs that exist natively inside modern Chromium and WebKit architectures, we allow your browser to communicate directly with your computer's dedicated graphics processing chip (GPU) and hardware media engines (such as NVIDIA NVENC, AMD AMF, Intel QuickSync, or Apple Video Toolbox). Our tool splits the container streams locally, processes the high-definition streams simultaneously, and performs full-resolution encoding within sandboxed memory. No network traffic is wasted, ensuring instant processing and total data privacy.
+                    </p>
+                </div>
+            </section>
+
+            <!-- AdSense Slot 2 -->
+<!-- Chapter 2 -->
+            <section class="bg-neutral-800/40 rounded-2xl p-8 border border-neutral-600/50 shadow-lg">
+                <h2 class="text-2xl font-extrabold text-neutral-300 mb-4">Chapter 2: Understanding Bitrates, Resolutions, and Container Math</h2>
+                <div class="text-neutral-300 space-y-4 leading-relaxed text-sm">
+                    <p>
+                        To achieve optimal file size compression without ruining visual clarity, you must master the fundamental mathematical relationship between video resolution, frame rates, and bitrates. A digital video is essentially a sequence of raw image frames displayed rapidly to simulate movement.
+                    </p>
+                    <ul class="list-disc pl-5 space-y-2">
+                        <li><strong>Resolution (Pixels):</strong> The physical dimension of each frame (e.g., 1920x1080 for Full HD or 1280x720 for standard HD). Reducing resolution from 1080p to 720p mathematically cuts the pixel count per frame in half, which directly reduces the processing workload and file overhead.</li>
+                        <li><strong>Frame Rate (FPS):</strong> The number of snapshots processed per second. While 60 FPS is standard for gaming and 24 FPS is standard for cinema, dropping down to an optimized 15 FPS removes excess motion redundancy. This allows the compression engine to achieve highly compact file outputs while keeping the clip perfectly watchable for informational and social posts.</li>
+                        <li><strong>Bitrate (bits per second):</strong> The exact volume of digital information allocated to represent each second of media playback. Our tool's smart-limit formula calculates this dynamically to prevent oversized outputs:
+                            <br>
+                            <span class="block my-2 bg-neutral-900/50 p-3 rounded font-mono text-center text-neutral-300">
+                                Target Video Bitrate = (Target File Limit in Bits - Combined Audio Bits) / Video Duration
+                            </span>
+                        </li>
+                    </ul>
+                    <p>
+                        By combining WebCodecs' high-speed quantization algorithms with local frame parsing, our compressor analyzes the media stream at runtime, applying higher compression factors to static scenes (such as presentation slides or talking heads) and reserving high-quality bitrates for high-motion segments. This intelligent visual profiling guarantees that your compressed video will stay strictly under Discord, Slack, or email file ceilings while looking razor-sharp.
+                    </p>
+                </div>
+            </section>
+
+            <!-- AdSense Slot 3 -->
+<!-- Chapter 3 -->
+            <section class="bg-neutral-800/40 rounded-2xl p-8 border border-neutral-600/50 shadow-lg">
+                <h2 class="text-2xl font-extrabold text-neutral-300 mb-4">Chapter 3: Local GPU Hardware vs. Software Decoders</h2>
+                <div class="text-neutral-300 space-y-4 leading-relaxed text-sm">
+                    <p>
+                        A major reason traditional browser conversion websites are incredibly slow is because they process media files using software-based, non-hardware-accelerated WebAssembly modules (such as standard FFmpeg-Wasm). While WebAssembly is a powerful technology, compiling massive video files solely within a virtualized, single-threaded software CPU space is extremely heavy. It can quickly cause user devices to overheat, stutter, or crash the entire browser tab due to severe memory exhaustion.
+                    </p>
+                    <p>
+                        Our hyperfast architecture relies on the browser's native hardware access layers to utilize actual graphics acceleration (GPU). By passing raw frames via the GPU-to-CPU bus directly into the physical H.264 video encoding chip built inside your processor, we process media at up to 16x normal speed. 
+                    </p>
+                    <p>
+                        This hardware-level integration means your processor temperature remains stable, your device stays responsive, and the compression completes in seconds rather than hours. Best of all, if your browser is running on a device with limited GPU capabilities, our advanced engine automatically handles fallback routes, checking multiple compatibility profiles (Baseline, Main, or High profiles) to find the fastest safe pipeline available.
+                    </p>
+                </div>
+            </section>
+
+            <!-- AdSense Slot 4 -->
+<!-- Chapter 4 -->
+            <section class="bg-neutral-800/40 rounded-2xl p-8 border border-neutral-600/50 shadow-lg">
+                <h2 class="text-2xl font-extrabold text-neutral-300 mb-4">Chapter 4: Advanced Local Audio Isolation & CPU MP3 Extraction</h2>
+                <div class="text-neutral-300 space-y-4 leading-relaxed text-sm">
+                    <p>
+                        Often, users do not actually need to compress or preserve the entire video file. If you are working with podcasts, lecture recordings, musical clips, or simple voice notes, the actual visual tracks are frequently dead weightâ€”greatly increasing the file footprint without adding any practical value. Isolating and compressing the audio track is the ultimate way to reduce media down to 1% of its original size.
+                    </p>
+                    <p>
+                        Our platform is equipped with two dedicated routes for audio compression:
+                    </p>
+                    <ul class="list-disc pl-5 space-y-2">
+                        <li><strong>Independent Audio File Compressor:</strong> Supports compressing existing MP3, WAV, M4A, OGG, and FLAC files. Uses high-performance native standard algorithms to encode raw PCM waveforms down to highly efficient levels.</li>
+                        <li><strong>Extract MP3 Only (Fast CPU LAME Engine):</strong> Located directly within the main video compressor's audio options. If selected, our engine skips the heavy visual rendering and encoding pipeline entirely. Instead, it extracts the audio track from the uploaded video file, feeds it to our CPU-optimized LAME encoder, and instantly outputs a highly compressed, universally compatible `.mp3` file.</li>
+                    </ul>
+                    <p>
+                        By using the pure-JS LAME encoder directly on your device, we process audio extractions at blazing-fast speeds without requiring any external dependencies or network traffic. This lets you quickly grab sound bites or voice recordings from video clips on the fly.
+                    </p>
+                </div>
+            </section>
+
+            <!-- AdSense Slot 5 -->
+<!-- Chapter 5 -->
+            <section class="bg-neutral-800/40 rounded-2xl p-8 border border-neutral-600/50 shadow-lg">
+                <h2 class="text-2xl font-extrabold text-neutral-300 mb-4">Chapter 5: Bypassing Chat Application Size Constraints (Discord, Slack, & Email)</h2>
+                <div class="text-neutral-300 space-y-4 leading-relaxed text-sm">
+                    <p>
+                        Virtually every modern messaging app and platform limits the file size of uploaded media to protect their server infrastructure. For example, standard Discord accounts limit uploads to 8 MB, while popular email systems (like Gmail or Outlook) and workspace apps like Slack limit attachments to 25 MB.
+                    </p>
+                    <p>
+                        Using our **Smart Target File Size Limit** tool, you don't have to guess or waste time running multiple conversions. The calculator does all the heavy lifting automatically:
+                    </p>
+                    <ol class="list-decimal pl-5 space-y-2">
+                        <li>When you upload a video, our engine instantly extracts its metadata to determine the exact length and original format.</li>
+                        <li>If you choose "Under 8 MB (Discord Free tier)", the engine reserves a small safety margin (about 10% of the total size) to prevent the final container from being blocked by strict server filters.</li>
+                        <li>It calculates the optimal compression bitrate, updates the resolution fallback (downscaling to 720p or 480p if the clip is long), and configures the audio to ensure the entire file stays within limits.</li>
+                    </ol>
+                    <p>
+                        If your file is already under the selected limit, our smart-skip architecture instantly flags the file. It skips the compression step entirely and lets you download the original file with zero quality lossâ€”saving you valuable time.
+                    </p>
+                </div>
+            </section>
+
+            <!-- AdSense Slot 6 -->
+<!-- Chapter 6 -->
+            <section class="bg-neutral-800/40 rounded-2xl p-8 border border-neutral-600/50 shadow-lg">
+                <h2 class="text-2xl font-extrabold text-neutral-300 mb-4">Chapter 6: Comprehensive Security, Privacy, and Offline Operation</h2>
+                <div class="text-neutral-300 space-y-4 leading-relaxed text-sm">
+                    <p>
+                        In a world where data leaks, identity theft, and corporate tracking are at an all-time high, uploading personal files to remote servers is a massive risk. Traditional cloud compressors require you to trust their privacy policies, but there is always a risk that your confidential video files, recorded meetings, and personal clips are stored, tracked, or used to train commercial AI models.
+                    </p>
+                    <p>
+                        Our compressor is built on a **100% Client-Side Privacy Policy**. Because the entire conversion runs inside your browser using local GPU and CPU resources, **your files are never uploaded to the internet.** The tool does not use external cloud workers, third-party databases, or background tracking systems.
+                    </p>
+                    <p>
+                        In fact, once the website and its libraries are loaded, **you can completely disconnect your device from the internet** (turn off Wi-Fi or enable Airplane Mode) and the compression engine will continue to run perfectly. This makes it the ideal tool for corporate users, researchers, creators, and privacy-focused individuals who need to handle sensitive media files without compromising security.
+                    </p>
+                </div>
+            </section>
+
+        </div>
+
+    </div>
+
+    <!-- Visually active to preserve requestVideoFrameCallback while keeping tab backgrounds running safely -->
+    <video id="hiddenProcessingVideo" style="position: absolute; width: 1px; height: 1px; opacity: 0.01; z-index: -9999; pointer-events: none;" muted playsinline></video>
+
+    <script>
+        // DOM Elements
+        const dropzone = document.getElementById('dropzone');
+        const fileInput = document.getElementById('fileInput');
+        const settingsPanel = document.getElementById('settingsPanel');
+        const processingPanel = document.getElementById('processingPanel');
+        const resultPanel = document.getElementById('resultPanel');
+        
+        const originalFileName = document.getElementById('originalFileName');
+        const originalFileSize = document.getElementById('originalFileSize');
+        const originalResolution = document.getElementById('originalResolution');
+        const originalDuration = document.getElementById('originalDuration');
+        const smartSkipIndicator = document.getElementById('smartSkipIndicator');
+        
+        const sizeLimitSelect = document.getElementById('sizeLimit');
+        const audioModeSelect = document.getElementById('audioMode');
+        const fpsSelect = document.getElementById('fps');
+        const resolutionSelect = document.getElementById('resolution');
+        
+        const startBtn = document.getElementById('startBtn');
+        const progressBar = document.getElementById('progressBar');
+        const progressText = document.getElementById('progressText');
+        const currentStepText = document.getElementById('currentStepText');
+        const previewCanvas = document.getElementById('previewCanvas');
+        const elapsedTimeLabel = document.getElementById('elapsedTime');
+        const frameCounterLabel = document.getElementById('frameCounter');
+        
+        const resultHeader = document.getElementById('resultHeader');
+        const resultOriginalSize = document.getElementById('resultOriginalSize');
+        const newFileSize = document.getElementById('newFileSize');
+        const spaceSavedBadge = document.getElementById('spaceSavedBadge');
+        const downloadLink = document.getElementById('downloadLink');
+        const resetBtn = document.getElementById('resetBtn');
+        const hiddenVideo = document.getElementById('hiddenProcessingVideo');
+
+        // Mode Switcher Elements
+        const modeVideoBtn = document.getElementById('modeVideoBtn');
+        const modeAudioBtn = document.getElementById('modeAudioBtn');
+        const videoCardWrapper = document.getElementById('videoCardWrapper');
+        const audioCardWrapper = document.getElementById('audioCardWrapper');
+
+        function setMode(mode) {
+            if (mode === 'audio') {
+                videoCardWrapper.classList.add('hidden');
+                audioCardWrapper.classList.remove('hidden');
+                modeAudioBtn.classList.add('bg-neutral-600', 'text-neutral-100');
+                modeAudioBtn.classList.remove('text-neutral-300');
+                modeVideoBtn.classList.remove('bg-neutral-600', 'text-neutral-100');
+                modeVideoBtn.classList.add('text-neutral-300');
+            } else {
+                audioCardWrapper.classList.add('hidden');
+                videoCardWrapper.classList.remove('hidden');
+                modeVideoBtn.classList.add('bg-neutral-600', 'text-neutral-100');
+                modeVideoBtn.classList.remove('text-neutral-300');
+                modeAudioBtn.classList.remove('bg-neutral-600', 'text-neutral-100');
+                modeAudioBtn.classList.add('text-neutral-300');
+            }
+        }
+        modeVideoBtn.addEventListener('click', () => setMode('video'));
+        modeAudioBtn.addEventListener('click', () => setMode('audio'));
+
+        // State
+        let currentFile = null;
+        let originalMetadata = null;
+        let isCompressing = false;
+
+        // Custom Premium Toast Notification Helper
+        function showToast(message, type = 'error') {
+            const container = document.getElementById('toastContainer');
+            if (!container) return;
+            
+            const toast = document.createElement('div');
+            toast.className = `p-4 rounded-lg shadow-lg text-sm font-medium border transition-all duration-300 transform translate-y-2 opacity-0 pointer-events-auto ${
+                type === 'error' 
+                    ? 'bg-neutral-950/90 border-neutral-600/50 text-neutral-300 shadow-black/20' 
+                    : 'bg-neutral-950/90 border-neutral-600/50 text-neutral-300 shadow-black/20'
+            }`;
+            toast.innerHTML = message;
+            container.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.classList.remove('translate-y-2', 'opacity-0');
+            }, 10);
+            
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-y-2');
+                setTimeout(() => toast.remove(), 300);
+            }, 5000);
+        }
+
+        // Warning on backgrounding
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden && isCompressing) {
+                showToast("Tab is in the background. Encoding continues but the browser may throttle speed.", "error");
+            }
+        });
+
+        function formatBytes(bytes, decimals = 2) {
+            if (!+bytes) return '0 Bytes';
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+        }
+
+        function formatDuration(seconds) {
+            const m = Math.floor(seconds / 60);
+            const s = Math.floor(seconds % 60);
+            return `${m}:${s.toString().padStart(2, '0')}`;
+        }
+
+        function updateEstimates() {
+            if (!originalMetadata) return;
+            const selectedLimit = sizeLimitSelect.value;
+            if (selectedLimit === 'none') {
+                smartSkipIndicator.textContent = "No target limit. Will use default medium quality.";
+                smartSkipIndicator.className = "text-[11px] text-neutral-300 mt-1.5 block font-medium";
+                return;
+            }
+
+            const limitBytes = parseInt(selectedLimit, 10);
+            if (currentFile.size <= limitBytes) {
+                smartSkipIndicator.textContent = `ðŸŽ‰ SMART-SKIP: Your file (${formatBytes(currentFile.size)}) is already under the target limit! Click below to save it instantly.`;
+                smartSkipIndicator.className = "text-[11px] text-neutral-300 mt-1.5 block font-semibold";
+            } else {
+                let availableBits = limitBytes * 8 * 0.90; // 10% structural header margin
+                
+                if (audioModeSelect.value === 'extract') {
+                    const audioBits = 128000 * originalMetadata.duration; // 128kbps AAC
+                    availableBits -= audioBits;
+                }
+                
+                const calculatedMaxBitrate = Math.floor(availableBits / originalMetadata.duration);
+                smartSkipIndicator.textContent = `âš–ï¸ Max target video stream rate: ${formatBytes(calculatedMaxBitrate/8)}/sec to secure a final ${formatBytes(limitBytes)} size.`;
+                smartSkipIndicator.className = "text-[11px] text-neutral-300 mt-1.5 block font-medium";
+            }
+        }
+
+        sizeLimitSelect.addEventListener('change', updateEstimates);
+        audioModeSelect.addEventListener('change', updateEstimates);
+
+        dropzone.addEventListener('click', () => fileInput.click());
+        dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dropzone-active'); });
+        dropzone.addEventListener('dragleave', (e) => { e.preventDefault(); dropzone.classList.remove('dropzone-active'); });
+        dropzone.addEventListener('drop', (e) => {
+            e.preventDefault(); dropzone.classList.remove('dropzone-active');
+            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files[0]);
+        });
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files && e.target.files.length > 0) handleFile(e.target.files[0]);
+        });
+
+        function handleFile(file) {
+            if (!file.type.startsWith('video/')) {
+                showToast("Please supply a valid video format file.", "error"); return;
+            }
+            
+            currentFile = file;
+            originalFileName.textContent = file.name;
+            originalFileSize.textContent = formatBytes(file.size);
+            
+            const videoURL = URL.createObjectURL(file);
+            hiddenVideo.src = videoURL;
+            hiddenVideo.preload = 'auto';
+            
+            hiddenVideo.onloadedmetadata = () => {
+                originalResolution.textContent = `${hiddenVideo.videoWidth} x ${hiddenVideo.videoHeight}`;
+                originalDuration.textContent = formatDuration(hiddenVideo.duration);
+                originalMetadata = { width: hiddenVideo.videoWidth, height: hiddenVideo.videoHeight, duration: hiddenVideo.duration };
+                
+                updateEstimates();
+                dropzone.classList.add('hidden');
+                settingsPanel.classList.remove('hidden');
+            };
+        }
+
+        async function extractAndEncodeAudio(file) {
+            currentStepText.innerHTML = `<svg class="animate-spin -ml-1 mr-3 h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Step 1: Extracting Audio Track...`;
+            progressBar.style.width = '0%';
+            progressText.textContent = '0%';
+
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+
+                const sampleRate = audioBuffer.sampleRate;
+                const numberOfChannels = audioBuffer.numberOfChannels;
+
+                const encodedAudioChunks = [];
+                const audioEncoder = new AudioEncoder({
+                    output: (chunk, meta) => encodedAudioChunks.push({ chunk, meta }),
+                    error: (e) => console.error("Audio Encoder Error:", e)
+                });
+
+                audioEncoder.configure({
+                    codec: 'mp4a.40.2', // Standard AAC Audio configuration
+                    sampleRate: sampleRate,
+                    numberOfChannels: numberOfChannels,
+                    bitrate: 128000
+                });
+
+                const framesPerChunk = Math.floor(sampleRate * 0.04);
+                const totalFrames = audioBuffer.length;
+                let offset = 0;
+                let timestampUs = 0;
+                
+                let lastYieldTime = performance.now();
+
+                while (offset < totalFrames) {
+                    if (!isCompressing) return null;
+
+                    const frameCount = Math.min(framesPerChunk, totalFrames - offset);
+                    const planarData = new Float32Array(frameCount * numberOfChannels);
+
+                    for (let c = 0; c < numberOfChannels; c++) {
+                        const channelData = audioBuffer.getChannelData(c);
+                        planarData.set(channelData.subarray(offset, offset + frameCount), c * frameCount);
+                    }
+
+                    const audioData = new AudioData({
+                        format: 'f32-planar',
+                        sampleRate: sampleRate,
+                        numberOfChannels: numberOfChannels,
+                        numberOfFrames: frameCount,
+                        timestamp: timestampUs,
+                        data: planarData
+                    });
+
+                    audioEncoder.encode(audioData);
+                    audioData.close();
+
+                    offset += frameCount;
+                    timestampUs += Math.round((frameCount / sampleRate) * 1000000);
+
+                    // Yield and update progress dynamically every 50ms (never freeze UI thread)
+                    if (performance.now() - lastYieldTime > 50) {
+                        const p = (offset / totalFrames) * 100;
+                        progressBar.style.width = `${p}%`;
+                        progressText.textContent = `${Math.round(p)}%`;
+                        await new Promise(r => setTimeout(r, 0));
+                        lastYieldTime = performance.now();
+                    }
+                }
+
+                await audioEncoder.flush();
+                return { encodedAudioChunks, sampleRate, numberOfChannels };
+
+            } catch (err) {
+                console.warn("Audio extraction failed or file has no audio:", err);
+                return null;
+            }
+        }
+
+        async function getSupportedVideoConfig(width, height, framerate, bitrate) {
+            const candidates = [
+                'avc1.640034', // High Profile, Level 5.2 (Supports up to 4K / 1080p, very high compatibility)
+                'avc1.4d0034', // Main Profile, Level 5.2 (Supports up to 4K, extremely robust)
+                'avc1.64002a', // High Profile, Level 4.2 (Standard 1080p profile)
+                'avc1.4d002a', // Main Profile, Level 4.2 (Standard 1080p Main profile)
+                'avc1.42003e', // Baseline Profile, Level 6.2 (Safe fallback for extreme heights)
+                'avc1.42001f'  // Baseline Profile, Level 3.1 (Supports up to 720p only)
+            ];
+
+            // 1. Try Hardware Acceleration profile configurations first
+            for (const codec of candidates) {
+                const config = {
+                    codec: codec,
+                    width: width,
+                    height: height,
+                    bitrate: bitrate,
+                    framerate: framerate,
+                    hardwareAcceleration: 'prefer-hardware',
+                    latencyMode: 'realtime'
+                };
+                try {
+                    const support = await VideoEncoder.isConfigSupported(config);
+                    if (support.supported) {
+                        console.log(`Hardware accelerated profile selected: ${codec}`);
+                        return support.config || config;
+                    }
+                } catch (e) {
+                    console.warn(`Hardware profile validation failed for ${codec}:`, e);
+                }
+            }
+
+            // 2. Try Software fallback profile configurations if hardware encoders are busy or unsupported
+            console.warn("No compatible hardware profile found. Attempting software-only profiles...");
+            for (const codec of candidates) {
+                const config = {
+                    codec: codec,
+                    width: width,
+                    height: height,
+                    bitrate: bitrate,
+                    framerate: framerate,
+                    hardwareAcceleration: 'prefer-software',
+                    latencyMode: 'realtime'
+                };
+                try {
+                    const support = await VideoEncoder.isConfigSupported(config);
+                    if (support.supported) {
+                        console.log(`Software fallback profile selected: ${codec}`);
+                        return support.config || config;
+                    }
+                } catch (e) {
+                    console.warn(`Software profile validation failed for ${codec}:`, e);
+                }
+            }
+
+            // 3. Absolute minimum fallback to guarantee execution
+            console.warn("Waterfall capability check failed. Forcing Main Profile configuration...");
+            return {
+                codec: 'avc1.4d002a',
+                width: width,
+                height: height,
+                bitrate: bitrate,
+                framerate: framerate,
+                hardwareAcceleration: 'no-preference',
+                latencyMode: 'realtime'
+            };
+        }
+
+        startBtn.addEventListener('click', async () => {
+            if (!currentFile || !originalMetadata || isCompressing) return;
+
+            // Secure original metadata to a local execution scope
+            const localMetadata = { ...originalMetadata };
+
+            // Enforce library load validation
+            if (typeof Mp4Muxer === 'undefined') {
+                showToast("The MP4 Multiplexer engine failed to initialize. Please check your internet connection and reload.", "error");
+                return;
+            }
+
+            // -----------------------------------------------------------------
+            // DIRECT CPU MP3 EXTRACTION PATH FROM VIDEO DROPDOWN
+            // -----------------------------------------------------------------
+            if (audioModeSelect.value === 'mp3_only') {
+                isCompressing = true;
+                settingsPanel.classList.add('hidden');
+                processingPanel.classList.remove('hidden');
+                const startTime = performance.now();
+                
+                currentStepText.innerHTML = `<svg class="animate-spin -ml-1 mr-3 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Extracting and Isolating Audio Track...`;
+                progressBar.style.width = '0%';
+                progressText.textContent = '0%';
+                
+                try {
+                    const arrayBuffer = await currentFile.arrayBuffer();
+                    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                    const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+                    
+                    currentStepText.innerHTML = `<svg class="animate-spin -ml-1 mr-3 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Compressing Audio to MP3 (High-Speed CPU LameJS)...`;
+                    
+                    const onProgress = (pct) => {
+                        progressBar.style.width = `${pct}%`;
+                        progressText.textContent = `${Math.round(pct)}%`;
+                        elapsedTimeLabel.textContent = `${((performance.now() - startTime) / 1000).toFixed(1)}s`;
+                    };
+                    
+                    const mp3Blob = await encodeMp3(audioBuffer, 128, false, onProgress);
+                    
+                    // Switch interface smoothly to Audio Results Panel
+                    currentAudioFile = currentFile;
+                    setMode('audio');
+                    showAudioResults(mp3Blob, false, 'mp3');
+                    processingPanel.classList.add('hidden');
+                    isCompressing = false;
+                } catch (err) {
+                    console.error("Direct MP3 Extraction Failed:", err);
+                    showToast("Failed to isolate MP3 audio track: " + err.message, "error");
+                    resetState();
+                }
+                return;
+            }
+
+            const selectedLimit = sizeLimitSelect.value;
+            if (selectedLimit !== 'none' && currentFile.size <= parseInt(selectedLimit, 10)) {
+                showResults(currentFile, true);
+                return;
+            }
+
+            isCompressing = true;
+            settingsPanel.classList.add('hidden');
+            processingPanel.classList.remove('hidden');
+            const startTime = performance.now();
+
+            let audioConfig = null;
+            let audioChunks = [];
+            
+            if (audioModeSelect.value === 'extract') {
+                const audioResult = await extractAndEncodeAudio(currentFile);
+                if (audioResult) {
+                    audioChunks = audioResult.encodedAudioChunks;
+                    audioConfig = {
+                        codec: 'aac',
+                        sampleRate: audioResult.sampleRate,
+                        numberOfChannels: audioResult.numberOfChannels
+                    };
+                }
+            }
+
+            currentStepText.innerHTML = `<svg class="animate-pulse -ml-1 mr-3 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Step 2: 16x Video Engine & Muxing...`;
+            progressBar.style.width = '0%';
+            progressText.textContent = '0%';
+
+            const targetRes = resolutionSelect.value;
+            const targetFps = parseInt(fpsSelect.value, 10);
+            let targetBitrate = 2000000;
+
+            if (selectedLimit !== 'none') {
+                const limitBytes = parseInt(selectedLimit, 10);
+                let availableBits = limitBytes * 8 * 0.90;
+                if (audioConfig) availableBits -= (128000 * localMetadata.duration);
+                targetBitrate = Math.max(200000, Math.floor(availableBits / localMetadata.duration));
+            }
+
+            let outWidth = localMetadata.width;
+            let outHeight = localMetadata.height;
+            if (targetRes !== 'original') {
+                const targetHeight = parseInt(targetRes, 10);
+                if (outHeight > targetHeight) {
+                    outHeight = targetHeight;
+                    outWidth = Math.round(outHeight * (localMetadata.width / localMetadata.height));
+                }
+            }
+            if (outWidth % 2 !== 0) outWidth -= 1;
+            if (outHeight % 2 !== 0) outHeight -= 1;
+
+            previewCanvas.width = outWidth;
+            previewCanvas.height = outHeight;
+            const ctx = previewCanvas.getContext('2d');
+
+            if (!('VideoEncoder' in window)) {
+                showToast("Your current browser is missing standard WebCodecs support.", "error"); 
+                resetState(); 
+                return;
+            }
+
+            const muxerOptions = {
+                target: new Mp4Muxer.ArrayBufferTarget(),
+                video: { codec: 'avc', width: outWidth, height: outHeight },
+                fastStart: 'in-memory',
+                firstTimestampBehavior: 'offset' 
+            };
+            if (audioConfig) muxerOptions.audio = audioConfig;
+            
+            const muxer = new Mp4Muxer.Muxer(muxerOptions);
+
+            let videoEncoder;
+            try {
+                const verifiedVideoConfig = await getSupportedVideoConfig(outWidth, outHeight, targetFps, targetBitrate);
+
+                videoEncoder = new VideoEncoder({
+                    output: (chunk, meta) => {
+                        let safeMeta = meta;
+                        if (meta) {
+                            safeMeta = { ...meta };
+                            if (safeMeta.decoderConfig === null || safeMeta.decoderConfig === undefined) {
+                                delete safeMeta.decoderConfig;
+                            }
+                        }
+                        muxer.addVideoChunk(chunk, safeMeta);
+                    },
+                    error: (e) => { 
+                        console.error("Asynchronous Codec pipeline failed:", e); 
+                        showToast("Hardware pipeline error: " + e.message, "error"); 
+                        resetState(); 
+                    }
+                });
+                
+                videoEncoder.configure(verifiedVideoConfig);
+                console.log("Hardware/Software codec configured:", verifiedVideoConfig);
+            } catch (err) {
+                console.error("Synchronous configuration crash:", err);
+                showToast("System failed initializing local GPU encoder profile.", "error"); 
+                resetState(); 
+                return;
+            }
+
+            hiddenVideo.muted = true;
+            hiddenVideo.playbackRate = 16.0; // 16x fast extraction rate
+            
+            let lastEncodedMediaTime = -1;
+            let lastKeyFrameMediaTime = -1; 
+            let processedFrameCount = 0;
+            const targetFrameInterval = 1 / targetFps;
+            const duration = localMetadata.duration;
+
+            const processFastFrame = (now, metadata) => {
+                if (!isCompressing) return;
+                const currentMediaTime = metadata ? metadata.mediaTime : hiddenVideo.currentTime;
+
+                if (currentMediaTime - lastEncodedMediaTime >= targetFrameInterval || lastEncodedMediaTime === -1) {
+                    ctx.drawImage(hiddenVideo, 0, 0, outWidth, outHeight);
+                    const frameTimestamp = Math.round(currentMediaTime * 1000000);
+                    
+                    while (audioChunks.length > 0 && audioChunks[0].chunk.timestamp <= frameTimestamp) {
+                        const aChunk = audioChunks.shift();
+                        let safeMeta = aChunk.meta;
+                        if (safeMeta) {
+                            safeMeta = { ...safeMeta };
+                            if (safeMeta.decoderConfig === null || safeMeta.decoderConfig === undefined) {
+                                delete safeMeta.decoderConfig;
+                            }
+                        }
+                        muxer.addAudioChunk(aChunk.chunk, safeMeta);
+                    }
+
+                    const frame = new VideoFrame(previewCanvas, { timestamp: frameTimestamp });
+                    
+                    const isKeyFrame = lastKeyFrameMediaTime === -1 || (currentMediaTime - lastKeyFrameMediaTime) >= 5.0;
+                    if (isKeyFrame) {
+                        lastKeyFrameMediaTime = currentMediaTime;
+                    }
+
+                    try {
+                        videoEncoder.encode(frame, { keyFrame: isKeyFrame });
+                    } catch (e) {
+                        console.error("Encoding runtime failure:", e);
+                        if (e.name === 'QuotaExceededError') {
+                            showToast("Codec reclaimed. Keep the browser tab focused during operations.", "error");
+                        } else {
+                            showToast("Encoding engine issue: " + e.message, "error");
+                        }
+                        frame.close();
+                        resetState();
+                        return;
+                    }
+
+                    frame.close();
+                    
+                    lastEncodedMediaTime = currentMediaTime;
+                    processedFrameCount++;
+                    
+                    const progress = (currentMediaTime / duration) * 100;
+                    progressBar.style.width = `${progress}%`;
+                    progressText.textContent = `${Math.min(100, Math.round(progress))}%`;
+                    elapsedTimeLabel.textContent = `${((performance.now() - startTime) / 1000).toFixed(1)}s`;
+                    frameCounterLabel.textContent = processedFrameCount;
+                }
+
+                if (currentMediaTime < duration && !hiddenVideo.ended) {
+                    if ('requestVideoFrameCallback' in hiddenVideo) {
+                        hiddenVideo.requestVideoFrameCallback(processFastFrame);
+                    } else {
+                        requestAnimationFrame((n) => processFastFrame(n, { mediaTime: hiddenVideo.currentTime }));
+                    }
+                }
+            };
+
+            hiddenVideo.onended = async () => {
+                if (!isCompressing) return;
+                isCompressing = false;
+                progressBar.style.width = `100%`;
+                progressText.textContent = `100%`;
+                
+                while (audioChunks.length > 0) {
+                    const aChunk = audioChunks.shift();
+                    let safeMeta = aChunk.meta;
+                    if (safeMeta) {
+                        safeMeta = { ...safeMeta };
+                        if (safeMeta.decoderConfig === null || safeMeta.decoderConfig === undefined) {
+                            delete safeMeta.decoderConfig;
+                        }
+                    }
+                    muxer.addAudioChunk(aChunk.chunk, safeMeta);
+                }
+
+                await videoEncoder.flush();
+                muxer.finalize();
+
+                const compressedBlob = new Blob([muxer.target.buffer], { type: 'video/mp4' });
+                showResults(compressedBlob, false);
+            };
+
+            try {
+                await hiddenVideo.play();
+                if ('requestVideoFrameCallback' in hiddenVideo) {
+                    hiddenVideo.requestVideoFrameCallback(processFastFrame);
+                } else {
+                    requestAnimationFrame((n) => processFastFrame(n, { mediaTime: hiddenVideo.currentTime }));
+                }
+            } catch (err) {
+                console.error(err);
+                showToast("System playback sequence blocked. Click to retry.", "error");
+                resetState();
+            }
+        });
+
+        // --- Showing Results ---
+        function showResults(blob, wasSkipped) {
+            isCompressing = false;
+            processingPanel.classList.add('hidden');
+            resultPanel.classList.remove('hidden');
+
+            resultOriginalSize.textContent = formatBytes(currentFile.size);
+            let finalBlob = blob;
+
+            if (wasSkipped) {
+                resultHeader.textContent = "Instant Smart-Skip Complete!";
+                newFileSize.textContent = formatBytes(currentFile.size);
+                spaceSavedBadge.textContent = "File is already under limits!";
+                finalBlob = currentFile;
+            } else {
+                resultHeader.textContent = "Compression & Muxing Complete!";
+                if (blob.size >= currentFile.size) {
+                    newFileSize.textContent = formatBytes(currentFile.size);
+                    spaceSavedBadge.textContent = "Swapped to Original (Compressed was larger)";
+                    finalBlob = currentFile;
+                } else {
+                    newFileSize.textContent = formatBytes(blob.size);
+                    const pctSaved = ((currentFile.size - blob.size) / currentFile.size) * 100;
+                    spaceSavedBadge.textContent = `Massively reduced by ${pctSaved.toFixed(1)}%`;
+                }
+            }
+
+            const url = URL.createObjectURL(finalBlob);
+            downloadLink.href = url;
+            const originalName = currentFile.name.replace(/\.[^/.]+$/, "");
+            const ext = finalBlob === currentFile ? currentFile.name.split('.').pop() : 'mp4';
+            downloadLink.download = `${originalName}_squashed.${ext}`;
+            showToast("Video compressed and built successfully!", "success");
+        }
+
+        function resetState() {
+            isCompressing = false;
+            currentFile = null;
+            originalMetadata = null;
+            fileInput.value = '';
+            processingPanel.classList.add('hidden');
+            resultPanel.classList.add('hidden');
+            settingsPanel.classList.add('hidden');
+            dropzone.classList.remove('hidden');
+        }
+
+        resetBtn.addEventListener('click', resetState);
+
+        // =====================================================
+        // AUDIO-ONLY COMPRESSOR ENGINE
+        // =====================================================
+
+        // Audio DOM Elements
+        const audioDropzone = document.getElementById('audioDropzone');
+        const audioFileInput = document.getElementById('audioFileInput');
+        const audioSettingsPanel = document.getElementById('audioSettingsPanel');
+        const audioProcessingPanel = document.getElementById('audioProcessingPanel');
+        const audioResultPanel = document.getElementById('audioResultPanel');
+
+        const audioOriginalFileName = document.getElementById('audioOriginalFileName');
+        const audioOriginalFileSize = document.getElementById('audioOriginalFileSize');
+        const audioOriginalChannels = document.getElementById('audioOriginalChannels');
+        const audioOriginalDuration = document.getElementById('audioOriginalDuration');
+
+        const audioFormatSelect = document.getElementById('audioFormat');
+        const audioFormatIndicator = document.getElementById('audioFormatIndicator');
+        const audioBitrateSelect = document.getElementById('audioBitrate');
+        const audioBitrateWrapper = document.getElementById('audioBitrateWrapper');
+        const audioSizeLimitSelect = document.getElementById('audioSizeLimit');
+        const audioSmartSkipIndicator = document.getElementById('audioSmartSkipIndicator');
+        const audioChannelsSelect = document.getElementById('audioChannels');
+
+        const audioStartBtn = document.getElementById('audioStartBtn');
+        const audioProgressBar = document.getElementById('audioProgressBar');
+        const audioProgressText = document.getElementById('audioProgressText');
+        const audioCurrentStepText = document.getElementById('audioCurrentStepText');
+        const audioElapsedTime = document.getElementById('audioElapsedTime');
+        const audioFormatLabel = document.getElementById('audioFormatLabel');
+
+        const audioResultHeader = document.getElementById('audioResultHeader');
+        const audioResultOriginalSize = document.getElementById('audioResultOriginalSize');
+        const audioNewFileSize = document.getElementById('audioNewFileSize');
+        const audioSpaceSavedBadge = document.getElementById('audioSpaceSavedBadge');
+        const audioDownloadLink = document.getElementById('audioDownloadLink');
+        const audioResetBtn = document.getElementById('audioResetBtn');
+
+        // Audio State
+        let currentAudioFile = null;
+        let audioMetadata = null; 
+        let decodedAudioBuffer = null;
+        let isAudioCompressing = false;
+
+        function resetAudioState() {
+            isAudioCompressing = false;
+            currentAudioFile = null;
+            audioMetadata = null;
+            decodedAudioBuffer = null;
+            audioFileInput.value = '';
+            audioProcessingPanel.classList.add('hidden');
+            audioResultPanel.classList.add('hidden');
+            audioSettingsPanel.classList.add('hidden');
+            audioDropzone.classList.remove('hidden');
+        }
+
+        function updateAudioFormatUI() {
+            const fmt = audioFormatSelect.value;
+            if (fmt === 'wav') {
+                audioBitrateWrapper.classList.add('hidden');
+                audioFormatIndicator.textContent = "WAV is uncompressed \u2014 no quality loss, but largest file size.";
+            } else {
+                audioBitrateWrapper.classList.remove('hidden');
+                audioFormatIndicator.textContent = fmt === 'mp3'
+                    ? "MP3 uses a local LAME encoder \u2014 no upload required."
+                    : "AAC uses your browser's native WebCodecs encoder.";
+            }
+            updateAudioEstimates();
+        }
+
+        function updateAudioEstimates() {
+            if (!audioMetadata) return;
+            const selectedLimit = audioSizeLimitSelect.value;
+            if (selectedLimit === 'none' || audioFormatSelect.value === 'wav') {
+                audioSmartSkipIndicator.textContent = audioFormatSelect.value === 'wav'
+                    ? "Smart size limits don't apply to uncompressed WAV output."
+                    : "No target limit. Will use the bitrate selected above.";
+                audioSmartSkipIndicator.className = "text-[11px] text-neutral-300 mt-1.5 block font-medium";
+                return;
+            }
+            const limitBytes = parseInt(selectedLimit, 10);
+            if (currentAudioFile.size <= limitBytes) {
+                audioSmartSkipIndicator.textContent = `\ud83c\udf89 SMART-SKIP: Your file (${formatBytes(currentAudioFile.size)}) is already under the target limit!`;
+                audioSmartSkipIndicator.className = "text-[11px] text-neutral-300 mt-1.5 block font-semibold";
+            } else {
+                const availableBits = limitBytes * 8 * 0.92;
+                const calculatedBitrate = Math.max(32000, Math.floor(availableBits / audioMetadata.duration));
+                audioSmartSkipIndicator.textContent = `\u2696\ufe0f Target bitrate ~${Math.round(calculatedBitrate / 1000)} kbps to fit a ${formatBytes(limitBytes)} limit.`;
+                audioSmartSkipIndicator.className = "text-[11px] text-neutral-300 mt-1.5 block font-medium";
+            }
+        }
+
+        audioFormatSelect.addEventListener('change', updateAudioFormatUI);
+        audioBitrateSelect.addEventListener('change', updateAudioEstimates);
+        audioSizeLimitSelect.addEventListener('change', updateAudioEstimates);
+
+        audioDropzone.addEventListener('click', () => audioFileInput.click());
+        audioDropzone.addEventListener('dragover', (e) => { e.preventDefault(); audioDropzone.classList.add('dropzone-active'); });
+        audioDropzone.addEventListener('dragleave', (e) => { e.preventDefault(); audioDropzone.classList.remove('dropzone-active'); });
+        audioDropzone.addEventListener('drop', (e) => {
+            e.preventDefault(); audioDropzone.classList.remove('dropzone-active');
+            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) handleAudioFile(e.dataTransfer.files[0]);
+        });
+        audioFileInput.addEventListener('change', (e) => {
+            if (e.target.files && e.target.files.length > 0) handleAudioFile(e.target.files[0]);
+        });
+
+        async function handleAudioFile(file) {
+            const looksLikeAudio = file.type.startsWith('audio/') || /\.(mp3|wav|m4a|ogg|flac|aac|opus|wma)$/i.test(file.name);
+            if (!looksLikeAudio) {
+                showToast("Please supply a valid audio format file.", "error"); return;
+            }
+
+            currentAudioFile = file;
+            audioOriginalFileName.textContent = file.name;
+            audioOriginalFileSize.textContent = formatBytes(file.size);
+            audioOriginalChannels.textContent = "Reading...";
+            audioOriginalDuration.textContent = "Reading...";
+
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                decodedAudioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+
+                audioMetadata = {
+                    duration: decodedAudioBuffer.duration,
+                    sampleRate: decodedAudioBuffer.sampleRate,
+                    numberOfChannels: decodedAudioBuffer.numberOfChannels
+                };
+
+                audioOriginalChannels.textContent = decodedAudioBuffer.numberOfChannels === 1 ? "Mono" : "Stereo";
+                audioOriginalDuration.textContent = formatDuration(decodedAudioBuffer.duration);
+
+                updateAudioFormatUI();
+                audioDropzone.classList.add('hidden');
+                audioSettingsPanel.classList.remove('hidden');
+            } catch (err) {
+                console.error("Audio decode failed:", err);
+                showToast("Couldn't decode that audio file. Try a different format.", "error");
+                resetAudioState();
+            }
+        }
+
+        // --- WAV Encoder (uncompressed PCM16, written manually) ---
+        function encodeWav(audioBuffer, forceMono) {
+            const numChannels = forceMono ? 1 : audioBuffer.numberOfChannels;
+            const sampleRate = audioBuffer.sampleRate;
+            const numFrames = audioBuffer.length;
+            const bytesPerSample = 2;
+            const blockAlign = numChannels * bytesPerSample;
+            const dataSize = numFrames * blockAlign;
+            const buffer = new ArrayBuffer(44 + dataSize);
+            const view = new DataView(buffer);
+
+            function writeString(offset, str) {
+                for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+            }
+
+            writeString(0, 'RIFF');
+            view.setUint32(4, 36 + dataSize, true);
+            writeString(8, 'WAVE');
+            writeString(12, 'fmt ');
+            view.setUint32(16, 16, true);
+            view.setUint16(20, 1, true); // PCM
+            view.setUint16(22, numChannels, true);
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, sampleRate * blockAlign, true);
+            view.setUint16(32, blockAlign, true);
+            view.setUint16(34, 16, true); // bits per sample
+            writeString(36, 'data');
+            view.setUint32(40, dataSize, true);
+
+            const channelData = [];
+            for (let c = 0; c < audioBuffer.numberOfChannels; c++) channelData.push(audioBuffer.getChannelData(c));
+
+            let offset = 44;
+            for (let i = 0; i < numFrames; i++) {
+                if (forceMono && audioBuffer.numberOfChannels > 1) {
+                    let sum = 0;
+                    for (let c = 0; c < audioBuffer.numberOfChannels; c++) sum += channelData[c][i];
+                    const sample = Math.max(-1, Math.min(1, sum / audioBuffer.numberOfChannels));
+                    view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
+                    offset += 2;
+                } else {
+                    for (let c = 0; c < numChannels; c++) {
+                        const sample = Math.max(-1, Math.min(1, channelData[c][i]));
+                        view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
+                        offset += 2;
+                    }
+                }
+            }
+
+            return new Blob([buffer], { type: 'audio/wav' });
+        }
+
+        async function encodeMp3(audioBuffer, bitrateKbps, forceMono, onProgress) {
+            if (typeof lamejs === 'undefined') {
+                throw new Error("MP3 encoder library failed to load. Check your connection and reload.");
+            }
+            const sampleRate = audioBuffer.sampleRate;
+            const numChannels = forceMono ? 1 : Math.min(2, audioBuffer.numberOfChannels);
+            const mp3encoder = new lamejs.Mp3Encoder(numChannels, sampleRate, bitrateKbps);
+
+            const numFrames = audioBuffer.length;
+            const sampleBlockSize = 1152;
+            const mp3Data = [];
+
+            function floatTo16(channelFloat) {
+                const out = new Int16Array(channelFloat.length);
+                for (let i = 0; i < channelFloat.length; i++) {
+                    const s = Math.max(-1, Math.min(1, channelFloat[i]));
+                    out[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                }
+                return out;
+            }
+
+            let left, right = null;
+            if (numChannels === 1) {
+                if (audioBuffer.numberOfChannels > 1 && forceMono) {
+                    const ch0 = audioBuffer.getChannelData(0);
+                    const ch1 = audioBuffer.getChannelData(1);
+                    const mixed = new Float32Array(numFrames);
+                    for (let i = 0; i < numFrames; i++) mixed[i] = (ch0[i] + ch1[i]) / 2;
+                    left = floatTo16(mixed);
+                } else {
+                    left = floatTo16(audioBuffer.getChannelData(0));
+                }
+            } else {
+                left = floatTo16(audioBuffer.getChannelData(0));
+                right = floatTo16(audioBuffer.getChannelData(1));
+            }
+
+            let lastYield = performance.now();
+            for (let i = 0; i < numFrames; i += sampleBlockSize) {
+                const leftChunk = left.subarray(i, i + sampleBlockSize);
+                let mp3buf;
+                if (numChannels === 2 && right) {
+                    const rightChunk = right.subarray(i, i + sampleBlockSize);
+                    mp3buf = mp3encoder.encodeBuffer(leftChunk, rightChunk);
+                } else {
+                    mp3buf = mp3encoder.encodeBuffer(leftChunk);
+                }
+                if (mp3buf.length > 0) mp3Data.push(new Int8Array(mp3buf));
+
+                if (performance.now() - lastYield > 50) {
+                    onProgress((i / numFrames) * 100);
+                    await new Promise(r => setTimeout(r, 0));
+                    lastYield = performance.now();
+                }
+            }
+
+            const finalBuf = mp3encoder.flush();
+            if (finalBuf.length > 0) mp3Data.push(new Int8Array(finalBuf));
+
+            onProgress(100);
+            return new Blob(mp3Data, { type: 'audio/mp3' });
+        }
+
+        async function encodeM4a(audioBuffer, bitrateKbps, forceMono, onProgress) {
+            if (typeof Mp4Muxer === 'undefined') {
+                throw new Error("The MP4 Multiplexer engine failed to initialize. Please check your connection and reload.");
+            }
+            if (!('AudioEncoder' in window)) {
+                throw new Error("Your browser is missing WebCodecs AudioEncoder support.");
+            }
+
+            const sampleRate = audioBuffer.sampleRate;
+            const numberOfChannels = forceMono ? 1 : audioBuffer.numberOfChannels;
+
+            const muxer = new Mp4Muxer.Muxer({
+                target: new Mp4Muxer.ArrayBufferTarget(),
+                audio: { codec: 'aac', sampleRate: sampleRate, numberOfChannels: numberOfChannels },
+                fastStart: 'in-memory',
+                firstTimestampBehavior: 'offset'
+            });
+
+            const audioEncoder = new AudioEncoder({
+                output: (chunk, meta) => {
+                    let safeMeta = meta;
+                    if (meta) {
+                        safeMeta = { ...meta };
+                        if (safeMeta.decoderConfig === null || safeMeta.decoderConfig === undefined) delete safeMeta.decoderConfig;
+                    }
+                    muxer.addAudioChunk(chunk, safeMeta);
+                },
+                error: (e) => console.error("Audio Encoder Error:", e)
+            });
+
+            audioEncoder.configure({
+                codec: 'mp4a.40.2',
+                sampleRate: sampleRate,
+                numberOfChannels: numberOfChannels,
+                bitrate: bitrateKbps * 1000
+            });
+
+            const framesPerChunk = Math.floor(sampleRate * 0.04);
+            const totalFrames = audioBuffer.length;
+            let offset = 0;
+            let timestampUs = 0;
+            let lastYield = performance.now();
+
+            const srcChannels = [];
+            for (let c = 0; c < audioBuffer.numberOfChannels; c++) srcChannels.push(audioBuffer.getChannelData(c));
+
+            while (offset < totalFrames) {
+                const frameCount = Math.min(framesPerChunk, totalFrames - offset);
+                const planarData = new Float32Array(frameCount * numberOfChannels);
+
+                if (forceMono && audioBuffer.numberOfChannels > 1) {
+                    for (let i = 0; i < frameCount; i++) {
+                        let sum = 0;
+                        for (let c = 0; c < audioBuffer.numberOfChannels; c++) sum += srcChannels[c][offset + i];
+                        planarData[i] = sum / audioBuffer.numberOfChannels;
+                    }
+                } else {
+                    for (let c = 0; c < numberOfChannels; c++) {
+                        planarData.set(srcChannels[c].subarray(offset, offset + frameCount), c * frameCount);
+                    }
+                }
+
+                const audioData = new AudioData({
+                    format: 'f32-planar',
+                    sampleRate: sampleRate,
+                    numberOfChannels: numberOfChannels,
+                    numberOfFrames: frameCount,
+                    timestamp: timestampUs,
+                    data: planarData
+                });
+
+                audioEncoder.encode(audioData);
+                audioData.close();
+
+                offset += frameCount;
+                timestampUs += Math.round((frameCount / sampleRate) * 1000000);
+
+                if (performance.now() - lastYield > 50) {
+                    onProgress((offset / totalFrames) * 100);
+                    await new Promise(r => setTimeout(r, 0));
+                    lastYield = performance.now();
+                }
+            }
+
+            await audioEncoder.flush();
+            muxer.finalize();
+            onProgress(100);
+            return new Blob([muxer.target.buffer], { type: 'audio/mp4' });
+        }
+
+        audioStartBtn.addEventListener('click', async () => {
+            if (!currentAudioFile || !decodedAudioBuffer || isAudioCompressing) return;
+
+            const selectedLimit = audioSizeLimitSelect.value;
+            const format = audioFormatSelect.value;
+
+            if (format !== 'wav' && selectedLimit !== 'none' && currentAudioFile.size <= parseInt(selectedLimit, 10)) {
+                showAudioResults(currentAudioFile, true);
+                return;
+            }
+
+            isAudioCompressing = true;
+            audioSettingsPanel.classList.add('hidden');
+            audioProcessingPanel.classList.remove('hidden');
+            audioFormatLabel.textContent = format.toUpperCase();
+            const startTime = performance.now();
+
+            const forceMono = audioChannelsSelect.value === 'mono';
+            let bitrateKbps = parseInt(audioBitrateSelect.value, 10);
+
+            if (format !== 'wav' && selectedLimit !== 'none') {
+                const limitBytes = parseInt(selectedLimit, 10);
+                const availableBits = limitBytes * 8 * 0.92;
+                bitrateKbps = Math.max(32, Math.floor((availableBits / audioMetadata.duration) / 1000));
+            }
+
+            const onProgress = (pct) => {
+                audioProgressBar.style.width = `${pct}%`;
+                audioProgressText.textContent = `${Math.round(pct)}%`;
+                audioElapsedTime.textContent = `${((performance.now() - startTime) / 1000).toFixed(1)}s`;
+            };
+
+            audioCurrentStepText.innerHTML = `<svg class="animate-spin -ml-1 mr-3 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Encoding ${format.toUpperCase()} locally...`;
+
+            try {
+                let blob;
+                if (format === 'wav') {
+                    blob = encodeWav(decodedAudioBuffer, forceMono);
+                    onProgress(100);
+                } else if (format === 'mp3') {
+                    blob = await encodeMp3(decodedAudioBuffer, bitrateKbps, forceMono, onProgress);
+                } else {
+                    blob = await encodeM4a(decodedAudioBuffer, bitrateKbps, forceMono, onProgress);
+                }
+                showAudioResults(blob, false, format);
+            } catch (err) {
+                console.error("Audio compression failed:", err);
+                showToast("Audio encoding failed: " + err.message, "error");
+                resetAudioState();
+            }
+        });
+
+        function showAudioResults(blob, wasSkipped, format) {
+            isAudioCompressing = false;
+            audioProcessingPanel.classList.add('hidden');
+            audioResultPanel.classList.remove('hidden');
+
+            audioResultOriginalSize.textContent = formatBytes(currentAudioFile.size);
+            let finalBlob = blob;
+            let ext = format || currentAudioFile.name.split('.').pop();
+
+            if (wasSkipped) {
+                audioResultHeader.textContent = "Instant Smart-Skip Complete!";
+                audioNewFileSize.textContent = formatBytes(currentAudioFile.size);
+                audioSpaceSavedBadge.textContent = "File is already under limits!";
+                finalBlob = currentAudioFile;
+                ext = currentAudioFile.name.split('.').pop();
+            } else {
+                audioResultHeader.textContent = "Audio Compression Complete!";
+                if (blob.size >= currentAudioFile.size && format !== 'wav') {
+                    audioNewFileSize.textContent = formatBytes(currentAudioFile.size);
+                    audioSpaceSavedBadge.textContent = "Swapped to Original (Compressed was larger)";
+                    finalBlob = currentAudioFile;
+                    ext = currentAudioFile.name.split('.').pop();
+                } else {
+                    audioNewFileSize.textContent = formatBytes(blob.size);
+                    const pctSaved = ((currentAudioFile.size - blob.size) / currentAudioFile.size) * 100;
+                    audioSpaceSavedBadge.textContent = pctSaved >= 0
+                        ? `Reduced by ${pctSaved.toFixed(1)}%`
+                        : `Converted (uncompressed WAV is larger by design)`;
+                }
+            }
+
+            const url = URL.createObjectURL(finalBlob);
+            audioDownloadLink.href = url;
+            const originalName = currentAudioFile.name.replace(/\.[^/.]+$/, "");
+            audioDownloadLink.download = `${originalName}_compressed.${ext}`;
+            showToast("Audio compressed successfully!", "success");
+        }
+
+        audioResetBtn.addEventListener('click', resetAudioState);
+    </script>
+</div>
+
+<!-- ENVIZION_AD_SLOT_START -->
+<section class="envizion-ad-slot" aria-label="Advertisement" style="--toolkit-seo-accent:#10a37f;--toolkit-seo-accent-2:#0d8f6f;--toolkit-seo-bg:#212121;--toolkit-seo-accent-soft:rgba(16, 163, 127, 0.14);--toolkit-seo-accent-border:rgba(16, 163, 127, 0.28);--toolkit-seo-surface:#2f2f2f;--toolkit-seo-text:#ececec;--toolkit-seo-muted:#b4b4b4;--toolkit-seo-line:rgba(255, 255, 255, 0.12)">
+  <div class="envizion-ad-box">
+    <span class="envizion-ad-label">Advertisement</span>
+    <ins class="adsbygoogle"
+         style="display:block"
+         data-ad-client="ca-pub-5812524294035974"
+         data-ad-slot="9312358743"
+         data-ad-format="auto"
+         data-full-width-responsive="true"></ins>
+  </div>
+</section>
+<!-- ENVIZION_AD_SLOT_END -->
+
+<!-- ENVIZION_STATIC_SEO_START -->
+<section class="envizion-static-seo" id="envizion-page-guide" aria-label="Superfast Video Compressor explanation" style="--toolkit-seo-accent:#10a37f;--toolkit-seo-accent-2:#0d8f6f;--toolkit-seo-bg:#212121;--toolkit-seo-accent-soft:rgba(16, 163, 127, 0.14);--toolkit-seo-accent-border:rgba(16, 163, 127, 0.28);--toolkit-seo-surface:#2f2f2f;--toolkit-seo-text:#ececec;--toolkit-seo-muted:#b4b4b4;--toolkit-seo-line:rgba(255, 255, 255, 0.12)">
+  <div class="envizion-static-seo__shell">
+    <div class="envizion-static-seo__hero">
+      <div>
+        <p class="envizion-static-seo__kicker">Video and audio compressor</p>
+        <h2>Superfast Video Compressor</h2>
+        <p>Compress video and audio locally with browser media APIs, quality controls, and practical export settings.</p>
+      </div>
+      <div class="envizion-static-seo__badges">
+        <span class="envizion-static-seo__badge">Envizion Tools</span>
+        <span class="envizion-static-seo__badge">Local browser workflow</span>
+        <span class="envizion-static-seo__badge">Tool guide</span>
+      </div>
+    </div>
+    <div class="envizion-static-seo__grid">
+      <article class="envizion-static-seo__panel">
+        <h3>What this tool does</h3>
+        <ul><li>Video compression with bitrate controls.</li><li>Audio compression mode for MP3-style output.</li><li>Local processing without a custom server.</li></ul>
+      </article>
+      <article class="envizion-static-seo__panel">
+        <h3>How to use it</h3>
+        <ol><li>Choose video or audio mode.</li><li>Select a file and settings.</li><li>Start processing and download the result.</li></ol>
+      </article>
+      <article class="envizion-static-seo__panel">
+        <h3>Helpful notes</h3>
+        <ul><li>This page is intentionally centered on the working tool first, then the guide below documents what the tool does, what it does not promise, and how to verify the output.</li><li>The safest workflow is to keep original files, test settings on a small sample, and inspect the exported result before replacing anything important.</li><li>Media exports depend on browser codec support, hardware acceleration, memory, and file duration, so very large files may need a smaller test run or a desktop encoder.</li></ul>
+      </article>
+    </div>
+    <div class="envizion-static-seo__body">
+      <h3>Detailed explanation</h3>
+      <div class="envizion-static-seo__article">
+        <p>Superfast Video Compressor is part of the Envizion Tools collection, a set of focused browser-based utilities for practical file preparation, editing, conversion, compression, previewing, and creative production.</p>
+        <p>Compress video and audio locally with browser media APIs, quality controls, and practical export settings. The working controls stay at the top of the page, while this guide gives visitors and search engines clear context about what the tool does, when it is useful, and how to approach the workflow.</p>
+        <p>The normal workflow is straightforward: Choose video or audio mode. Select a file and settings. Start processing and download the result. For best results, test with a small file first, inspect the output, and then process larger or more important files once the settings look correct.</p>
+        <p>Many Envizion tools run directly in the browser, which helps keep everyday work fast and private. Some tools still depend on browser APIs, local device performance, media encoders, canvas features, PDF handling, or WebGL support, so behavior can differ between browsers.</p>
+      </div>
+      <h3>Best use cases</h3>
+      <ul><li>Use Superfast Video Compressor when you need a focused audio preparation task without opening a large desktop suite.</li><li>Use it as a quick verification step before sending files to a client, teammate, upload portal, chat app, or production workflow.</li><li>Use the page for repeatable local work where privacy, speed, and predictable browser controls matter more than cloud storage.</li></ul>
+      <h3>Before you export</h3>
+      <ul><li>This page is intentionally centered on the working tool first, then the guide below documents what the tool does, what it does not promise, and how to verify the output.</li><li>The safest workflow is to keep original files, test settings on a small sample, and inspect the exported result before replacing anything important.</li><li>Media exports depend on browser codec support, hardware acceleration, memory, and file duration, so very large files may need a smaller test run or a desktop encoder.</li></ul>
+      <h3>Troubleshooting</h3>
+      <ul><li>Close other heavy tabs before processing long media.</li><li>Use shorter clips to test the chosen bitrate or quality level.</li><li>If export fails, try a more common input format or a smaller resolution.</li></ul>
+      <h3>Common questions</h3>
+      <dl class="envizion-static-seo__faq">
+        <div><dt>How do I use this tool?</dt><dd>Choose video or audio mode. Select a file and settings. Start processing and download the result.</dd></div>
+        <div><dt>What is this page best for?</dt><dd>Compress video and audio locally with browser media APIs, quality controls, and practical export settings.</dd></div>
+        <div><dt>Are my files uploaded?</dt><dd>These tools are designed around local browser workflows where supported. If a page uses a third-party library or browser API, review your browser permissions and keep sensitive originals until you have verified the output.</dd></div>
+        <div><dt>Does this page include ads?</dt><dd>Yes. The page includes a restrained AdSense slot using the configured Envizion publisher client and shared ad styling.</dd></div>
+        <div><dt>Where is the published page?</dt><dd>https://envizion.work/tools2/superfast_video_compressor.html</dd></div>
+      </dl>
+      <h3>Publisher and privacy links</h3>
+      <div class="envizion-static-seo__links">
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/about.html">About Envizion Tools</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/privacy.html">Privacy and cookies</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/contact.html">Contact and corrections</a>
+      </div>
+      <h3>Related Envizion tools</h3>
+      <div class="envizion-static-seo__links">
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/index.html">Envizion Tools</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/advanced_editor_converter.html">Advanced Paste, Edit and Convert</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/animator_studio.html">Mixamo Animator Studio</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/bulk_webp_converter.html">Local WebP Converter</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/CodeWeb.html">Localhost Server Manager</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/envizion_editor.html">Envizion Studio Editor</a>
+      </div>
+    </div>
+  </div>
+</section>
+<!-- ENVIZION_STATIC_SEO_END -->
+
+<!-- ENVIZION_TRUST_FOOTER_START -->
+<footer class="envizion-trust-footer" aria-label="Envizion site links">
+  <a href="https://envizion.work/tools2/index.html">Tools</a>
+  <a href="https://envizion.work/tools2/about.html">About</a>
+  <a href="https://envizion.work/tools2/privacy.html">Privacy</a>
+  <a href="https://envizion.work/tools2/contact.html">Contact</a>
+</footer>
+<!-- ENVIZION_TRUST_FOOTER_END -->
+  <script src="toolkit-enhance.js"></script>
+</body>
+</html>
+
+

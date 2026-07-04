@@ -1,0 +1,2624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>envizion.work | 3D Model Viewer</title>
+    <style>
+        /* Design tokens (Envizion SEO grey palette) */
+        :root {
+            --bg-base:        #212121;
+            --bg-sidebar:     #2f2f2f;
+            --bg-panel:       #2f2f2f;
+            --bg-input:       #2f2f2f;
+            --bg-active:      #383838;
+            --bg-hover:       #383838;
+            --bg-badge:       #212121;
+
+            --border:         rgba(255, 255, 255, 0.12);
+            --border-focus:   rgba(255, 255, 255, 0.12);
+            --border-subtle:  #b4b4b4;
+
+            --text-primary:   #ececec;
+            --text-secondary: #b4b4b4;
+            --text-muted:     #b4b4b4;
+            --text-neutral-100:     #ececec;
+            --text-link:      #ececec;
+
+            --accent-primary:   #10a37f;
+            --accent-primary-2: #0d8f6f;
+
+            --font-ui:    -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            --font-mono:  'Cascadia Code', 'SF Mono', 'Fira Code', 'Consolas', monospace;
+            --font-size:  13px;
+            --radius-sm:  3px;
+            --radius:     4px;
+            --radius-lg:  6px;
+
+            --sidebar-w:  300px;
+            --header-h:   38px;
+            --tab-h:      35px;
+
+            --shadow-panel: 0 2px 8px rgba(0,0,0,.5);
+            --shadow-float: 0 4px 24px rgba(0,0,0,.7);
+        }
+
+        /* ─── Reset ─── */
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body { width: 100%; height: 100%; overflow: hidden; }
+        body {
+            font-family: var(--font-ui);
+            font-size: var(--font-size);
+            color: var(--text-primary);
+            background: var(--bg-base);
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ─── Title bar (like VS Code) ─── */
+        #titlebar {
+            height: var(--header-h);
+            background: #2f2f2f;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+            display: flex;
+            align-items: center;
+            padding: 0 14px;
+            gap: 10px;
+            flex-shrink: 0;
+            user-select: none;
+            -webkit-app-region: drag;
+        }
+        #titlebar .logo {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text-neutral-100);
+            letter-spacing: -0.3px;
+        }
+        #titlebar .logo span { color: var(--accent-primary-2); }
+        #titlebar .tagline {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-left: 4px;
+        }
+        #titlebar .trust-badge {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 11px;
+            color: var(--accent-primary);
+            margin-left: auto;
+        }
+        #titlebar .trust-badge svg { width: 12px; height: 12px; }
+        #titlebar .resources-link {
+            font-size: 11px;
+            color: var(--text-secondary);
+            text-decoration: none;
+            padding: 3px 8px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            transition: border-color .15s, color .15s;
+            margin-left: 10px;
+        }
+        #titlebar .resources-link:hover { border-color: var(--border-focus); color: var(--text-neutral-100); }
+
+        /* ─── App body (sidebar + canvas) ─── */
+        #app {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+            min-height: 0;
+        }
+
+        /* ─── Activity bar (far-left icon strip like VS Code) ─── */
+        #activity-bar {
+            width: 46px;
+            background: #2f2f2f;
+            border-right: 1px solid rgba(255, 255, 255, 0.12);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 4px 0;
+            flex-shrink: 0;
+            z-index: 20;
+        }
+        .act-btn {
+            width: 46px;
+            height: 46px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            border: none;
+            background: transparent;
+            color: #ececec;
+            position: relative;
+            transition: color .1s;
+            border-left: 2px solid transparent;
+        }
+        .act-btn:hover { color: var(--text-neutral-100); }
+        .act-btn.active {
+            color: var(--text-neutral-100);
+            border-left-color: var(--accent-primary-2);
+            background: #2f2f2f;
+        }
+        .act-btn svg { width: 22px; height: 22px; }
+        .act-btn .act-label {
+            position: absolute;
+            left: 50px;
+            background: #2f2f2f;
+            color: var(--text-neutral-100);
+            font-size: 11px;
+            padding: 3px 7px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+            white-space: nowrap;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity .1s;
+            z-index: 999;
+            box-shadow: var(--shadow-panel);
+        }
+        .act-btn:hover .act-label { opacity: 1; }
+
+        /* ─── Sidebar ─── */
+        #sidebar {
+            width: var(--sidebar-w);
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+            overflow: hidden;
+        }
+        #sidebar-header {
+            height: 35px;
+            padding: 0 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+        #sidebar-header .panel-title {
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+        }
+        #sidebar-body { flex: 1; overflow-y: auto; min-height: 0; }
+
+        /* Scrollbar — VS Code thin style */
+        #sidebar-body::-webkit-scrollbar { width: 6px; }
+        #sidebar-body::-webkit-scrollbar-track { background: transparent; }
+        #sidebar-body::-webkit-scrollbar-thumb { background: #2f2f2f; border-radius: 3px; }
+        #sidebar-body::-webkit-scrollbar-thumb:hover { background: #2f2f2f; }
+
+        /* ─── Upload area ─── */
+        #upload-area {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border);
+        }
+        .upload-btn {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 7px;
+            padding: 7px 12px;
+            background: var(--accent-primary);
+            color: #ececec;
+            font-size: 12px;
+            font-weight: 600;
+            border: none;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: background .15s;
+            font-family: var(--font-ui);
+        }
+        .upload-btn:hover { background: #2f2f2f; }
+        .upload-btn svg { width: 13px; height: 13px; flex-shrink: 0; }
+        input[type="file"] { display: none; }
+        .upload-formats {
+            margin-top: 5px;
+            font-size: 10px;
+            color: var(--text-muted);
+            text-align: center;
+            line-height: 1.5;
+        }
+
+        /* ─── Stats bar ─── */
+        #model-stats {
+            display: none;
+            padding: 6px 12px;
+            gap: 6px;
+            border-bottom: 1px solid var(--border);
+        }
+        #model-stats.visible { display: flex; }
+        .stat-cell {
+            flex: 1;
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 4px 6px;
+            text-align: center;
+        }
+        .stat-cell .sl { font-size: 9px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
+        .stat-cell .sv { font-family: var(--font-mono); font-size: 11px; color: var(--text-neutral-100); margin-top: 1px; }
+
+        /* ─── Tab strip ─── */
+        #tab-strip {
+            display: flex;
+            flex-wrap: wrap;
+            background: #2f2f2f;
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+        .tab-btn {
+            padding: 0 8px;
+            height: 28px;
+            font-size: 11px;
+            font-weight: 400;
+            color: #ececec;
+            background: transparent;
+            border: none;
+            border-right: 1px solid var(--border);
+            border-bottom: 1px solid var(--border);
+            cursor: pointer;
+            white-space: nowrap;
+            transition: color .1s, background .1s;
+            position: relative;
+            font-family: var(--font-ui);
+            flex: 1;
+        }
+        .tab-btn:hover { color: var(--text-neutral-100); background: var(--bg-hover); }
+        .tab-btn.active {
+            color: var(--text-neutral-100);
+            background: var(--bg-sidebar);
+            border-bottom: 2px solid var(--accent-primary-2);
+        }
+
+        /* ─── Tab panels ─── */
+        .tab-panel { display: none; padding: 12px; }
+        .tab-panel.active { display: block; }
+
+        /* ─── Section headers ─── */
+        .section-hdr {
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            padding: 10px 0 5px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            user-select: none;
+        }
+        .section-hdr::after { content: ''; flex: 1; height: 1px; background: var(--border); margin-left: 6px; }
+
+        /* ─── Mode / action buttons ─── */
+        .mode-btn {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 9px;
+            font-size: 12px;
+            font-family: var(--font-ui);
+            color: var(--text-primary);
+            background: transparent;
+            border: 1px solid transparent;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: background .1s, border-color .1s, color .1s;
+            text-align: left;
+            gap: 8px;
+        }
+        .mode-btn:hover { background: var(--bg-hover); border-color: var(--border); color: var(--text-neutral-100); }
+        .mode-btn.active {
+            background: var(--bg-active);
+            border-color: var(--border-focus);
+            color: #ececec;
+        }
+        .mode-btn .kbd {
+            font-family: var(--font-mono);
+            font-size: 10px;
+            color: var(--text-muted);
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            padding: 1px 5px;
+            border-radius: var(--radius-sm);
+            flex-shrink: 0;
+        }
+        .mode-btn.active .kbd { background: #2f2f2f; border-color: rgba(255, 255, 255, 0.12); color: #ececec; }
+        .btn-group { display: flex; flex-direction: column; gap: 1px; margin-bottom: 10px; }
+
+        /* ─── Toggle rows (scene props) ─── */
+        .prop-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 5px 9px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            border-radius: var(--radius-sm);
+            gap: 8px;
+        }
+        .prop-row:hover { background: var(--bg-hover); color: var(--text-primary); }
+        .prop-row label { flex: 1; cursor: default; }
+        .prop-row input[type=color] {
+            width: 26px; height: 22px; padding: 0; border: 1px solid var(--border);
+            border-radius: var(--radius-sm); cursor: pointer; background: transparent;
+        }
+        .prop-row input[type=range] {
+            -webkit-appearance: none; width: 80px; height: 3px;
+            border-radius: 2px; background: var(--border); outline: none; flex-shrink: 0;
+        }
+        .prop-row input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; width: 12px; height: 12px;
+            border-radius: 50%; background: var(--accent-primary-2); cursor: pointer;
+        }
+        .toggle-pill {
+            font-size: 10px; font-weight: 600; font-family: var(--font-mono);
+            padding: 2px 8px; border-radius: 10px; cursor: pointer; border: none;
+            background: var(--bg-panel); color: var(--text-muted);
+            transition: background .1s, color .1s;
+        }
+        .toggle-pill.on { background: var(--accent-primary-2); color: #ececec; }
+
+        /* ─── 3-col transform grid ─── */
+        .xform-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; margin-bottom: 10px; }
+        .xform-btn {
+            padding: 6px 0; font-size: 11px; font-weight: 600; font-family: var(--font-ui);
+            color: var(--text-secondary); background: var(--bg-panel);
+            border: 1px solid var(--border); border-radius: var(--radius-sm);
+            cursor: pointer; transition: all .1s; text-align: center;
+        }
+        .xform-btn:hover { background: var(--bg-hover); color: var(--text-neutral-100); border-color: var(--border-focus); }
+        .xform-btn.active { background: var(--bg-active); color: #ececec; border-color: var(--border-focus); }
+
+        /* ─── Danger / action button ─── */
+        .action-btn {
+            width: 100%; display: flex; align-items: center; gap: 6px;
+            padding: 6px 9px; font-size: 12px; font-family: var(--font-ui);
+            color: var(--text-secondary); background: transparent;
+            border: 1px solid transparent; border-radius: var(--radius-sm);
+            cursor: pointer; transition: all .1s; text-align: left;
+        }
+        .action-btn:hover { background: var(--bg-hover); color: var(--text-neutral-100); border-color: var(--border); }
+        .action-btn.danger { color: #ececec; }
+        .action-btn.danger:hover { background: #2f2f2f; border-color: rgba(255, 255, 255, 0.12); color: #ececec; }
+
+        /* ─── Export row ─── */
+        .export-row { display: flex; gap: 6px; align-items: center; }
+        .vsc-select {
+            flex: 1; font-size: 12px; font-family: var(--font-ui);
+            background: var(--bg-input); color: var(--text-primary);
+            border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 5px 8px; outline: none; cursor: pointer;
+        }
+        .vsc-select:focus { border-color: var(--border-focus); }
+        .vsc-select option { background: var(--bg-panel); }
+        .export-btn {
+            padding: 5px 14px; font-size: 12px; font-weight: 600; font-family: var(--font-ui);
+            background: var(--accent-primary-2); color: #ececec;
+            border: 1px solid rgba(255, 255, 255, 0.12); border-radius: var(--radius-sm);
+            cursor: pointer; white-space: nowrap; transition: background .15s;
+        }
+        .export-btn:hover { background: #2f2f2f; }
+
+        /* ─── Converter badges ─── */
+        .conv-block { background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px; margin-bottom: 8px; }
+        .conv-row { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-bottom: 4px; }
+        .conv-row:last-child { margin-bottom: 0; }
+        .conv-badge {
+            font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+            padding: 1px 6px; border-radius: var(--radius-sm);
+            background: #2f2f2f; color: var(--accent-primary-2);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+        .conv-arrow { color: var(--text-muted); font-size: 11px; }
+        .conv-note { font-size: 10px; color: var(--text-muted); }
+
+        /* ─── Link rows ─── */
+        .link-row {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 7px 9px; border-radius: var(--radius-sm);
+            text-decoration: none; transition: background .1s; gap: 8px;
+        }
+        .link-row:hover { background: var(--bg-hover); }
+        .link-row .lr-title { font-size: 12px; color: var(--text-link); }
+        .link-row .lr-sub { font-size: 10px; color: var(--text-muted); margin-top: 1px; }
+        .link-row .lr-arrow { color: var(--text-muted); font-size: 12px; flex-shrink: 0; }
+
+        /* ─── Sample cards ─── */
+        .sample-card {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 6px 9px; border-radius: var(--radius-sm);
+            cursor: pointer; transition: background .1s; gap: 8px;
+            border: 1px solid transparent;
+        }
+        .sample-card:hover { background: var(--bg-hover); border-color: var(--border); }
+        .sample-card:active { background: var(--bg-active); }
+        .sample-card .sname { font-size: 12px; color: var(--text-primary); }
+        .ext-badge {
+            font-family: var(--font-mono); font-size: 9px; font-weight: 700;
+            padding: 1px 5px; border-radius: var(--radius-sm); flex-shrink: 0;
+        }
+        .ext-glb { background: #2f2f2f; color: #ececec; border: 1px solid rgba(255, 255, 255, 0.12); }
+        .ext-obj { background: #2f2f2f; color: var(--accent-primary); border: 1px solid rgba(255, 255, 255, 0.12); }
+
+        /* ─── Canvas ─── */
+        #canvas-container {
+            flex: 1; position: relative; overflow: hidden; cursor: grab;
+            background: #2f2f2f;
+        }
+        #canvas-container:active { cursor: grabbing; }
+
+        /* ─── Empty state ─── */
+        #no-model-text {
+            position: absolute; inset: 0;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            pointer-events: none; gap: 12px;
+        }
+        .empty-icon { font-size: 48px; opacity: .2; }
+        .empty-title { font-size: 14px; color: var(--text-muted); font-weight: 500; }
+        .empty-sub { font-size: 11px; color: #ececec; text-align: center; line-height: 1.6; }
+
+        /* ─── Loading overlay ─── */
+        #loading-overlay {
+            display: none; position: absolute; inset: 0; z-index: 50;
+            background: #2f2f2f; backdrop-filter: blur(4px);
+            flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+        }
+        .spinner {
+            width: 32px; height: 32px; border-radius: 50%;
+            border: 3px solid var(--border);
+            border-top-color: var(--accent-primary-2);
+            animation: spin .7s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        #loading-overlay h2 { font-size: 13px; color: var(--text-secondary); font-weight: 400; }
+
+        /* ─── Status bar (bottom, like VS Code) ─── */
+        #statusbar {
+            height: 22px; background: var(--accent-primary); display: flex;
+            align-items: center; padding: 0 10px; gap: 16px;
+            flex-shrink: 0; border-top: 1px solid rgba(255, 255, 255, 0.12);
+        }
+        .sb-item { font-size: 11px; color: #ececec; display: flex; align-items: center; gap: 4px; }
+        .sb-item svg { width: 12px; height: 12px; }
+        #sb-mode { margin-left: auto; }
+        #drag-hint { color: #ececec; font-size: 11px; margin: 0 auto; }
+
+
+        /* ─── Level Builder history list ─── */
+        .lb-history-item {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 5px 8px; font-size: 10px; color: var(--text-secondary);
+            border-bottom: 1px solid var(--border);
+        }
+        .lb-history-item:last-child { border-bottom: none; }
+        .lb-hbtn {
+            font-size: 10px; padding: 1px 7px; border-radius: var(--radius-sm);
+            border: 1px solid var(--border); cursor: pointer; background: var(--bg-panel);
+            color: var(--text-secondary); margin-left: 3px; transition: background .1s;
+        }
+        .lb-hbtn:hover { background: var(--bg-hover); color: var(--text-neutral-100); }
+        .lb-hbtn.del { color: var(--accent-primary); border-color: rgba(255, 255, 255, 0.12); }
+        .lb-hbtn.del:hover { background: #2f2f2f; }
+
+        /* ─── Toast notification ─── */
+        #toast {
+            position: fixed; bottom: 30px; right: 16px;
+            background: var(--bg-panel); border: 1px solid var(--border);
+            color: var(--text-primary); padding: 8px 14px;
+            border-radius: var(--radius); font-size: 12px;
+            z-index: 999; display: none;
+            box-shadow: var(--shadow-float);
+            animation: slideup .2s ease;
+        }
+        @keyframes slideup { from { transform: translateY(8px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+        /* ─── Info overlay panel ─── */
+        #info-panel {
+            position: absolute; top: 10px; right: 10px;
+            background: #2f2f2f; border: 1px solid var(--border);
+            border-radius: var(--radius); padding: 10px 13px;
+            font-size: 11px; z-index: 20; min-width: 160px; display: none;
+            box-shadow: var(--shadow-panel);
+        }
+        #info-panel .ip-title { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .07em; margin-bottom: 6px; }
+    </style>
+    <!-- Import maps polyfill -->
+    <script async src="https://unpkg.com/es-module-shims@1.8.0/dist/es-module-shims.js"></script>
+    <!-- Import map for Three.js -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+  <meta name="description" content="Inspect GLB, GLTF, OBJ, and sample 3D models in a rich local model viewer with practical format resources.">
+  <meta name="robots" content="index, follow, max-image-preview:large">
+  <link rel="canonical" href="https://envizion.work/tools2/main...3d_model_viewer.html">
+  <meta property="og:title" content="Envizion 3D Model Viewer - Envizion Tools">
+  <meta property="og:description" content="Inspect GLB, GLTF, OBJ, and sample 3D models in a rich local model viewer with practical format resources.">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="toolkit-common.css">
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5812524294035974" crossorigin="anonymous"></script>
+  <script type="application/ld+json" id="envizion-tool-schema">{"@context":"https://schema.org","@type":"WebApplication","name":"Envizion 3D Model Viewer","applicationCategory":"3D viewer","operatingSystem":"Any modern browser","url":"https://envizion.work/tools2/main...3d_model_viewer.html","description":"Inspect GLB, GLTF, OBJ, and sample 3D models in a rich local model viewer with practical format resources.","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"publisher":{"@type":"Organization","name":"Envizion Tools"}}</script>
+</head>
+<body>
+<div class="envizion-tool-app-shell">
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay">
+        <div class="spinner"></div>
+        <h2>Processing Geometry...</h2>
+    </div>
+
+    <div id="app">
+    <!-- Sidebar / UI Controls -->
+    <aside id="sidebar">
+
+        <!-- Header -->
+        <div id="sidebar-header" style="height:auto;padding:10px 12px;flex-direction:column;align-items:stretch;gap:6px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;width:100%;">
+                <div>
+                    <h1 style="font-size:15px;font-weight:700;color:var(--text-neutral-100)">envizion<span style="color:var(--accent-primary-2)">.work</span></h1>
+                    <p style="font-size:11px;color:var(--accent-primary);display:flex;align-items:center;gap:4px;margin-top:2px;">
+                        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                        Free of viruses &amp; malware · Local GPU only
+                    </p>
+                </div>
+                <a href="envizion_resources.html" target="_blank" class="resources-link">Resources ↗</a>
+            </div>
+
+            <!-- Upload -->
+            <div id="upload-area" style="padding:0;border:none;">
+                <label class="upload-btn">
+                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+                    Upload 3D Model or Texture
+                    <input type="file" id="file-input" accept=".obj,.gltf,.glb,.fbx,.stl,.ply,.dae,.3ds,.usdz,.abc,.vox,.xyz,.pcd,.json,.png,.jpg,.jpeg,.webp,.hdr,.exr,.svg" />
+                </label>
+                <p class="upload-formats">OBJ · GLB · GLTF · FBX · STL · PLY · DAE · 3DS · USDZ · VOX · ABC · XYZ · PCD · JSON · PNG · HDR</p>
+            </div>
+
+            <!-- Model Stats Row -->
+            <div id="model-stats" style="display:none;margin-top:8px;">
+                <div class="stat-cell"><div class="sl">Vertices</div><div class="sv" id="stat-verts">—</div></div>
+                <div class="stat-cell"><div class="sl">Faces</div><div class="sv" id="stat-faces">—</div></div>
+                <div class="stat-cell"><div class="sl">Materials</div><div class="sv" id="stat-mats">—</div></div>
+            </div>
+        </div>
+
+        <!-- Tabs -->
+        <div id="tab-strip">
+            <button class="tab-btn active" data-tab="viewer">Viewer</button>
+            <button class="tab-btn" data-tab="editor">Editor</button>
+            <button class="tab-btn" data-tab="convert">Convert</button>
+            <button class="tab-btn" data-tab="samples">Samples</button>
+            <button class="tab-btn" data-tab="refs">Refs</button>
+            <button class="tab-btn" data-tab="level">Level</button>
+            <button class="tab-btn" data-tab="animator">Animator</button>
+        </div>
+
+        <!-- Tab Content -->
+        <div id="sidebar-body">
+
+            <!-- ===== VIEWER TAB ===== -->
+            <div class="tab-panel active" id="tab-viewer">
+                <div class="section-hdr">Inspection Mode</div>
+                <div class="btn-group">
+                    <button id="btn-reset" class="mode-btn active">
+                        Standard View<span class="kbd">Esc</span>
+                    </button>
+                    <button id="btn-wireframe" class="mode-btn">Wireframe Toggle<span class="kbd">W</span></button>
+                    <button id="btn-normals" class="mode-btn">Normal Map Inspect<span class="kbd">N</span></button>
+                    <button id="btn-uv" class="mode-btn">UV Texture Layout<span class="kbd">U</span></button>
+                    <button id="btn-depth" class="mode-btn">Depth View<span class="kbd">D</span></button>
+                    <button id="btn-flat" class="mode-btn">Flat / Matcap<span class="kbd">M</span></button>
+                    <button id="btn-xray" class="mode-btn">X-Ray / Translucent<span class="kbd">X</span></button>
+                </div>
+
+                <div class="section-hdr">Scene</div>
+                <div class="btn-group">
+                    <div class="prop-row"><label>Background</label><input type="color" id="bg-color-picker" value="#212121"></div>
+                    <div class="prop-row"><label>Ambient Light</label><input type="range" id="ambient-slider" min="0" max="300" value="150"></div>
+                    <div class="prop-row"><label>Directional</label><input type="range" id="dir-slider" min="0" max="400" value="200"></div>
+                    <div class="prop-row"><label>Grid</label><button id="btn-grid" class="toggle-pill on">ON</button></div>
+                    <div class="prop-row"><label>Auto-rotate</label><button id="btn-autorotate" class="toggle-pill">OFF</button></div>
+                    <div class="prop-row"><label>Shadows</label><button id="btn-shadows" class="toggle-pill">OFF</button></div>
+                    <button id="btn-screenshot" class="mode-btn">📷 Screenshot<span class="kbd">P</span></button>
+                    <button id="btn-center" class="mode-btn">Reset Camera</button>
+                    <button id="btn-explode" class="mode-btn">Explode View<span class="kbd" style="color:var(--text-muted)">spread</span></button>
+                </div>
+
+                <div class="section-hdr">What is it?</div>
+                <p style="font-size:11px;color:var(--text-secondary);line-height:1.6;margin-bottom:10px;">
+                    Render &amp; inspect raw 3D geometry mathematically on your local GPU canvas. Features wireframe, normal map, UV texture, depth, matcap, and X-ray modes. Files never leave your device.
+                </p>
+            </div>
+
+            <!-- ===== EDITOR TAB ===== -->
+            <div class="tab-panel" id="tab-editor">
+                <div class="section-hdr">Transform</div>
+                <div class="xform-grid">
+                    <button id="btn-trans" class="xform-btn active">Move</button>
+                    <button id="btn-rot" class="xform-btn">Rotate</button>
+                    <button id="btn-scale" class="xform-btn">Scale</button>
+                </div>
+
+                <div class="section-hdr">Material</div>
+                <div class="btn-group">
+                    <div class="prop-row"><label>Base Color</label><input type="color" id="color-picker" value="#ececec"></div>
+                    <div class="prop-row"><label>Metalness</label><input type="range" id="metalness-slider" min="0" max="100" value="0"></div>
+                    <div class="prop-row"><label>Roughness</label><input type="range" id="roughness-slider" min="0" max="100" value="50"></div>
+                    <div class="prop-row"><label>Opacity</label><input type="range" id="opacity-slider" min="0" max="100" value="100"></div>
+                    <div class="prop-row"><label>Emissive</label><input type="color" id="emissive-picker" value="#171717"></div>
+                </div>
+
+                <div class="section-hdr">Texture Upload</div>
+                <div class="btn-group">
+                    <label class="upload-btn" style="background:var(--bg-panel);color:var(--text-secondary);font-weight:400;border:1px solid var(--border);">
+                        <input type="file" id="texture-input" accept=".png,.jpg,.jpeg,.webp,.hdr,.exr" />
+                        📁 Apply Texture Map
+                    </label>
+                    <label class="upload-btn" style="background:var(--bg-panel);color:var(--text-secondary);font-weight:400;border:1px solid var(--border);">
+                        <input type="file" id="normal-texture-input" accept=".png,.jpg,.jpeg,.webp" />
+                        📁 Apply Normal Map
+                    </label>
+                </div>
+
+                <div class="section-hdr">Geometry</div>
+                <div class="btn-group">
+                    <button id="btn-flip-normals" class="action-btn">Flip Normals</button>
+                    <button id="btn-center-model" class="action-btn">Center to Origin</button>
+                    <button id="btn-clone" class="action-btn">Clone Object</button>
+                    <button id="btn-delete" class="action-btn danger">🗑 Delete Model</button>
+                </div>
+            </div>
+
+            <!-- ===== CONVERT TAB ===== -->
+            <div class="tab-panel" id="tab-convert">
+                <div class="section-hdr">Export Loaded Model</div>
+                <div class="export-row">
+                    <select id="export-format" class="vsc-select">
+                        <optgroup label="glTF Family">
+                            <option value="glb">.GLB — Binary glTF</option>
+                            <option value="gltf">.GLTF — JSON glTF</option>
+                        </optgroup>
+                        <optgroup label="Geometry">
+                            <option value="obj">.OBJ — Wavefront</option>
+                            <option value="stl">.STL — Stereolithography</option>
+                            <option value="ply">.PLY — Polygon</option>
+                        </optgroup>
+                    </select>
+                    <button id="btn-export" class="export-btn">Export</button>
+                </div>
+
+                <div class="section-hdr">GLB / GLTF Converts To/From</div>
+                <div class="conv-block">
+                    <div class="conv-row"><span class="conv-badge">GLB</span><span class="conv-arrow">⇄</span><span class="conv-badge">GLTF</span><span class="conv-note">lossless pair</span></div>
+                    <div class="conv-row"><span class="conv-badge">GLB</span><span class="conv-arrow">→</span><span class="conv-badge">OBJ</span><span class="conv-badge">FBX</span><span class="conv-badge">DAE</span></div>
+                    <div class="conv-row"><span class="conv-badge">GLB</span><span class="conv-arrow">→</span><span class="conv-badge">STL</span><span class="conv-badge">PLY</span><span class="conv-badge">3DS</span></div>
+                    <div class="conv-row"><span class="conv-badge">GLB</span><span class="conv-arrow">→</span><span class="conv-badge">USDZ</span><span class="conv-badge">ABC</span><span class="conv-badge">X3D</span></div>
+                    <div class="conv-row"><span class="conv-badge">GLB</span><span class="conv-arrow">→</span><span class="conv-badge">JSON</span><span class="conv-note">raw scene graph</span></div>
+                    <div class="conv-row"><span class="conv-badge">OBJ</span><span class="conv-arrow">→</span><span class="conv-badge">GLB</span><span class="conv-badge">GLTF</span><span class="conv-badge">FBX</span></div>
+                    <div class="conv-row"><span class="conv-badge">FBX</span><span class="conv-arrow">→</span><span class="conv-badge">GLB</span><span class="conv-badge">OBJ</span><span class="conv-badge">DAE</span></div>
+                    <div class="conv-row"><span class="conv-badge">DAE</span><span class="conv-arrow">→</span><span class="conv-badge">GLB</span><span class="conv-badge">FBX</span><span class="conv-badge">OBJ</span></div>
+                    <div class="conv-row"><span class="conv-badge">STL</span><span class="conv-arrow">⇄</span><span class="conv-badge">OBJ</span><span class="conv-badge">PLY</span><span class="conv-badge">GLB</span></div>
+                    <div class="conv-row"><span class="conv-badge">USDZ</span><span class="conv-arrow">→</span><span class="conv-badge">GLB</span><span class="conv-note">Apple AR → web</span></div>
+                    <div class="conv-row"><span class="conv-badge">JSON</span><span class="conv-arrow">→</span><span class="conv-badge">GLB</span><span class="conv-note">Three.js JSON → glTF</span></div>
+                </div>
+
+                <div class="section-hdr">OBJ Converts To/From</div>
+                <div class="conv-block">
+                    <div class="conv-row"><span class="conv-badge">OBJ</span><span class="conv-arrow">→</span><span class="conv-badge">GLB</span><span class="conv-badge">GLTF</span><span class="conv-badge">FBX</span><span class="conv-badge">DAE</span></div>
+                    <div class="conv-row"><span class="conv-badge">OBJ</span><span class="conv-arrow">→</span><span class="conv-badge">STL</span><span class="conv-badge">PLY</span><span class="conv-badge">3DS</span><span class="conv-badge">ABC</span></div>
+                    <div class="conv-row"><span class="conv-badge">OBJ</span><span class="conv-arrow">→</span><span class="conv-badge">USDZ</span><span class="conv-badge">X3D</span><span class="conv-badge">WRL</span></div>
+                    <div class="conv-row"><span class="conv-badge">STL</span><span class="conv-arrow">→</span><span class="conv-badge">OBJ</span><span class="conv-arrow">·</span><span class="conv-badge">FBX</span><span class="conv-arrow">→</span><span class="conv-badge">OBJ</span></div>
+                </div>
+
+                <div class="section-hdr">Online Converter Tools</div>
+                <div class="btn-group">
+                    <a href="https://products.aspose.app/3d/conversion" target="_blank" class="link-row">Aspose 3D Converter <span>↗</span></a>
+                    <a href="https://www.meshconvert.com/" target="_blank" class="link-row">MeshConvert.com <span>↗</span></a>
+                    <a href="https://cloudconvert.com/3d" target="_blank" class="link-row">CloudConvert 3D <span>↗</span></a>
+                    <a href="https://github.com/KhronosGroup/glTF-Sample-Viewer" target="_blank" class="link-row">Khronos glTF Viewer (OSS) <span>↗</span></a>
+                    <a href="https://sbtron.github.io/makeglb/" target="_blank" class="link-row">OBJ → GLB Tool <span>↗</span></a>
+                </div>
+            </div>
+
+            <!-- ===== SAMPLES TAB ===== -->
+            <div class="tab-panel" id="tab-samples">
+                <div class="section-hdr">GLB Sample Files (Load Direct)</div>
+                <p style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">Click any card to load a sample model from the official Khronos glTF-Sample-Assets repository.</p>
+                <div id="samples-glb">
+                    <!-- JS will populate these -->
+                </div>
+                <div class="section-hdr">OBJ Sample Files</div>
+                <p style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">Community OBJ reference models for testing your converter workflow.</p>
+                <div id="samples-obj">
+                    <!-- JS will populate -->
+                </div>
+            </div>
+
+            <!-- ===== REFS TAB ===== -->
+            <div class="tab-panel" id="tab-refs">
+                <div class="section-hdr">glTF / GLB ↔ JSON</div>
+                <div class="btn-group">
+                    <a href="https://github.com/KhronosGroup/glTF" target="_blank" class="link-row">
+                        <div><div class="lr-title">Khronos glTF Spec</div><div class="lr-sub">JSON schema, extensions, RFC</div></div><span class="lr-arrow">↗</span>
+                    </a>
+                    <a href="https://github.com/CesiumGS/gltf-pipeline" target="_blank" class="link-row">
+                        <div><div class="lr-title">gltf-pipeline (GLB↔GLTF+JSON)</div><div class="lr-sub">Cesium CLI &amp; Node.js library</div></div><span class="lr-arrow">↗</span>
+                    </a>
+                    <a href="https://github.com/AnalyticalGraphicsInc/obj2gltf" target="_blank" class="link-row">
+                        <div><div class="lr-title">obj2gltf (OBJ→GLB/GLTF)</div><div class="lr-sub">Official Cesium OBJ converter</div></div><span class="lr-arrow">↗</span>
+                    </a>
+                    <a href="https://github.com/facebookincubator/FBX2glTF" target="_blank" class="link-row">
+                        <div><div class="lr-title">FBX2glTF (Meta/FB)</div><div class="lr-sub">FBX → GLB CLI tool</div></div><span class="lr-arrow">↗</span>
+                    </a>
+                    <a href="https://www.gltfeditor.com/" target="_blank" class="link-row">
+                        <div><div class="lr-title">glTF Editor (online)</div><div class="lr-sub">Edit GLTF JSON in browser</div></div><span class="lr-arrow">↗</span>
+                    </a>
+                    <a href="https://sandbox.babylonjs.com/" target="_blank" class="link-row">
+                        <div><div class="lr-title">BabylonJS Sandbox</div><div class="lr-sub">Inspect + export GLB/GLTF/OBJ</div></div><span class="lr-arrow">↗</span>
+                    </a>
+                </div>
+
+                <div class="section-hdr">OBJ Format References</div>
+                <div class="btn-group">
+                    <a href="https://en.wikipedia.org/wiki/Wavefront_.obj_file" target="_blank" class="link-row">
+                        <div><div class="lr-title">OBJ Format (Wikipedia)</div><div class="lr-sub">Geometry, MTL, UV spec</div></div><span class="lr-arrow">↗</span>
+                    </a>
+                    <a href="http://paulbourke.net/dataformats/obj/" target="_blank" class="link-row">
+                        <div><div class="lr-title">Paul Bourke OBJ Reference</div><div class="lr-sub">Comprehensive vertex format docs</div></div><span class="lr-arrow">↗</span>
+                    </a>
+                </div>
+
+                <div class="section-hdr">3D Format Index</div>
+                <div class="btn-group">
+                    <a href="https://docs.fileformat.com/3d/" target="_blank" class="link-row">
+                        <div><div class="lr-title">fileformat.com/3d</div><div class="lr-sub">All 3D formats, specs &amp; converters</div></div><span class="lr-arrow">↗</span>
+                    </a>
+                    <a href="https://www.meshlab.net/" target="_blank" class="link-row">
+                        <div><div class="lr-title">MeshLab (desktop)</div><div class="lr-sub">Open-source 3D mesh processing</div></div><span class="lr-arrow">↗</span>
+                    </a>
+                    <a href="https://www.blender.org/" target="_blank" class="link-row">
+                        <div><div class="lr-title">Blender (free, all formats)</div><div class="lr-sub">Import/export any format to any</div></div><span class="lr-arrow">↗</span>
+                    </a>
+                    <a href="https://github.com/nicktindall/cyclopedia" target="_blank" class="link-row">
+                        <div><div class="lr-title">Three.js Docs — Loaders</div><div class="lr-sub">All loaders &amp; format support</div></div><span class="lr-arrow">↗</span>
+                    </a>
+                </div>
+            </div>
+
+
+            <!-- ===== LEVEL BUILDER TAB ===== -->
+            <div class="tab-panel" id="tab-level">
+
+                <div class="section-hdr">💾 Save &amp; Load Level</div>
+                <div class="btn-group">
+                    <div class="prop-row" style="gap:6px;">
+                        <button id="lb-quick-save" class="mode-btn" style="flex:1;">Quick Save</button>
+                        <button id="lb-quick-load" class="mode-btn" style="flex:1;">Load Latest</button>
+                    </div>
+                    <div style="font-size:10px;color:var(--text-muted);padding:4px 9px;display:flex;justify-content:space-between;align-items:center;">
+                        <span>Save History (max 10)</span>
+                        <label class="upload-btn" style="background:var(--bg-panel);color:var(--accent-primary);font-weight:400;font-size:10px;padding:2px 8px;border:1px solid var(--border);width:auto;cursor:pointer;">
+                            + Import<input type="file" id="lb-import-history" accept=".json">
+                        </label>
+                    </div>
+                    <div id="lb-history-container" style="background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);max-height:160px;overflow-y:auto;margin-bottom:4px;"></div>
+                    <div class="prop-row" style="gap:6px;">
+                        <button id="lb-file-export" class="mode-btn" style="flex:1;">Export Layout File</button>
+                        <label class="mode-btn" style="flex:1;text-align:center;cursor:pointer;">
+                            Import Layout<input type="file" id="lb-file-import" accept=".json">
+                        </label>
+                    </div>
+                    <button id="lb-clear-scene" class="action-btn danger">🗑 Clear All Objects</button>
+                </div>
+
+                <div class="section-hdr">Spawn Asset</div>
+                <div class="btn-group">
+                    <div class="prop-row">
+                        <label>Asset</label>
+                        <select id="lb-asset-select" class="vsc-select" style="flex:1;"></select>
+                    </div>
+                    <button id="lb-spawn" class="mode-btn">Spawn into Scene</button>
+                </div>
+
+                <div class="section-hdr">Custom Asset</div>
+                <div class="btn-group">
+                    <label class="upload-btn" style="background:var(--bg-panel);color:var(--text-secondary);font-weight:400;border:1px solid var(--border);">
+                        <input type="file" id="lb-file-upload" accept=".glb,.gltf">
+                        📁 Upload GLB/GLTF
+                    </label>
+                    <div class="prop-row">
+                        <input id="lb-url-upload" placeholder="Or paste GLB URL…" style="flex:1;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px 8px;color:var(--text-primary);font-size:11px;outline:none;">
+                    </div>
+                    <button id="lb-spawn-custom" class="mode-btn active">Load Custom</button>
+                </div>
+
+                <div class="section-hdr">Selected Object</div>
+                <div id="lb-properties-panel" class="btn-group" style="display:none;">
+                    <div class="prop-row"><label style="width:28px;">Pos</label>
+                        <input type="number" id="lb-px" step="0.1" title="X" style="flex:1;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);padding:3px 5px;color:var(--text-primary);font-size:11px;min-width:0;">
+                        <input type="number" id="lb-py" step="0.1" title="Y" style="flex:1;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);padding:3px 5px;color:var(--text-primary);font-size:11px;min-width:0;">
+                        <input type="number" id="lb-pz" step="0.1" title="Z" style="flex:1;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);padding:3px 5px;color:var(--text-primary);font-size:11px;min-width:0;">
+                    </div>
+                    <div class="prop-row"><label style="width:28px;">Rot</label>
+                        <input type="number" id="lb-rx" step="5" title="X°" style="flex:1;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);padding:3px 5px;color:var(--text-primary);font-size:11px;min-width:0;">
+                        <input type="number" id="lb-ry" step="5" title="Y°" style="flex:1;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);padding:3px 5px;color:var(--text-primary);font-size:11px;min-width:0;">
+                        <input type="number" id="lb-rz" step="5" title="Z°" style="flex:1;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);padding:3px 5px;color:var(--text-primary);font-size:11px;min-width:0;">
+                    </div>
+                    <div class="prop-row"><label style="width:28px;">Scl</label>
+                        <input type="number" id="lb-sx" step="0.1" title="X" style="flex:1;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);padding:3px 5px;color:var(--text-primary);font-size:11px;min-width:0;">
+                        <input type="number" id="lb-sy" step="0.1" title="Y" style="flex:1;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);padding:3px 5px;color:var(--text-primary);font-size:11px;min-width:0;">
+                        <input type="number" id="lb-sz" step="0.1" title="Z" style="flex:1;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);padding:3px 5px;color:var(--text-primary);font-size:11px;min-width:0;">
+                    </div>
+                    <button id="lb-delete" class="action-btn danger">🗑 Delete Selected</button>
+                </div>
+
+                <div class="section-hdr">Export Layout Code</div>
+                <div class="btn-group">
+                    <button id="lb-export-code" class="export-btn" style="width:100%;">Generate JS Code</button>
+                    <textarea id="lb-export-output" readonly placeholder="Generated placement code will appear here…"
+                        style="width:100%;height:120px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px;color:var(--text-secondary);font-family:var(--font-mono);font-size:10px;resize:vertical;outline:none;margin-top:4px;"></textarea>
+                </div>
+
+            </div>
+
+            <!-- ===== ANIMATOR TAB ===== -->
+            <div class="tab-panel" id="tab-animator">
+                <div class="section-hdr">FBX Character & Animations</div>
+                <p style="font-size:10px;color:var(--text-muted);margin-bottom:8px;line-height:1.5;">Upload a Mixamo FBX character, then add animation FBX files. Each clip can be previewed live in the viewport.</p>
+                <div class="btn-group">
+                    <label class="upload-btn" style="background:var(--accent-primary);font-size:11px;padding:6px 10px;">
+                        <input type="file" id="anim-fbx-input" accept=".fbx,.glb,.gltf" multiple>
+                        📁 Upload FBX / GLB Character + Anims
+                    </label>
+                    <div id="anim-char-status" style="font-size:10px;color:var(--text-muted);padding:3px 0;">No character loaded</div>
+                </div>
+                <div class="section-hdr">Animations</div>
+                <div style="font-size:10px;color:var(--text-muted);margin-bottom:6px;" id="anim-count-label">0 loaded</div>
+                <div id="anim-list" style="display:flex;flex-direction:column;gap:4px;max-height:280px;overflow-y:auto;"></div>
+                <div class="section-hdr" style="margin-top:10px;">Playback</div>
+                <div class="btn-group">
+                    <div class="prop-row"><label>Active</label><span id="anim-active-label" style="font-size:10px;color:var(--accent-primary-2);font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;text-align:right;">None</span></div>
+                    <div class="prop-row"><label>Speed</label><input type="range" id="anim-speed-slider" min="10" max="300" value="100"></div>
+                    <div class="prop-row"><label>Loop</label><button id="anim-loop-btn" class="toggle-pill on">ON</button></div>
+                </div>
+                <div class="section-hdr">Workspace</div>
+                <div class="btn-group">
+                    <div class="prop-row" style="gap:6px;">
+                        <button id="anim-save-btn" class="mode-btn" style="flex:1;font-size:10px;">Quick Save</button>
+                        <button id="anim-load-btn" class="mode-btn" style="flex:1;font-size:10px;">Quick Load</button>
+                    </div>
+                    <div class="prop-row" style="gap:6px;">
+                        <button id="anim-export-json-btn" class="export-btn" style="flex:1;font-size:10px;">Export JSON</button>
+                        <label class="export-btn" style="flex:1;font-size:10px;text-align:center;cursor:pointer;">Import JSON<input type="file" id="anim-import-json-input" accept=".json"></label>
+                    </div>
+                </div>
+                <div id="anim-save-status" style="font-size:9px;color:var(--text-muted);margin-top:4px;"></div>
+            </div>
+
+        </div><!-- end tab content -->
+    </aside>
+
+
+    <!-- Confirm Modal (Level Builder) -->
+    <div id="lb-confirm-modal" style="display:none;position:fixed;inset:0;background:#2f2f2f;z-index:200;align-items:center;justify-content:center;">
+        <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px 24px;max-width:340px;width:90%;">
+            <p id="lb-confirm-msg" style="font-size:13px;color:var(--text-primary);margin-bottom:16px;line-height:1.5;"></p>
+            <div style="display:flex;gap:8px;justify-content:flex-end;">
+                <button id="lb-confirm-no" class="mode-btn" style="padding:5px 16px;">Cancel</button>
+                <button id="lb-confirm-yes" class="export-btn" style="padding:5px 16px;">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div id="toast"></div>
+
+    <!-- Canvas Container -->
+    <main id="canvas-container">
+        <!-- Info panel overlay -->
+        <div id="info-panel">
+            <div class="ip-title">Model Info</div>
+            <div id="info-content"></div>
+        </div>
+        <!-- Three.js will attach here -->
+        <div id="no-model-text">
+            <div class="empty-icon">⬡</div>
+            <p class="empty-title">Drag &amp; Drop or Upload a model</p>
+            <p class="empty-sub">OBJ · GLB · GLTF · FBX · STL · PLY · DAE · 3DS · USDZ and more</p>
+        </div>
+        <div id="drag-hint">Orbit: Left-drag · Zoom: Scroll · Pan: Right-drag</div>
+    </main>
+    </div><!-- #app -->
+
+    <div id="statusbar">
+        <span class="sb-item">envizion.work</span>
+        <span class="sb-item">3D Model Viewer</span>
+        <span id="sb-mode" class="sb-item">No model loaded</span>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { TransformControls } from 'three/addons/controls/TransformControls.js';
+        
+        // Loaders
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+        import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+        import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+        import { STLLoader } from 'three/addons/loaders/STLLoader.js';
+        import { PLYLoader } from 'three/addons/loaders/PLYLoader.js';
+        import { ColladaLoader } from 'three/addons/loaders/ColladaLoader.js';
+        import { TDSLoader } from 'three/addons/loaders/TDSLoader.js';
+
+        // Exporters
+        import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+        import { OBJExporter } from 'three/addons/exporters/OBJExporter.js';
+        import { STLExporter } from 'three/addons/exporters/STLExporter.js';
+        import { PLYExporter } from 'three/addons/exporters/PLYExporter.js';
+
+        // --- State ---
+        let scene, camera, renderer, controls, transformControl;
+        let currentModel = null;
+        let isWireframe = false;
+        let currentMode = 'standard';
+        let gridHelper = null;
+        let ambientLight, dirLight, dirLight2;
+        let isAutoRotate = false;
+        let shadowsEnabled = false;
+        let isExploded = false;
+        let clonedModels = [];
+        const depthMaterial = new THREE.MeshDepthMaterial();
+        const matcapMaterial = new THREE.MeshMatcapMaterial();
+
+        // --- Animator state ---
+        let animMixer = null;
+        let animClock = new THREE.Clock();
+        let animCurrentAction = null;
+        let animData = []; // {id, name, clip, action, sourceFile}
+        let animCharModel = null;
+        let animLoopEnabled = true;
+        let animRawFiles = {}; // fileName -> ArrayBuffer
+
+        // --- Materials ---
+        const normalMaterial = new THREE.MeshNormalMaterial({ side: THREE.DoubleSide });
+        let uvMaterial = null;
+
+        // --- DOM Elements ---
+        const container = document.getElementById('canvas-container');
+        const fileInput = document.getElementById('file-input');
+        const loadingOverlay = document.getElementById('loading-overlay');
+        const noModelText = document.getElementById('no-model-text');
+        const toast = document.getElementById('toast');
+        
+        // Inspection Buttons
+        const btnReset = document.getElementById('btn-reset');
+        const btnWireframe = document.getElementById('btn-wireframe');
+        const btnNormals = document.getElementById('btn-normals');
+        const btnUv = document.getElementById('btn-uv');
+        const btnDepth = document.getElementById('btn-depth');
+        const btnFlat = document.getElementById('btn-flat');
+        const btnXray = document.getElementById('btn-xray');
+
+        // Scene controls
+        const bgColorPicker = document.getElementById('bg-color-picker');
+        const ambientSlider = document.getElementById('ambient-slider');
+        const dirSlider = document.getElementById('dir-slider');
+        const btnGrid = document.getElementById('btn-grid');
+        const btnAutoRotate = document.getElementById('btn-autorotate');
+        const btnShadows = document.getElementById('btn-shadows');
+        const btnScreenshot = document.getElementById('btn-screenshot');
+        const btnCenter = document.getElementById('btn-center');
+        const btnExplode = document.getElementById('btn-explode');
+
+        // Editor & Converter Buttons
+        const colorPicker = document.getElementById('color-picker');
+        const emissivePicker = document.getElementById('emissive-picker');
+        const metalnessSlider = document.getElementById('metalness-slider');
+        const roughnessSlider = document.getElementById('roughness-slider');
+        const opacitySlider = document.getElementById('opacity-slider');
+        const btnTrans = document.getElementById('btn-trans');
+        const btnRot = document.getElementById('btn-rot');
+        const btnScale = document.getElementById('btn-scale');
+        const btnExport = document.getElementById('btn-export');
+        const exportFormat = document.getElementById('export-format');
+        const textureInput = document.getElementById('texture-input');
+        const normalTextureInput = document.getElementById('normal-texture-input');
+        const btnFlipNormals = document.getElementById('btn-flip-normals');
+        const btnCenterModel = document.getElementById('btn-center-model');
+        const btnClone = document.getElementById('btn-clone');
+        const btnDelete = document.getElementById('btn-delete');
+
+        // --- Sample Data (must be declared before init() calls populateSamples) ---
+        const GLB_SAMPLES = [
+            { name: 'Avocado', url: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/Avocado/glTF-Binary/Avocado.glb' },
+            { name: 'DamagedHelmet', url: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/DamagedHelmet/glTF-Binary/DamagedHelmet.glb' },
+            { name: 'BoomBox', url: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/BoomBox/glTF-Binary/BoomBox.glb' },
+            { name: 'FlightHelmet', url: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/FlightHelmet/glTF-Binary/FlightHelmet.glb' },
+            { name: 'WaterBottle', url: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/WaterBottle/glTF-Binary/WaterBottle.glb' },
+            { name: 'SciFiHelmet', url: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/SciFiHelmet/glTF-Binary/SciFiHelmet.glb' },
+            { name: 'DragonAttenuation', url: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/DragonAttenuation/glTF-Binary/DragonAttenuation.glb' },
+            { name: 'Fox (Animated)', url: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/Fox/glTF-Binary/Fox.glb' },
+            { name: 'CesiumMilkTruck', url: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/CesiumMilkTruck/glTF-Binary/CesiumMilkTruck.glb' },
+            { name: 'Lantern', url: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/Lantern/glTF-Binary/Lantern.glb' },
+        ];
+        const OBJ_SAMPLES = [
+            { name: 'Utah Teapot', url: 'https://raw.githubusercontent.com/nicktindall/cyclopedia/master/examples/geometry-demo/assets/teapot.obj' },
+            { name: 'Stanford Bunny', url: 'https://raw.githubusercontent.com/alecjacobson/common-3d-test-models/master/data/bunny.obj' },
+            { name: 'African Head', url: 'https://raw.githubusercontent.com/ssloy/tinyrenderer/master/obj/african_head/african_head.obj' },
+            { name: 'Cube reference', url: 'https://raw.githubusercontent.com/nicktindall/cyclopedia/master/examples/loaders/assets/cube.obj' },
+            { name: 'Diablo model', url: 'https://raw.githubusercontent.com/ssloy/tinyrenderer/master/obj/diablo3_pose/diablo3_pose.obj' },
+            { name: 'Spot (cow)', url: 'https://raw.githubusercontent.com/alecjacobson/common-3d-test-models/master/data/spot.obj' },
+            { name: 'Horse mesh', url: 'https://raw.githubusercontent.com/alecjacobson/common-3d-test-models/master/data/horse.obj' },
+            { name: 'Camelhead', url: 'https://raw.githubusercontent.com/alecjacobson/common-3d-test-models/master/data/camelhead.obj' },
+            { name: 'Armadillo', url: 'https://raw.githubusercontent.com/alecjacobson/common-3d-test-models/master/data/armadillo.obj' },
+            { name: 'Cheburashka', url: 'https://raw.githubusercontent.com/alecjacobson/common-3d-test-models/master/data/cheburashka.obj' },
+        ];
+
+        init();
+        animate();
+
+        function init() {
+            // Scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color('#212121');
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(45, (window.innerWidth - 300) / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 2, 5);
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+            renderer.setSize(window.innerWidth - 300, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.0;
+            renderer.shadowMap.enabled = false;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            container.appendChild(renderer.domElement);
+
+            // Controls
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+
+            // Transform Controls (Editor)
+            transformControl = new TransformControls(camera, renderer.domElement);
+            transformControl.addEventListener('dragging-changed', function (event) {
+                controls.enabled = !event.value;
+            });
+            scene.add(transformControl);
+
+            // Lighting
+            ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
+            scene.add(ambientLight);
+            
+            dirLight = new THREE.DirectionalLight(0xffffff, 2);
+            dirLight.position.set(5, 10, 7.5);
+            dirLight.castShadow = false;
+            dirLight.shadow.mapSize.width = 2048;
+            dirLight.shadow.mapSize.height = 2048;
+            scene.add(dirLight);
+
+            dirLight2 = new THREE.DirectionalLight(0xffffff, 1);
+            dirLight2.position.set(-5, -5, -5);
+            scene.add(dirLight2);
+
+            // Generate UV Checker Material
+            uvMaterial = new THREE.MeshBasicMaterial({ 
+                map: createUVCheckerTexture(),
+                side: THREE.DoubleSide
+            });
+
+            // Grid Helper
+            gridHelper = new THREE.GridHelper(20, 80, 0x334155, 0x1e293b);
+            scene.add(gridHelper);
+
+            // Matcap texture (procedural clay-like)
+            const matcapCanvas = document.createElement('canvas');
+            matcapCanvas.width = 256; matcapCanvas.height = 256;
+            const mc = matcapCanvas.getContext('2d');
+            const grd = mc.createRadialGradient(90, 80, 10, 128, 128, 140);
+            grd.addColorStop(0, '#b4b4b4'); grd.addColorStop(0.4, '#b4b4b4'); grd.addColorStop(1, '#b4b4b4');
+            mc.fillStyle = grd; mc.fillRect(0, 0, 256, 256);
+            matcapMaterial.matcap = new THREE.CanvasTexture(matcapCanvas);
+
+            // Event Listeners
+            window.addEventListener('resize', onWindowResize);
+            fileInput.addEventListener('change', handleFileUpload);
+            document.addEventListener('dragover', (e) => e.preventDefault());
+            document.addEventListener('drop', handleDrop);
+            
+            // Keyboard shortcuts
+            document.addEventListener('keydown', (e) => {
+                if (document.activeElement.tagName === 'INPUT') return;
+                if (e.key === 'w' || e.key === 'W') toggleWireframe();
+                if (e.key === 'n' || e.key === 'N') setMode('normals');
+                if (e.key === 'u' || e.key === 'U') setMode('uv');
+                if (e.key === 'd' || e.key === 'D') setMode('depth');
+                if (e.key === 'm' || e.key === 'M') setMode('flat');
+                if (e.key === 'x' || e.key === 'X') setMode('xray');
+                if (e.key === 'p' || e.key === 'P') takeScreenshot();
+                if (e.key === 'Escape') setMode('standard');
+            });
+            
+            // Inspection Bindings
+            btnReset.addEventListener('click', () => setMode('standard'));
+            btnWireframe.addEventListener('click', toggleWireframe);
+            btnNormals.addEventListener('click', () => setMode('normals'));
+            btnUv.addEventListener('click', () => setMode('uv'));
+            btnDepth.addEventListener('click', () => setMode('depth'));
+            btnFlat.addEventListener('click', () => setMode('flat'));
+            btnXray.addEventListener('click', () => setMode('xray'));
+
+            // Scene controls
+            bgColorPicker.addEventListener('input', (e) => { scene.background = new THREE.Color(e.target.value); });
+            ambientSlider.addEventListener('input', (e) => { ambientLight.intensity = e.target.value / 100; });
+            dirSlider.addEventListener('input', (e) => { dirLight.intensity = e.target.value / 100; });
+            btnGrid.addEventListener('click', () => {
+                gridHelper.visible = !gridHelper.visible;
+                btnGrid.textContent = gridHelper.visible ? 'ON' : 'OFF';
+                btnGrid.classList.toggle('on', gridHelper.visible);
+            });
+            btnAutoRotate.addEventListener('click', () => {
+                isAutoRotate = !isAutoRotate;
+                controls.autoRotate = isAutoRotate;
+                controls.autoRotateSpeed = 1.5;
+                btnAutoRotate.textContent = isAutoRotate ? 'ON' : 'OFF';
+                btnAutoRotate.classList.toggle('on', isAutoRotate);
+            });
+            btnShadows.addEventListener('click', () => {
+                shadowsEnabled = !shadowsEnabled;
+                renderer.shadowMap.enabled = shadowsEnabled;
+                dirLight.castShadow = shadowsEnabled;
+                if (currentModel) currentModel.traverse(c => { if (c.isMesh) { c.castShadow = shadowsEnabled; c.receiveShadow = shadowsEnabled; } });
+                btnShadows.textContent = shadowsEnabled ? 'ON' : 'OFF';
+                btnShadows.classList.toggle('on', shadowsEnabled);
+                showToast('Shadows ' + (shadowsEnabled ? 'enabled' : 'disabled'));
+            });
+            btnScreenshot.addEventListener('click', takeScreenshot);
+            btnCenter.addEventListener('click', resetCamera);
+            btnExplode.addEventListener('click', toggleExplode);
+
+            // Editor
+            btnTrans.addEventListener('click', () => setTransformMode('translate', btnTrans));
+            btnRot.addEventListener('click', () => setTransformMode('rotate', btnRot));
+            btnScale.addEventListener('click', () => setTransformMode('scale', btnScale));
+            btnExport.addEventListener('click', () => exportFile(exportFormat.value));
+            colorPicker.addEventListener('input', updateModelColor);
+            emissivePicker.addEventListener('input', updateEmissive);
+            metalnessSlider.addEventListener('input', (e) => updateMaterialProp('metalness', e.target.value / 100));
+            roughnessSlider.addEventListener('input', (e) => updateMaterialProp('roughness', e.target.value / 100));
+            opacitySlider.addEventListener('input', (e) => updateMaterialProp('opacity', e.target.value / 100));
+            textureInput.addEventListener('change', handleTextureUpload);
+            normalTextureInput.addEventListener('change', handleNormalMapUpload);
+            btnFlipNormals.addEventListener('click', flipNormals);
+            btnCenterModel.addEventListener('click', centerModelToOrigin);
+            btnClone.addEventListener('click', cloneModel);
+            btnDelete.addEventListener('click', deleteModel);
+
+            // Tabs
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+                    btn.classList.add('active');
+                    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+                });
+            });
+
+            // Populate samples
+            populateSamples();
+        }
+
+        // --- Custom UV Checker Texture ---
+        function createUVCheckerTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 1024;
+            canvas.height = 1024;
+            const context = canvas.getContext('2d');
+            const numSquares = 32;
+            const squareSize = canvas.width / numSquares;
+            
+            for (let i = 0; i < numSquares; i++) {
+                for (let j = 0; j < numSquares; j++) {
+                    context.fillStyle = (i + j) % 2 === 0 ? '#b4b4b4' : '#2f2f2f';
+                    context.fillRect(i * squareSize, j * squareSize, squareSize, squareSize);
+                    if ((i + j) % 2 === 0) {
+                        context.fillStyle = '#b4b4b4';
+                        context.beginPath();
+                        context.arc(i * squareSize + squareSize/2, j * squareSize + squareSize/2, 2, 0, Math.PI * 2);
+                        context.fill();
+                    }
+                }
+            }
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
+            texture.colorSpace = THREE.SRGBColorSpace;
+            return texture;
+        }
+
+        // --- File Handling & Loaders ---
+        function handleDrop(event) {
+            event.preventDefault();
+            if (event.dataTransfer.files && event.dataTransfer.files.length > 0) {
+                loadFile(event.dataTransfer.files[0]);
+            }
+        }
+
+        function handleFileUpload(event) {
+            if (event.target.files && event.target.files.length > 0) {
+                loadFile(event.target.files[0]);
+            }
+        }
+
+        function loadFile(file) {
+            const extension = file.name.split('.').pop().toLowerCase();
+            const url = URL.createObjectURL(file);
+            
+            loadingOverlay.style.display = 'flex';
+            loadingOverlay.querySelector('h2').innerText = 'Processing Geometry...';
+            noModelText.style.display = 'none';
+
+            if (currentModel) {
+                transformControl.detach();
+                scene.remove(currentModel);
+                currentModel.traverse((child) => {
+                    if (child.isMesh) {
+                        child.geometry.dispose();
+                        if (child.material.isMaterial) child.material.dispose();
+                    }
+                });
+            }
+
+            try {
+                switch (extension) {
+                    case 'glb':
+                    case 'gltf':
+                        new GLTFLoader().load(url, (gltf) => setupModel(gltf.scene), undefined, handleError);
+                        break;
+                    case 'obj':
+                        new OBJLoader().load(url, (obj) => setupModel(obj), undefined, handleError);
+                        break;
+                    case 'fbx':
+                        new FBXLoader().load(url, (fbx) => setupModel(fbx), undefined, handleError);
+                        break;
+                    case 'stl':
+                        new STLLoader().load(url, (geo) => {
+                            const mat = new THREE.MeshStandardMaterial({ side: THREE.DoubleSide });
+                            setupModel(new THREE.Mesh(geo, mat));
+                        }, undefined, handleError);
+                        break;
+                    case 'ply':
+                        new PLYLoader().load(url, (geo) => {
+                            geo.computeVertexNormals();
+                            const mat = new THREE.MeshStandardMaterial({ side: THREE.DoubleSide });
+                            setupModel(new THREE.Mesh(geo, mat));
+                        }, undefined, handleError);
+                        break;
+                    case 'dae':
+                        new ColladaLoader().load(url, (collada) => setupModel(collada.scene), undefined, handleError);
+                        break;
+                    case '3ds':
+                        new TDSLoader().load(url, (tds) => setupModel(tds), undefined, handleError);
+                        break;
+                    case 'json': {
+                        // Three.js ObjectLoader JSON scene graph
+                        const loader = new THREE.ObjectLoader();
+                        loader.load(url, (obj) => setupModel(obj), undefined, handleError);
+                        break;
+                    }
+                    case 'svg': {
+                        // Render SVG as a flat plane texture
+                        new THREE.TextureLoader().load(url, (tex) => {
+                            tex.colorSpace = THREE.SRGBColorSpace;
+                            const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide });
+                            const geo = new THREE.PlaneGeometry(5, 5 * (tex.image.height / tex.image.width || 1));
+                            setupModel(new THREE.Mesh(geo, mat));
+                        }, undefined, handleError);
+                        break;
+                    }
+                    case 'png':
+                    case 'jpg':
+                    case 'jpeg':
+                    case 'webp': {
+                        // Image as textured plane
+                        new THREE.TextureLoader().load(url, (tex) => {
+                            tex.colorSpace = THREE.SRGBColorSpace;
+                            const ar = tex.image.width / (tex.image.height || 1);
+                            const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide });
+                            setupModel(new THREE.Mesh(new THREE.PlaneGeometry(5, 5/ar), mat));
+                        }, undefined, handleError);
+                        break;
+                    }
+                    default:
+                        showToast('Format .' + extension + ' not supported for 3D view');
+                        loadingOverlay.style.display = 'none';
+                }
+            } catch (err) {
+                handleError(err);
+            }
+        }
+
+        function handleError(error) {
+            console.error('Error loading model:', error);
+            loadingOverlay.style.display = 'none';
+            noModelText.style.display = 'flex';
+            const msg = error && error.message ? error.message : String(error);
+            showToast('⚠ Load failed: ' + msg.slice(0, 60));
+        }
+
+        function setupModel(model) {
+            currentModel = model;
+            
+            // Backup materials and ensure standardized setup
+            currentModel.traverse((child) => {
+                if (child.isMesh) {
+                    if (child.material) {
+                        if (Array.isArray(child.material)) {
+                            child.userData.originalMaterial = child.material.map(m => m.clone());
+                        } else {
+                            child.userData.originalMaterial = child.material.clone();
+                            child.userData.originalMaterial.side = THREE.DoubleSide; 
+                        }
+                    } else {
+                         child.userData.originalMaterial = new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, color: colorPicker.value });
+                         child.material = child.userData.originalMaterial;
+                    }
+                    child.castShadow = shadowsEnabled;
+                    child.receiveShadow = shadowsEnabled;
+                }
+            });
+
+            // Center and Scale Model
+            const box = new THREE.Box3().setFromObject(currentModel);
+            const size = box.getSize(new THREE.Vector3());
+            const maxDim = Math.max(size.x, size.y, size.z);
+            
+            const targetSize = 5;
+            const scale = targetSize / maxDim;
+            currentModel.scale.set(scale, scale, scale);
+            
+            const newBox = new THREE.Box3().setFromObject(currentModel);
+            const newCenter = newBox.getCenter(new THREE.Vector3());
+            
+            currentModel.position.sub(newCenter);
+            currentModel.position.y += (newBox.getSize(new THREE.Vector3()).y / 2);
+
+            scene.add(currentModel);
+            
+            // Attach editor controls
+            transformControl.attach(currentModel);
+            setTransformMode('translate', btnTrans);
+            
+            camera.position.set(0, targetSize/2, targetSize * 1.5);
+            controls.target.set(0, targetSize/2, 0);
+            controls.update();
+
+            loadingOverlay.style.display = 'none';
+            noModelText.style.display = 'none';
+            isWireframe = false;
+            isExploded = false;
+            setMode('standard');
+            updateStats(currentModel);
+            document.getElementById('sb-mode').textContent = 'Model loaded · Standard View';
+            showToast('Model loaded successfully!');
+        }
+
+        // --- Editing Tools ---
+        function setTransformMode(mode, activeBtn) {
+            if(!currentModel) return;
+            transformControl.setMode(mode);
+            [btnTrans, btnRot, btnScale].forEach(btn => { btn.classList.remove('active'); });
+            activeBtn.classList.add('active');
+        }
+
+        function updateModelColor(e) {
+            if (!currentModel) return;
+            const color = new THREE.Color(e.target.value);
+            currentModel.traverse((child) => {
+                if (child.isMesh && child.material) {
+                    // Update active material
+                    if (Array.isArray(child.material)) {
+                        child.material.forEach(m => m.color && m.color.set(color));
+                    } else {
+                        if (child.material.color) child.material.color.set(color);
+                    }
+                    // Update fallback standard material
+                    if (child.userData.originalMaterial) {
+                         if (Array.isArray(child.userData.originalMaterial)) {
+                             child.userData.originalMaterial.forEach(m => m.color && m.color.set(color));
+                         } else {
+                             if (child.userData.originalMaterial.color) child.userData.originalMaterial.color.set(color);
+                         }
+                    }
+                }
+            });
+        }
+
+        // --- Converter & Exporters ---
+        function exportFile(format) {
+            if (!currentModel) return alert('Please load a model first.');
+            
+            loadingOverlay.style.display = 'flex';
+            loadingOverlay.querySelector('h2').innerText = `Exporting to ${format.toUpperCase()}...`;
+            
+            // Temporarily detach gizmos so they aren't exported
+            transformControl.detach();
+
+            setTimeout(() => {
+                try {
+                    if (format === 'glb' || format === 'gltf') {
+                        const exporter = new GLTFExporter();
+                        exporter.parse(currentModel, (result) => {
+                            if (result instanceof ArrayBuffer) {
+                                saveArrayBuffer(result, 'envizion_export.glb');
+                            } else {
+                                saveString(JSON.stringify(result, null, 2), 'envizion_export.gltf');
+                            }
+                            afterExport();
+                        }, (err) => { console.error(err); alert('Export failed'); }, { binary: format === 'glb' });
+                    } else if (format === 'obj') {
+                        const exporter = new OBJExporter();
+                        saveString(exporter.parse(currentModel), 'envizion_export.obj');
+                        afterExport();
+                    } else if (format === 'stl') {
+                        const exporter = new STLExporter();
+                        saveString(exporter.parse(currentModel), 'envizion_export.stl');
+                        afterExport();
+                    } else if (format === 'ply') {
+                        const exporter = new PLYExporter();
+                        exporter.parse(currentModel, (result) => {
+                            if (result instanceof ArrayBuffer) {
+                                saveArrayBuffer(result, 'envizion_export.ply');
+                            } else {
+                                saveString(result, 'envizion_export.ply');
+                            }
+                            afterExport();
+                        }, { binary: true });
+                    }
+                } catch (err) {
+                    console.error(err);
+                    alert('An error occurred during export.');
+                    afterExport();
+                }
+            }, 100);
+        }
+
+        function afterExport() {
+            transformControl.attach(currentModel); // re-attach gizmos
+            loadingOverlay.style.display = 'none';
+        }
+
+        function saveString(text, filename) {
+            saveBlob(new Blob([text], { type: 'text/plain' }), filename);
+        }
+
+        function saveArrayBuffer(buffer, filename) {
+            saveBlob(new Blob([buffer], { type: 'application/octet-stream' }), filename);
+        }
+
+        function saveBlob(blob, filename) {
+            const link = document.createElement('a');
+            link.style.display = 'none';
+            link.href = URL.createObjectURL(blob);
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // --- Inspection Tools Logic ---
+        function toggleWireframe() {
+            if (!currentModel) return;
+            isWireframe = !isWireframe;
+            currentModel.traverse((child) => {
+                if (child.isMesh && child.material) {
+                    if (Array.isArray(child.material)) {
+                        child.material.forEach(m => m.wireframe = isWireframe);
+                    } else {
+                        child.material.wireframe = isWireframe;
+                    }
+                }
+            });
+            btnWireframe.classList.toggle('active', isWireframe);
+        }
+
+        function setMode(mode) {
+            if (!currentModel) return;
+            currentMode = mode;
+            const allModeBtns = [btnReset, btnNormals, btnUv, btnDepth, btnFlat, btnXray];
+            allModeBtns.forEach(btn => { btn.classList.remove('active'); });
+            
+            if (mode === 'standard') { btnReset.classList.add('active'); }
+            if (mode === 'normals') { btnNormals.classList.add('active'); }
+            if (mode === 'uv') { btnUv.classList.add('active'); }
+            if (mode === 'depth') { btnDepth.classList.add('active'); }
+            if (mode === 'flat') { btnFlat.classList.add('active'); }
+            if (mode === 'xray') { btnXray.classList.add('active'); }
+
+            currentModel.traverse((child) => {
+                if (child.isMesh) {
+                    if (mode === 'standard') child.material = child.userData.originalMaterial;
+                    else if (mode === 'normals') child.material = normalMaterial;
+                    else if (mode === 'uv') child.material = uvMaterial;
+                    else if (mode === 'depth') child.material = depthMaterial;
+                    else if (mode === 'flat') child.material = matcapMaterial;
+                    else if (mode === 'xray') child.material = new THREE.MeshBasicMaterial({ color: 0x88ccff, wireframe: false, transparent: true, opacity: 0.18, side: THREE.DoubleSide, depthWrite: false });
+                    
+                    if (Array.isArray(child.material)) {
+                        child.material.forEach(m => m.wireframe = isWireframe);
+                    } else {
+                        if (mode !== 'xray') child.material.wireframe = isWireframe;
+                    }
+                }
+            });
+            showToast('Mode: ' + mode.charAt(0).toUpperCase() + mode.slice(1));
+        }
+
+        // --- Toast ---
+        let toastTimer;
+        function showToast(msg) {
+            toast.textContent = msg;
+            toast.style.display = 'block';
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => { toast.style.display = 'none'; }, 2500);
+        }
+
+        // --- Model Stats ---
+        function updateStats(model) {
+            let verts = 0, faces = 0, mats = new Set();
+            model.traverse(c => {
+                if (c.isMesh) {
+                    const g = c.geometry;
+                    if (g.attributes.position) verts += g.attributes.position.count;
+                    if (g.index) faces += g.index.count / 3;
+                    else if (g.attributes.position) faces += g.attributes.position.count / 3;
+                    const m = Array.isArray(c.material) ? c.material : [c.material];
+                    m.forEach(mat => mat && mats.add(mat.uuid));
+                }
+            });
+            document.getElementById('stat-verts').textContent = verts.toLocaleString();
+            document.getElementById('stat-faces').textContent = Math.round(faces).toLocaleString();
+            document.getElementById('stat-mats').textContent = mats.size;
+            document.getElementById('model-stats').style.display = 'flex';
+        }
+
+        // --- Screenshot ---
+        function takeScreenshot() {
+            renderer.render(scene, camera);
+            const url = renderer.domElement.toDataURL('image/png');
+            const a = document.createElement('a'); a.href = url; a.download = 'envizion_screenshot.png';
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            showToast('Screenshot saved!');
+        }
+
+        // --- Reset Camera ---
+        function resetCamera() {
+            if (currentModel) {
+                const box = new THREE.Box3().setFromObject(currentModel);
+                const size = box.getSize(new THREE.Vector3());
+                const center = box.getCenter(new THREE.Vector3());
+                const maxDim = Math.max(size.x, size.y, size.z);
+                camera.position.set(center.x, center.y + maxDim * 0.5, center.z + maxDim * 1.8);
+                controls.target.copy(center);
+            } else {
+                camera.position.set(0, 2, 5);
+                controls.target.set(0, 0, 0);
+            }
+            controls.update();
+            showToast('Camera reset');
+        }
+
+        // --- Explode View ---
+        function toggleExplode() {
+            if (!currentModel) return;
+            isExploded = !isExploded;
+            const center = new THREE.Box3().setFromObject(currentModel).getCenter(new THREE.Vector3());
+            let i = 0;
+            currentModel.traverse(c => {
+                if (c.isMesh) {
+                    if (!c.userData.origPos) c.userData.origPos = c.position.clone();
+                    if (isExploded) {
+                        const dir = c.getWorldPosition(new THREE.Vector3()).sub(center).normalize();
+                        c.position.copy(c.userData.origPos).addScaledVector(dir, 0.8 * (i + 1) * 0.3);
+                    } else {
+                        c.position.copy(c.userData.origPos);
+                    }
+                    i++;
+                }
+            });
+            showToast(isExploded ? 'Explode view ON' : 'Explode view OFF');
+        }
+
+        // --- Material property update ---
+        function updateMaterialProp(prop, value) {
+            if (!currentModel) return;
+            currentModel.traverse(c => {
+                if (c.isMesh && c.material) {
+                    const mats = Array.isArray(c.material) ? c.material : [c.material];
+                    mats.forEach(m => {
+                        if (prop in m) { m[prop] = value; if (prop === 'opacity') m.transparent = value < 1; m.needsUpdate = true; }
+                    });
+                    const origMats = Array.isArray(c.userData.originalMaterial) ? c.userData.originalMaterial : (c.userData.originalMaterial ? [c.userData.originalMaterial] : []);
+                    origMats.forEach(m => { if (prop in m) { m[prop] = value; if (prop === 'opacity') m.transparent = value < 1; m.needsUpdate = true; } });
+                }
+            });
+        }
+
+        // --- Emissive update ---
+        function updateEmissive(e) {
+            if (!currentModel) return;
+            const color = new THREE.Color(e.target.value);
+            currentModel.traverse(c => {
+                if (c.isMesh && c.material) {
+                    const mats = Array.isArray(c.material) ? c.material : [c.material];
+                    mats.forEach(m => { if (m.emissive) m.emissive.set(color); });
+                }
+            });
+        }
+
+        // --- Texture Upload ---
+        function handleTextureUpload(e) {
+            if (!currentModel || !e.target.files[0]) return;
+            const url = URL.createObjectURL(e.target.files[0]);
+            new THREE.TextureLoader().load(url, (tex) => {
+                tex.colorSpace = THREE.SRGBColorSpace;
+                currentModel.traverse(c => {
+                    if (c.isMesh) {
+                        const mats = Array.isArray(c.material) ? c.material : [c.material];
+                        mats.forEach(m => { m.map = tex; m.needsUpdate = true; });
+                    }
+                });
+                showToast('Texture applied!');
+            });
+        }
+
+        function handleNormalMapUpload(e) {
+            if (!currentModel || !e.target.files[0]) return;
+            const url = URL.createObjectURL(e.target.files[0]);
+            new THREE.TextureLoader().load(url, (tex) => {
+                currentModel.traverse(c => {
+                    if (c.isMesh) {
+                        const mats = Array.isArray(c.material) ? c.material : [c.material];
+                        mats.forEach(m => { m.normalMap = tex; m.needsUpdate = true; });
+                    }
+                });
+                showToast('Normal map applied!');
+            });
+        }
+
+        // --- Flip Normals ---
+        function flipNormals() {
+            if (!currentModel) return;
+            currentModel.traverse(c => {
+                if (c.isMesh) {
+                    const pos = c.geometry.attributes.position;
+                    if (c.geometry.index) {
+                        const idx = c.geometry.index.array;
+                        for (let i = 0; i < idx.length; i += 3) {
+                            const tmp = idx[i+1]; idx[i+1] = idx[i+2]; idx[i+2] = tmp;
+                        }
+                        c.geometry.index.needsUpdate = true;
+                    }
+                    c.geometry.computeVertexNormals();
+                }
+            });
+            showToast('Normals flipped!');
+        }
+
+        // --- Center to Origin ---
+        function centerModelToOrigin() {
+            if (!currentModel) return;
+            const box = new THREE.Box3().setFromObject(currentModel);
+            const center = box.getCenter(new THREE.Vector3());
+            currentModel.position.sub(center);
+            showToast('Centered to origin');
+        }
+
+        // --- Clone ---
+        function cloneModel() {
+            if (!currentModel) return;
+            const clone = currentModel.clone();
+            clone.position.x += 2;
+            scene.add(clone);
+            clonedModels.push(clone);
+            showToast('Object cloned!');
+        }
+
+        // --- Delete ---
+        function deleteModel() {
+            if (!currentModel) return;
+            transformControl.detach();
+            scene.remove(currentModel);
+            currentModel.traverse(c => { if (c.isMesh) { c.geometry.dispose(); if (c.material.isMaterial) c.material.dispose(); } });
+            currentModel = null;
+            document.getElementById('model-stats').style.display = 'none';
+            noModelText.style.display = 'flex';
+            showToast('Model deleted');
+        }
+
+        // --- Samples ---
+
+        function populateSamples() {
+            const glbContainer = document.getElementById('samples-glb');
+            GLB_SAMPLES.forEach(s => {
+                const card = document.createElement('div');
+                card.className = 'sample-card';
+                card.innerHTML = `<span class="sname">${s.name}</span><span class="ext-badge ext-glb">GLB</span>`;
+                card.addEventListener('click', () => loadFromURL(s.url, s.name + '.glb', 'glb'));
+                glbContainer.appendChild(card);
+            });
+            const objContainer = document.getElementById('samples-obj');
+            OBJ_SAMPLES.forEach(s => {
+                const card = document.createElement('div');
+                card.className = 'sample-card';
+                card.innerHTML = `<span class="sname">${s.name}</span><span class="ext-badge ext-obj">OBJ</span>`;
+                card.addEventListener('click', () => loadFromURL(s.url, s.name + '.obj', 'obj'));
+                objContainer.appendChild(card);
+            });
+        }
+
+        // loadFromURL: fetch the remote file as ArrayBuffer first, then create a local
+        // blob URL for Three.js. This avoids the DataCloneError that occurs when Three.js
+        // tries to postMessage a Request object to its worker for cross-origin URLs.
+        async function loadFromURL(url, name, ext) {
+            loadingOverlay.style.display = 'flex';
+            loadingOverlay.querySelector('h2').innerText = `Fetching ${name}…`;
+            noModelText.style.display = 'none';
+            if (currentModel) { transformControl.detach(); scene.remove(currentModel); currentModel = null; }
+
+            try {
+                const resp = await fetch(url);
+                if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching ${name}`);
+                const buf = await resp.arrayBuffer();
+                const mimeMap = { glb: 'model/gltf-binary', gltf: 'model/gltf+json', obj: 'text/plain' };
+                const blob = new Blob([buf], { type: mimeMap[ext] || 'application/octet-stream' });
+                const blobURL = URL.createObjectURL(blob);
+
+                loadingOverlay.querySelector('h2').innerText = `Loading ${name}…`;
+
+                if (ext === 'glb' || ext === 'gltf') {
+                    new GLTFLoader().load(blobURL, (gltf) => { URL.revokeObjectURL(blobURL); setupModel(gltf.scene); }, undefined, (e) => { URL.revokeObjectURL(blobURL); handleError(e); });
+                } else if (ext === 'obj') {
+                    new OBJLoader().load(blobURL, (obj) => { URL.revokeObjectURL(blobURL); setupModel(obj); }, undefined, (e) => { URL.revokeObjectURL(blobURL); handleError(e); });
+                }
+            } catch (e) {
+                handleError(e);
+            }
+        }
+
+        // --- Render Loop ---
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = animClock.getDelta();
+            if (animMixer) animMixer.update(delta);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            const width = window.innerWidth - 300;
+            const height = window.innerHeight;
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+            renderer.setSize(width, height);
+        }
+
+
+        // ═══════════════════════════════════════════════════════════════
+        // LEVEL BUILDER — all functions ported from visual_level_builder
+        // ═══════════════════════════════════════════════════════════════
+
+        // ── IDB for custom model blobs ────────────────────────────────
+        const LB_DB_NAME = 'EnvizionLevelBuilderDB';
+        const LB_DB_VERSION = 1;
+
+        function lbOpenDatabase() {
+            return new Promise((resolve, reject) => {
+                const req = indexedDB.open(LB_DB_NAME, LB_DB_VERSION);
+                req.onupgradeneeded = (e) => {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains('custom_models'))
+                        db.createObjectStore('custom_models');
+                };
+                req.onsuccess = (e) => resolve(e.target.result);
+                req.onerror  = (e) => reject(e.target.error);
+            });
+        }
+        async function lbStoreCustomModel(key, blob) {
+            const db = await lbOpenDatabase();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction('custom_models', 'readwrite');
+                tx.objectStore('custom_models').put(blob, key).onsuccess = () => resolve();
+                tx.onerror = () => reject(tx.error);
+            });
+        }
+        async function lbRetrieveCustomModel(key) {
+            const db = await lbOpenDatabase();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction('custom_models', 'readonly');
+                const req = tx.objectStore('custom_models').get(key);
+                req.onsuccess = () => resolve(req.result);
+                req.onerror  = () => reject(req.error);
+            });
+        }
+
+        // ── Confirm modal ─────────────────────────────────────────────
+        function lbShowConfirm(message, onYes) {
+            const modal = document.getElementById('lb-confirm-modal');
+            document.getElementById('lb-confirm-msg').textContent = message;
+            modal.style.display = 'flex';
+            const yes = document.getElementById('lb-confirm-yes');
+            const no  = document.getElementById('lb-confirm-no');
+            const cleanup = () => { modal.style.display = 'none'; yes.onclick = no.onclick = null; };
+            yes.onclick = () => { cleanup(); onYes(); };
+            no.onclick  = () => cleanup();
+        }
+
+        // ── Level Builder state ───────────────────────────────────────
+        const lbPlacedObjects = [];
+        let lbSelectedObject  = null;
+        const lbRaycaster     = new THREE.Raycaster();
+        const lbMouse         = new THREE.Vector2();
+
+        // Selection highlight box
+        const lbSelectionBox  = new THREE.BoxHelper(undefined, 0xffff00);
+        lbSelectionBox.visible = false;
+        scene.add(lbSelectionBox);
+
+        // DRACOLoader for level builder (reuse existing gltfLoader or make a separate one)
+        const lbDraco = new DRACOLoader();
+        lbDraco.setDecoderPath('https://www.gstatic.com/draco/v1/decoders/');
+        const lbGltfLoader = new GLTFLoader();
+        lbGltfLoader.setDRACOLoader(lbDraco);
+
+        // ── Asset catalogue (same as level builder) ───────────────────
+        const LB_ASSETS = {
+            mansionExterior: 'https://static.seeles.ai/data/asset/export/b41de708-ba2c-43e8-b35b-5d76b571d5c3/950949/threeJs_5f208905-f988-4c9f-adb9-a7b0d21b50ae.glb',
+            bed:             'https://static.seeles.ai/data/asset/export/87762adf-7325-4b27-b439-615308aec2d6/696101/threeJs_f7e63846-c577-4ede-af30-2387d1f8e877.glb',
+            wardrobe:        'https://static.seeles.ai/data/asset/export/75a22e8b-e45c-4324-b0d0-8a4b7be9671a/926000/threeJs_622b582e-8c04-4688-890f-ad2a8049c85d.glb',
+            wardrobeTall:    'https://static.seeles.ai/data/asset/export/96f19401-a309-45ca-8dc4-c9c4c9ac2f73/772062/threeJs_00fd99df-b252-406e-b0af-ff01a7865276.glb',
+            nightstandLamp:  'https://static.seeles.ai/data/asset/export/5e470864-f7dc-4035-8365-cb7fd74a4124/265259/threeJs_de654a49-4afd-4bae-ae72-39206853b2a2.glb',
+            nightstand:      'https://static.seeles.ai/data/asset/export/033c9663-353d-459b-a6e6-a0fe25124369/941322/threeJs_3bb38d97-02b0-40bb-a68e-7aa3972f42bc.glb',
+            door:            'https://static.seeles.ai/data/asset/export/f9ec49c9-4b4d-4e4e-9486-e2cf2a40f2c5/940952/threeJs_2382894d-1c08-44db-bc5e-f523a4200648.glb',
+            cabinet:         'https://static.seeles.ai/data/asset/export/545b587f-51e1-4e67-bd40-ab8e65ffb1c6/801867/threeJs_7998f89c-4810-44ac-9127-1bc17eff7930.glb',
+            staircase:       'https://static.seeles.ai/data/asset/export/72c23955-9776-44ae-9b92-4b3d9c45eba1/990654/threeJs_1ea4dddb-1341-47d6-b082-1c01bd698dcd.glb',
+            sofa:            'https://static.seeles.ai/data/asset/export/856a1fcf-65bd-49b8-8bed-ad25fedb6a2d/952363/threeJs_9524eec5-6042-4bf1-a97a-3495b1fb5ef3.glb',
+            tv:              'https://static.seeles.ai/data/asset/export/4685be39-6fc5-4e11-a805-dac56fdb76e1/1002151/threeJs_47e72340-cf45-4ba0-b680-aacf0254bfea.glb',
+            diningSet:       'https://static.seeles.ai/data/asset/export/21395a31-f8bf-4209-a3af-f3a431d2a5f9/741545/threeJs_4cba11a0-8fb9-4241-a969-ab9ccdda2872.glb',
+            kitchenCounter:  'https://static.seeles.ai/data/asset/export/be7f2cb4-f34b-4ea1-849c-e83b84e29898/651080/threeJs_ac250853-8e8b-4348-a0cc-fcc03b328aea.glb',
+            fridge:          'https://static.seeles.ai/data/asset/export/763c0da0-561f-4e03-9de9-5be3491c9173/947937/threeJs_9909ef65-3cf7-4973-becb-fa900d444074.glb',
+            oven:            'https://static.seeles.ai/data/asset/export/eed90304-0a2c-4a7e-bf76-342d74f35aa7/961961/threeJs_d35fd5ce-4777-46bc-af6e-6f166042c40e.glb',
+            sofa2:           'https://static.seeles.ai/data/asset/export/c3ec7ce1-3ae1-4636-9a98-2fb6fa4ac284/928429/threeJs_fb57af7c-643b-4ae9-bfd4-bbb938dd8950.glb',
+            bookcase:        'https://static.seeles.ai/data/asset/export/6d62fd3d-2ad2-43ca-99a3-b5c851236c90/948388/threeJs_95a6ca55-4c21-41b8-9fbb-f6b388c5bf62.glb',
+            piano:           'https://static.seeles.ai/data/asset/export/0e5d8045-145f-47e1-8746-e37cff00e507/1004953/threeJs_45897f52-d74a-4090-942f-3fc9567149cb.glb',
+            sedan:           'https://static.seeles.ai/data/asset/export/3413f54e-8823-4e53-bd7e-4f4842188a2c/926701/threeJs_901136ed-767f-45f7-85fb-9200a8183909.glb',
+            chandelier:      'https://static.seeles.ai/data/asset/export/d1a8d737-1a51-4089-80b5-99388c4918c8/922373/threeJs_2f19c5e9-3cd9-47c9-ad25-2a80cb52f52c.glb',
+            cctv:            'https://static.seeles.ai/data/asset/export/671eae22-d8f3-4a47-a33a-9b26118e89dd/1017881/threeJs_1017881_2892281.glb',
+            umbrella:        'https://static.seeles.ai/data/asset/export/864143a6-3199-4b2c-83bf-2d286c421720/988440/threeJs_b6b5dd6d-be97-4452-818a-97009f898971.glb',
+            coatRack:        'https://static.seeles.ai/data/asset/export/cfae5b0e-ab83-4164-9d78-a3a700a640fc/916520/threeJs_41e8f957-e670-44df-8066-f7ff60762376.glb',
+            consoleTable:    'https://static.seeles.ai/data/asset/export/34ddedd0-87b5-455a-96a5-4d022fdb77dc/941072/threeJs_9eff8419-70e5-4e3c-8289-97e61dff85f7.glb',
+            plantStand:      'https://static.seeles.ai/data/asset/export/cff30703-b91c-4c99-9d97-6a8da37b6805/652292/threeJs_a368cc01-4309-4b6b-8fa7-6b6628025587.glb',
+            loungeSet:       'https://static.seeles.ai/data/asset/export/c3ec7ce1-3ae1-4636-9a98-2fb6fa4ac284/928429/threeJs_fb57af7c-643b-4ae9-bfd4-bbb938dd8950.glb',
+            roadsideShelter: 'https://static.seeles.ai/data/asset/export/04d04503-1ba0-497b-9fda-cddee24d37ab/764936/threeJs_ff802237-ea48-4341-94ca-6ea844ec9374.glb',
+            signpost:        'https://static.seeles.ai/data/asset/export/2723de8d-f08c-4d57-a838-fc4c33edf317/929444/threeJs_c27a3194-da1e-4fc9-8998-b611566b6cf3.glb',
+        };
+
+        // Populate asset dropdown
+        (function() {
+            const sel = document.getElementById('lb-asset-select');
+            Object.keys(LB_ASSETS).forEach(k => {
+                const o = document.createElement('option');
+                o.value = k; o.textContent = k;
+                sel.appendChild(o);
+            });
+        })();
+
+        // ── Select / deselect ─────────────────────────────────────────
+        function lbSelectObject(obj) {
+            lbSelectedObject = obj;
+            const panel = document.getElementById('lb-properties-panel');
+            if (obj) {
+                lbSelectionBox.setFromObject(obj);
+                lbSelectionBox.visible = true;
+                panel.style.display = 'flex';
+                lbUpdateUIFromObject();
+            } else {
+                lbSelectionBox.visible = false;
+                panel.style.display = 'none';
+            }
+        }
+
+        // ── Properties panel sync ─────────────────────────────────────
+        const lbInputs = {
+            px: document.getElementById('lb-px'), py: document.getElementById('lb-py'), pz: document.getElementById('lb-pz'),
+            rx: document.getElementById('lb-rx'), ry: document.getElementById('lb-ry'), rz: document.getElementById('lb-rz'),
+            sx: document.getElementById('lb-sx'), sy: document.getElementById('lb-sy'), sz: document.getElementById('lb-sz'),
+        };
+        function lbUpdateUIFromObject() {
+            if (!lbSelectedObject) return;
+            const o = lbSelectedObject;
+            lbInputs.px.value = o.position.x.toFixed(3);
+            lbInputs.py.value = o.position.y.toFixed(3);
+            lbInputs.pz.value = o.position.z.toFixed(3);
+            lbInputs.rx.value = THREE.MathUtils.radToDeg(o.rotation.x).toFixed(1);
+            lbInputs.ry.value = THREE.MathUtils.radToDeg(o.rotation.y).toFixed(1);
+            lbInputs.rz.value = THREE.MathUtils.radToDeg(o.rotation.z).toFixed(1);
+            lbInputs.sx.value = o.scale.x.toFixed(3);
+            lbInputs.sy.value = o.scale.y.toFixed(3);
+            lbInputs.sz.value = o.scale.z.toFixed(3);
+        }
+        function lbUpdateObjectFromUI() {
+            if (!lbSelectedObject) return;
+            const o = lbSelectedObject;
+            o.position.set(parseFloat(lbInputs.px.value)||0, parseFloat(lbInputs.py.value)||0, parseFloat(lbInputs.pz.value)||0);
+            o.rotation.set(
+                THREE.MathUtils.degToRad(parseFloat(lbInputs.rx.value)||0),
+                THREE.MathUtils.degToRad(parseFloat(lbInputs.ry.value)||0),
+                THREE.MathUtils.degToRad(parseFloat(lbInputs.rz.value)||0)
+            );
+            o.scale.set(parseFloat(lbInputs.sx.value)||1, parseFloat(lbInputs.sy.value)||1, parseFloat(lbInputs.sz.value)||1);
+            if (lbSelectionBox.visible) lbSelectionBox.update();
+        }
+        Object.values(lbInputs).forEach(inp => {
+            inp.addEventListener('change', lbUpdateObjectFromUI);
+            inp.addEventListener('input',  lbUpdateObjectFromUI);
+        });
+
+        // ── Raycast select on canvas click (only when Level tab active) ──
+        renderer.domElement.addEventListener('pointerdown', (e) => {
+            if (e.button !== 0) return;
+            const activeTab = document.querySelector('#tab-strip .tab-btn.active');
+            if (!activeTab || activeTab.dataset.tab !== 'level') return;
+            const rect = renderer.domElement.getBoundingClientRect();
+            lbMouse.x =  ((e.clientX - rect.left) / rect.width)  * 2 - 1;
+            lbMouse.y = -((e.clientY - rect.top)  / rect.height) * 2 + 1;
+            lbRaycaster.setFromCamera(lbMouse, camera);
+            const hits = lbRaycaster.intersectObjects(lbPlacedObjects, true);
+            if (hits.length > 0) {
+                let obj = hits[0].object;
+                while (obj.parent && obj.parent.type !== 'Scene' && !obj.userData.isAssetRoot) obj = obj.parent;
+                lbSelectObject(obj);
+            } else {
+                lbSelectObject(null);
+            }
+        });
+
+        // ── Placeholder box (fallback when model can't be loaded) ─────
+        function lbCreatePlaceholderBox(item) {
+            const box = new THREE.Mesh(
+                new THREE.BoxGeometry(1.5, 1.5, 1.5),
+                new THREE.MeshBasicMaterial({ color: 0xff3333, wireframe: true })
+            );
+            box.userData.isAssetRoot = true;
+            box.userData.assetKey    = item.assetKey;
+            box.userData.isCustom    = item.isCustom;
+            box.userData.customUrl   = item.customUrl;
+            box.userData.isPlaceholder = true;
+            box.position.set(item.position.x, item.position.y, item.position.z);
+            box.rotation.set(item.rotation.x, item.rotation.y, item.rotation.z);
+            box.scale.set(item.scale.x, item.scale.y, item.scale.z);
+            scene.add(box);
+            lbPlacedObjects.push(box);
+            lbSelectObject(box);
+        }
+
+        // ── Load and place model ──────────────────────────────────────
+        async function lbLoadAndPlace(url, assetKey, isCustom = false, customUrl = null, customTransform = null) {
+            loadingOverlay.style.display = 'flex';
+            try {
+                const gltf = await lbGltfLoader.loadAsync(url);
+                const model = gltf.scene;
+                model.traverse(c => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
+                model.userData.isAssetRoot = true;
+                model.userData.assetKey    = assetKey;
+                model.userData.isCustom    = isCustom;
+                model.userData.customUrl   = customUrl;
+                if (customTransform) {
+                    model.position.set(customTransform.position.x, customTransform.position.y, customTransform.position.z);
+                    model.rotation.set(customTransform.rotation.x, customTransform.rotation.y, customTransform.rotation.z);
+                    model.scale.set(customTransform.scale.x, customTransform.scale.y, customTransform.scale.z);
+                }
+                scene.add(model);
+                lbPlacedObjects.push(model);
+                lbSelectObject(model);
+            } catch (err) {
+                console.error(err);
+                if (customTransform) {
+                    lbCreatePlaceholderBox({ assetKey, isCustom, customUrl, position: customTransform.position, rotation: customTransform.rotation, scale: customTransform.scale });
+                } else {
+                    showToast('Failed to load: ' + err.message);
+                }
+            }
+            loadingOverlay.style.display = 'none';
+        }
+
+        // ── Spawn preset ──────────────────────────────────────────────
+        document.getElementById('lb-spawn').addEventListener('click', () => {
+            const key = document.getElementById('lb-asset-select').value;
+            if (LB_ASSETS[key]) lbLoadAndPlace(LB_ASSETS[key], key);
+        });
+
+        // ── Spawn custom (file or URL) ────────────────────────────────
+        document.getElementById('lb-spawn-custom').addEventListener('click', async () => {
+            const file = document.getElementById('lb-file-upload').files[0];
+            const urlVal = document.getElementById('lb-url-upload').value.trim();
+            if (file) {
+                const key = 'custom_' + file.name.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9]/g, '_');
+                loadingOverlay.style.display = 'flex';
+                try {
+                    await lbStoreCustomModel(key, file);
+                    const localUrl = URL.createObjectURL(file);
+                    const existing = lbPlacedObjects.find(o => o.userData.isPlaceholder && o.userData.assetKey === key);
+                    if (existing) {
+                        const t = { position: existing.position.clone(), rotation: existing.rotation.clone(), scale: existing.scale.clone() };
+                        scene.remove(existing);
+                        lbPlacedObjects.splice(lbPlacedObjects.indexOf(existing), 1);
+                        await lbLoadAndPlace(localUrl, key, true, null, { position: t.position, rotation: t.rotation, scale: t.scale });
+                    } else {
+                        await lbLoadAndPlace(localUrl, key, true, null);
+                    }
+                } catch (e) { showToast('DB error: ' + e.message); }
+                loadingOverlay.style.display = 'none';
+                document.getElementById('lb-file-upload').value = '';
+            } else if (urlVal) {
+                lbLoadAndPlace(urlVal, 'custom_url_model', true, urlVal);
+                document.getElementById('lb-url-upload').value = '';
+            } else {
+                showToast('Select a file or enter a URL.');
+            }
+        });
+
+        // ── Delete selected ───────────────────────────────────────────
+        document.getElementById('lb-delete').addEventListener('click', () => {
+            if (!lbSelectedObject) return;
+            scene.remove(lbSelectedObject);
+            lbPlacedObjects.splice(lbPlacedObjects.indexOf(lbSelectedObject), 1);
+            lbSelectObject(null);
+            showToast('Object deleted');
+        });
+
+        // ── Clear all ─────────────────────────────────────────────────
+        document.getElementById('lb-clear-scene').addEventListener('click', () => {
+            lbShowConfirm('Clear all placed objects from the scene?', () => {
+                lbSelectObject(null);
+                [...lbPlacedObjects].forEach(o => scene.remove(o));
+                lbPlacedObjects.length = 0;
+                showToast('Scene cleared');
+            });
+        });
+
+        // ── Serialize / Deserialize ───────────────────────────────────
+        function lbSerialize() {
+            return lbPlacedObjects.map(o => ({
+                assetKey:      o.userData.assetKey,
+                isCustom:      o.userData.isCustom    || false,
+                customUrl:     o.userData.customUrl   || null,
+                isPlaceholder: o.userData.isPlaceholder || false,
+                position: { x: o.position.x, y: o.position.y, z: o.position.z },
+                rotation: { x: o.rotation.x, y: o.rotation.y, z: o.rotation.z },
+                scale:    { x: o.scale.x,    y: o.scale.y,    z: o.scale.z    },
+            }));
+        }
+        async function lbDeserialize(data) {
+            if (!Array.isArray(data)) return;
+            lbSelectObject(null);
+            [...lbPlacedObjects].forEach(o => scene.remove(o));
+            lbPlacedObjects.length = 0;
+            for (const item of data) {
+                let url = null;
+                if (item.isCustom) {
+                    if (item.embeddedData) {
+                        url = item.embeddedData;
+                        try { const r = await fetch(item.embeddedData); await lbStoreCustomModel(item.assetKey, await r.blob()); } catch(e) {}
+                    } else if (item.customUrl) {
+                        url = item.customUrl;
+                    } else {
+                        try {
+                            const blob = await lbRetrieveCustomModel(item.assetKey);
+                            if (blob) url = URL.createObjectURL(blob);
+                            else { lbCreatePlaceholderBox(item); continue; }
+                        } catch(e) { lbCreatePlaceholderBox(item); continue; }
+                    }
+                } else {
+                    url = LB_ASSETS[item.assetKey];
+                }
+                if (url) await lbLoadAndPlace(url, item.assetKey, item.isCustom, item.customUrl,
+                    { position: item.position, rotation: item.rotation, scale: item.scale });
+            }
+        }
+
+        // ── Save history ──────────────────────────────────────────────
+        function lbGetHistory() {
+            const raw = localStorage.getItem('envizion_level_history');
+            return raw ? JSON.parse(raw) : [];
+        }
+        function lbSaveHistory(hist) {
+            localStorage.setItem('envizion_level_history', JSON.stringify(hist));
+        }
+        function lbRenderHistory() {
+            const hist = lbGetHistory();
+            const el   = document.getElementById('lb-history-container');
+            if (hist.length === 0) {
+                el.innerHTML = '<div style="padding:8px;font-size:10px;color:var(--text-muted);text-align:center;">No saves yet</div>';
+                return;
+            }
+            el.innerHTML = '';
+            hist.forEach((save, i) => {
+                const row = document.createElement('div');
+                row.className = 'lb-history-item';
+                row.innerHTML = `<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${save.timestamp}">${i===0?'<b>':''}${save.timestamp}${i===0?' (Latest)</b>':''}</span>`;
+                const loadB = document.createElement('button');
+                loadB.className = 'lb-hbtn'; loadB.textContent = 'Load';
+                loadB.onclick = () => lbShowConfirm(`Load layout from ${save.timestamp}?`, async () => { await lbDeserialize(save.data); showToast('Layout loaded'); });
+                const expB = document.createElement('button');
+                expB.className = 'lb-hbtn'; expB.textContent = 'Exp';
+                expB.onclick = async () => await lbPackageAndDownload(save.data, 'envizion_layout_' + save.timestamp.replace(/[^a-zA-Z0-9]/g,'_') + '.json');
+                const delB = document.createElement('button');
+                delB.className = 'lb-hbtn del'; delB.textContent = '×';
+                delB.onclick = () => lbShowConfirm(`Delete save from ${save.timestamp}?`, () => { const h=lbGetHistory(); h.splice(i,1); lbSaveHistory(h); lbRenderHistory(); showToast('Save deleted'); });
+                row.appendChild(loadB); row.appendChild(expB); row.appendChild(delB);
+                el.appendChild(row);
+            });
+        }
+        lbRenderHistory();
+
+        // ── Quick Save ────────────────────────────────────────────────
+        document.getElementById('lb-quick-save').addEventListener('click', () => {
+            const hist = lbGetHistory();
+            hist.unshift({ timestamp: new Date().toLocaleString(), data: lbSerialize() });
+            if (hist.length > 10) hist.length = 10;
+            lbSaveHistory(hist);
+            lbRenderHistory();
+            showToast('Layout saved to history');
+        });
+
+        // ── Quick Load ────────────────────────────────────────────────
+        document.getElementById('lb-quick-load').addEventListener('click', async () => {
+            const hist = lbGetHistory();
+            if (!hist.length) { showToast('No saves found'); return; }
+            await lbDeserialize(hist[0].data);
+            showToast('Latest save loaded');
+        });
+
+        // ── Package & Download ────────────────────────────────────────
+        async function lbPackageAndDownload(layoutData, filename) {
+            loadingOverlay.style.display = 'flex';
+            try {
+                const data = JSON.parse(JSON.stringify(layoutData));
+                for (const item of data) {
+                    if (item.isCustom && !item.customUrl && !item.isPlaceholder) {
+                        try {
+                            const blob = await lbRetrieveCustomModel(item.assetKey);
+                            if (blob) {
+                                item.embeddedData = await new Promise((res, rej) => {
+                                    const r = new FileReader(); r.onloadend = () => res(r.result); r.onerror = rej; r.readAsDataURL(blob);
+                                });
+                            }
+                        } catch(e) {}
+                    }
+                }
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+                a.download = filename;
+                document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                showToast('Layout exported');
+            } catch(e) { showToast('Export failed: ' + e.message); }
+            loadingOverlay.style.display = 'none';
+        }
+
+        // ── File export ───────────────────────────────────────────────
+        document.getElementById('lb-file-export').addEventListener('click', async () => {
+            await lbPackageAndDownload(lbSerialize(), 'envizion_level_layout.json');
+        });
+
+        // ── File import (scene) ───────────────────────────────────────
+        document.getElementById('lb-file-import').addEventListener('change', (e) => {
+            const file = e.target.files[0]; if (!file) return;
+            const r = new FileReader();
+            r.onload = async (ev) => {
+                try { await lbDeserialize(JSON.parse(ev.target.result)); showToast('Layout imported'); }
+                catch(err) { showToast('Import failed: ' + err.message); }
+                e.target.value = '';
+            };
+            r.readAsText(file);
+        });
+
+        // ── Import to history ─────────────────────────────────────────
+        document.getElementById('lb-import-history').addEventListener('change', (e) => {
+            const file = e.target.files[0]; if (!file) return;
+            const r = new FileReader();
+            r.onload = (ev) => {
+                try {
+                    const parsed = JSON.parse(ev.target.result);
+                    if (!Array.isArray(parsed)) throw new Error('Expected JSON array');
+                    const hist = lbGetHistory();
+                    hist.unshift({ timestamp: 'Imported: ' + file.name.slice(0,20), data: parsed });
+                    if (hist.length > 10) hist.length = 10;
+                    lbSaveHistory(hist); lbRenderHistory();
+                    showToast('Imported to history');
+                } catch(err) { showToast('Parse failed: ' + err.message); }
+                e.target.value = '';
+            };
+            r.readAsText(file);
+        });
+
+        // ── Export layout code (JS snippet for buildProps) ────────────
+        document.getElementById('lb-export-code').addEventListener('click', () => {
+            if (!lbPlacedObjects.length) { showToast('No objects placed yet'); return; }
+            const counts = {};
+            let code = '// --- GENERATED LAYOUT ---\n// Paste into buildProps()\n\n';
+            lbPlacedObjects.forEach(obj => {
+                const key = obj.userData.assetKey;
+                counts[key] = (counts[key] || 0) + 1;
+                const varName = `${key}_${counts[key]}`;
+                const p = obj.position;
+                const box = new THREE.Box3().setFromObject(obj);
+                const sz = new THREE.Vector3(); box.getSize(sz);
+                code += `const ${varName} = cloneAsset(assets.${key});\n`;
+                code += `if (${varName}) {\n`;
+                code += `  placeObjectOnFloor(${varName}, new THREE.Vector3(${p.x.toFixed(3)}, ${p.y.toFixed(3)}, ${p.z.toFixed(3)}), { targetHeight: ${sz.y.toFixed(3)}, yaw: ${obj.rotation.y.toFixed(3)} });\n`;
+                code += `  scene.add(${varName});\n`;
+                code += `  registerObstacleObject(${varName}, 0.08, 0.05);\n`;
+                code += `}\n\n`;
+            });
+            document.getElementById('lb-export-output').value = code;
+            showToast('Code generated');
+        });
+
+        // ── Delete key shortcut (level tab only) ─────────────────────
+        window.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+            const activeTab = document.querySelector('#tab-strip .tab-btn.active');
+            if (!activeTab || activeTab.dataset.tab !== 'level') return;
+            if (e.key === 'Delete' || e.key === 'Backspace') {
+                document.getElementById('lb-delete').click();
+            }
+        });
+
+        // ═══════════════════════════════════════════════════════════════
+        // ANIMATOR — FBX/GLB animation system (from animator_studio)
+        // ═══════════════════════════════════════════════════════════════
+
+        function animB64(buf) {
+            let b = ''; const u = new Uint8Array(buf); const c = 0x8000;
+            for (let i = 0; i < u.length; i += c) b += String.fromCharCode.apply(null, u.subarray(i, i+c));
+            return btoa(b);
+        }
+        function animFromB64(b64) {
+            const b = atob(b64); const u = new Uint8Array(b.length);
+            for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i);
+            return u.buffer;
+        }
+
+        // IDB for animator workspace
+        const ANIM_IDB = 'envizionAnimatorDB';
+        function animOpenDB() {
+            return new Promise((res, rej) => {
+                const r = indexedDB.open(ANIM_IDB, 1);
+                r.onupgradeneeded = () => { if (!r.result.objectStoreNames.contains('ws')) r.result.createObjectStore('ws'); };
+                r.onsuccess = () => res(r.result);
+                r.onerror = () => rej(r.error);
+            });
+        }
+        async function animIDBPut(k, v) {
+            const db = await animOpenDB();
+            return new Promise((res, rej) => { const tx = db.transaction('ws','readwrite'); tx.objectStore('ws').put(v,k); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); });
+        }
+        async function animIDBGet(k) {
+            const db = await animOpenDB();
+            return new Promise((res, rej) => { const tx = db.transaction('ws','readonly'); const r = tx.objectStore('ws').get(k); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); });
+        }
+
+        function animRenderList() {
+            const list = document.getElementById('anim-list');
+            list.innerHTML = '';
+            document.getElementById('anim-count-label').textContent = animData.length + ' loaded';
+            animData.forEach(a => {
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:4px 6px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-panel);font-size:11px;';
+                row.innerHTML = `<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-primary);" title="${a.name}">${a.name}</span>
+                    <button data-id="${a.id}" class="anim-play-btn" style="font-size:10px;padding:2px 8px;background:var(--accent-primary);color:#ececec;border:none;border-radius:var(--radius-sm);cursor:pointer;">▶</button>
+                    <button data-id="${a.id}" class="anim-del-btn" style="font-size:10px;padding:2px 6px;background:transparent;color:var(--accent-primary);border:1px solid rgba(255, 255, 255, 0.12);border-radius:var(--radius-sm);cursor:pointer;">✕</button>`;
+                list.appendChild(row);
+            });
+            list.querySelectorAll('.anim-play-btn').forEach(btn => {
+                btn.addEventListener('click', () => animPlay(btn.dataset.id));
+            });
+            list.querySelectorAll('.anim-del-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const id = btn.dataset.id;
+                    const a = animData.find(x => x.id === id);
+                    if (a && a.action) { try { animMixer && animMixer.uncacheAction(a.clip); } catch(e){} }
+                    animData = animData.filter(x => x.id !== id);
+                    animRenderList();
+                    showToast('Animation removed');
+                });
+            });
+        }
+
+        function animPlay(id) {
+            if (!animMixer || !animCharModel) { showToast('Load a character FBX first'); return; }
+            const a = animData.find(x => x.id === id);
+            if (!a) return;
+            if (animCurrentAction) animCurrentAction.fadeOut(0.2);
+            animCurrentAction = animMixer.clipAction(a.clip);
+            animCurrentAction.reset();
+            animCurrentAction.setLoop(animLoopEnabled ? THREE.LoopRepeat : THREE.LoopOnce);
+            animCurrentAction.clampWhenFinished = !animLoopEnabled;
+            animCurrentAction.fadeIn(0.2).play();
+            document.getElementById('anim-active-label').textContent = a.name;
+            // highlight active
+            document.querySelectorAll('.anim-play-btn').forEach(b => b.style.background = b.dataset.id === id ? 'var(--accent-primary-2)' : 'var(--accent-primary)');
+        }
+
+        async function animHandleFiles(files) {
+            for (const file of files) {
+                const ext = file.name.split('.').pop().toLowerCase();
+                const buf = await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>rej(r.error); r.readAsArrayBuffer(file); });
+                animRawFiles[file.name] = buf;
+
+                if (ext === 'fbx') {
+                    let fbx;
+                    try { fbx = new FBXLoader().parse(buf, ''); }
+                    catch(e) { showToast('FBX parse error: ' + e.message); continue; }
+
+                    // First valid FBX with mesh becomes character
+                    if (!animCharModel && fbx.children.length > 0) {
+                        if (animMixer) { animMixer.stopAllAction(); animMixer = null; }
+                        if (animCharModel) scene.remove(animCharModel);
+                        animCharModel = fbx;
+                        animCharModel.traverse(c => { if (c.isMesh) { c.castShadow=true; c.receiveShadow=true; } });
+                        // Normalize bone names for Mixamo
+                        animCharModel.traverse(c => { if (c.isBone && c.name) c.name = c.name.replace(/.*mixamorig/i,'mixamorig'); });
+                        const box = new THREE.Box3().setFromObject(animCharModel);
+                        const sz = new THREE.Vector3(); box.getSize(sz);
+                        const sc = 1.8 / Math.max(sz.x, sz.y, sz.z);
+                        animCharModel.scale.setScalar(sc);
+                        const ctr = new THREE.Vector3(); box.getCenter(ctr);
+                        animCharModel.position.set(-ctr.x*sc, -box.min.y*sc, -ctr.z*sc);
+                        scene.add(animCharModel);
+                        animMixer = new THREE.AnimationMixer(animCharModel);
+                        document.getElementById('anim-char-status').textContent = '✓ ' + file.name;
+                        document.getElementById('anim-char-status').style.color = 'var(--accent-primary)';
+                    }
+
+                    // Extract clips
+                    if (fbx.animations && fbx.animations.length > 0) {
+                        fbx.animations.forEach((clip, i) => {
+                            clip.tracks.forEach(t => { t.name = t.name.replace(/.*mixamorig/i,'mixamorig'); });
+                            let name = clip.name || file.name.replace('.fbx','');
+                            if (/take001|mixamocom/i.test(name)) name = file.name.replace('.fbx','');
+                            animData.push({ id: Date.now()+Math.random()+''+i, name, clip, sourceFile: file.name });
+                        });
+                    }
+                } else if (ext === 'glb' || ext === 'gltf') {
+                    const blob = new Blob([buf], {type:'model/gltf-binary'});
+                    const url = URL.createObjectURL(blob);
+                    const gltf = await new Promise((res,rej)=>new GLTFLoader().load(url, res, undefined, rej));
+                    URL.revokeObjectURL(url);
+                    if (!animCharModel) {
+                        if (animMixer) { animMixer.stopAllAction(); animMixer = null; }
+                        animCharModel = gltf.scene;
+                        scene.add(animCharModel);
+                        animMixer = new THREE.AnimationMixer(animCharModel);
+                        document.getElementById('anim-char-status').textContent = '✓ ' + file.name;
+                        document.getElementById('anim-char-status').style.color = 'var(--accent-primary)';
+                    }
+                    if (gltf.animations && gltf.animations.length > 0) {
+                        gltf.animations.forEach((clip, i) => {
+                            animData.push({ id: Date.now()+Math.random()+''+i, name: clip.name || file.name, clip, sourceFile: file.name });
+                        });
+                    }
+                }
+            }
+            animRenderList();
+            if (animData.length > 0 && !animCurrentAction) animPlay(animData[0].id);
+            showToast('Animator: ' + animData.length + ' clips loaded');
+        }
+
+        document.getElementById('anim-fbx-input').addEventListener('change', async (e) => {
+            const files = Array.from(e.target.files); if (!files.length) return;
+            await animHandleFiles(files);
+            e.target.value = '';
+        });
+
+        document.getElementById('anim-loop-btn').addEventListener('click', () => {
+            animLoopEnabled = !animLoopEnabled;
+            const btn = document.getElementById('anim-loop-btn');
+            btn.textContent = animLoopEnabled ? 'ON' : 'OFF';
+            btn.classList.toggle('on', animLoopEnabled);
+            if (animCurrentAction) {
+                animCurrentAction.setLoop(animLoopEnabled ? THREE.LoopRepeat : THREE.LoopOnce);
+                animCurrentAction.clampWhenFinished = !animLoopEnabled;
+            }
+        });
+
+        document.getElementById('anim-speed-slider').addEventListener('input', (e) => {
+            if (animCurrentAction) animCurrentAction.timeScale = e.target.value / 100;
+        });
+
+        // Animator Quick Save / Load (IDB — metadata only, no raw buffers)
+        document.getElementById('anim-save-btn').addEventListener('click', async () => {
+            const snap = {
+                savedAt: new Date().toISOString(),
+                files: Object.fromEntries(Object.entries(animRawFiles).map(([k,v])=>[k, animB64(v)])),
+                clips: animData.map(a => ({ name: a.name, sourceFile: a.sourceFile }))
+            };
+            await animIDBPut('snap', snap);
+            document.getElementById('anim-save-status').textContent = 'Saved ' + new Date().toLocaleTimeString();
+            showToast('Animator workspace saved');
+        });
+
+        document.getElementById('anim-load-btn').addEventListener('click', async () => {
+            const snap = await animIDBGet('snap');
+            if (!snap) { showToast('No saved workspace found'); return; }
+            animRawFiles = {};
+            const files = [];
+            for (const [name, b64] of Object.entries(snap.files)) {
+                const buf = animFromB64(b64);
+                animRawFiles[name] = buf;
+                files.push(new File([buf], name));
+            }
+            animData = []; animCharModel = null; animCurrentAction = null;
+            if (animMixer) { animMixer.stopAllAction(); animMixer = null; }
+            await animHandleFiles(files);
+            document.getElementById('anim-save-status').textContent = 'Loaded save from ' + new Date(snap.savedAt).toLocaleString();
+            showToast('Animator workspace loaded');
+        });
+
+        // Animator JSON export (metadata + embedded base64 files)
+        document.getElementById('anim-export-json-btn').addEventListener('click', () => {
+            if (!animData.length && !Object.keys(animRawFiles).length) { showToast('Nothing to export'); return; }
+            const snap = {
+                savedAt: new Date().toISOString(),
+                files: Object.fromEntries(Object.entries(animRawFiles).map(([k,v])=>[k, animB64(v)])),
+                clips: animData.map(a => ({ name: a.name, sourceFile: a.sourceFile }))
+            };
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(new Blob([JSON.stringify(snap)], {type:'application/json'}));
+            a.download = 'envizion_animator_' + Date.now() + '.json';
+            a.click(); URL.revokeObjectURL(a.href);
+            showToast('Animator workspace exported');
+        });
+
+        document.getElementById('anim-import-json-input').addEventListener('change', async (e) => {
+            const file = e.target.files[0]; if (!file) return;
+            try {
+                const snap = JSON.parse(await file.text());
+                if (!snap.files) throw new Error('Invalid format');
+                animRawFiles = {};
+                const files = [];
+                for (const [name, b64] of Object.entries(snap.files)) {
+                    const buf = animFromB64(b64);
+                    animRawFiles[name] = buf;
+                    files.push(new File([buf], name));
+                }
+                animData = []; animCharModel = null; animCurrentAction = null;
+                if (animMixer) { animMixer.stopAllAction(); animMixer = null; }
+                await animHandleFiles(files);
+                showToast('Animator workspace imported');
+            } catch(err) { showToast('Import failed: ' + err.message); }
+            e.target.value = '';
+        });
+
+    </script>
+</div>
+
+<!-- ENVIZION_AD_SLOT_START -->
+<section class="envizion-ad-slot" aria-label="Advertisement" style="--toolkit-seo-accent:#10a37f;--toolkit-seo-accent-2:#0d8f6f;--toolkit-seo-bg:#212121;--toolkit-seo-accent-soft:rgba(16, 163, 127, 0.14);--toolkit-seo-accent-border:rgba(16, 163, 127, 0.28);--toolkit-seo-surface:#2f2f2f;--toolkit-seo-text:#ececec;--toolkit-seo-muted:#b4b4b4;--toolkit-seo-line:rgba(255, 255, 255, 0.12)">
+  <div class="envizion-ad-box">
+    <span class="envizion-ad-label">Advertisement</span>
+    <ins class="adsbygoogle"
+         style="display:block"
+         data-ad-client="ca-pub-5812524294035974"
+         data-ad-slot="9312358743"
+         data-ad-format="auto"
+         data-full-width-responsive="true"></ins>
+  </div>
+</section>
+<!-- ENVIZION_AD_SLOT_END -->
+
+<!-- ENVIZION_STATIC_SEO_START -->
+<section class="envizion-static-seo" id="envizion-page-guide" aria-label="Envizion 3D Model Viewer explanation" style="--toolkit-seo-accent:#10a37f;--toolkit-seo-accent-2:#0d8f6f;--toolkit-seo-bg:#212121;--toolkit-seo-accent-soft:rgba(16, 163, 127, 0.14);--toolkit-seo-accent-border:rgba(16, 163, 127, 0.28);--toolkit-seo-surface:#2f2f2f;--toolkit-seo-text:#ececec;--toolkit-seo-muted:#b4b4b4;--toolkit-seo-line:rgba(255, 255, 255, 0.12)">
+  <div class="envizion-static-seo__shell">
+    <div class="envizion-static-seo__hero">
+      <div>
+        <p class="envizion-static-seo__kicker">3D viewer</p>
+        <h2>Envizion 3D Model Viewer</h2>
+        <p>Inspect GLB, GLTF, OBJ, and sample 3D models in a rich local model viewer with practical format resources.</p>
+      </div>
+      <div class="envizion-static-seo__badges">
+        <span class="envizion-static-seo__badge">Envizion Tools</span>
+        <span class="envizion-static-seo__badge">Local browser workflow</span>
+        <span class="envizion-static-seo__badge">Tool guide</span>
+      </div>
+    </div>
+    <div class="envizion-static-seo__grid">
+      <article class="envizion-static-seo__panel">
+        <h3>What this tool does</h3>
+        <ul><li>Inspect 3D assets in a browser viewport.</li><li>Load local and sample models.</li><li>Reference common 3D conversion resources.</li></ul>
+      </article>
+      <article class="envizion-static-seo__panel">
+        <h3>How to use it</h3>
+        <ol><li>Open or choose a model.</li><li>Use viewport controls to inspect it.</li><li>Use export or resource links as needed.</li></ol>
+      </article>
+      <article class="envizion-static-seo__panel">
+        <h3>Helpful notes</h3>
+        <ul><li>This page is intentionally centered on the working tool first, then the guide below documents what the tool does, what it does not promise, and how to verify the output.</li><li>The safest workflow is to keep original files, test settings on a small sample, and inspect the exported result before replacing anything important.</li><li>3D previews depend on WebGL support, model scale, texture paths, and browser memory; inspect materials, animation clips, and orientation before using the asset elsewhere.</li></ul>
+      </article>
+    </div>
+    <div class="envizion-static-seo__body">
+      <h3>Detailed explanation</h3>
+      <div class="envizion-static-seo__article">
+        <p>Envizion 3D Model Viewer is part of the Envizion Tools collection, a set of focused browser-based utilities for practical file preparation, editing, conversion, compression, previewing, and creative production.</p>
+        <p>Inspect GLB, GLTF, OBJ, and sample 3D models in a rich local model viewer with practical format resources. The working controls stay at the top of the page, while this guide gives visitors and search engines clear context about what the tool does, when it is useful, and how to approach the workflow.</p>
+        <p>The normal workflow is straightforward: Open or choose a model. Use viewport controls to inspect it. Use export or resource links as needed. For best results, test with a small file first, inspect the output, and then process larger or more important files once the settings look correct.</p>
+        <p>Many Envizion tools run directly in the browser, which helps keep everyday work fast and private. Some tools still depend on browser APIs, local device performance, media encoders, canvas features, PDF handling, or WebGL support, so behavior can differ between browsers.</p>
+      </div>
+      <h3>Best use cases</h3>
+      <ul><li>Use Envizion 3D Model Viewer when you need a focused 3D asset review task without opening a large desktop suite.</li><li>Use it as a quick verification step before sending files to a client, teammate, upload portal, chat app, or production workflow.</li><li>Use the page for repeatable local work where privacy, speed, and predictable browser controls matter more than cloud storage.</li></ul>
+      <h3>Before you export</h3>
+      <ul><li>This page is intentionally centered on the working tool first, then the guide below documents what the tool does, what it does not promise, and how to verify the output.</li><li>The safest workflow is to keep original files, test settings on a small sample, and inspect the exported result before replacing anything important.</li><li>3D previews depend on WebGL support, model scale, texture paths, and browser memory; inspect materials, animation clips, and orientation before using the asset elsewhere.</li></ul>
+      <h3>Troubleshooting</h3>
+      <ul><li>Confirm that textures are embedded or available beside the model file.</li><li>Reset the camera if a model opens very small, very large, or off-center.</li><li>Try GLB for the most portable web preview workflow.</li></ul>
+      <h3>Common questions</h3>
+      <dl class="envizion-static-seo__faq">
+        <div><dt>How do I use this tool?</dt><dd>Open or choose a model. Use viewport controls to inspect it. Use export or resource links as needed.</dd></div>
+        <div><dt>What is this page best for?</dt><dd>Inspect GLB, GLTF, OBJ, and sample 3D models in a rich local model viewer with practical format resources.</dd></div>
+        <div><dt>Are my files uploaded?</dt><dd>These tools are designed around local browser workflows where supported. If a page uses a third-party library or browser API, review your browser permissions and keep sensitive originals until you have verified the output.</dd></div>
+        <div><dt>Does this page include ads?</dt><dd>Yes. The page includes a restrained AdSense slot using the configured Envizion publisher client and shared ad styling.</dd></div>
+        <div><dt>Where is the published page?</dt><dd>https://envizion.work/tools2/main...3d_model_viewer.html</dd></div>
+      </dl>
+      <h3>Publisher and privacy links</h3>
+      <div class="envizion-static-seo__links">
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/about.html">About Envizion Tools</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/privacy.html">Privacy and cookies</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/contact.html">Contact and corrections</a>
+      </div>
+      <h3>Related Envizion tools</h3>
+      <div class="envizion-static-seo__links">
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/index.html">Envizion Tools</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/advanced_editor_converter.html">Advanced Paste, Edit and Convert</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/animator_studio.html">Mixamo Animator Studio</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/bulk_webp_converter.html">Local WebP Converter</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/CodeWeb.html">Localhost Server Manager</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/envizion_editor.html">Envizion Studio Editor</a>
+      </div>
+    </div>
+  </div>
+</section>
+<!-- ENVIZION_STATIC_SEO_END -->
+
+<!-- ENVIZION_TRUST_FOOTER_START -->
+<footer class="envizion-trust-footer" aria-label="Envizion site links">
+  <a href="https://envizion.work/tools2/index.html">Tools</a>
+  <a href="https://envizion.work/tools2/about.html">About</a>
+  <a href="https://envizion.work/tools2/privacy.html">Privacy</a>
+  <a href="https://envizion.work/tools2/contact.html">Contact</a>
+</footer>
+<!-- ENVIZION_TRUST_FOOTER_END -->
+  <script src="toolkit-enhance.js"></script>
+</body>
+</html>
+
+
+
+
