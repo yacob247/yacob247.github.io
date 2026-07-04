@@ -70,7 +70,7 @@
             
             <!-- File Upload Area -->
             <div id="dropZone" class="relative border-2 border-dashed border-slate-600 rounded-xl p-8 flex flex-col items-center justify-center text-center transition-all hover:bg-slate-700/50 cursor-pointer group">
-                <input type="file" id="fileInput" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept="video/mp4,video/quicktime,audio/*" />
+                <input type="file" id="fileInput" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept="video/*,audio/*" />
                 
                 <div id="uploadIcon" class="mb-4 text-indigo-400 group-hover:scale-110 transition-transform">
                     <svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12 mx-auto" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -94,7 +94,7 @@
 
                 <div id="uploadPrompt" class="space-y-1">
                     <p class="text-slate-300 font-medium">Click or drag a file here</p>
-                    <p class="text-slate-500 text-xs">Supports MOV, MP4, and basic audio</p>
+                    <p class="text-slate-500 text-xs">Supports MP4, MOV, WebM, and audio</p>
                 </div>
             </div>
 
@@ -253,9 +253,14 @@
             
             // Smart default selection
             const ext = file.name.split('.').pop().toLowerCase();
-            if (ext === 'mov') outputFormat.value = 'mp4';
-            else if (ext === 'mp4') outputFormat.value = 'mov';
-            else outputFormat.value = 'mp3';
+            const videoExts = ['mov', 'webm', 'mkv', 'avi', 'flv', 'wmv'];
+            if (videoExts.includes(ext)) {
+                outputFormat.value = 'mp4';
+            } else if (ext === 'mp4') {
+                outputFormat.value = 'mov';
+            } else {
+                outputFormat.value = 'mp3';
+            }
 
             addLog(`File loaded: ${file.name} (${formatBytes(file.size)})`);
         }
@@ -305,6 +310,7 @@
                 statusText.textContent = 'Downloading FFmpeg engine...';
                 
                 const { FFmpeg } = window.FFmpegWASM;
+                const { toBlobURL } = window.FFmpegUtil;
                 ffmpeg = new FFmpeg();
 
                 // Hook up logging
@@ -319,12 +325,14 @@
                     progressText.textContent = `${percent.toFixed(1)}%`;
                 });
 
-                // We load the single-threaded core because we cannot guarantee 
-                // Cross-Origin-Opener-Policy / SharedArrayBuffer exist in all environments.
                 const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
+                const ffmpegURL = 'https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd';
+
+                // Fetch external scripts and load them as local Blobs to bypass cross-origin worker restrictions
                 await ffmpeg.load({
-                    coreURL: `${baseURL}/ffmpeg-core.js`,
-                    wasmURL: `${baseURL}/ffmpeg-core.wasm`,
+                    coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+                    wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+                    classWorkerURL: await toBlobURL(`${ffmpegURL}/814.ffmpeg.js`, 'text/javascript')
                 });
 
                 addLog('FFmpeg core loaded successfully.');
