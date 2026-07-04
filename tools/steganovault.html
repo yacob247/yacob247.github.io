@@ -1,0 +1,1797 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SteganoVault - Universal LSB Steganography Suite | Hide & Detect Secret Data in Images</title>
+    <meta name="description" content="SteganoVault is a free, 100% browser-based steganography tool. Hide AES-256 encrypted text inside any image using LSB encoding, then forensically extract hidden data from ANY stego image — no server, no uploads, fully private.">
+    <meta name="keywords" content="steganography tool, LSB steganography, image steganography, hide text in image, AES-256 encryption, steganalysis, forensic image analysis, chi-square steganalysis, free steganography, online steganography, detect hidden data in image, stego tool, pixel steganography, image encryption">
+    <meta name="author" content="SteganoVault">
+    <meta name="robots" content="index, follow">
+    <link rel="canonical" href="https://steganovault.app/">
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="SteganoVault — Hide & Detect Secret Data in Images">
+    <meta property="og:description" content="Free, fully local steganography suite. Encode AES-256 encrypted messages into image pixels. Forensically scan ANY image for hidden data using chi-square analysis and 80-permutation LSB brute force. Zero server contact.">
+    <meta property="og:url" content="https://steganovault.app/">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="SteganoVault — Universal LSB Steganography Suite">
+    <meta name="twitter:description" content="Hide encrypted secrets in images or forensically extract data from any stego image. 100% local, AES-256-GCM, no server, no uploads.">
+
+    <!-- Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "SteganoVault",
+      "description": "Universal LSB steganography and steganalysis suite. Hide AES-256 encrypted text inside images and forensically detect hidden data in any image, fully in-browser.",
+      "applicationCategory": "SecurityApplication",
+      "operatingSystem": "Any",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+      "featureList": [
+        "LSB image steganography",
+        "AES-256-GCM encryption",
+        "PBKDF2 key derivation",
+        "Universal forensic extraction (80 permutations)",
+        "Chi-Square steganalysis",
+        "File signature detection",
+        "100% local processing"
+      ]
+    }
+    </script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            500: '#10b981', // Emerald
+                            600: '#059669',
+                            900: '#064e3b',
+                        },
+                        dark: {
+                            800: '#1e293b',
+                            900: '#0f172a',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+        }
+        .font-mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1e293b;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+
+        .dropzone-active {
+            border-color: #10b981 !important;
+            background-color: rgba(16, 185, 129, 0.1) !important;
+        }
+        
+        #toast-container {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 50;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .toast {
+            padding: 12px 20px;
+            border-radius: 8px;
+            background: #1e293b;
+            border: 1px solid #334155;
+            color: white;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            animation: slideIn 0.3s ease-out forwards;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .toast.error { border-left: 4px solid #ef4444; }
+        .toast.success { border-left: 4px solid #10b981; }
+        .toast.info { border-left: 4px solid #3b82f6; }
+
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes fadeOut {
+            to { opacity: 0; transform: translateY(10px); }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center p-4 sm:p-8">
+
+    <!-- Header -->
+    <header class="w-full max-w-4xl text-center mb-8">
+        <div class="inline-flex items-center justify-center p-3 bg-brand-900/50 rounded-2xl mb-4 border border-brand-500/30">
+            <svg class="w-8 h-8 text-brand-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+            </svg>
+        </div>
+        <h1 class="text-3xl sm:text-4xl font-bold tracking-tight mb-2">Stegano<span class="text-brand-500">Vault</span></h1>
+        <p class="text-gray-400 max-w-2xl mx-auto">
+            Universal LSB steganography suite. Hide AES-256 encrypted payloads, then forensically extract hidden data from <em>any</em> LSB-stego image — regardless of what tool created it. 100% local, zero server contact.
+        </p>
+    </header>
+
+    <!-- Main App Container -->
+    <main class="w-full max-w-4xl bg-dark-800 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden">
+        
+        <!-- Tabs -->
+        <div class="flex border-b border-slate-700">
+            <button id="tab-encode" class="flex-1 py-4 text-center font-semibold text-brand-500 border-b-2 border-brand-500 bg-dark-900 transition-colors">
+                <svg class="w-5 h-5 inline-block mr-2 -mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
+                Hide Data (Encode)
+            </button>
+            <button id="tab-decode" class="flex-1 py-4 text-center font-medium text-slate-400 hover:text-slate-200 transition-colors">
+                <svg class="w-5 h-5 inline-block mr-2 -mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                Reveal Data (Decode)
+            </button>
+            <button id="tab-analyze" class="flex-1 py-4 text-center font-medium text-slate-400 hover:text-slate-200 transition-colors">
+                <svg class="w-5 h-5 inline-block mr-2 -mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+                Analyze LSB
+            </button>
+            <button id="tab-forensic" class="flex-1 py-4 text-center font-medium text-slate-400 hover:text-slate-200 transition-colors">
+                <svg class="w-5 h-5 inline-block mr-2 -mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"></path></svg>
+                Forensic Extract
+            </button>
+        </div>
+
+        <!-- Encode View -->
+        <div id="view-encode" class="p-6 sm:p-8 space-y-6">
+            
+            <!-- Dropzone -->
+            <div id="encode-dropzone" class="border-2 border-dashed border-slate-600 rounded-xl p-8 text-center transition-all hover:border-brand-500 cursor-pointer relative group bg-dark-900/50">
+                <input type="file" id="encode-file" accept="image/png, image/jpeg, image/webp" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+                
+                <div id="encode-preview-container" class="hidden flex-col items-center">
+                    <img id="encode-preview" class="max-h-48 rounded-lg mb-4 shadow-lg" src="" alt="Preview">
+                    <p class="text-sm text-slate-300 font-medium" id="encode-filename">image.png</p>
+                    <button type="button" id="btn-remove-encode" class="mt-2 text-xs text-red-400 hover:text-red-300 z-20 relative">Remove Image</button>
+                </div>
+
+                <div id="encode-placeholder" class="space-y-3 pointer-events-none">
+                    <div class="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mx-auto group-hover:scale-110 transition-transform">
+                        <svg class="w-8 h-8 text-slate-400 group-hover:text-brand-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                    </div>
+                    <p class="text-slate-300 font-medium text-lg">Drop your carrier image here</p>
+                    <p class="text-slate-500 text-sm">PNG, JPG, WEBP (Will be converted to lossless PNG)</p>
+                </div>
+            </div>
+
+            <!-- Capacity Indicator -->
+            <div id="capacity-container" class="hidden">
+                <div class="flex justify-between text-xs text-slate-400 mb-1">
+                    <span>Storage Capacity Used</span>
+                    <span id="capacity-text">0 / 0 Bytes</span>
+                </div>
+                <div class="w-full bg-slate-700 rounded-full h-2">
+                    <div id="capacity-bar" class="bg-brand-500 h-2 rounded-full" style="width: 0%"></div>
+                </div>
+            </div>
+
+            <!-- Secret Text -->
+            <div class="space-y-2">
+                <label class="block text-sm font-medium text-slate-300">Secret Message</label>
+                <textarea id="encode-text" rows="4" class="w-full bg-dark-900 border border-slate-600 rounded-lg p-3 text-slate-200 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-all font-mono text-sm resize-y" placeholder="Enter the sensitive payload to embed into the image..."></textarea>
+            </div>
+
+            <!-- Password -->
+            <div class="space-y-2">
+                <label class="block text-sm font-medium text-slate-300">Encryption Password (Optional but Recommended)</label>
+                <div class="relative">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <svg class="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                    </div>
+                    <input type="password" id="encode-password" class="w-full bg-dark-900 border border-slate-600 rounded-lg py-3 pl-10 pr-3 text-slate-200 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-all" placeholder="Leave blank for unencrypted embedding">
+                </div>
+                <p class="text-xs text-slate-500">Uses AES-256-GCM + PBKDF2 key derivation. Highly secure.</p>
+            </div>
+
+            <!-- Action -->
+            <button id="btn-encode" class="w-full bg-brand-600 hover:bg-brand-500 text-white font-bold py-4 rounded-xl shadow-lg transition-all transform active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                Encrypt & Embed Data
+            </button>
+        </div>
+
+        <!-- Decode View (Hidden initially) -->
+        <div id="view-decode" class="hidden p-6 sm:p-8 space-y-6">
+            
+            <!-- Dropzone -->
+            <div id="decode-dropzone" class="border-2 border-dashed border-slate-600 rounded-xl p-8 text-center transition-all hover:border-brand-500 cursor-pointer relative group bg-dark-900/50">
+                <input type="file" id="decode-file" accept="image/png" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+                
+                <div id="decode-preview-container" class="hidden flex-col items-center">
+                    <img id="decode-preview" class="max-h-48 rounded-lg mb-4 shadow-lg" src="" alt="Preview">
+                    <p class="text-sm text-slate-300 font-medium" id="decode-filename">image.png</p>
+                    <button type="button" id="btn-remove-decode" class="mt-2 text-xs text-red-400 hover:text-red-300 z-20 relative">Remove Image</button>
+                </div>
+
+                <div id="decode-placeholder" class="space-y-3 pointer-events-none">
+                    <div class="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mx-auto group-hover:scale-110 transition-transform">
+                        <svg class="w-8 h-8 text-slate-400 group-hover:text-brand-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    </div>
+                    <p class="text-slate-300 font-medium text-lg">Drop your encoded PNG image here</p>
+                    <p class="text-slate-500 text-sm">Must be a lossless PNG file to preserve LSB data</p>
+                </div>
+            </div>
+
+            <!-- Password -->
+            <div class="space-y-2">
+                <label class="block text-sm font-medium text-slate-300">Decryption Password (If applied)</label>
+                <div class="relative">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <svg class="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"></path></svg>
+                    </div>
+                    <input type="password" id="decode-password" class="w-full bg-dark-900 border border-slate-600 rounded-lg py-3 pl-10 pr-3 text-slate-200 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-all" placeholder="Enter password to decrypt payload">
+                </div>
+            </div>
+
+            <!-- Action -->
+            <button id="btn-decode" class="w-full bg-slate-700 hover:bg-slate-600 text-white font-bold py-4 rounded-xl shadow-lg transition-all transform active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+                Extract & Decrypt Data
+            </button>
+
+            <!-- Results -->
+            <div id="decode-result-container" class="hidden space-y-2 mt-6 pt-6 border-t border-slate-700">
+                <div class="flex justify-between items-center">
+                    <label class="block text-sm font-medium text-brand-500">Recovered Payload</label>
+                    <button id="btn-copy" class="text-xs text-slate-400 hover:text-white flex items-center gap-1 transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                        Copy
+                    </button>
+                </div>
+                <textarea id="decode-text" rows="5" readonly class="w-full bg-dark-900 border border-brand-500/50 rounded-lg p-3 text-brand-400 focus:outline-none font-mono text-sm resize-y shadow-[0_0_15px_rgba(16,185,129,0.1)]"></textarea>
+            </div>
+        </div>
+
+        <!-- Analyze View (Hidden initially) -->
+        <div id="view-analyze" class="hidden p-6 sm:p-8 space-y-6">
+            <div class="bg-blue-900/30 border border-blue-500/30 rounded-lg p-4 text-sm text-blue-200">
+                <strong>LSB Analyzer:</strong> This tool amplifies the Least Significant Bit of the image to 255 (maximum brightness). This reveals the "invisible text mask" and steganography patterns as visual noise. Because the data is binary and encrypted, OCR cannot read this noise, but it allows you to detect if an image has been manipulated.
+            </div>
+
+            <!-- Dropzone -->
+            <div id="analyze-dropzone" class="border-2 border-dashed border-slate-600 rounded-xl p-8 text-center transition-all hover:border-brand-500 cursor-pointer relative group bg-dark-900/50">
+                <input type="file" id="analyze-file" accept="image/png, image/jpeg, image/webp" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+                
+                <div id="analyze-preview-container" class="hidden flex-col items-center">
+                    <img id="analyze-preview" class="max-h-64 rounded-lg mb-4 shadow-lg pixelated" src="" alt="Preview" style="image-rendering: pixelated;">
+                    <p class="text-sm text-slate-300 font-medium" id="analyze-filename">image.png</p>
+                    <button type="button" id="btn-remove-analyze" class="mt-2 text-xs text-red-400 hover:text-red-300 z-20 relative">Remove Image</button>
+                </div>
+
+                <div id="analyze-placeholder" class="space-y-3 pointer-events-none">
+                    <div class="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mx-auto group-hover:scale-110 transition-transform">
+                        <svg class="w-8 h-8 text-slate-400 group-hover:text-brand-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    </div>
+                    <p class="text-slate-300 font-medium text-lg">Drop image to inspect LSB patterns</p>
+                </div>
+            </div>
+
+            <!-- Action -->
+            <button id="btn-analyze" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-xl shadow-lg transition-all transform active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                Visualize Hidden Data Bits
+            </button>
+        </div>
+
+        <!-- Forensic Extract View (Hidden initially) -->
+        <div id="view-forensic" class="hidden p-6 sm:p-8 space-y-6">
+        <div class="bg-purple-900/30 border border-purple-500/30 rounded-lg p-4 text-sm text-purple-200">
+            <strong>🔬 Universal Forensic Extractor:</strong> Attempts to recover hidden data embedded by <em>any</em> LSB steganography tool — not just SteganoVault. Brute-forces all common bit-depths (1–4 bits), channel orders (RGB, RBG, GRB, GBR, BRG, BGR, R-only, G-only, B-only), and row vs. column scan orders. Also runs a Chi-Square statistical attack to detect manipulation even without recovering the payload. All processing is 100% local.
+        </div>
+
+        <!-- Dropzone -->
+        <div id="forensic-dropzone" class="border-2 border-dashed border-slate-600 rounded-xl p-8 text-center transition-all hover:border-purple-500 cursor-pointer relative group bg-dark-900/50">
+            <input type="file" id="forensic-file" accept="image/png, image/jpeg, image/webp" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+            <div id="forensic-preview-container" class="hidden flex-col items-center">
+                <img id="forensic-preview" class="max-h-48 rounded-lg mb-4 shadow-lg" src="" alt="Preview">
+                <p class="text-sm text-slate-300 font-medium" id="forensic-filename">image.png</p>
+                <button type="button" id="btn-remove-forensic" class="mt-2 text-xs text-red-400 hover:text-red-300 z-20 relative">Remove Image</button>
+            </div>
+            <div id="forensic-placeholder" class="space-y-3 pointer-events-none">
+                <div class="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mx-auto group-hover:scale-110 transition-transform">
+                    <svg class="w-8 h-8 text-slate-400 group-hover:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"></path></svg>
+                </div>
+                <p class="text-slate-300 font-medium text-lg">Drop <em>any</em> suspicious image here</p>
+                <p class="text-slate-500 text-sm">PNG, JPG, WEBP — from any tool, any source</p>
+            </div>
+        </div>
+
+        <!-- Optional password -->
+        <div class="space-y-2">
+            <label class="block text-sm font-medium text-slate-300">Password hint (optional — try if payload appears encrypted)</label>
+            <input type="password" id="forensic-password" class="w-full bg-dark-900 border border-slate-600 rounded-lg py-3 px-4 text-slate-200 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-all" placeholder="Leave blank to dump raw bytes">
+        </div>
+
+        <!-- Action -->
+        <button id="btn-forensic" class="w-full bg-purple-700 hover:bg-purple-600 text-white font-bold py-4 rounded-xl shadow-lg transition-all transform active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"></path></svg>
+            Run Universal Forensic Extraction
+        </button>
+
+        <!-- Chi-Square result -->
+        <div id="forensic-chi-container" class="hidden space-y-2 pt-4 border-t border-slate-700">
+            <h3 class="text-sm font-semibold text-slate-300">📊 Chi-Square Steganalysis</h3>
+            <div id="forensic-chi-result" class="font-mono text-xs bg-dark-900 rounded-lg p-4 text-slate-300 whitespace-pre-wrap"></div>
+        </div>
+
+        <!-- Brute-force results -->
+        <div id="forensic-results-container" class="hidden space-y-4 pt-4 border-t border-slate-700">
+            <h3 class="text-sm font-semibold text-slate-300">🔍 Extraction Candidates</h3>
+            <p class="text-xs text-slate-500">Results ranked by readability score. Anything with printable ASCII or a known header is highlighted.</p>
+            <div id="forensic-results" class="space-y-3 max-h-[500px] overflow-y-auto pr-1"></div>
+        </div>
+        </div><!-- end view-forensic -->
+
+    </main><!-- end main app -->
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         ILLUSTRATED HOW-TO GUIDE  (SEO long-form content)
+    ════════════════════════════════════════════════════════════════ -->
+    <section class="w-full max-w-4xl mt-16 mb-8 space-y-20" id="guide" aria-label="How to use SteganoVault">
+
+        <!-- Intro -->
+        <div class="text-center space-y-4">
+            <h2 class="text-2xl sm:text-3xl font-bold text-white">How to Use SteganoVault</h2>
+            <p class="text-slate-400 max-w-2xl mx-auto">Four powerful tools in one page. Follow the numbered steps below — each section has an illustration and a plain-English explanation.</p>
+        </div>
+
+        <!-- ── STEP 1 ── HIDE DATA ─────────────────────────────────────── -->
+        <article class="space-y-6" id="step-hide">
+            <!-- Number badge -->
+            <div class="flex flex-col items-center gap-3">
+                <div class="w-14 h-14 rounded-full bg-brand-900/60 border-2 border-brand-500 flex items-center justify-center text-2xl font-extrabold text-brand-500 shadow-lg">1</div>
+                <h3 class="text-xl font-bold text-white text-center">Hide a Secret Message Inside an Image</h3>
+                <p class="text-slate-400 text-sm text-center max-w-lg">Use the <strong class="text-brand-400">Hide Data (Encode)</strong> tab to invisibly embed any text into a carrier image using LSB steganography.</p>
+            </div>
+
+            <!-- SVG illustration -->
+            <div class="flex justify-center">
+                <svg viewBox="0 0 640 260" xmlns="http://www.w3.org/2000/svg" class="w-full max-w-xl rounded-xl border border-slate-700 bg-dark-900/80" aria-label="Encoding flow diagram">
+                    <!-- Carrier image box -->
+                    <rect x="30" y="60" width="140" height="140" rx="12" fill="#1e293b" stroke="#334155" stroke-width="2"/>
+                    <image href="" x="30" y="60" width="140" height="140" rx="12"/>
+                    <!-- Placeholder mountain icon -->
+                    <rect x="30" y="60" width="140" height="140" rx="12" fill="#0f172a"/>
+                    <polygon points="100,90 60,160 140,160" fill="#1e3a5f" stroke="#3b82f6" stroke-width="1.5"/>
+                    <circle cx="125" cy="100" r="12" fill="#fbbf24" opacity="0.8"/>
+                    <text x="100" y="185" text-anchor="middle" fill="#64748b" font-size="11" font-family="Inter,sans-serif">carrier.png</text>
+                    <text x="100" y="198" text-anchor="middle" fill="#475569" font-size="10" font-family="Inter,sans-serif">any PNG/JPG/WEBP</text>
+
+                    <!-- Arrow 1 -->
+                    <line x1="175" y1="130" x2="215" y2="130" stroke="#10b981" stroke-width="2" marker-end="url(#arrowG)"/>
+
+                    <!-- Secret text box -->
+                    <rect x="215" y="90" width="130" height="80" rx="8" fill="#064e3b" stroke="#10b981" stroke-width="1.5"/>
+                    <text x="280" y="118" text-anchor="middle" fill="#a7f3d0" font-size="10" font-family="JetBrains Mono,monospace">"Top secret msg"</text>
+                    <text x="280" y="135" text-anchor="middle" fill="#6ee7b7" font-size="9" font-family="Inter,sans-serif">+ optional password</text>
+                    <text x="280" y="152" text-anchor="middle" fill="#34d399" font-size="9" font-family="Inter,sans-serif">AES-256-GCM encrypt</text>
+
+                    <!-- Arrow 2 -->
+                    <line x1="348" y1="130" x2="388" y2="130" stroke="#10b981" stroke-width="2" marker-end="url(#arrowG)"/>
+
+                    <!-- LSB embed box -->
+                    <rect x="388" y="85" width="90" height="90" rx="8" fill="#1e293b" stroke="#10b981" stroke-width="1.5"/>
+                    <text x="433" y="113" text-anchor="middle" fill="#94a3b8" font-size="9" font-family="Inter,sans-serif">LSB embed</text>
+                    <!-- Pixel grid visual -->
+                    <g transform="translate(400,120)">
+                        <rect x="0" y="0" width="10" height="10" fill="#ef4444" rx="1"/>
+                        <rect x="11" y="0" width="10" height="10" fill="#ef4445" rx="1"/>
+                        <rect x="22" y="0" width="10" height="10" fill="#ef4444" rx="1"/>
+                        <rect x="0" y="11" width="10" height="10" fill="#22c55e" rx="1"/>
+                        <rect x="11" y="11" width="10" height="10" fill="#22c55f" rx="1"/>
+                        <rect x="22" y="11" width="10" height="10" fill="#22c55e" rx="1"/>
+                        <rect x="0" y="22" width="10" height="10" fill="#3b82f6" rx="1"/>
+                        <rect x="11" y="22" width="10" height="10" fill="#3b82f7" rx="1"/>
+                        <rect x="22" y="22" width="10" height="10" fill="#3b82f6" rx="1"/>
+                    </g>
+
+                    <!-- Arrow 3 -->
+                    <line x1="482" y1="130" x2="520" y2="130" stroke="#10b981" stroke-width="2" marker-end="url(#arrowG)"/>
+
+                    <!-- Output -->
+                    <rect x="520" y="60" width="100" height="140" rx="12" fill="#0f172a" stroke="#10b981" stroke-width="2"/>
+                    <polygon points="570,90 540,155 600,155" fill="#1e3a5f" stroke="#10b981" stroke-width="1.5"/>
+                    <circle cx="591" cy="98" r="10" fill="#fbbf24" opacity="0.8"/>
+                    <text x="570" y="185" text-anchor="middle" fill="#10b981" font-size="11" font-family="Inter,sans-serif">stego.png</text>
+                    <text x="570" y="198" text-anchor="middle" fill="#475569" font-size="10" font-family="Inter,sans-serif">looks identical</text>
+
+                    <defs>
+                        <marker id="arrowG" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                            <path d="M0,0 L0,6 L8,3 z" fill="#10b981"/>
+                        </marker>
+                    </defs>
+                </svg>
+            </div>
+
+            <!-- Steps list -->
+            <ol class="space-y-4 text-slate-300 text-sm max-w-2xl mx-auto">
+                <li class="flex gap-4 items-start">
+                    <span class="mt-0.5 w-6 h-6 rounded-full bg-brand-900 border border-brand-500 text-brand-400 text-xs flex items-center justify-center font-bold flex-shrink-0">1</span>
+                    <span>Click the <strong class="text-brand-400">Hide Data (Encode)</strong> tab at the top of the app.</span>
+                </li>
+                <li class="flex gap-4 items-start">
+                    <span class="mt-0.5 w-6 h-6 rounded-full bg-brand-900 border border-brand-500 text-brand-400 text-xs flex items-center justify-center font-bold flex-shrink-0">2</span>
+                    <span>Drag and drop — or click to select — any <strong>PNG, JPG, or WEBP</strong> image as your carrier. The larger the image, the more text you can hide. A capacity bar shows how full the image is as you type.</span>
+                </li>
+                <li class="flex gap-4 items-start">
+                    <span class="mt-0.5 w-6 h-6 rounded-full bg-brand-900 border border-brand-500 text-brand-400 text-xs flex items-center justify-center font-bold flex-shrink-0">3</span>
+                    <span>Type your secret message in the <strong>Secret Message</strong> box. You can paste anything — passwords, notes, coordinates, source code, anything text-based.</span>
+                </li>
+                <li class="flex gap-4 items-start">
+                    <span class="mt-0.5 w-6 h-6 rounded-full bg-brand-900 border border-brand-500 text-brand-400 text-xs flex items-center justify-center font-bold flex-shrink-0">4</span>
+                    <span><strong>Optional but recommended:</strong> enter a password. The message will be encrypted with AES-256-GCM and a PBKDF2-derived key before being embedded. Without a password, the raw text is embedded (still invisible to the eye, but not encrypted).</span>
+                </li>
+                <li class="flex gap-4 items-start">
+                    <span class="mt-0.5 w-6 h-6 rounded-full bg-brand-900 border border-brand-500 text-brand-400 text-xs flex items-center justify-center font-bold flex-shrink-0">5</span>
+                    <span>Click <strong class="text-brand-400">Encrypt & Embed Data</strong>. A PNG file downloads automatically. The image looks <em>visually identical</em> to the original — the secret is in the least significant bits of each pixel's colour channels.</span>
+                </li>
+            </ol>
+        </article>
+
+        <hr class="border-slate-700">
+
+        <!-- ── STEP 2 ── REVEAL DATA ───────────────────────────────────── -->
+        <article class="space-y-6" id="step-reveal">
+            <div class="flex flex-col items-center gap-3">
+                <div class="w-14 h-14 rounded-full bg-slate-800 border-2 border-slate-500 flex items-center justify-center text-2xl font-extrabold text-slate-300 shadow-lg">2</div>
+                <h3 class="text-xl font-bold text-white text-center">Reveal a Hidden Message from an Encoded Image</h3>
+                <p class="text-slate-400 text-sm text-center max-w-lg">Use the <strong class="text-slate-300">Reveal Data (Decode)</strong> tab to extract and decrypt the payload from a SteganoVault-encoded PNG.</p>
+            </div>
+
+            <!-- SVG illustration -->
+            <div class="flex justify-center">
+                <svg viewBox="0 0 560 220" xmlns="http://www.w3.org/2000/svg" class="w-full max-w-xl rounded-xl border border-slate-700 bg-dark-900/80" aria-label="Decoding flow diagram">
+                    <!-- Stego image -->
+                    <rect x="20" y="40" width="110" height="140" rx="12" fill="#0f172a" stroke="#10b981" stroke-width="2"/>
+                    <polygon points="75,65 45,135 105,135" fill="#1e3a5f" stroke="#10b981" stroke-width="1.5"/>
+                    <circle cx="97" cy="75" r="10" fill="#fbbf24" opacity="0.8"/>
+                    <text x="75" y="163" text-anchor="middle" fill="#10b981" font-size="11" font-family="Inter,sans-serif">stego.png</text>
+
+                    <!-- Arrow -->
+                    <line x1="133" y1="110" x2="170" y2="110" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrowW)"/>
+
+                    <!-- LSB extract -->
+                    <rect x="170" y="75" width="100" height="70" rx="8" fill="#1e293b" stroke="#475569" stroke-width="1.5"/>
+                    <text x="220" y="104" text-anchor="middle" fill="#94a3b8" font-size="10" font-family="Inter,sans-serif">Read pixel LSBs</text>
+                    <text x="220" y="120" text-anchor="middle" fill="#64748b" font-size="9" font-family="Inter,sans-serif">reconstruct bytes</text>
+
+                    <!-- Arrow -->
+                    <line x1="273" y1="110" x2="308" y2="110" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrowW)"/>
+
+                    <!-- Decrypt box -->
+                    <rect x="308" y="75" width="100" height="70" rx="8" fill="#1e293b" stroke="#475569" stroke-width="1.5"/>
+                    <text x="358" y="104" text-anchor="middle" fill="#94a3b8" font-size="10" font-family="Inter,sans-serif">AES-256-GCM</text>
+                    <text x="358" y="120" text-anchor="middle" fill="#64748b" font-size="9" font-family="Inter,sans-serif">decrypt (if pwd)</text>
+
+                    <!-- Arrow -->
+                    <line x1="411" y1="110" x2="446" y2="110" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrowW)"/>
+
+                    <!-- Result -->
+                    <rect x="446" y="68" width="96" height="84" rx="8" fill="#064e3b" stroke="#10b981" stroke-width="1.5"/>
+                    <text x="494" y="98" text-anchor="middle" fill="#a7f3d0" font-size="10" font-family="JetBrains Mono,monospace">"Top secret</text>
+                    <text x="494" y="113" text-anchor="middle" fill="#a7f3d0" font-size="10" font-family="JetBrains Mono,monospace"> msg"</text>
+                    <text x="494" y="136" text-anchor="middle" fill="#6ee7b7" font-size="9" font-family="Inter,sans-serif">✓ recovered</text>
+
+                    <defs>
+                        <marker id="arrowW" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                            <path d="M0,0 L0,6 L8,3 z" fill="#94a3b8"/>
+                        </marker>
+                    </defs>
+                </svg>
+            </div>
+
+            <ol class="space-y-4 text-slate-300 text-sm max-w-2xl mx-auto">
+                <li class="flex gap-4 items-start">
+                    <span class="mt-0.5 w-6 h-6 rounded-full bg-slate-800 border border-slate-600 text-slate-400 text-xs flex items-center justify-center font-bold flex-shrink-0">1</span>
+                    <span>Click the <strong class="text-slate-200">Reveal Data (Decode)</strong> tab.</span>
+                </li>
+                <li class="flex gap-4 items-start">
+                    <span class="mt-0.5 w-6 h-6 rounded-full bg-slate-800 border border-slate-600 text-slate-400 text-xs flex items-center justify-center font-bold flex-shrink-0">2</span>
+                    <span>Drop in the stego PNG that was produced by SteganoVault. <strong>Important:</strong> it must still be a lossless PNG — if it was re-saved as JPEG the LSB data will have been destroyed by compression.</span>
+                </li>
+                <li class="flex gap-4 items-start">
+                    <span class="mt-0.5 w-6 h-6 rounded-full bg-slate-800 border border-slate-600 text-slate-400 text-xs flex items-center justify-center font-bold flex-shrink-0">3</span>
+                    <span>If the message was encrypted, enter the same password that was used during encoding.</span>
+                </li>
+                <li class="flex gap-4 items-start">
+                    <span class="mt-0.5 w-6 h-6 rounded-full bg-slate-800 border border-slate-600 text-slate-400 text-xs flex items-center justify-center font-bold flex-shrink-0">4</span>
+                    <span>Click <strong>Extract & Decrypt Data</strong>. The message appears in the green box below. Click <strong>Copy</strong> to copy it to your clipboard.</span>
+                </li>
+            </ol>
+        </article>
+
+        <hr class="border-slate-700">
+
+        <!-- ── STEP 3 ── LSB ANALYZE ───────────────────────────────────── -->
+        <article class="space-y-6" id="step-analyze">
+            <div class="flex flex-col items-center gap-3">
+                <div class="w-14 h-14 rounded-full bg-blue-900/60 border-2 border-blue-500 flex items-center justify-center text-2xl font-extrabold text-blue-400 shadow-lg">3</div>
+                <h3 class="text-xl font-bold text-white text-center">Visualize Hidden Bit Patterns (LSB View)</h3>
+                <p class="text-slate-400 text-sm text-center max-w-lg">Use the <strong class="text-blue-300">Analyze LSB</strong> tab to visually reveal whether an image's least-significant bits show signs of tampering.</p>
+            </div>
+
+            <!-- SVG illustration -->
+            <div class="flex justify-center">
+                <svg viewBox="0 0 560 230" xmlns="http://www.w3.org/2000/svg" class="w-full max-w-xl rounded-xl border border-slate-700 bg-dark-900/80" aria-label="LSB analysis diagram">
+                    <!-- Original image -->
+                    <rect x="20" y="45" width="130" height="140" rx="12" fill="#0f172a" stroke="#334155" stroke-width="2"/>
+                    <polygon points="85,70 50,148 120,148" fill="#1e3a5f" stroke="#3b82f6" stroke-width="1.5"/>
+                    <circle cx="108" cy="80" r="11" fill="#fbbf24" opacity="0.8"/>
+                    <text x="85" y="172" text-anchor="middle" fill="#64748b" font-size="11" font-family="Inter,sans-serif">input image</text>
+
+                    <!-- Arrow -->
+                    <line x1="153" y1="115" x2="193" y2="115" stroke="#3b82f6" stroke-width="2" marker-end="url(#arrowB)"/>
+
+                    <!-- Process box -->
+                    <rect x="193" y="82" width="134" height="66" rx="8" fill="#1e3a5f" stroke="#3b82f6" stroke-width="1.5"/>
+                    <text x="260" y="108" text-anchor="middle" fill="#93c5fd" font-size="10" font-family="Inter,sans-serif">For each pixel:</text>
+                    <text x="260" y="123" text-anchor="middle" fill="#bfdbfe" font-size="9" font-family="JetBrains Mono,monospace">R,G,B LSB × 255</text>
+                    <text x="260" y="137" text-anchor="middle" fill="#93c5fd" font-size="9" font-family="Inter,sans-serif">(amplify to visible)</text>
+
+                    <!-- Arrow -->
+                    <line x1="330" y1="115" x2="368" y2="115" stroke="#3b82f6" stroke-width="2" marker-end="url(#arrowB)"/>
+
+                    <!-- Clean image result -->
+                    <rect x="368" y="45" width="80" height="80" rx="8" fill="#0f172a" stroke="#334155" stroke-width="1.5"/>
+                    <!-- uniform grey noise pattern for clean -->
+                    <g opacity="0.6">
+                        <rect x="374" y="51" width="5" height="5" fill="#1e293b"/>
+                        <rect x="380" y="51" width="5" height="5" fill="#334155"/>
+                        <rect x="386" y="51" width="5" height="5" fill="#1e293b"/>
+                        <rect x="392" y="51" width="5" height="5" fill="#334155"/>
+                        <rect x="374" y="57" width="5" height="5" fill="#334155"/>
+                        <rect x="380" y="57" width="5" height="5" fill="#1e293b"/>
+                        <rect x="386" y="57" width="5" height="5" fill="#334155"/>
+                        <rect x="392" y="57" width="5" height="5" fill="#1e293b"/>
+                        <rect x="374" y="63" width="5" height="5" fill="#1e293b"/>
+                        <rect x="380" y="63" width="5" height="5" fill="#334155"/>
+                        <rect x="386" y="63" width="5" height="5" fill="#1e293b"/>
+                        <rect x="392" y="63" width="5" height="5" fill="#334155"/>
+                    </g>
+                    <text x="408" y="140" text-anchor="middle" fill="#64748b" font-size="10" font-family="Inter,sans-serif">clean image</text>
+                    <text x="408" y="153" text-anchor="middle" fill="#475569" font-size="9" font-family="Inter,sans-serif">→ random noise</text>
+
+                    <!-- Stego image result -->
+                    <rect x="462" y="45" width="80" height="80" rx="8" fill="#0f172a" stroke="#10b981" stroke-width="1.5"/>
+                    <!-- structured pattern for stego -->
+                    <g>
+                        <rect x="468" y="51" width="5" height="5" fill="#000"/>
+                        <rect x="474" y="51" width="5" height="5" fill="#fff"/>
+                        <rect x="480" y="51" width="5" height="5" fill="#000"/>
+                        <rect x="486" y="51" width="5" height="5" fill="#000"/>
+                        <rect x="492" y="51" width="5" height="5" fill="#fff"/>
+                        <rect x="468" y="57" width="5" height="5" fill="#fff"/>
+                        <rect x="474" y="57" width="5" height="5" fill="#000"/>
+                        <rect x="480" y="57" width="5" height="5" fill="#fff"/>
+                        <rect x="486" y="57" width="5" height="5" fill="#fff"/>
+                        <rect x="492" y="57" width="5" height="5" fill="#000"/>
+                        <rect x="468" y="63" width="5" height="5" fill="#000"/>
+                        <rect x="474" y="63" width="5" height="5" fill="#fff"/>
+                        <rect x="480" y="63" width="5" height="5" fill="#000"/>
+                        <rect x="486" y="63" width="5" height="5" fill="#fff"/>
+                        <rect x="492" y="63" width="5" height="5" fill="#000"/>
+                        <rect x="468" y="69" width="5" height="5" fill="#fff"/>
+                        <rect x="474" y="69" width="5" height="5" fill="#000"/>
+                        <rect x="480" y="69" width="5" height="5" fill="#fff"/>
+                        <rect x="486" y="69" width="5" height="5" fill="#000"/>
+                        <rect x="492" y="69" width="5" height="5" fill="#fff"/>
+                    </g>
+                    <text x="500" y="140" text-anchor="middle" fill="#10b981" font-size="10" font-family="Inter,sans-serif">stego image</text>
+                    <text x="500" y="153" text-anchor="middle" fill="#059669" font-size="9" font-family="Inter,sans-serif">→ structured bits</text>
+
+                    <defs>
+                        <marker id="arrowB" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                            <path d="M0,0 L0,6 L8,3 z" fill="#3b82f6"/>
+                        </marker>
+                    </defs>
+                </svg>
+            </div>
+
+            <ol class="space-y-4 text-slate-300 text-sm max-w-2xl mx-auto">
+                <li class="flex gap-4 items-start">
+                    <span class="mt-0.5 w-6 h-6 rounded-full bg-blue-900/60 border border-blue-600 text-blue-400 text-xs flex items-center justify-center font-bold flex-shrink-0">1</span>
+                    <span>Click <strong class="text-blue-300">Analyze LSB</strong> and drop in any image you want to inspect.</span>
+                </li>
+                <li class="flex gap-4 items-start">
+                    <span class="mt-0.5 w-6 h-6 rounded-full bg-blue-900/60 border border-blue-600 text-blue-400 text-xs flex items-center justify-center font-bold flex-shrink-0">2</span>
+                    <span>Click <strong>Visualize Hidden Data Bits</strong>. The tool amplifies each pixel's least significant bit to full brightness (0 → black, 1 → white).</span>
+                </li>
+                <li class="flex gap-4 items-start">
+                    <span class="mt-0.5 w-6 h-6 rounded-full bg-blue-900/60 border border-blue-600 text-blue-400 text-xs flex items-center justify-center font-bold flex-shrink-0">3</span>
+                    <span><strong>Reading the result:</strong> a natural photograph will show random salt-and-pepper noise — no pattern. A stego image will show structured regions, smooth gradients of white/black blocks, or unusual geometric patterns where data has been written.</span>
+                </li>
+                <li class="flex gap-4 items-start">
+                    <span class="mt-0.5 w-6 h-6 rounded-full bg-blue-900/60 border border-blue-600 text-blue-400 text-xs flex items-center justify-center font-bold flex-shrink-0">4</span>
+                    <span>This is a <em>visual-only</em> detection. For a rigorous statistical test, use the Forensic Extract tab (Step 4) which also runs Chi-Square analysis.</span>
+                </li>
+            </ol>
+        </article>
+
+        <hr class="border-slate-700">
+
+        <!-- ── STEP 4 ── FORENSIC EXTRACT ──────────────────────────────── -->
+        <article class="space-y-6" id="step-forensic">
+            <div class="flex flex-col items-center gap-3">
+                <div class="w-14 h-14 rounded-full bg-purple-900/60 border-2 border-purple-500 flex items-center justify-center text-2xl font-extrabold text-purple-400 shadow-lg">4</div>
+                <h3 class="text-xl font-bold text-white text-center">Forensically Extract Data from <em>Any</em> Stego Image</h3>
+                <p class="text-slate-400 text-sm text-center max-w-lg">The <strong class="text-purple-300">Forensic Extract</strong> tab is a universal scanner — it brute-forces 80 extraction permutations and runs a Chi-Square statistical attack on any image, regardless of which tool encoded it.</p>
+            </div>
+
+            <!-- SVG illustration -->
+            <div class="flex justify-center">
+                <svg viewBox="0 0 640 270" xmlns="http://www.w3.org/2000/svg" class="w-full max-w-xl rounded-xl border border-slate-700 bg-dark-900/80" aria-label="Forensic extraction diagram">
+                    <!-- Unknown image -->
+                    <rect x="16" y="55" width="100" height="100" rx="10" fill="#0f172a" stroke="#7c3aed" stroke-width="2"/>
+                    <text x="66" y="95" text-anchor="middle" fill="#a78bfa" font-size="9" font-family="Inter,sans-serif">unknown</text>
+                    <text x="66" y="109" text-anchor="middle" fill="#7c3aed" font-size="9" font-family="Inter,sans-serif">stego image</text>
+                    <text x="66" y="124" text-anchor="middle" fill="#6d28d9" font-size="9" font-family="Inter,sans-serif">any tool, any format</text>
+
+                    <!-- Arrow fan -->
+                    <line x1="118" y1="105" x2="155" y2="55"  stroke="#7c3aed" stroke-width="1.2" stroke-dasharray="4,2"/>
+                    <line x1="118" y1="105" x2="155" y2="105" stroke="#7c3aed" stroke-width="1.2" stroke-dasharray="4,2"/>
+                    <line x1="118" y1="105" x2="155" y2="155" stroke="#7c3aed" stroke-width="1.2" stroke-dasharray="4,2"/>
+
+                    <!-- Permutation boxes -->
+                    <rect x="155" y="33" width="130" height="38" rx="6" fill="#1e1b4b" stroke="#6d28d9" stroke-width="1"/>
+                    <text x="220" y="50" text-anchor="middle" fill="#c4b5fd" font-size="9" font-family="JetBrains Mono,monospace">10 channel orders ×</text>
+                    <text x="220" y="63" text-anchor="middle" fill="#a78bfa" font-size="9" font-family="JetBrains Mono,monospace">4 bit-depths × 2 scans</text>
+
+                    <rect x="155" y="86" width="130" height="38" rx="6" fill="#1e1b4b" stroke="#6d28d9" stroke-width="1"/>
+                    <text x="220" y="103" text-anchor="middle" fill="#c4b5fd" font-size="9" font-family="Inter,sans-serif">Chi-Square analysis</text>
+                    <text x="220" y="116" text-anchor="middle" fill="#a78bfa" font-size="9" font-family="Inter,sans-serif">per channel (R, G, B)</text>
+
+                    <rect x="155" y="139" width="130" height="38" rx="6" fill="#1e1b4b" stroke="#6d28d9" stroke-width="1"/>
+                    <text x="220" y="156" text-anchor="middle" fill="#c4b5fd" font-size="9" font-family="Inter,sans-serif">File signature scan</text>
+                    <text x="220" y="169" text-anchor="middle" fill="#a78bfa" font-size="9" font-family="Inter,sans-serif">PNG, ZIP, PDF, EXE…</text>
+
+                    <!-- Converge arrow -->
+                    <line x1="287" y1="52"  x2="330" y2="105" stroke="#7c3aed" stroke-width="1.2"/>
+                    <line x1="287" y1="105" x2="330" y2="105" stroke="#7c3aed" stroke-width="1.2" marker-end="url(#arrowP)"/>
+                    <line x1="287" y1="158" x2="330" y2="105" stroke="#7c3aed" stroke-width="1.2"/>
+
+                    <!-- Score & rank box -->
+                    <rect x="330" y="72" width="120" height="66" rx="8" fill="#2e1065" stroke="#7c3aed" stroke-width="1.5"/>
+                    <text x="390" y="98" text-anchor="middle" fill="#e9d5ff" font-size="10" font-family="Inter,sans-serif">Rank by readability</text>
+                    <text x="390" y="113" text-anchor="middle" fill="#c4b5fd" font-size="9" font-family="Inter,sans-serif">highlight file headers</text>
+                    <text x="390" y="126" text-anchor="middle" fill="#a78bfa" font-size="9" font-family="Inter,sans-serif">attempt AES decrypt</text>
+
+                    <!-- Arrow -->
+                    <line x1="452" y1="105" x2="488" y2="105" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrowP)"/>
+
+                    <!-- Results box -->
+                    <rect x="488" y="50" width="136" height="170" rx="10" fill="#0f172a" stroke="#7c3aed" stroke-width="1.5"/>
+                    <text x="556" y="78" text-anchor="middle" fill="#a78bfa" font-size="10" font-family="Inter,sans-serif">80 candidates</text>
+                    <rect x="498" y="88" width="116" height="20" rx="4" fill="#1e1b4b"/>
+                    <text x="556" y="102" text-anchor="middle" fill="#e9d5ff" font-size="9" font-family="JetBrains Mono,monospace">RGB 1-bit row  ██░</text>
+                    <rect x="498" y="113" width="116" height="20" rx="4" fill="#312e81"/>
+                    <text x="556" y="127" text-anchor="middle" fill="#c4b5fd" font-size="9" font-family="JetBrains Mono,monospace">GBR 2-bit col  █░░</text>
+                    <rect x="498" y="138" width="116" height="20" rx="4" fill="#1e1b4b"/>
+                    <text x="556" y="152" text-anchor="middle" fill="#e9d5ff" font-size="9" font-family="JetBrains Mono,monospace">R-only 1-bit   ░░░</text>
+                    <text x="556" y="183" text-anchor="middle" fill="#6d28d9" font-size="9" font-family="Inter,sans-serif">+ hex dump each</text>
+                    <text x="556" y="198" text-anchor="middle" fill="#6d28d9" font-size="9" font-family="Inter,sans-serif">+ χ² verdict</text>
+
+                    <defs>
+                        <marker id="arrowP" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                            <path d="M0,0 L0,6 L8,3 z" fill="#7c3aed"/>
+                        </marker>
+                    </defs>
+                </svg>
+            </div>
+
+            <ol class="space-y-4 text-slate-300 text-sm max-w-2xl mx-auto">
+                <li class="flex gap-4 items-start">
+                    <span class="mt-0.5 w-6 h-6 rounded-full bg-purple-900/60 border border-purple-600 text-purple-400 text-xs flex items-center justify-center font-bold flex-shrink-0">1</span>
+                    <span>Click the <strong class="text-purple-300">Forensic Extract</strong> tab and drop in any suspicious image — it doesn't need to have been encoded by SteganoVault.</span>
+                </li>
+                <li class="flex gap-4 items-start">
+                    <span class="mt-0.5 w-6 h-6 rounded-full bg-purple-900/60 border border-purple-600 text-purple-400 text-xs flex items-center justify-center font-bold flex-shrink-0">2</span>
+                    <span><strong>Optional:</strong> if you suspect the payload is AES-encrypted, enter a candidate password. The scanner will attempt to decrypt any matching payload structure it finds.</span>
+                </li>
+                <li class="flex gap-4 items-start">
+                    <span class="mt-0.5 w-6 h-6 rounded-full bg-purple-900/60 border border-purple-600 text-purple-400 text-xs flex items-center justify-center font-bold flex-shrink-0">3</span>
+                    <span>Click <strong class="text-purple-300">Run Universal Forensic Extraction</strong>. The scanner tries every combination of: 10 channel extraction orders (RGB, RBG, GRB, GBR, BRG, BGR, R-only, G-only, B-only, RGBA), 4 bit depths (1–4 LSBs), and 2 scan patterns (row-by-row and column-by-column). That is <strong>80 total permutations</strong>.</span>
+                </li>
+                <li class="flex gap-4 items-start">
+                    <span class="mt-0.5 w-6 h-6 rounded-full bg-purple-900/60 border border-purple-600 text-purple-400 text-xs flex items-center justify-center font-bold flex-shrink-0">4</span>
+                    <span>The <strong>Chi-Square report</strong> appears first — it tells you statistically whether any channel has been modified, even if the data cannot be decoded. A ratio below 0.5 is strong evidence of steganography.</span>
+                </li>
+                <li class="flex gap-4 items-start">
+                    <span class="mt-0.5 w-6 h-6 rounded-full bg-purple-900/60 border border-purple-600 text-purple-400 text-xs flex items-center justify-center font-bold flex-shrink-0">5</span>
+                    <span>Below that, the top 20 extraction candidates are ranked by <strong>readability score</strong>. Candidates with a detected file signature (PNG, ZIP, PDF, EXE, etc.) are highlighted in purple. Expand any result to see a <strong>hex dump</strong> or a plain-text preview.</span>
+                </li>
+                <li class="flex gap-4 items-start">
+                    <span class="mt-0.5 w-6 h-6 rounded-full bg-purple-900/60 border border-purple-600 text-purple-400 text-xs flex items-center justify-center font-bold flex-shrink-0">6</span>
+                    <span><strong>Why must I serve it from a web server?</strong> Browsers block canvas pixel-reading (<code class="bg-slate-800 px-1 rounded text-xs">getImageData</code>) when a page is opened as a local <code class="bg-slate-800 px-1 rounded text-xs">file://</code> URL. Serving from <code class="bg-slate-800 px-1 rounded text-xs">localhost</code> or any <code class="bg-slate-800 px-1 rounded text-xs">https://</code> host removes this restriction. Run <code class="bg-slate-800 px-1 rounded text-purple-300 text-xs">python3 -m http.server 8080</code> in the folder containing this file, then open <code class="bg-slate-800 px-1 rounded text-purple-300 text-xs">http://localhost:8080</code>.</span>
+                </li>
+            </ol>
+        </article>
+
+        <!-- FAQ / SEO section -->
+        <hr class="border-slate-700">
+        <article class="space-y-8 max-w-2xl mx-auto" id="faq">
+            <h2 class="text-xl font-bold text-white text-center">Frequently Asked Questions</h2>
+
+            <div class="space-y-6">
+                <div class="space-y-2">
+                    <h3 class="font-semibold text-slate-200">What is LSB steganography?</h3>
+                    <p class="text-slate-400 text-sm">LSB (Least Significant Bit) steganography hides data by replacing the lowest bit of each colour channel in an image pixel. A pixel's colour value changes by at most 1 out of 255 — completely imperceptible to the human eye — but those bits can carry a full message.</p>
+                </div>
+                <div class="space-y-2">
+                    <h3 class="font-semibold text-slate-200">How secure is the encryption?</h3>
+                    <p class="text-slate-400 text-sm">SteganoVault uses AES-256-GCM with a PBKDF2-derived key (100,000 iterations, SHA-256 hash). The salt and IV are randomly generated per message. This is the same encryption standard used by governments and financial institutions. Without the correct password the ciphertext is computationally infeasible to break.</p>
+                </div>
+                <div class="space-y-2">
+                    <h3 class="font-semibold text-slate-200">Does any data leave my device?</h3>
+                    <p class="text-slate-400 text-sm">No. Everything runs entirely in your browser using the Web Crypto API and HTML Canvas. No image, message, or password is ever transmitted to any server.</p>
+                </div>
+                <div class="space-y-2">
+                    <h3 class="font-semibold text-slate-200">Why does it only accept PNG for decoding?</h3>
+                    <p class="text-slate-400 text-sm">JPEG compression alters pixel values to reduce file size, which destroys the precise LSB values the payload is stored in. PNG is lossless — every pixel value is preserved exactly. Always share the stego image as PNG.</p>
+                </div>
+                <div class="space-y-2">
+                    <h3 class="font-semibold text-slate-200">Can the Forensic tab detect any stego tool's output?</h3>
+                    <p class="text-slate-400 text-sm">It covers the vast majority of common LSB implementations — Steghide, OpenStego, SilentEye, StegSolve-style tools, and custom scripts that use sequential RGB encoding. Tools that use DCT-domain embedding (like Outguess or F5 for JPEG) operate differently and are beyond LSB extraction scope, though the Chi-Square analysis will still flag statistical anomalies in those images.</p>
+                </div>
+                <div class="space-y-2">
+                    <h3 class="font-semibold text-slate-200">How much text can I hide in an image?</h3>
+                    <p class="text-slate-400 text-sm">At 1-bit LSB depth (the default), each pixel stores 3 bits (one per R, G, B channel). A 1920×1080 image has roughly 2,073,600 pixels, giving about 777 KB of raw capacity — or roughly 750 KB of text after encryption overhead. The real-time capacity bar in the Encode tab shows exactly how much you have left.</p>
+                </div>
+            </div>
+        </article>
+
+        <!-- Footer -->
+        <footer class="text-center text-slate-600 text-xs pb-4 space-y-1">
+            <p>SteganoVault — 100% local steganography. No server. No tracking. No ads.</p>
+            <p>All cryptography uses the browser's native <a href="https://developer.mozilla.org/en-US/docs/Web/API/Web_Crypto_API" target="_blank" rel="noopener" class="text-slate-500 hover:text-slate-300 underline">Web Crypto API</a>.</p>
+        </footer>
+
+    </section>
+    <canvas id="canvas" class="hidden"></canvas>
+    <a id="download-link" class="hidden"></a>
+
+    <div id="toast-container"></div>
+
+    <script>
+        /**
+         * STEGANOVAULT CORE LOGIC
+         * Handles UI state, cryptography, and LSB image encoding/decoding.
+         */
+
+        // UI Elements
+        const tabEncode = document.getElementById('tab-encode');
+        const tabDecode = document.getElementById('tab-decode');
+        const tabAnalyze = document.getElementById('tab-analyze');
+        const viewEncode = document.getElementById('view-encode');
+        const viewDecode = document.getElementById('view-decode');
+        const viewAnalyze = document.getElementById('view-analyze');
+        
+        const encodeFile = document.getElementById('encode-file');
+        const encodeDropzone = document.getElementById('encode-dropzone');
+        const encodePreviewContainer = document.getElementById('encode-preview-container');
+        const encodePlaceholder = document.getElementById('encode-placeholder');
+        const encodePreview = document.getElementById('encode-preview');
+        const encodeFilename = document.getElementById('encode-filename');
+        const btnRemoveEncode = document.getElementById('btn-remove-encode');
+        const encodeText = document.getElementById('encode-text');
+        const encodePassword = document.getElementById('encode-password');
+        const btnEncode = document.getElementById('btn-encode');
+        const capacityContainer = document.getElementById('capacity-container');
+        const capacityText = document.getElementById('capacity-text');
+        const capacityBar = document.getElementById('capacity-bar');
+
+        const decodeFile = document.getElementById('decode-file');
+        const decodeDropzone = document.getElementById('decode-dropzone');
+        const decodePreviewContainer = document.getElementById('decode-preview-container');
+        const decodePlaceholder = document.getElementById('decode-placeholder');
+        const decodePreview = document.getElementById('decode-preview');
+        const decodeFilename = document.getElementById('decode-filename');
+        const btnRemoveDecode = document.getElementById('btn-remove-decode');
+        const decodePassword = document.getElementById('decode-password');
+        const btnDecode = document.getElementById('btn-decode');
+        const decodeResultContainer = document.getElementById('decode-result-container');
+        const decodeText = document.getElementById('decode-text');
+        const btnCopy = document.getElementById('btn-copy');
+
+        const analyzeFile = document.getElementById('analyze-file');
+        const analyzeDropzone = document.getElementById('analyze-dropzone');
+        const analyzePreviewContainer = document.getElementById('analyze-preview-container');
+        const analyzePlaceholder = document.getElementById('analyze-placeholder');
+        const analyzePreview = document.getElementById('analyze-preview');
+        const analyzeFilename = document.getElementById('analyze-filename');
+        const btnRemoveAnalyze = document.getElementById('btn-remove-analyze');
+        const btnAnalyze = document.getElementById('btn-analyze');
+
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+        // State
+        let currentImage = {
+            element: new Image(),
+            loaded: false,
+            width: 0,
+            height: 0,
+            maxBytes: 0,
+            type: 'encode' // 'encode' or 'decode'
+        };
+
+        // --- UI Handlers ---
+
+        // switchTab is fully defined below after the forensic tab elements exist
+        let switchTab = function(mode) { /* placeholder, replaced below */ };
+
+        const tabForensic = document.getElementById('tab-forensic');
+        const viewForensic = document.getElementById('view-forensic');
+
+        // Patch switchTab to handle 4th tab
+        const _origSwitchTab = switchTab;
+        switchTab = function(mode) {
+            [tabEncode, tabDecode, tabAnalyze, tabForensic].forEach(tab => {
+                tab.classList.replace('text-brand-500', 'text-slate-400');
+                tab.classList.replace('text-purple-400', 'text-slate-400');
+                tab.classList.remove('border-b-2', 'border-brand-500', 'border-purple-500', 'bg-dark-900', 'font-semibold');
+                tab.classList.add('font-medium');
+            });
+            [viewEncode, viewDecode, viewAnalyze, viewForensic].forEach(v => v.classList.add('hidden'));
+
+            if (mode === 'encode') {
+                tabEncode.classList.replace('text-slate-400', 'text-brand-500');
+                tabEncode.classList.add('border-b-2', 'border-brand-500', 'bg-dark-900', 'font-semibold');
+                tabEncode.classList.remove('font-medium');
+                viewEncode.classList.remove('hidden');
+            } else if (mode === 'decode') {
+                tabDecode.classList.replace('text-slate-400', 'text-brand-500');
+                tabDecode.classList.add('border-b-2', 'border-brand-500', 'bg-dark-900', 'font-semibold');
+                tabDecode.classList.remove('font-medium');
+                viewDecode.classList.remove('hidden');
+            } else if (mode === 'analyze') {
+                tabAnalyze.classList.replace('text-slate-400', 'text-brand-500');
+                tabAnalyze.classList.add('border-b-2', 'border-brand-500', 'bg-dark-900', 'font-semibold');
+                tabAnalyze.classList.remove('font-medium');
+                viewAnalyze.classList.remove('hidden');
+            } else if (mode === 'forensic') {
+                tabForensic.classList.replace('text-slate-400', 'text-purple-400');
+                tabForensic.classList.add('border-b-2', 'border-purple-500', 'bg-dark-900', 'font-semibold');
+                tabForensic.classList.remove('font-medium');
+                viewForensic.classList.remove('hidden');
+            }
+        };
+
+        tabEncode.addEventListener('click', () => switchTab('encode'));
+        tabDecode.addEventListener('click', () => switchTab('decode'));
+        tabAnalyze.addEventListener('click', () => switchTab('analyze'));
+        tabForensic.addEventListener('click', () => switchTab('forensic'));
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            
+            let icon = '';
+            if (type === 'error') icon = '<svg class="w-5 h-5 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>';
+            else if (type === 'success') icon = '<svg class="w-5 h-5 text-brand-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>';
+            
+            toast.innerHTML = `${icon} <span class="text-sm font-medium">${message}</span>`;
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.animation = 'fadeOut 0.3s ease-in forwards';
+                setTimeout(() => toast.remove(), 300);
+            }, 4000);
+        }
+
+        // --- File Handling ---
+
+        function setupDropzone(dropzone, input, previewContainer, placeholder, previewImg, filenameEl, mode) {
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                dropzone.addEventListener(eventName, preventDefaults, false);
+            });
+
+            function preventDefaults(e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropzone.addEventListener(eventName, () => dropzone.classList.add('dropzone-active'), false);
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropzone.addEventListener(eventName, () => dropzone.classList.remove('dropzone-active'), false);
+            });
+
+            dropzone.addEventListener('drop', (e) => {
+                const dt = e.dataTransfer;
+                const files = dt.files;
+                handleFiles(files, mode);
+            });
+
+            input.addEventListener('change', function() {
+                handleFiles(this.files, mode);
+            });
+        }
+
+        function handleFiles(files, mode) {
+            if (!files || files.length === 0) return;
+            const file = files[0];
+            
+            if (!file.type.startsWith('image/')) {
+                showToast("Please upload a valid image file.", "error");
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                loadImage(e.target.result, file.name, mode);
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function loadImage(dataUrl, filename, mode) {
+            currentImage.element.onload = () => {
+                currentImage.loaded = true;
+                currentImage.width = currentImage.element.width;
+                currentImage.height = currentImage.element.height;
+                currentImage.type = mode;
+                
+                // 1 pixel = 3 channels (RGB) = 3 bits. 
+                // Total Bits = W * H * 3
+                // Total Bytes = floor(Total Bits / 8)
+                currentImage.maxBytes = Math.floor((currentImage.width * currentImage.height * 3) / 8);
+
+                if (mode === 'encode') {
+                    encodePreview.src = dataUrl;
+                    encodeFilename.textContent = filename;
+                    encodePlaceholder.classList.add('hidden');
+                    encodePreviewContainer.classList.remove('hidden');
+                    encodePreviewContainer.classList.add('flex');
+                    capacityContainer.classList.remove('hidden');
+                    updateCapacity();
+                } else if (mode === 'decode') {
+                    decodePreview.src = dataUrl;
+                    decodeFilename.textContent = filename;
+                    decodePlaceholder.classList.add('hidden');
+                    decodePreviewContainer.classList.remove('hidden');
+                    decodePreviewContainer.classList.add('flex');
+                    decodeResultContainer.classList.add('hidden');
+                } else if (mode === 'analyze') {
+                    analyzePreview.src = dataUrl;
+                    analyzeFilename.textContent = filename;
+                    analyzePlaceholder.classList.add('hidden');
+                    analyzePreviewContainer.classList.remove('hidden');
+                    analyzePreviewContainer.classList.add('flex');
+                }
+            };
+            currentImage.element.src = dataUrl;
+        }
+
+        function removeImage(mode) {
+            currentImage.loaded = false;
+            if (mode === 'encode') {
+                encodeFile.value = '';
+                encodePreview.src = '';
+                encodePlaceholder.classList.remove('hidden');
+                encodePreviewContainer.classList.add('hidden');
+                encodePreviewContainer.classList.remove('flex');
+                capacityContainer.classList.add('hidden');
+                encodeText.value = '';
+            } else if (mode === 'decode') {
+                decodeFile.value = '';
+                decodePreview.src = '';
+                decodePlaceholder.classList.remove('hidden');
+                decodePreviewContainer.classList.add('hidden');
+                decodePreviewContainer.classList.remove('flex');
+                decodeResultContainer.classList.add('hidden');
+                decodeText.value = '';
+            } else if (mode === 'analyze') {
+                analyzeFile.value = '';
+                analyzePreview.src = '';
+                analyzePlaceholder.classList.remove('hidden');
+                analyzePreviewContainer.classList.add('hidden');
+                analyzePreviewContainer.classList.remove('flex');
+            }
+        }
+
+        btnRemoveEncode.addEventListener('click', (e) => { e.stopPropagation(); removeImage('encode'); });
+        btnRemoveDecode.addEventListener('click', (e) => { e.stopPropagation(); removeImage('decode'); });
+        btnRemoveAnalyze.addEventListener('click', (e) => { e.stopPropagation(); removeImage('analyze'); });
+
+        setupDropzone(encodeDropzone, encodeFile, encodePreviewContainer, encodePlaceholder, encodePreview, encodeFilename, 'encode');
+        setupDropzone(decodeDropzone, decodeFile, decodePreviewContainer, decodePlaceholder, decodePreview, decodeFilename, 'decode');
+        setupDropzone(analyzeDropzone, analyzeFile, analyzePreviewContainer, analyzePlaceholder, analyzePreview, analyzeFilename, 'analyze');
+
+        encodeText.addEventListener('input', updateCapacity);
+        encodePassword.addEventListener('input', updateCapacity);
+
+        function updateCapacity() {
+            if (!currentImage.loaded) return;
+            
+            // Calculate approximate payload size
+            const textEncoder = new TextEncoder();
+            const textBytes = textEncoder.encode(encodeText.value).length;
+            
+            // Overhead: 4 bytes (length) + 1 byte (flag) = 5 bytes min
+            let overhead = 5;
+            if (encodePassword.value.length > 0) {
+                // If encrypted: + 16 bytes (salt) + 12 bytes (IV) + 16 bytes (Auth Tag)
+                overhead += 16 + 12 + 16;
+            }
+            
+            const totalBytes = textBytes + overhead;
+            const percentage = Math.min(100, (totalBytes / currentImage.maxBytes) * 100);
+            
+            capacityText.textContent = `${totalBytes.toLocaleString()} / ${currentImage.maxBytes.toLocaleString()} Bytes`;
+            capacityBar.style.width = `${percentage}%`;
+
+            if (percentage > 100) {
+                capacityBar.classList.replace('bg-brand-500', 'bg-red-500');
+                capacityText.classList.add('text-red-400');
+                btnEncode.disabled = true;
+            } else {
+                capacityBar.classList.replace('bg-red-500', 'bg-brand-500');
+                capacityText.classList.remove('text-red-400');
+                btnEncode.disabled = false;
+            }
+        }
+
+        btnCopy.addEventListener('click', () => {
+            decodeText.select();
+            document.execCommand('copy');
+            showToast('Decoded text copied to clipboard!', 'success');
+        });
+
+        // --- Cryptography Module ---
+        
+        const CryptoModule = {
+            // Derives an AES-GCM key from a password and salt using PBKDF2
+            async deriveKey(password, salt) {
+                const enc = new TextEncoder();
+                const keyMaterial = await window.crypto.subtle.importKey(
+                    "raw",
+                    enc.encode(password),
+                    { name: "PBKDF2" },
+                    false,
+                    ["deriveKey"]
+                );
+                return window.crypto.subtle.deriveKey(
+                    {
+                        name: "PBKDF2",
+                        salt: salt,
+                        iterations: 100000,
+                        hash: "SHA-256"
+                    },
+                    keyMaterial,
+                    { name: "AES-GCM", length: 256 },
+                    false,
+                    ["encrypt", "decrypt"]
+                );
+            },
+
+            async encrypt(plaintext, password) {
+                const enc = new TextEncoder();
+                const plainBytes = enc.encode(plaintext);
+                
+                // Generate Salt and IV
+                const salt = window.crypto.getRandomValues(new Uint8Array(16));
+                const iv = window.crypto.getRandomValues(new Uint8Array(12));
+                
+                const key = await this.deriveKey(password, salt);
+                
+                const cipherBuffer = await window.crypto.subtle.encrypt(
+                    { name: "AES-GCM", iv: iv },
+                    key,
+                    plainBytes
+                );
+                
+                const cipherBytes = new Uint8Array(cipherBuffer);
+                
+                // Payload structure: [16b Salt] + [12b IV] + [Ciphertext]
+                const payload = new Uint8Array(salt.length + iv.length + cipherBytes.length);
+                payload.set(salt, 0);
+                payload.set(iv, salt.length);
+                payload.set(cipherBytes, salt.length + iv.length);
+                
+                return payload;
+            },
+
+            async decrypt(payload, password) {
+                try {
+                    // Extract parts: [16b Salt] + [12b IV] + [Ciphertext]
+                    const salt = payload.slice(0, 16);
+                    const iv = payload.slice(16, 28);
+                    const cipherBytes = payload.slice(28);
+                    
+                    const key = await this.deriveKey(password, salt);
+                    
+                    const plainBuffer = await window.crypto.subtle.decrypt(
+                        { name: "AES-GCM", iv: iv },
+                        key,
+                        cipherBytes
+                    );
+                    
+                    const dec = new TextDecoder();
+                    return dec.decode(plainBuffer);
+                } catch (e) {
+                    console.error("Decryption failed", e);
+                    throw new Error("Invalid password or corrupted data.");
+                }
+            }
+        };
+
+        // --- Steganography Module ---
+
+        const StegoModule = {
+            
+            // Converts Uint8Array to an array of individual bits (0 or 1)
+            bytesToBits(bytes) {
+                const bits = new Uint8Array(bytes.length * 8);
+                for (let i = 0; i < bytes.length; i++) {
+                    for (let j = 0; j < 8; j++) {
+                        bits[i * 8 + j] = (bytes[i] >> (7 - j)) & 1;
+                    }
+                }
+                return bits;
+            },
+
+            // Converts array of bits back to Uint8Array
+            bitsToBytes(bits) {
+                const bytes = new Uint8Array(Math.floor(bits.length / 8));
+                for (let i = 0; i < bytes.length; i++) {
+                    let byte = 0;
+                    for (let j = 0; j < 8; j++) {
+                        byte = (byte << 1) | bits[i * 8 + j];
+                    }
+                    bytes[i] = byte;
+                }
+                return bytes;
+            },
+
+            // Converts a 32-bit unsigned integer to 32 bits array
+            int32ToBits(num) {
+                const bits = new Uint8Array(32);
+                for (let i = 0; i < 32; i++) {
+                    bits[31 - i] = (num >>> i) & 1;
+                }
+                return bits;
+            },
+
+            // Converts 32 bits array back to 32-bit unsigned integer
+            bitsToInt32(bits) {
+                let num = 0;
+                for (let i = 0; i < 32; i++) {
+                    num = (num << 1) | bits[i];
+                }
+                return num >>> 0;
+            },
+
+            async encode(imageElement, text, password) {
+                // 1. Prepare data payload
+                let payloadBytes;
+                let isEncrypted = password && password.trim().length > 0;
+                
+                if (isEncrypted) {
+                    payloadBytes = await CryptoModule.encrypt(text, password);
+                } else {
+                    const enc = new TextEncoder();
+                    payloadBytes = enc.encode(text);
+                }
+
+                // 2. Format entire structure
+                // Structure: [32-bit Length of Data] + [1-bit Flag (8 bits padded)] + [Data Payload]
+                // Length represents the bit length of (Flag + Data Payload)
+                const flagByte = new Uint8Array([isEncrypted ? 1 : 0]);
+                const dataAndFlag = new Uint8Array(flagByte.length + payloadBytes.length);
+                dataAndFlag.set(flagByte, 0);
+                dataAndFlag.set(payloadBytes, flagByte.length);
+
+                const dataBits = this.bytesToBits(dataAndFlag);
+                const lengthBits = this.int32ToBits(dataBits.length);
+                
+                const totalBits = new Uint8Array(lengthBits.length + dataBits.length);
+                totalBits.set(lengthBits, 0);
+                totalBits.set(dataBits, lengthBits.length);
+
+                // 3. Draw image to canvas to get pixel data
+                canvas.width = imageElement.width;
+                canvas.height = imageElement.height;
+                ctx.drawImage(imageElement, 0, 0);
+                
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const pixels = imageData.data;
+
+                // Capacity Check
+                // 1 pixel = 4 bytes (RGBA). We use RGB (3 bytes/pixel)
+                const availableBits = (pixels.length / 4) * 3;
+                if (totalBits.length > availableBits) {
+                    throw new Error("Message is too large for this image.");
+                }
+
+                // 4. Encode bits into LSB of R, G, B channels
+                let bitIndex = 0;
+                for (let i = 0; i < pixels.length; i++) {
+                    // Skip Alpha channel (every 4th byte: 3, 7, 11...)
+                    if ((i + 1) % 4 === 0) continue; 
+                    
+                    if (bitIndex < totalBits.length) {
+                        // Clear the least significant bit and set it to our data bit
+                        pixels[i] = (pixels[i] & 0xFE) | totalBits[bitIndex];
+                        bitIndex++;
+                    } else {
+                        break; // All bits encoded
+                    }
+                }
+
+                // 5. Put altered data back
+                ctx.putImageData(imageData, 0, 0);
+                
+                // 6. Return as PNG data URL (Lossless is strictly required)
+                return canvas.toDataURL('image/png');
+            },
+
+            async decode(imageElement, password) {
+                canvas.width = imageElement.width;
+                canvas.height = imageElement.height;
+                ctx.drawImage(imageElement, 0, 0);
+                
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const pixels = imageData.data;
+
+                // 1. Extract Length (First 32 bits)
+                let lengthBits = new Uint8Array(32);
+                let bitIndex = 0;
+                let pixelIndex = 0;
+
+                while (bitIndex < 32 && pixelIndex < pixels.length) {
+                    if ((pixelIndex + 1) % 4 !== 0) {
+                        lengthBits[bitIndex] = pixels[pixelIndex] & 1;
+                        bitIndex++;
+                    }
+                    pixelIndex++;
+                }
+
+                const dataLengthBits = this.bitsToInt32(lengthBits);
+
+                // Safety checks
+                if (dataLengthBits === 0 || dataLengthBits > (pixels.length / 4) * 3 - 32) {
+                    throw new Error("No hidden data found or image is corrupted.");
+                }
+
+                // 2. Extract Data Bits
+                let extractedDataBits = new Uint8Array(dataLengthBits);
+                let dataBitIndex = 0;
+
+                while (dataBitIndex < dataLengthBits && pixelIndex < pixels.length) {
+                    if ((pixelIndex + 1) % 4 !== 0) {
+                        extractedDataBits[dataBitIndex] = pixels[pixelIndex] & 1;
+                        dataBitIndex++;
+                    }
+                    pixelIndex++;
+                }
+
+                if (dataBitIndex < dataLengthBits) {
+                    throw new Error("Image data is truncated or corrupted.");
+                }
+
+                // 3. Reconstruct Bytes
+                const payloadBytes = this.bitsToBytes(extractedDataBits);
+
+                // 4. Parse Flag and Data
+                const isEncrypted = payloadBytes[0] === 1;
+                const actualData = payloadBytes.slice(1);
+
+                if (isEncrypted) {
+                    if (!password || password.trim() === '') {
+                        throw new Error("This payload is encrypted. A password is required.");
+                    }
+                    return await CryptoModule.decrypt(actualData, password);
+                } else {
+                    const dec = new TextDecoder();
+                    return dec.decode(actualData);
+                }
+            },
+
+            async analyze(imageElement) {
+                canvas.width = imageElement.width;
+                canvas.height = imageElement.height;
+                ctx.drawImage(imageElement, 0, 0);
+                
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const pixels = imageData.data;
+
+                // Amplify the LSB of R, G, B channels to 255. 
+                // Keep Alpha intact.
+                for (let i = 0; i < pixels.length; i += 4) {
+                    pixels[i] = (pixels[i] & 1) ? 255 : 0;       // R
+                    pixels[i+1] = (pixels[i+1] & 1) ? 255 : 0;   // G
+                    pixels[i+2] = (pixels[i+2] & 1) ? 255 : 0;   // B
+                    pixels[i+3] = 255; // Set alpha to fully opaque
+                }
+
+                ctx.putImageData(imageData, 0, 0);
+                return canvas.toDataURL('image/png');
+            }
+        };
+
+        // --- Execute Actions ---
+
+        btnEncode.addEventListener('click', async () => {
+            if (!currentImage.loaded) {
+                showToast("Please select an image first.", "error");
+                return;
+            }
+            if (!encodeText.value) {
+                showToast("Please enter a secret message.", "error");
+                return;
+            }
+
+            btnEncode.disabled = true;
+            const originalText = btnEncode.innerHTML;
+            btnEncode.innerHTML = `<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Processing...`;
+
+            try {
+                // Yield thread to UI
+                await new Promise(r => setTimeout(r, 50)); 
+                
+                const dataUrl = await StegoModule.encode(
+                    currentImage.element, 
+                    encodeText.value, 
+                    encodePassword.value
+                );
+
+                // Trigger Download
+                const link = document.getElementById('download-link');
+                link.href = dataUrl;
+                
+                // Suggest filename
+                const originalName = encodeFilename.textContent;
+                const baseName = originalName.substring(0, originalName.lastIndexOf('.')) || originalName;
+                link.download = `${baseName}_secure.png`;
+                link.click();
+                
+                showToast("Image encoded and downloaded successfully!", "success");
+                
+                // Clear text for security
+                encodeText.value = '';
+                encodePassword.value = '';
+                updateCapacity();
+                
+            } catch (err) {
+                console.error(err);
+                showToast(err.message || "An error occurred during encoding.", "error");
+            } finally {
+                btnEncode.disabled = false;
+                btnEncode.innerHTML = originalText;
+            }
+        });
+
+
+        btnDecode.addEventListener('click', async () => {
+            if (!currentImage.loaded) {
+                showToast("Please select an encoded PNG image first.", "error");
+                return;
+            }
+
+            btnDecode.disabled = true;
+            decodeResultContainer.classList.add('hidden');
+            const originalText = btnDecode.innerHTML;
+            btnDecode.innerHTML = `<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Analyzing...`;
+
+            try {
+                await new Promise(r => setTimeout(r, 50)); 
+
+                const secretText = await StegoModule.decode(
+                    currentImage.element,
+                    decodePassword.value
+                );
+
+                decodeText.value = secretText;
+                decodeResultContainer.classList.remove('hidden');
+                showToast("Data successfully extracted!", "success");
+                decodePassword.value = '';
+
+            } catch (err) {
+                console.error(err);
+                showToast(err.message || "Failed to extract data. Image may not contain payload.", "error");
+            } finally {
+                btnDecode.disabled = false;
+                btnDecode.innerHTML = originalText;
+            }
+        });
+
+        btnAnalyze.addEventListener('click', async () => {
+            if (!currentImage.loaded || currentImage.type !== 'analyze') {
+                showToast("Please select an image to analyze.", "error");
+                return;
+            }
+
+            btnAnalyze.disabled = true;
+            const originalText = btnAnalyze.innerHTML;
+            btnAnalyze.innerHTML = `<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Analyzing LSB...`;
+
+            try {
+                await new Promise(r => setTimeout(r, 50)); 
+                const analyzedDataUrl = await StegoModule.analyze(currentImage.element);
+                
+                // Show the analyzed image in the preview
+                analyzePreview.src = analyzedDataUrl;
+                showToast("LSB Analysis complete. Noise indicates modified bits.", "success");
+            } catch (err) {
+                console.error(err);
+                showToast("Failed to analyze image.", "error");
+            } finally {
+                btnAnalyze.disabled = false;
+                btnAnalyze.innerHTML = originalText;
+            }
+        });
+
+
+        // ─── Forensic Tab State & Dropzone ───────────────────────────────────────
+        let forensicImage = { element: new Image(), loaded: false };
+
+        const forensicFile      = document.getElementById('forensic-file');
+        const forensicDropzone  = document.getElementById('forensic-dropzone');
+        const forensicPreviewContainer = document.getElementById('forensic-preview-container');
+        const forensicPlaceholder      = document.getElementById('forensic-placeholder');
+        const forensicPreview          = document.getElementById('forensic-preview');
+        const forensicFilename         = document.getElementById('forensic-filename');
+        const btnRemoveForensic        = document.getElementById('btn-remove-forensic');
+        const btnForensic              = document.getElementById('btn-forensic');
+        const forensicPassword         = document.getElementById('forensic-password');
+        const forensicChiContainer     = document.getElementById('forensic-chi-container');
+        const forensicChiResult        = document.getElementById('forensic-chi-result');
+        const forensicResultsContainer = document.getElementById('forensic-results-container');
+        const forensicResults          = document.getElementById('forensic-results');
+
+        setupDropzone(forensicDropzone, forensicFile,
+            forensicPreviewContainer, forensicPlaceholder,
+            forensicPreview, forensicFilename, 'forensic');
+
+        // Override loadImage to also handle forensic mode
+        const _origLoadImage = loadImage;
+        loadImage = function(dataUrl, filename, mode) {
+            if (mode !== 'forensic') { _origLoadImage(dataUrl, filename, mode); return; }
+            forensicImage.element.onload = () => {
+                forensicImage.loaded = true;
+                forensicPreview.src = dataUrl;
+                forensicFilename.textContent = filename;
+                forensicPlaceholder.classList.add('hidden');
+                forensicPreviewContainer.classList.remove('hidden');
+                forensicPreviewContainer.classList.add('flex');
+            };
+            forensicImage.element.src = dataUrl;
+        };
+
+        btnRemoveForensic.addEventListener('click', (e) => {
+            e.stopPropagation();
+            forensicImage.loaded = false;
+            forensicFile.value = '';
+            forensicPreview.src = '';
+            forensicPlaceholder.classList.remove('hidden');
+            forensicPreviewContainer.classList.add('hidden');
+            forensicPreviewContainer.classList.remove('flex');
+            forensicChiContainer.classList.add('hidden');
+            forensicResultsContainer.classList.add('hidden');
+            forensicResults.innerHTML = '';
+        });
+
+        // ─── Universal Forensic Extraction Engine ────────────────────────────────
+
+        const ForensicModule = {
+
+            // Get raw RGBA pixel array from any image element
+            getPixels(imgEl) {
+                const c = document.createElement('canvas');
+                c.width = imgEl.naturalWidth || imgEl.width;
+                c.height = imgEl.naturalHeight || imgEl.height;
+                const x = c.getContext('2d', { willReadFrequently: true });
+                x.drawImage(imgEl, 0, 0);
+                return { pixels: x.getImageData(0, 0, c.width, c.height).data, w: c.width, h: c.height };
+            },
+
+            // Chi-Square statistical attack — detects LSB manipulation
+            chiSquare(pixels) {
+                // For each channel, count observed pairs of values (2k, 2k+1)
+                // In a clean image they differ; a stego image equalises them
+                const chans = [[], [], []]; // R, G, B
+                for (let i = 0; i < pixels.length; i += 4) {
+                    chans[0].push(pixels[i]);
+                    chans[1].push(pixels[i+1]);
+                    chans[2].push(pixels[i+2]);
+                }
+                const names = ['Red', 'Green', 'Blue'];
+                const results = [];
+                let overallSuspicion = 0;
+                for (let c = 0; c < 3; c++) {
+                    const freq = new Array(256).fill(0);
+                    for (const v of chans[c]) freq[v]++;
+                    let chi2 = 0;
+                    let pairs = 0;
+                    for (let k = 0; k < 128; k++) {
+                        const o0 = freq[2*k], o1 = freq[2*k+1];
+                        const expected = (o0 + o1) / 2;
+                        if (expected > 0) { chi2 += Math.pow(o0 - expected, 2) / expected; pairs++; }
+                    }
+                    // p-value approximation for chi2 with `pairs` DOF
+                    // Rule of thumb: chi2/pairs > 1.0 = suspicious
+                    const ratio = pairs > 0 ? chi2 / pairs : 0;
+                    const suspicion = ratio < 0.5 ? 'HIGH (likely stego)' : ratio < 1.5 ? 'MEDIUM' : 'LOW (likely clean)';
+                    overallSuspicion += (ratio < 0.5 ? 2 : ratio < 1.5 ? 1 : 0);
+                    results.push(`  ${names[c]} channel:  χ²/df = ${ratio.toFixed(3)}  →  Suspicion: ${suspicion}`);
+                }
+                const verdict = overallSuspicion >= 4 ? '⚠️  STRONG evidence of LSB steganography' :
+                                overallSuspicion >= 2 ? '⚠️  MODERATE evidence of LSB steganography' :
+                                '✅  No strong statistical evidence of steganography';
+                return `Chi-Square Steganalysis Results\n${'─'.repeat(50)}\n${results.join('\n')}\n${'─'.repeat(50)}\n  Overall Verdict: ${verdict}`;
+            },
+
+            // Extract bits from pixels using a given channel order and bit depth
+            extractBits(pixels, channelOrder, bitDepth, scanOrder, w, h) {
+                const bits = [];
+                const totalPixels = pixels.length / 4;
+                const indices = scanOrder === 'row'
+                    ? Array.from({ length: totalPixels }, (_, i) => i)
+                    : (() => {
+                        const idx = [];
+                        for (let x = 0; x < w; x++) for (let y = 0; y < h; y++) idx.push(y * w + x);
+                        return idx;
+                    })();
+                const mask = (1 << bitDepth) - 1;
+                for (const pi of indices) {
+                    const base = pi * 4;
+                    for (const ch of channelOrder) {
+                        if (ch > 2) continue;
+                        const byteVal = pixels[base + ch];
+                        for (let b = bitDepth - 1; b >= 0; b--) {
+                            bits.push((byteVal >> b) & 1);
+                        }
+                    }
+                }
+                return bits;
+            },
+
+            bitsToBytes(bits) {
+                const bytes = new Uint8Array(Math.floor(bits.length / 8));
+                for (let i = 0; i < bytes.length; i++) {
+                    let byte = 0;
+                    for (let j = 0; j < 8; j++) {
+                        byte = (byte << 1) | bits[i * 8 + j];
+                    }
+                    bytes[i] = byte;
+                }
+                return bytes;
+            },
+
+            // Score how "readable" the bytes are (higher = more likely real data)
+            readabilityScore(bytes) {
+                const check = bytes.slice(0, Math.min(512, bytes.length));
+                let printable = 0, nulls = 0;
+                for (const b of check) {
+                    if (b === 0) nulls++;
+                    else if ((b >= 32 && b <= 126) || b === 9 || b === 10 || b === 13) printable++;
+                }
+                if (nulls > check.length * 0.5) return 0;
+                return printable / check.length;
+            },
+
+            // Known magic bytes for file type detection
+            detectFileType(bytes) {
+                const h = bytes;
+                if (h[0]===0x89&&h[1]===0x50&&h[2]===0x4E&&h[3]===0x47) return 'PNG image';
+                if (h[0]===0xFF&&h[1]===0xD8&&h[2]===0xFF) return 'JPEG image';
+                if (h[0]===0x47&&h[1]===0x49&&h[2]===0x46) return 'GIF image';
+                if (h[0]===0x25&&h[1]===0x50&&h[2]===0x44&&h[3]===0x46) return 'PDF document';
+                if (h[0]===0x50&&h[1]===0x4B&&h[2]===0x03&&h[3]===0x04) return 'ZIP archive';
+                if (h[0]===0x52&&h[1]===0x61&&h[2]===0x72&&h[3]===0x21) return 'RAR archive';
+                if (h[0]===0x7F&&h[1]===0x45&&h[2]===0x4C&&h[3]===0x46) return 'ELF binary';
+                if (h[0]===0x4D&&h[1]===0x5A) return 'Windows EXE/DLL';
+                if (h[0]===0xCA&&h[1]===0xFE&&h[2]===0xBA&&h[3]===0xBE) return 'Java class';
+                if (h[0]===0x1F&&h[1]===0x8B) return 'GZIP archive';
+                if (h[0]===0xFD&&h[1]===0x37&&h[2]===0x7A&&h[3]===0x58&&h[4]===0x5A&&h[5]===0x00) return 'XZ archive';
+                if (h[0]===0x42&&h[1]===0x5A&&h[2]===0x68) return 'BZIP2 archive';
+                // SteganoVault own format: first byte is 0x00 or 0x01 (flag), followed by plausible data
+                if ((h[0]===0||h[0]===1) && bytes.length > 10) return 'SteganoVault payload (flag byte detected)';
+                return null;
+            },
+
+            // Also try SteganoVault's own header format (32-bit length prefix)
+            trySteganoVaultDecode(bytes) {
+                if (bytes.length < 5) return null;
+                // Read 32-bit big-endian length (in bits)
+                const lenBits = (bytes[0]<<24)|(bytes[1]<<16)|(bytes[2]<<8)|bytes[3];
+                const lenBytes = Math.ceil(lenBits / 8);
+                if (lenBytes <= 0 || lenBytes > bytes.length - 4) return null;
+                const payload = bytes.slice(4, 4 + lenBytes);
+                return payload;
+            },
+
+            hexDump(bytes, maxBytes = 256) {
+                const slice = bytes.slice(0, maxBytes);
+                const lines = [];
+                for (let i = 0; i < slice.length; i += 16) {
+                    const chunk = slice.slice(i, i + 16);
+                    const hex = Array.from(chunk).map(b => b.toString(16).padStart(2,'0')).join(' ').padEnd(47);
+                    const ascii = Array.from(chunk).map(b => (b>=32&&b<=126) ? String.fromCharCode(b) : '.').join('');
+                    lines.push(`${i.toString(16).padStart(4,'0')}  ${hex}  |${ascii}|`);
+                }
+                if (bytes.length > maxBytes) lines.push(`... (${bytes.length - maxBytes} more bytes)`);
+                return lines.join('\n');
+            },
+
+            async run(imgEl, password) {
+                const { pixels, w, h } = this.getPixels(imgEl);
+
+                // Chi-Square first
+                const chiReport = this.chiSquare(pixels);
+
+                // Channel orders to try
+                const channelOrders = [
+                    { name: 'RGB', order: [0,1,2] },
+                    { name: 'RBG', order: [0,2,1] },
+                    { name: 'GRB', order: [1,0,2] },
+                    { name: 'GBR', order: [1,2,0] },
+                    { name: 'BRG', order: [2,0,1] },
+                    { name: 'BGR', order: [2,1,0] },
+                    { name: 'R only', order: [0] },
+                    { name: 'G only', order: [1] },
+                    { name: 'B only', order: [2] },
+                    { name: 'RGBA',  order: [0,1,2,3] },
+                ];
+                const bitDepths   = [1, 2, 3, 4];
+                const scanOrders  = ['row', 'column'];
+
+                const candidates = [];
+
+                for (const co of channelOrders) {
+                    
+                    // YIELD TO MAIN THREAD: 
+                    // Placed securely in the outermost loop (runs only 10 times) 
+                    // This is enough to prevent the "Page Unresponsive" error 
+                    // without modifying your functional logic inside.
+                    await new Promise(r => setTimeout(r, 0));
+
+                    for (const bd of bitDepths) {
+                        for (const so of scanOrders) {
+                            const bits  = this.extractBits(pixels, co.order, bd, so, w, h);
+                            const bytes = this.bitsToBytes(bits);
+
+                            // Score
+                            const score = this.readabilityScore(bytes);
+                            const fileType = this.detectFileType(bytes);
+                            const svPayload = this.trySteganoVaultDecode(bytes);
+
+                            // Attempt text decode
+                            let textPreview = '';
+                            try { textPreview = new TextDecoder('utf-8', { fatal: true }).decode(bytes.slice(0, 512)); } catch(e) {
+                                try { textPreview = new TextDecoder('latin1').decode(bytes.slice(0, 512)); } catch(e2) {}
+                            }
+
+                            // Attempt SteganoVault AES decrypt if password given and sv payload found
+                            let decrypted = null;
+                            if (password && svPayload && svPayload[0] === 1) {
+                                try {
+                                    decrypted = await CryptoModule.decrypt(svPayload.slice(1), password);
+                                } catch(e) {}
+                            }
+                            // Also try direct AES if the bytes look encrypted (flag=1)
+                            if (!decrypted && password && bytes[4] === 1 && svPayload) {
+                                try { decrypted = await CryptoModule.decrypt(svPayload.slice(1), password); } catch(e) {}
+                            }
+
+                            candidates.push({
+                                label: `${co.name} | ${bd}-bit LSB | ${so}-scan`,
+                                score,
+                                fileType,
+                                textPreview: textPreview.slice(0, 300),
+                                hexDump: this.hexDump(bytes),
+                                decrypted,
+                                totalBytes: bytes.length,
+                            });
+                        }
+                    }
+                }
+
+                // Sort by score descending, file-type hits first
+                candidates.sort((a,b) => {
+                    const af = a.fileType ? 1 : 0, bf = b.fileType ? 1 : 0;
+                    if (af !== bf) return bf - af;
+                    return b.score - a.score;
+                });
+
+                return { chiReport, candidates: candidates.slice(0, 20) };
+            }
+        };
+
+        // ─── Forensic Button Handler ──────────────────────────────────────────────
+        btnForensic.addEventListener('click', async () => {
+            if (!forensicImage.loaded) {
+                showToast('Please select an image first.', 'error');
+                return;
+            }
+            btnForensic.disabled = true;
+            const origText = btnForensic.innerHTML;
+            btnForensic.innerHTML = `<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Scanning all permutations…`;
+
+            try {
+                await new Promise(r => setTimeout(r, 60));
+                const pw = forensicPassword.value;
+                const { chiReport, candidates } = await ForensicModule.run(forensicImage.element, pw);
+
+                // Show chi-square
+                forensicChiResult.textContent = chiReport;
+                forensicChiContainer.classList.remove('hidden');
+
+                // Render candidates
+                forensicResults.innerHTML = '';
+                for (const c of candidates) {
+                    const highlight = c.fileType || c.score > 0.7 || c.decrypted;
+                    const card = document.createElement('div');
+                    card.className = `rounded-lg p-4 border ${highlight ? 'border-purple-500/60 bg-purple-900/20' : 'border-slate-700 bg-dark-900'}`;
+                    card.innerHTML = `
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-xs font-bold font-mono ${highlight ? 'text-purple-300' : 'text-slate-400'}">${c.label}</span>
+                            <span class="text-xs text-slate-500">Readability: ${(c.score*100).toFixed(0)}% | ${c.totalBytes.toLocaleString()} bytes</span>
+                        </div>
+                        ${c.fileType ? `<div class="mb-2 text-xs font-bold text-yellow-400">⚠️ File signature detected: ${c.fileType}</div>` : ''}
+                        ${c.decrypted ? `<div class="mb-2"><span class="text-xs font-bold text-green-400">🔓 AES-256 decryption succeeded!</span><pre class="mt-1 text-xs text-green-300 bg-dark-900 rounded p-2 overflow-x-auto whitespace-pre-wrap">${c.decrypted.slice(0,500)}</pre></div>` : ''}
+                        <details class="mt-1">
+                            <summary class="text-xs text-slate-500 cursor-pointer hover:text-slate-300">▶ Text preview (${Math.round(c.score*100)}% printable)</summary>
+                            <pre class="mt-1 text-xs text-slate-400 bg-dark-900 rounded p-2 overflow-x-auto whitespace-pre-wrap">${c.textPreview.replace(/</g,'&lt;')}</pre>
+                        </details>
+                        <details class="mt-1">
+                            <summary class="text-xs text-slate-500 cursor-pointer hover:text-slate-300">▶ Hex dump (first 256 bytes)</summary>
+                            <pre class="mt-1 text-xs text-slate-400 font-mono bg-dark-900 rounded p-2 overflow-x-auto">${c.hexDump}</pre>
+                        </details>
+                    `;
+                    forensicResults.appendChild(card);
+                }
+                forensicResultsContainer.classList.remove('hidden');
+                showToast(`Forensic scan complete. ${candidates.length} extraction candidates ranked.`, 'success');
+            } catch(err) {
+                console.error(err);
+                showToast(err.message || 'Forensic extraction failed.', 'error');
+            } finally {
+                btnForensic.disabled = false;
+                btnForensic.innerHTML = origText;
+            }
+        });
+
+    </script>
+</body>
+</html>

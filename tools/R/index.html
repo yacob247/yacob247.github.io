@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Local Media Converter</title>
+    
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    
+    <!-- FFmpeg WASM scripts (UMD builds) -->
+    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js"></script>
+    <script src="https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js"></script>
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a; /* Tailwind slate-900 */
+            color: #f8fafc; /* Tailwind slate-50 */
+        }
+        .log-font {
+            font-family: 'Fira Code', monospace;
+        }
+        
+        /* Custom scrollbar for log area */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #1e293b; 
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #475569; 
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #64748b; 
+        }
+
+        .pulse-border {
+            animation: pulse-border-anim 2s infinite;
+        }
+
+        @keyframes pulse-border-anim {
+            0% { border-color: rgba(99, 102, 241, 0.4); }
+            50% { border-color: rgba(99, 102, 241, 1); box-shadow: 0 0 15px rgba(99, 102, 241, 0.5); }
+            100% { border-color: rgba(99, 102, 241, 0.4); }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center py-10 px-4 md:px-0">
+
+    <div class="w-full max-w-3xl space-y-6">
+        <!-- Header -->
+        <div class="text-center space-y-2">
+            <h1 class="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-cyan-400">
+                Local Media Converter
+            </h1>
+            <p class="text-slate-400 text-sm">
+                100% Client-Side • No Uploads • Powered by FFmpeg.wasm
+            </p>
+        </div>
+
+        <!-- Main Card -->
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 md:p-8 shadow-2xl space-y-8">
+            
+            <!-- File Upload Area -->
+            <div id="dropZone" class="relative border-2 border-dashed border-slate-600 rounded-xl p-8 flex flex-col items-center justify-center text-center transition-all hover:bg-slate-700/50 cursor-pointer group">
+                <input type="file" id="fileInput" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept="video/*,audio/*" />
+                
+                <div id="uploadIcon" class="mb-4 text-indigo-400 group-hover:scale-110 transition-transform">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12 mx-auto" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="17 8 12 3 7 8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                </div>
+                
+                <div id="fileInfo" class="hidden flex-col items-center w-full">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-10 h-10 mx-auto text-green-400 mb-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                        <line x1="16" y1="13" x2="8" y2="13"></line>
+                        <line x1="16" y1="17" x2="8" y2="17"></line>
+                        <polyline points="10 9 9 9 8 9"></polyline>
+                    </svg>
+                    <p id="fileName" class="text-sm font-medium text-slate-200 truncate w-full max-w-xs"></p>
+                    <p id="fileSize" class="text-xs text-slate-400 mt-1"></p>
+                </div>
+
+                <div id="uploadPrompt" class="space-y-1">
+                    <p class="text-slate-300 font-medium">Click or drag a file here</p>
+                    <p class="text-slate-500 text-xs">Supports MP4, MOV, WebM, and audio</p>
+                </div>
+            </div>
+
+            <!-- Controls & Format Selection -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                <div class="col-span-1 md:col-span-2 space-y-2">
+                    <label class="block text-sm font-medium text-slate-300">Convert To</label>
+                    <div class="relative">
+                        <select id="outputFormat" class="w-full bg-slate-900 border border-slate-600 text-slate-200 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block p-3 appearance-none">
+                            <option value="mp4">MP4 Video (.mp4)</option>
+                            <option value="mov">QuickTime Video (.mov)</option>
+                            <option value="mp3">MP3 Audio (.mp3)</option>
+                        </select>
+                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-400">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-span-1">
+                    <button id="convertBtn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg text-sm px-5 py-3 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-indigo-900/20 disabled:opacity-50 disabled:cursor-not-allowed">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                        Convert File
+                    </button>
+                </div>
+            </div>
+
+            <!-- Status Message UI -->
+            <div id="alertBox" class="hidden rounded-lg p-4 text-sm border" role="alert">
+                <p id="alertMessage"></p>
+            </div>
+
+            <!-- Progress Area -->
+            <div id="progressContainer" class="hidden space-y-2">
+                <div class="flex justify-between text-xs font-medium text-slate-400">
+                    <span id="statusText">Initializing...</span>
+                    <span id="progressText">0%</span>
+                </div>
+                <div class="w-full bg-slate-700 rounded-full h-2.5 overflow-hidden">
+                    <div id="progressBar" class="bg-gradient-to-r from-indigo-500 to-cyan-500 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+                </div>
+            </div>
+
+            <!-- Download Area -->
+            <div id="downloadArea" class="hidden pt-4 border-t border-slate-700 flex flex-col items-center">
+                <a id="downloadLink" href="#" download="converted.mp4" class="bg-green-600 hover:bg-green-500 text-white font-bold rounded-lg px-8 py-3 transition-colors flex items-center gap-2 shadow-lg shadow-green-900/30">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                    Download Output
+                </a>
+            </div>
+        </div>
+
+        <!-- Terminal / Logs -->
+        <div class="bg-[#0d1117] border border-slate-700 rounded-xl overflow-hidden shadow-inner">
+            <div class="bg-slate-800 px-4 py-2 border-b border-slate-700 flex items-center justify-between">
+                <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Conversion Logs</span>
+                <button id="clearLogsBtn" class="text-xs text-slate-500 hover:text-slate-300">Clear</button>
+            </div>
+            <div id="logs" class="p-4 h-48 overflow-y-auto custom-scrollbar log-font text-xs text-slate-400 space-y-1">
+                <div class="text-slate-500">System ready. Waiting for file...</div>
+                <div class="text-amber-500/70 italic mt-2">Note: Conversion runs completely in your browser memory. Processing large videos may cause high CPU usage or out-of-memory errors on lower-end devices.</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- State Variables ---
+        let ffmpeg = null;
+        let currentFile = null;
+        let isProcessing = false;
+
+        // --- DOM Elements ---
+        const fileInput = document.getElementById('fileInput');
+        const dropZone = document.getElementById('dropZone');
+        const uploadIcon = document.getElementById('uploadIcon');
+        const uploadPrompt = document.getElementById('uploadPrompt');
+        const fileInfo = document.getElementById('fileInfo');
+        const fileNameEl = document.getElementById('fileName');
+        const fileSizeEl = document.getElementById('fileSize');
+        
+        const convertBtn = document.getElementById('convertBtn');
+        const outputFormat = document.getElementById('outputFormat');
+        
+        const alertBox = document.getElementById('alertBox');
+        const alertMessage = document.getElementById('alertMessage');
+        
+        const progressContainer = document.getElementById('progressContainer');
+        const progressBar = document.getElementById('progressBar');
+        const progressText = document.getElementById('progressText');
+        const statusText = document.getElementById('statusText');
+        
+        const downloadArea = document.getElementById('downloadArea');
+        const downloadLink = document.getElementById('downloadLink');
+        
+        const logsContainer = document.getElementById('logs');
+        const clearLogsBtn = document.getElementById('clearLogsBtn');
+
+        // --- Utility Functions ---
+        function formatBytes(bytes, decimals = 2) {
+            if (!+bytes) return '0 Bytes';
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+        }
+
+        function showAlert(msg, type = 'info') {
+            alertBox.classList.remove('hidden', 'bg-red-500/10', 'border-red-500', 'text-red-400', 'bg-blue-500/10', 'border-blue-500', 'text-blue-400');
+            if (type === 'error') {
+                alertBox.classList.add('bg-red-500/10', 'border-red-500', 'text-red-400');
+            } else {
+                alertBox.classList.add('bg-blue-500/10', 'border-blue-500', 'text-blue-400');
+            }
+            alertMessage.textContent = msg;
+        }
+
+        function hideAlert() {
+            alertBox.classList.add('hidden');
+        }
+
+        function addLog(message, isError = false) {
+            const line = document.createElement('div');
+            line.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            if (isError) line.classList.add('text-red-400');
+            
+            logsContainer.appendChild(line);
+            logsContainer.scrollTop = logsContainer.scrollHeight;
+        }
+
+        // --- File Handling ---
+        function handleFile(file) {
+            if (!file) return;
+            
+            // Limit file size roughly to 2GB to prevent immediate browser crash
+            if (file.size > 2 * 1024 * 1024 * 1024) {
+                showAlert('File is too large for browser-based conversion (> 2GB).', 'error');
+                return;
+            }
+
+            currentFile = file;
+            
+            // Update UI
+            uploadIcon.classList.add('hidden');
+            uploadPrompt.classList.add('hidden');
+            fileInfo.classList.remove('hidden');
+            fileInfo.classList.add('flex');
+            
+            fileNameEl.textContent = file.name;
+            fileSizeEl.textContent = formatBytes(file.size);
+            dropZone.classList.add('border-indigo-500', 'bg-indigo-500/5');
+            dropZone.classList.remove('border-slate-600');
+            
+            hideAlert();
+            downloadArea.classList.add('hidden');
+            
+            // Smart default selection
+            const ext = file.name.split('.').pop().toLowerCase();
+            const videoExts = ['mov', 'webm', 'mkv', 'avi', 'flv', 'wmv'];
+            if (videoExts.includes(ext)) {
+                outputFormat.value = 'mp4';
+            } else if (ext === 'mp4') {
+                outputFormat.value = 'mov';
+            } else {
+                outputFormat.value = 'mp3';
+            }
+
+            addLog(`File loaded: ${file.name} (${formatBytes(file.size)})`);
+        }
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) handleFile(e.target.files[0]);
+        });
+
+        // Drag and Drop visual feedback
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if(!isProcessing) dropZone.classList.add('border-indigo-400', 'bg-slate-700/80');
+            }, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if(!isProcessing) {
+                    dropZone.classList.remove('border-indigo-400', 'bg-slate-700/80');
+                    if (currentFile) dropZone.classList.add('border-indigo-500'); // Maintain selected state
+                }
+            }, false);
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            if (isProcessing) return;
+            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                handleFile(e.dataTransfer.files[0]);
+            }
+        });
+
+        clearLogsBtn.addEventListener('click', () => {
+            logsContainer.innerHTML = '';
+            addLog('Logs cleared.');
+        });
+
+        // --- FFmpeg Initialization ---
+        async function initFFmpeg() {
+            if (ffmpeg) return true;
+
+            try {
+                addLog('Loading FFmpeg core... (This requires a one-time ~30MB download)');
+                statusText.textContent = 'Downloading FFmpeg engine...';
+                
+                const { FFmpeg } = window.FFmpegWASM;
+                const { toBlobURL } = window.FFmpegUtil;
+                ffmpeg = new FFmpeg();
+
+                // Hook up logging
+                ffmpeg.on('log', ({ message }) => {
+                    addLog(message);
+                });
+
+                // Hook up progress
+                ffmpeg.on('progress', ({ progress, time }) => {
+                    const percent = Math.max(0, Math.min(100, progress * 100));
+                    progressBar.style.width = `${percent}%`;
+                    progressText.textContent = `${percent.toFixed(1)}%`;
+                });
+
+                const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
+                const ffmpegURL = 'https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd';
+
+                // Fetch external scripts and load them as local Blobs to bypass cross-origin worker restrictions
+                await ffmpeg.load({
+                    coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+                    wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+                    classWorkerURL: await toBlobURL(`${ffmpegURL}/814.ffmpeg.js`, 'text/javascript')
+                });
+
+                addLog('FFmpeg core loaded successfully.');
+                return true;
+            } catch (err) {
+                console.error(err);
+                addLog(`Failed to load FFmpeg: ${err.message}`, true);
+                showAlert('Could not initialize conversion engine. Check network or logs.', 'error');
+                return false;
+            }
+        }
+
+        // --- Conversion Execution ---
+        convertBtn.addEventListener('click', async () => {
+            if (!currentFile) {
+                showAlert('Please select a file to convert first.', 'error');
+                return;
+            }
+            if (isProcessing) return;
+
+            hideAlert();
+            downloadArea.classList.add('hidden');
+            progressContainer.classList.remove('hidden');
+            progressBar.style.width = '0%';
+            progressText.textContent = '0%';
+            
+            isProcessing = true;
+            convertBtn.disabled = true;
+            fileInput.disabled = true;
+            dropZone.classList.add('opacity-50', 'cursor-not-allowed', 'pulse-border');
+
+            const format = outputFormat.value;
+            const inName = currentFile.name.replace(/\s+/g, '_'); // sanitize spaces
+            const outName = `output_${Date.now()}.${format}`;
+            const { fetchFile } = window.FFmpegUtil;
+
+            try {
+                // 1. Initialize
+                const isLoaded = await initFFmpeg();
+                if (!isLoaded) throw new Error("FFmpeg failed to load");
+
+                // 2. Write file to memory
+                statusText.textContent = 'Reading file into memory...';
+                addLog(`Writing ${inName} to virtual filesystem...`);
+                await ffmpeg.writeFile(inName, await fetchFile(currentFile));
+
+                // 3. Build Command
+                statusText.textContent = `Converting to ${format.toUpperCase()}...`;
+                let cmd = [];
+                
+                // Optimized standard conversion parameters for browser
+                if (format === 'mp3') {
+                    // Extract audio, resample to 44.1kHz, 192kbps
+                    cmd = ['-i', inName, '-vn', '-ar', '44100', '-ac', '2', '-b:a', '192k', outName];
+                } else if (format === 'mp4') {
+                    // Re-encode to highly compatible H.264/AAC. Using ultrafast preset to survive browser constraints.
+                    cmd = ['-i', inName, '-c:v', 'libx264', '-preset', 'ultrafast', '-c:a', 'aac', outName];
+                } else if (format === 'mov') {
+                    // Re-encode to MOV container.
+                    cmd = ['-i', inName, '-c:v', 'libx264', '-preset', 'ultrafast', '-c:a', 'aac', outName];
+                }
+
+                addLog(`Executing: ffmpeg ${cmd.join(' ')}`);
+
+                // 4. Run Command
+                const execResult = await ffmpeg.exec(cmd);
+                
+                if (execResult !== 0) {
+                     throw new Error(`FFmpeg exited with code ${execResult}`);
+                }
+
+                // 5. Read Result
+                statusText.textContent = 'Finalizing file...';
+                const fileData = await ffmpeg.readFile(outName);
+                
+                // 6. Create Download Link
+                const mimeType = format === 'mp3' ? 'audio/mpeg' : `video/${format}`;
+                const blob = new Blob([fileData.buffer], { type: mimeType });
+                const url = URL.createObjectURL(blob);
+                
+                const originalNameWithoutExt = currentFile.name.substring(0, currentFile.name.lastIndexOf('.')) || currentFile.name;
+                const finalDownloadName = `${originalNameWithoutExt}_converted.${format}`;
+
+                downloadLink.href = url;
+                downloadLink.download = finalDownloadName;
+                downloadArea.classList.remove('hidden');
+                
+                statusText.textContent = 'Conversion Complete!';
+                progressBar.style.width = '100%';
+                progressText.textContent = '100%';
+                addLog('Conversion finished successfully.');
+
+                // Clean up memory in virtual FS
+                await ffmpeg.deleteFile(inName);
+                await ffmpeg.deleteFile(outName);
+
+            } catch (err) {
+                console.error(err);
+                statusText.textContent = 'Conversion Failed';
+                addLog(`Error: ${err.message}`, true);
+                showAlert(`Conversion failed: ${err.message}`, 'error');
+                progressBar.classList.replace('from-indigo-500', 'from-red-500');
+                progressBar.classList.replace('to-cyan-500', 'to-orange-500');
+            } finally {
+                // Restore UI state
+                isProcessing = false;
+                convertBtn.disabled = false;
+                fileInput.disabled = false;
+                dropZone.classList.remove('opacity-50', 'cursor-not-allowed', 'pulse-border');
+            }
+        });
+    </script>
+</body>
+</html>
