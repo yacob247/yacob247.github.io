@@ -1,64 +1,42 @@
 ﻿<!DOCTYPE html>
 <html lang="en">
 <head>
-  <link rel="icon" type="image/png" href="logo.png">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Envizion — Playground</title>
+    <title>Envizion Studio - Playground</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Google Fonts Inter -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <!-- FontAwesome for robust, crisp icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- JSZip for ZIP download -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     
     <style>
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #0d0d0d;
+            background-color: #2f2f2f;
             overflow: hidden;
             user-select: none;
         }
 
-        /* Infinite dot grid — fixed canvas in screen space, never clips */
-        #grid-canvas {
-            position: fixed;
-            top: 0; left: 0;
-            width: 100vw; height: 100vh;
-            pointer-events: none;
-            z-index: 0;
-            background: #0e0e11;
-        }
-
+        /* Infinite dot grid background */
         #infinite-canvas {
             position: absolute;
-            top: 0; left: 0;
-            width: 100vw; height: 100vh;
-            background: transparent;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: #2f2f2f;
+            background-image: linear-gradient(135deg, #212121, #2f2f2f);
+            background-size: 24px 24px;
             cursor: grab;
             transform-origin: 0 0;
             will-change: transform;
-            z-index: 1;
         }
 
-        #infinite-canvas:active { cursor: grabbing; }
-
-        /* Layer-order controls shown above selected card */
-        .layer-controls {
-            position: absolute;
-            bottom: calc(100% + 4px); left: 0;
-            display: flex; gap: 2px;
-            pointer-events: auto;
+        #infinite-canvas:active {
+            cursor: grabbing;
         }
-        .layer-btn {
-            padding: 2px 6px; font-size: 9px; font-weight: 600;
-            background: #18181b; border: 1px solid #3f3f46;
-            color: #a1a1aa; border-radius: 5px; cursor: pointer;
-            white-space: nowrap; line-height: 1.6;
-        }
-        .layer-btn:hover { background: #27272a; color: #fff; }
 
         /* Custom Scrollbars */
         ::-webkit-scrollbar {
@@ -69,25 +47,25 @@
             background: transparent;
         }
         ::-webkit-scrollbar-thumb {
-            background: #27272a;
+            background: #2f2f2f;
             border-radius: 9999px;
         }
         ::-webkit-scrollbar-thumb:hover {
-            background: #3f3f46;
+            background: #2f2f2f;
         }
 
         /* Active highlight for selected tool */
         .active-tool {
-            background-color: #ffffff !important;
-            color: #000000 !important;
-            box-shadow: 0 4px 14px rgba(255, 255, 255, 0.25);
+            background-color: #2f2f2f !important;
+            color: #ececec !important;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
         }
 
         /* Lasso selection box style */
         #lasso-box {
             position: absolute;
-            border: 1px dashed #3b82f6;
-            background-color: rgba(59, 130, 246, 0.15);
+            border: 1px dashed rgba(255, 255, 255, 0.12);
+            background-color: #2f2f2f;
             pointer-events: none;
             display: none;
             z-index: 99999;
@@ -104,8 +82,8 @@
             position: absolute;
             width: 10px;
             height: 10px;
-            background-color: #ffffff;
-            border: 1.5px solid #3b82f6;
+            background-color: #2f2f2f;
+            border: 1.5px solid rgba(255, 255, 255, 0.12);
             border-radius: 50%;
             pointer-events: auto;
         }
@@ -113,8 +91,8 @@
             position: absolute;
             width: 12px;
             height: 12px;
-            background-color: #3b82f6;
-            border: 2px solid #ffffff;
+            background-color: #2f2f2f;
+            border: 2px solid rgba(255, 255, 255, 0.12);
             border-radius: 50%;
             top: -24px;
             left: calc(50% - 6px);
@@ -124,80 +102,60 @@
             position: absolute;
             width: 2px;
             height: 14px;
-            background-color: #3b82f6;
+            background-color: #2f2f2f;
             top: -14px;
             left: calc(50% - 1px);
         }
 
         /* Rotation state styling pointer */
-        .rotating { cursor: grabbing !important; }
-
-        /* Drop zone highlight */
-        body.drag-over::after {
-            content: 'Drop files anywhere';
-            position: fixed; inset: 0;
-            background: rgba(99,102,241,0.08);
-            border: 2px dashed #6366f1;
-            z-index: 9999; pointer-events: none;
-            display: flex; align-items: center; justify-content: center;
-            font-size: 18px; color: #818cf8; font-weight: 600;
+        .rotating {
+            cursor: grabbing !important;
         }
 
-        /* Group card */
-        .group-card-wrapper {
-            border: 2px dashed #6366f1 !important;
-            background: rgba(99,102,241,0.04) !important;
-        }
+        /* Preview overlay content styles */
+        #preview-body img { max-width: 100%; max-height: 100%; object-fit: contain; margin: auto; display: block; padding: 20px; }
+        #preview-body video, #preview-body audio { max-width: 100%; display: block; margin: 20px auto; }
+        #preview-body iframe { width: 100%; height: 100%; border: none; }
+        #preview-body canvas { display: block; margin: auto; }
+        #preview-body pre { padding: 24px; font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 12px; line-height: 1.7; color: #d4d4d4; white-space: pre-wrap; word-break: break-all; overflow-y: auto; height: 100%; }
+        #preview-body .docx-render { padding: 32px; max-width: 860px; margin: auto; color: #e0e0e0; font-size: 14px; line-height: 1.8; user-select: text; }
+        #preview-body .docx-render h1, #preview-body .docx-render h2, #preview-body .docx-render h3 { color: #fff; margin: 1em 0 0.4em; }
+        #preview-body .xlsx-table { padding: 16px; overflow: auto; height: 100%; }
+        #preview-body .xlsx-table table { border-collapse: collapse; font-size: 12px; color: #d4d4d4; }
+        #preview-body .xlsx-table th { background: #2a2a2a; padding: 6px 12px; border: 1px solid #3a3a3a; text-align: left; font-weight: 600; position: sticky; top: 0; }
+        #preview-body .xlsx-table td { padding: 5px 12px; border: 1px solid #2a2a2a; }
+        #preview-body .xlsx-table tr:hover td { background: #222; }
+        #preview-body .fallback-info { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 16px; color: #888; }
+        #preview-body .fallback-info i { font-size: 48px; }
+        #preview-body .fallback-info p { font-size: 14px; max-width: 340px; text-align: center; line-height: 1.6; }
+        #preview-body .fallback-info button { padding: 8px 20px; background: #3a3a3a; border-radius: 10px; font-size: 12px; color: #d4d4d4; border: 1px solid #4a4a4a; cursor: pointer; }
 
-        /* Fullscreen preview modal */
-        #preview-modal {
-            position: fixed; inset: 0; z-index: 9999;
-            background: rgba(0,0,0,0.92);
-            display: flex; align-items: center; justify-content: center;
-            flex-direction: column; gap: 12px;
-        }
-        #preview-modal.hidden { display: none; }
-        #preview-modal-inner {
-            max-width: 92vw; max-height: 84vh;
-            border-radius: 12px; overflow: hidden;
-            box-shadow: 0 40px 80px rgba(0,0,0,0.7);
-            background: #111;
-        }
-        #preview-modal iframe, #preview-modal img,
-        #preview-modal video, #preview-modal audio {
-            display: block; max-width: 92vw; max-height: 84vh;
-        }
-
-        /* Audio card */
-        .audio-card-inner { padding: 12px; display: flex; flex-direction: column; gap: 8px; height: 100%; }
-        .audio-wave { flex: 1; background: linear-gradient(180deg,#1e293b,#0f172a); border-radius: 8px;
-            display: flex; align-items: center; justify-content: center; gap: 2px; overflow: hidden; padding: 8px; }
-        .audio-wave span { display: inline-block; width: 3px; border-radius: 2px; background: #6366f1;
-            animation: wave 1.2s ease-in-out infinite; }
-        .audio-wave span:nth-child(2n) { animation-delay: 0.2s; }
-        .audio-wave span:nth-child(3n) { animation-delay: 0.4s; }
-        @keyframes wave { 0%,100% { height: 8px; } 50% { height: 28px; } }
-        .audio-wave.paused span { animation-play-state: paused; height: 8px !important; }
-
-        /* File card (OBJ/FBX/HTML/JS etc) */
-        .file-card-inner { display: flex; flex-direction: column; align-items: center; justify-content: center;
-            height: 100%; gap: 8px; padding: 12px; text-align: center; }
-
-        /* Table card */
-        .table-card-inner { overflow: auto; height: 100%; }
-        .table-card-inner table { border-collapse: collapse; width: 100%; font-size: 11px; }
-        .table-card-inner td { border: 1px solid #3f3f46; padding: 4px 8px; color: #e4e4e7;
-            outline: none; min-width: 60px; }
-        .table-card-inner td:focus { background: #27272a; }
-        .table-card-inner .add-row-btn, .table-card-inner .add-col-btn {
-            font-size: 10px; color: #6366f1; cursor: pointer; padding: 2px 6px;
-            background: none; border: none; }
+        /* Folder panel tree items */
+        .folder-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; cursor: pointer; font-size: 12px; color: #9a9a9a; transition: background 0.12s, color 0.12s; }
+        .folder-item:hover { background: rgba(255,255,255,0.06); color: #e0e0e0; }
+        .folder-item.active { background: rgba(255,255,255,0.08); color: #fff; }
     </style>
+  <meta name="description" content="Arrange images, videos, audio, notes, and references on a local creative canvas for planning and visual organization.">
+  <meta name="robots" content="index, follow, max-image-preview:large">
+  <link rel="canonical" href="https://envizion.work/tools2/envizion_playground.html">
+  <meta property="og:title" content="Envizion Playground - Envizion Tools">
+  <meta property="og:description" content="Arrange images, videos, audio, notes, and references on a local creative canvas for planning and visual organization.">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="toolkit-common.css">
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5812524294035974" crossorigin="anonymous"></script>
+  <script type="application/ld+json" id="envizion-tool-schema">{"@context":"https://schema.org","@type":"WebApplication","name":"Envizion Playground","applicationCategory":"Creative canvas","operatingSystem":"Any modern browser","url":"https://envizion.work/tools2/envizion_playground.html","description":"Arrange images, videos, audio, notes, and references on a local creative canvas for planning and visual organization.","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"publisher":{"@type":"Organization","name":"Envizion Tools"}}</script>
+    <!-- Three.js for 3D model preview -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- mammoth.js for DOCX -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+    <!-- SheetJS for XLSX/CSV -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- PDF.js for PDF preview -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
-<body class="text-zinc-200 w-screen h-screen relative select-none">
-
-    <!-- Infinite dot grid drawn in screen space — never clips regardless of pan/zoom -->
-    <canvas id="grid-canvas"></canvas>
+<body class="text-neutral-300 w-screen h-screen relative select-none">
+<div class="envizion-tool-app-shell text-neutral-300 w-screen h-screen relative select-none">
 
     <!-- The Infinite Board Container -->
     <div id="infinite-canvas">
@@ -212,157 +170,153 @@
     <!-- Top Bar Navigation (Left/Right elements matching image_ab2522.png) -->
     <div class="absolute top-5 left-5 right-5 flex justify-between items-center pointer-events-none z-50">
         <!-- Left Title Action Dropdown -->
-        <div class="flex items-center gap-3 bg-zinc-900/80 border border-zinc-800/80 px-4 py-2 rounded-xl premium-blur pointer-events-auto shadow-2xl">
-            <a href="luma_dashboard_clone.html" class="text-zinc-400 hover:text-white transition" title="Back to Home">
+        <div class="flex items-center gap-3 bg-neutral-900/80 border border-neutral-600/80 px-4 py-2 rounded-xl premium-blur pointer-events-auto shadow-2xl">
+            <button class="text-neutral-300 hover:text-neutral-100 transition" onclick="window.history.back()">
                 <i class="fa-solid fa-arrow-left text-sm"></i>
-            </a>
-            <div class="h-4 w-[1px] bg-zinc-800"></div>
-            <div class="flex items-center gap-2">
-                <span class="w-2 h-2 rounded-full bg-indigo-500 shadow-[0_0_8px_#6366f1]"></span>
-                <span class="font-bold text-xs tracking-wider text-zinc-100">envizion</span>
-            </div>
-            <div class="h-4 w-[1px] bg-zinc-800"></div>
+            </button>
+            <div class="h-4 w-[1px] bg-neutral-800"></div>
             <div class="flex items-center gap-2 cursor-pointer group" onclick="toggleRenameDropdown()">
-                <span id="project-title-display" class="font-semibold text-xs tracking-wider uppercase text-zinc-100">Untitled Project</span>
-                <i class="fa-solid fa-chevron-down text-[10px] text-zinc-500 group-hover:text-zinc-300 transition-colors"></i>
+                <span id="project-title-display" class="font-semibold text-xs tracking-wider uppercase text-neutral-300">Untitled Project</span>
+                <i class="fa-solid fa-chevron-down text-[10px] text-neutral-400 group-hover:text-neutral-300 transition-colors"></i>
             </div>
         </div>
 
         <!-- Right Side Header Panel -->
         <div class="flex items-center gap-2 pointer-events-auto">
-            <a href="envizion_editor.html" class="bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-700 text-zinc-200 hover:text-white px-4 py-2 rounded-xl text-xs font-medium transition flex items-center gap-2">
-                <i class="fa-solid fa-clapperboard text-xs"></i> Editor
-            </a>
-            <button class="bg-white hover:bg-zinc-100 text-black px-4 py-2 rounded-full font-semibold text-xs tracking-wide shadow-md transition flex items-center gap-1.5" onclick="triggerUpgrade()">
+            <button class="bg-neutral-800 hover:bg-neutral-800 text-neutral-100 px-4 py-2 rounded-full font-semibold text-xs tracking-wide shadow-md transition flex items-center gap-1.5" onclick="triggerUpgrade()">
                 <i class="fa-solid fa-plus text-[10px]"></i> Upgrade
             </button>
-            <button class="w-9 h-9 bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white rounded-xl flex items-center justify-center transition" onclick="toggleSettingsModal()">
+            <button class="w-9 h-9 bg-neutral-900/80 hover:bg-neutral-800 border border-neutral-600 text-neutral-300 hover:text-neutral-100 rounded-xl flex items-center justify-center transition" onclick="toggleSettingsModal()">
                 <i class="fa-solid fa-gear text-sm"></i>
             </button>
-            <button class="bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 hover:text-white px-4 py-2 rounded-xl text-xs font-medium transition flex items-center gap-2" onclick="triggerShare()">
+            <button class="bg-neutral-900/80 hover:bg-neutral-800 border border-neutral-600 text-neutral-300 hover:text-neutral-100 px-4 py-2 rounded-xl text-xs font-medium transition flex items-center gap-2" onclick="triggerShare()">
                 <i class="fa-solid fa-share text-xs"></i> Share
             </button>
         </div>
     </div>
 
     <!-- Bottom Left Zoom Indicators (Matching image_ab2522.png placement) -->
-    <div class="absolute bottom-6 left-6 flex items-center gap-3 bg-zinc-950/90 border border-zinc-800/80 px-4 py-2.5 rounded-2xl premium-blur z-50 text-xs text-zinc-400">
-        <button class="hover:text-white transition p-1" onclick="adjustZoom(-0.1)">
+    <div class="absolute bottom-6 left-6 flex items-center gap-3 bg-neutral-950/90 border border-neutral-600/80 px-4 py-2.5 rounded-2xl premium-blur z-50 text-xs text-neutral-300">
+        <button class="hover:text-neutral-100 transition p-1" onclick="adjustZoom(-0.1)">
             <i class="fa-solid fa-minus"></i>
         </button>
-        <span id="zoom-indicator" class="font-medium text-zinc-200 min-w-[36px] text-center">100%</span>
-        <button class="hover:text-white transition p-1" onclick="adjustZoom(0.1)">
+        <span id="zoom-indicator" class="font-medium text-neutral-300 min-w-[36px] text-center">100%</span>
+        <button class="hover:text-neutral-100 transition p-1" onclick="adjustZoom(0.1)">
             <i class="fa-solid fa-plus"></i>
         </button>
     </div>
 
     <!-- Floating Bottom Navigation Toolbar -->
-    <div class="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center bg-zinc-950/90 border border-zinc-800/80 p-2.5 rounded-[22px] premium-blur z-50 shadow-2xl gap-1">
+    <div class="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center bg-neutral-950/90 border border-neutral-600/80 p-2.5 rounded-[22px] premium-blur z-50 shadow-2xl gap-1">
         <!-- Selection Tool -->
-        <button id="tool-select" class="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all active-tool" title="Select Pointer" onclick="setTool('select')">
+        <button id="tool-select" class="w-10 h-10 rounded-xl flex items-center justify-center text-neutral-300 hover:text-neutral-100 hover:bg-neutral-900 transition-all active-tool" title="Select Pointer" onclick="setTool('select')">
             <i class="fa-solid fa-arrow-pointer text-sm"></i>
         </button>
         
         <!-- Media Selector: Image -->
-        <button id="tool-image" class="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all" title="Upload Image" onclick="triggerFileInput('image')">
+        <button id="tool-image" class="w-10 h-10 rounded-xl flex items-center justify-center text-neutral-300 hover:text-neutral-100 hover:bg-neutral-900 transition-all" title="Upload Image" onclick="triggerFileInput('image')">
             <i class="fa-regular fa-image text-sm"></i>
         </button>
         
         <!-- Media Selector: Video -->
-        <button id="tool-video" class="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all" title="Upload Video" onclick="triggerFileInput('video')">
+        <button id="tool-video" class="w-10 h-10 rounded-xl flex items-center justify-center text-neutral-300 hover:text-neutral-100 hover:bg-neutral-900 transition-all" title="Upload Video" onclick="triggerFileInput('video')">
             <i class="fa-solid fa-circle-play text-sm"></i>
         </button>
 
         <!-- Media Selector: Audio -->
-        <button id="tool-audio" class="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all" title="Add Audio Track" onclick="triggerAudioUpload()">
+        <button id="tool-audio" class="w-10 h-10 rounded-xl flex items-center justify-center text-neutral-300 hover:text-neutral-100 hover:bg-neutral-900 transition-all" title="Add Audio Track" onclick="triggerAudioUpload()">
             <i class="fa-solid fa-wave-square text-sm"></i>
         </button>
 
         <!-- Frame / Clip bounds Selection -->
-        <button id="tool-frame" class="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all" title="Clip Region Boundary" onclick="toggleActiveFrameRegion()">
+        <button id="tool-frame" class="w-10 h-10 rounded-xl flex items-center justify-center text-neutral-300 hover:text-neutral-100 hover:bg-neutral-900 transition-all" title="Clip Region Boundary" onclick="toggleActiveFrameRegion()">
             <i class="fa-solid fa-crop-simple text-sm"></i>
         </button>
 
         <!-- Pencil Free Draw Cutout Tool -->
-        <button id="tool-draw" class="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all" title="Freehand Path Canvas Draw" onclick="setTool('draw')">
+        <button id="tool-draw" class="w-10 h-10 rounded-xl flex items-center justify-center text-neutral-300 hover:text-neutral-100 hover:bg-neutral-900 transition-all" title="Freehand Path Canvas Draw" onclick="setTool('draw')">
             <i class="fa-solid fa-signature text-sm"></i>
         </button>
 
         <!-- Text Addition Tool -->
-        <button id="tool-text" class="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all" title="Add Text Layer" onclick="addTextCard()">
+        <button id="tool-text" class="w-10 h-10 rounded-xl flex items-center justify-center text-neutral-300 hover:text-neutral-100 hover:bg-neutral-900 transition-all" title="Add Text Layer" onclick="addTextCard()">
             <i class="fa-solid fa-t text-sm"></i>
         </button>
 
         <!-- Sticky Card Component -->
-        <button id="tool-sticky" class="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all" title="Add Sticky Note Card" onclick="addStickyCard()">
+        <button id="tool-sticky" class="w-10 h-10 rounded-xl flex items-center justify-center text-neutral-300 hover:text-neutral-100 hover:bg-neutral-900 transition-all" title="Add Sticky Note Card" onclick="addStickyCard()">
             <i class="fa-regular fa-sticky-note text-sm"></i>
         </button>
 
         <!-- Dynamic Color Picker Palette Trigger -->
         <div class="relative group">
-            <button id="tool-color" class="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all" title="Set Theme Color">
-                <span class="w-4.5 h-4.5 rounded-full border border-zinc-700 bg-emerald-500" id="color-wheel-preview"></span>
+            <button id="tool-color" class="w-10 h-10 rounded-xl flex items-center justify-center text-neutral-300 hover:text-neutral-100 hover:bg-neutral-900 transition-all" title="Set Theme Color">
+                <span class="w-4.5 h-4.5 rounded-full border border-neutral-600 bg-neutral-700" id="color-wheel-preview"></span>
             </button>
-            <div class="absolute bottom-14 left-1/2 -translate-x-1/2 hidden group-hover:flex bg-zinc-900 border border-zinc-800 p-2 rounded-xl flex-row gap-2 shadow-xl">
-                <button class="w-5 h-5 rounded-full bg-emerald-500 border border-white/20" onclick="setSelectedColor('#10b981')"></button>
-                <button class="w-5 h-5 rounded-full bg-amber-500 border border-white/20" onclick="setSelectedColor('#f59e0b')"></button>
-                <button class="w-5 h-5 rounded-full bg-rose-500 border border-white/20" onclick="setSelectedColor('#f43f5e')"></button>
-                <button class="w-5 h-5 rounded-full bg-sky-500 border border-white/20" onclick="setSelectedColor('#0ea5e9')"></button>
-                <button class="w-5 h-5 rounded-full bg-indigo-500 border border-white/20" onclick="setSelectedColor('#6366f1')"></button>
+            <div class="absolute bottom-14 left-1/2 -translate-x-1/2 hidden group-hover:flex bg-neutral-900 border border-neutral-600 p-2 rounded-xl flex-row gap-2 shadow-xl">
+                <button class="w-5 h-5 rounded-full bg-neutral-700 border border-neutral-600/20" onclick="setSelectedColor('#10a37f')"></button>
+                <button class="w-5 h-5 rounded-full bg-neutral-700 border border-neutral-600/20" onclick="setSelectedColor('#b4b4b4')"></button>
+                <button class="w-5 h-5 rounded-full bg-neutral-700 border border-neutral-600/20" onclick="setSelectedColor('#10a37f')"></button>
+                <button class="w-5 h-5 rounded-full bg-neutral-700 border border-neutral-600/20" onclick="setSelectedColor('#b4b4b4')"></button>
+                <button class="w-5 h-5 rounded-full bg-neutral-700 border border-neutral-600/20" onclick="setSelectedColor('#10a37f')"></button>
             </div>
         </div>
 
         <!-- Plus Overlay Module -->
-        <button class="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all" title="Add Table" onclick="addTableCard()">
-            <i class="fa-solid fa-table text-sm"></i>
-        </button>
-        <button class="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all" title="Add Elements / Extension Templates" onclick="triggerShowExtensions()">
+        <button class="w-10 h-10 rounded-xl flex items-center justify-center text-neutral-300 hover:text-neutral-100 hover:bg-neutral-900 transition-all" title="Add Elements / Extension Templates" onclick="triggerShowExtensions()">
             <i class="fa-solid fa-circle-plus text-sm"></i>
         </button>
-        <div class="w-[1px] h-6 bg-zinc-800 mx-1"></div>
-        <button class="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all" title="Download selected as ZIP" onclick="downloadSelectedAsZip()">
-            <i class="fa-solid fa-file-zipper text-sm"></i>
+
+        <div class="w-[1px] h-5 bg-neutral-700/60 mx-1"></div>
+
+        <!-- Open Any File -->
+        <button class="w-10 h-10 rounded-xl flex items-center justify-center text-neutral-300 hover:text-neutral-100 hover:bg-neutral-900 transition-all" title="Open Any File" onclick="document.getElementById('universal-file-input').click()">
+            <i class="fa-solid fa-folder-open text-sm"></i>
         </button>
-        <button class="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all" title="Group selected" onclick="groupSelected()">
-            <i class="fa-solid fa-object-group text-sm"></i>
+
+        <!-- Open URL / Drive Link -->
+        <button class="w-10 h-10 rounded-xl flex items-center justify-center text-neutral-300 hover:text-neutral-100 hover:bg-neutral-900 transition-all" title="Open URL / Google Drive Link" onclick="openURLInputPanel()">
+            <i class="fa-solid fa-link text-sm"></i>
         </button>
-        <button class="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all" title="Fullscreen" onclick="toggleFullscreen()">
-            <i class="fa-solid fa-expand text-sm"></i>
+
+        <!-- Folders / Workspaces -->
+        <button class="w-10 h-10 rounded-xl flex items-center justify-center text-neutral-300 hover:text-neutral-100 hover:bg-neutral-900 transition-all" title="Folders & Workspaces" onclick="toggleFolderPanel()">
+            <i class="fa-solid fa-boxes-stacked text-sm"></i>
         </button>
     </div>
 
-    <!-- Hidden native file input triggers -->
-    <input type="file" id="image-file-input" accept="image/*" multiple class="hidden" onchange="handleFilesSelected(this, 'image')">
-    <input type="file" id="video-file-input" accept="video/*" multiple class="hidden" onchange="handleFilesSelected(this, 'video')">
-    <input type="file" id="audio-file-input" accept="audio/*" multiple class="hidden" onchange="handleFilesSelected(this, 'audio')">
-    <input type="file" id="any-file-input" accept="*/*" multiple class="hidden" onchange="handleFilesSelected(this, 'any')">
+    <!-- Universal file input — accepts everything -->
+    <input type="file" id="image-file-input" accept="image/*" class="hidden" onchange="handleFileSelected(this, 'image')">
+    <input type="file" id="video-file-input" accept="video/*" class="hidden" onchange="handleFileSelected(this, 'video')">
+    <input type="file" id="audio-file-input" accept="audio/*" class="hidden" onchange="handleAudioSelected(this)">
+    <input type="file" id="universal-file-input" accept="*/*" multiple class="hidden" onchange="handleUniversalFileSelected(this)">
 
-    <!-- Bottom Right Supplementary Controls -->
+    <!-- Bottom Right Supplementary Controls (Chat, Finder, Extensions triggers) -->
     <div class="absolute bottom-6 right-6 flex items-center gap-2.5 z-50">
-        <button class="w-10 h-10 bg-zinc-950/90 hover:bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white rounded-2xl flex items-center justify-center transition premium-blur shadow-xl" onclick="document.getElementById('any-file-input').click()" title="Upload any file (HTML, JS, OBJ, FBX, MP3...)">
-            <i class="fa-solid fa-upload text-sm"></i>
-        </button>
-        <button class="w-10 h-10 bg-zinc-950/90 hover:bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white rounded-2xl flex items-center justify-center transition premium-blur shadow-xl" onclick="toggleChatPanel()" title="Open Creative AI Assistant">
+        <button class="w-10 h-10 bg-neutral-950/90 hover:bg-neutral-900 border border-neutral-600 text-neutral-300 hover:text-neutral-100 rounded-2xl flex items-center justify-center transition premium-blur shadow-xl" onclick="toggleChatPanel()" title="Open Creative AI Assistant">
             <i class="fa-regular fa-comment text-sm"></i>
         </button>
-        <button class="w-10 h-10 bg-zinc-950/90 hover:bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white rounded-2xl flex items-center justify-center transition premium-blur shadow-xl" onclick="triggerSearchBoard()" title="Search Elements">
+        <button class="w-10 h-10 bg-neutral-950/90 hover:bg-neutral-900 border border-neutral-600 text-neutral-300 hover:text-neutral-100 rounded-2xl flex items-center justify-center transition premium-blur shadow-xl" onclick="triggerSearchBoard()" title="Search Elements">
             <i class="fa-solid fa-magnifying-glass text-xs"></i>
+        </button>
+        <button class="w-10 h-10 bg-neutral-950/90 hover:bg-neutral-900 border border-neutral-600 text-neutral-300 hover:text-neutral-100 rounded-2xl flex items-center justify-center transition premium-blur shadow-xl" onclick="triggerShowExtensions()" title="Toggle Canvas Integrations">
+            <i class="fa-solid fa-puzzle-piece text-xs"></i>
         </button>
     </div>
 
     <!-- Right Panel Interactive AI Assistant (Fidelity matching image_ab2522.png) -->
-    <div id="ai-chat-panel" class="absolute bottom-20 right-6 w-96 max-w-[calc(100vw-48px)] h-[480px] bg-zinc-950/95 border border-zinc-800/80 rounded-2xl premium-blur shadow-2xl z-50 flex flex-col transition-all duration-300 transform scale-100 opacity-100">
+    <div id="ai-chat-panel" class="absolute bottom-20 right-6 w-96 max-w-[calc(100vw-48px)] h-[480px] bg-neutral-950/95 border border-neutral-600/80 rounded-2xl premium-blur shadow-2xl z-50 flex flex-col transition-all duration-300 transform scale-100 opacity-100">
         <!-- Panel Header -->
-        <div class="flex items-center justify-between px-4 py-3.5 border-b border-zinc-800/80">
+        <div class="flex items-center justify-between px-4 py-3.5 border-b border-neutral-600/80">
             <div class="flex items-center gap-2">
-                <div class="w-2.5 h-2.5 rounded-full bg-sky-500 animate-pulse"></div>
-                <span class="font-semibold text-xs text-zinc-100 tracking-wider">CREATIVE ENVIZION AI</span>
+                <div class="w-2.5 h-2.5 rounded-full bg-neutral-700 animate-pulse"></div>
+                <span class="font-semibold text-xs text-neutral-300 tracking-wider">CREATIVE ENVIZION AI</span>
             </div>
             <div class="flex items-center gap-2">
-                <button class="text-zinc-500 hover:text-zinc-300 p-1" onclick="minimizeChatPanel()">
+                <button class="text-neutral-400 hover:text-neutral-300 p-1" onclick="minimizeChatPanel()">
                     <i class="fa-solid fa-minus text-xs"></i>
                 </button>
-                <button class="text-zinc-500 hover:text-zinc-300 p-1" onclick="toggleChatPanel()">
+                <button class="text-neutral-400 hover:text-neutral-300 p-1" onclick="toggleChatPanel()">
                     <i class="fa-solid fa-xmark text-xs"></i>
                 </button>
             </div>
@@ -371,24 +325,24 @@
         <!-- Chat Logs Container -->
         <div id="chat-logs" class="flex-1 overflow-y-auto p-4 space-y-4 text-xs scroll-smooth">
             <div class="flex gap-2">
-                <div class="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center flex-shrink-0 text-[10px] text-zinc-400">
+                <div class="w-6 h-6 rounded-lg bg-neutral-800 flex items-center justify-center flex-shrink-0 text-[10px] text-neutral-300">
                     <i class="fa-solid fa-robot"></i>
                 </div>
-                <div class="bg-zinc-900/80 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-zinc-300 max-w-[85%] leading-relaxed shadow-sm">
-                    Hi! Drag or paste images/videos onto the playground board to organize your space. Or type below & I'll automatically add styled items for you! Try typing: <span class="text-sky-400 italic font-mono">"create red sticky note"</span>.
+                <div class="bg-neutral-900/80 border border-neutral-600 rounded-xl px-3.5 py-2.5 text-neutral-300 max-w-[85%] leading-relaxed shadow-sm">
+                    Hi! Drag or paste images/videos onto the playground board to organize your space. Or type below & I'll automatically add styled items for you! Try typing: <span class="text-neutral-300 italic font-mono">"create red sticky note"</span>.
                 </div>
             </div>
         </div>
 
         <!-- Chat Input Form Controls -->
-        <div class="p-3 border-t border-zinc-800/80 bg-zinc-950/80">
+        <div class="p-3 border-t border-neutral-600/80 bg-neutral-950/80">
             <form onsubmit="handleSendAssistantMsg(event)" class="relative">
-                <input type="text" id="assistant-input" placeholder="What do you want to do?" autocomplete="off" class="w-full bg-zinc-900/90 border border-zinc-800 rounded-xl pl-4 pr-24 py-3 text-xs text-zinc-100 placeholder-zinc-500 outline-none focus:border-zinc-700 focus:ring-1 focus:ring-zinc-700 transition">
+                <input type="text" id="assistant-input" placeholder="What do you want to do?" autocomplete="off" class="w-full bg-neutral-900/90 border border-neutral-600 rounded-xl pl-4 pr-24 py-3 text-xs text-neutral-300 placeholder-neutral-400 outline-none focus:border-neutral-600 focus:ring-1 focus:ring-neutral-600 transition">
                 <div class="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                    <button type="button" class="w-8 h-8 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 flex items-center justify-center transition" title="Voice Assist" onclick="triggerVoiceInput()">
+                    <button type="button" class="w-8 h-8 rounded-lg text-neutral-400 hover:text-neutral-300 hover:bg-neutral-800 flex items-center justify-center transition" title="Voice Assist" onclick="triggerVoiceInput()">
                         <i class="fa-solid fa-microphone text-xs"></i>
                     </button>
-                    <button type="submit" class="w-8 h-8 rounded-lg bg-sky-500 hover:bg-sky-400 text-white flex items-center justify-center transition shadow-lg shadow-sky-500/10">
+                    <button type="submit" class="w-8 h-8 rounded-lg bg-neutral-700 hover:bg-neutral-700 text-neutral-100 flex items-center justify-center transition shadow-lg shadow-black/20">
                         <i class="fa-solid fa-arrow-up text-xs"></i>
                     </button>
                 </div>
@@ -397,17 +351,17 @@
     </div>
 
     <!-- Batch Action/Selected Multi-Layer Send HUD Overlay -->
-    <div id="batch-export-panel" class="absolute top-24 left-1/2 -translate-x-1/2 bg-zinc-900/95 border border-sky-500/30 text-zinc-200 px-6 py-3.5 rounded-2xl flex items-center gap-4 shadow-2xl premium-blur z-50 transform translate-y-[-100px] opacity-0 transition-all pointer-events-none duration-300 border border-zinc-800">
+    <div id="batch-export-panel" class="absolute top-24 left-1/2 -translate-x-1/2 bg-neutral-900/95 border border-neutral-600/30 text-neutral-300 px-6 py-3.5 rounded-2xl flex items-center gap-4 shadow-2xl premium-blur z-50 transform translate-y-[-100px] opacity-0 transition-all pointer-events-none duration-300 border border-neutral-600">
         <div class="flex items-center gap-2">
-            <div class="w-5 h-5 rounded-full bg-sky-500/20 flex items-center justify-center text-[10px] text-sky-400 font-bold" id="selected-items-badge">0</div>
-            <span class="text-xs font-semibold text-zinc-300">Elements Selected</span>
+            <div class="w-5 h-5 rounded-full bg-neutral-700/20 flex items-center justify-center text-[10px] text-neutral-300 font-bold" id="selected-items-badge">0</div>
+            <span class="text-xs font-semibold text-neutral-300">Elements Selected</span>
         </div>
-        <div class="h-4 w-[1px] bg-zinc-800"></div>
+        <div class="h-4 w-[1px] bg-neutral-800"></div>
         <div class="flex items-center gap-1.5">
-            <button class="bg-sky-500 hover:bg-sky-400 text-black px-4 py-2 rounded-xl text-xs font-bold transition shadow-lg shadow-sky-500/10 flex items-center gap-1.5" onclick="sendSelectedToEditor()">
+            <button class="bg-neutral-700 hover:bg-neutral-700 text-neutral-100 px-4 py-2 rounded-xl text-xs font-bold transition shadow-lg shadow-black/20 flex items-center gap-1.5" onclick="sendSelectedToEditor()">
                 Send to Editor <i class="fa-solid fa-rocket text-[10px]"></i>
             </button>
-            <button class="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white px-3 py-2 rounded-xl text-xs transition" onclick="batchClearSelection()">
+            <button class="bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-neutral-100 px-3 py-2 rounded-xl text-xs transition" onclick="batchClearSelection()">
                 Deselect
             </button>
         </div>
@@ -417,36 +371,79 @@
     <div id="toast-wrapper" class="absolute top-6 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 z-50 pointer-events-none"></div>
 
     <!-- Settings dialog Modal -->
-    <div id="settings-modal" class="hidden absolute inset-0 bg-black/60 z-50 backdrop-blur-sm flex items-center justify-center">
-        <div class="bg-zinc-900 border border-zinc-800 rounded-2xl w-96 p-6 shadow-2xl relative">
-            <h3 class="font-bold text-sm tracking-wide text-zinc-200 uppercase mb-4">Board settings</h3>
-            <button class="absolute top-4 right-4 text-zinc-400 hover:text-white" onclick="toggleSettingsModal()">
+    <div id="settings-modal" class="hidden absolute inset-0 bg-neutral-950/60 z-50 backdrop-blur-sm flex items-center justify-center">
+        <div class="bg-neutral-900 border border-neutral-600 rounded-2xl w-96 p-6 shadow-2xl relative">
+            <h3 class="font-bold text-sm tracking-wide text-neutral-300 uppercase mb-4">Board settings</h3>
+            <button class="absolute top-4 right-4 text-neutral-300 hover:text-neutral-100" onclick="toggleSettingsModal()">
                 <i class="fa-solid fa-xmark"></i>
             </button>
             <div class="space-y-4 text-xs">
                 <div class="flex justify-between items-center">
                     <span>Show Grid Alignment</span>
-                    <input type="checkbox" id="settings-grid" checked class="accent-sky-500 h-4 w-4 rounded" onchange="toggleGridPattern(this.checked)">
+                    <input type="checkbox" id="settings-grid" checked class="accent-neutral-500 h-4 w-4 rounded" onchange="toggleGridPattern(this.checked)">
                 </div>
                 <div class="flex justify-between items-center">
                     <span>Smooth Pan & Zoom</span>
-                    <input type="checkbox" id="settings-smooth" checked class="accent-sky-500 h-4 w-4 rounded">
+                    <input type="checkbox" id="settings-smooth" checked class="accent-neutral-500 h-4 w-4 rounded">
                 </div>
                 <div class="flex justify-between items-center">
                     <span>Automatic Project Backups</span>
-                    <input type="checkbox" id="settings-backup" checked class="accent-sky-500 h-4 w-4">
+                    <input type="checkbox" id="settings-backup" checked class="accent-neutral-500 h-4 w-4">
                 </div>
             </div>
-            <button class="mt-6 w-full bg-zinc-800 hover:bg-zinc-700 text-white font-medium py-2.5 rounded-xl text-xs transition" onclick="toggleSettingsModal()">Apply Changes</button>
+            <button class="mt-6 w-full bg-neutral-800 hover:bg-neutral-700 text-neutral-100 font-medium py-2.5 rounded-xl text-xs transition" onclick="toggleSettingsModal()">Apply Changes</button>
         </div>
     </div>
 
-    <!-- Fullscreen Preview Modal -->
-    <div id="preview-modal" class="hidden">
-        <div id="preview-modal-inner"></div>
-        <div class="flex items-center gap-3 mt-2">
-            <button onclick="closePreview()" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white text-xs rounded-lg border border-zinc-700">✕ Close</button>
-            <button id="preview-fs-btn" onclick="goNativeFullscreen()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs rounded-lg">⛶ Native Fullscreen</button>
+    <!-- ===== UNIVERSAL FILE PREVIEW OVERLAY ===== -->
+    <div id="preview-overlay" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:200;display:none;flex-direction:column;">
+        <!-- Preview Header -->
+        <div class="flex items-center justify-between px-5 py-3 border-b border-neutral-700/60 shrink-0" style="background:#141414;">
+            <div class="flex items-center gap-3">
+                <i id="preview-icon" class="fa-solid fa-file text-neutral-400 text-sm"></i>
+                <span id="preview-filename" class="text-sm font-semibold text-neutral-100 truncate max-w-[400px]">File Preview</span>
+                <span id="preview-type-badge" class="text-[10px] bg-neutral-700/40 text-neutral-400 border border-neutral-600/20 rounded-full px-2 py-0.5 font-medium"></span>
+            </div>
+            <div class="flex items-center gap-2">
+                <button id="preview-copy-btn" onclick="copyPreviewText()" class="hidden px-3 py-1.5 text-xs bg-neutral-700/40 hover:bg-neutral-700 text-neutral-300 rounded-lg border border-neutral-600/20 transition-colors flex items-center gap-1.5">
+                    <i class="fa-regular fa-copy text-xs"></i> Copy Text
+                </button>
+                <button id="preview-add-canvas-btn" onclick="addPreviewToCanvas()" class="px-3 py-1.5 text-xs bg-neutral-600 hover:bg-neutral-700 text-neutral-100 rounded-lg transition-colors flex items-center gap-1.5 font-semibold">
+                    <i class="fa-solid fa-plus text-xs"></i> Add to Canvas
+                </button>
+                <button onclick="closePreviewOverlay()" class="w-8 h-8 rounded-lg bg-neutral-800/60 hover:bg-neutral-700 text-neutral-400 hover:text-neutral-100 flex items-center justify-center transition-colors">
+                    <i class="fa-solid fa-xmark text-sm"></i>
+                </button>
+            </div>
+        </div>
+        <!-- Preview Body -->
+        <div id="preview-body" class="flex-1 overflow-auto relative" style="background:#1a1a1a;"></div>
+    </div>
+
+    <!-- ===== URL INPUT PANEL ===== -->
+    <div id="url-input-panel" class="hidden absolute bottom-24 left-1/2 -translate-x-1/2 bg-neutral-950/95 border border-neutral-600/80 rounded-2xl premium-blur shadow-2xl z-50 p-4 w-[480px] max-w-[calc(100vw-48px)]">
+        <p class="text-xs font-semibold text-neutral-300 mb-3">Open URL / Google Drive / Docs / Slides / YouTube</p>
+        <div class="flex gap-2">
+            <input type="url" id="url-panel-input" placeholder="https://docs.google.com/..." class="flex-1 bg-neutral-800/60 border border-neutral-600/40 text-xs rounded-xl px-3 py-2.5 text-neutral-100 outline-none focus:border-neutral-600 placeholder:text-neutral-400">
+            <button onclick="openURLCard()" class="px-4 py-2 text-xs bg-neutral-600 hover:bg-neutral-700 text-neutral-100 rounded-xl font-semibold transition-colors">Open</button>
+            <button onclick="closeURLInputPanel()" class="px-3 py-2 text-xs text-neutral-400 hover:text-neutral-100 rounded-xl transition-colors">✕</button>
+        </div>
+    </div>
+
+    <!-- ===== FOLDER / WORKSPACES PANEL ===== -->
+    <div id="folder-panel" class="hidden absolute left-5 top-16 bottom-20 w-64 bg-neutral-950/95 border border-neutral-600/80 rounded-2xl premium-blur shadow-2xl z-50 flex flex-col overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-neutral-700/50 shrink-0">
+            <span class="text-xs font-semibold text-neutral-300 tracking-wider uppercase">Workspaces</span>
+            <div class="flex gap-1">
+                <button onclick="createFolder()" class="w-7 h-7 rounded-lg bg-neutral-800/40 hover:bg-neutral-700 text-neutral-400 hover:text-neutral-100 flex items-center justify-center transition-colors text-xs" title="New Folder"><i class="fa-solid fa-folder-plus"></i></button>
+                <button onclick="toggleFolderPanel()" class="w-7 h-7 rounded-lg bg-neutral-800/40 hover:bg-neutral-700 text-neutral-400 hover:text-neutral-100 flex items-center justify-center transition-colors text-xs"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+        </div>
+        <div class="flex-1 overflow-y-auto p-2" id="folder-tree"></div>
+        <div class="p-3 border-t border-neutral-700/50 shrink-0">
+            <button onclick="document.getElementById('universal-file-input').click()" class="w-full py-2 text-xs bg-neutral-800/40 hover:bg-neutral-700/40 text-neutral-400 hover:text-neutral-100 rounded-xl border border-neutral-700/30 transition-colors flex items-center justify-center gap-2">
+                <i class="fa-solid fa-plus text-xs"></i> Add Files to Workspace
+            </button>
         </div>
     </div>
 
@@ -467,7 +464,7 @@
         let selectedCards = [];
         let isLassoing = false;
         let lassoStartX = 0, lassoStartY = 0;
-        let activeColor = '#10b981';
+        let activeColor = '#10a37f';
 
         /* Drag/Resize element state variables */
         let draggedCard = null;
@@ -483,36 +480,18 @@
         const batchExportPanel = document.getElementById('batch-export-panel');
         const selectedBadge = document.getElementById('selected-items-badge');
 
-        // Set up IndexedDB — stores blobs so editor can actually receive them
+        // Set up IndexedDB
         let db;
-        const request = indexedDB.open("envizion_studio_db", 3);
+        const request = indexedDB.open("envizion_studio_db", 1);
         request.onupgradeneeded = function(e) {
             db = e.target.result;
-            if(!db.objectStoreNames.contains("handoffs")) db.createObjectStore("handoffs", { keyPath: "id" });
-            if(!db.objectStoreNames.contains("assets"))   db.createObjectStore("assets",   { keyPath: "id" });
-            if(!db.objectStoreNames.contains("boardItems")) db.createObjectStore("boardItems", { keyPath: "id" });
+            if(!db.objectStoreNames.contains("handoffs")) {
+                db.createObjectStore("handoffs", { keyPath: "id" });
+            }
         };
-        request.onsuccess = function(e) { db = e.target.result; };
-        request.onerror   = function(e) { console.warn("IDB error", e); };
-
-        // blob cache: cardId -> { blob, objectUrl, fileName, mimeType }
-        const blobCache = {};
-
-        // Body-level drag & drop for ANY file type
-        document.body.addEventListener('dragover', e => { e.preventDefault(); document.body.classList.add('drag-over'); });
-        document.body.addEventListener('dragleave', e => { if(!e.relatedTarget) document.body.classList.remove('drag-over'); });
-        document.body.addEventListener('drop', e => {
-            e.preventDefault();
-            document.body.classList.remove('drag-over');
-            if(e.target.closest('.canvas-card')) return; // don't fire on existing cards
-            const files = Array.from(e.dataTransfer.files);
-            const mid = screenToCanvasCoords(e.clientX, e.clientY);
-            let offsetX = 0;
-            files.forEach((file, i) => {
-                spawnFileCard(file, mid.x - 130 + offsetX, mid.y - 100);
-                offsetX += 280;
-            });
-        });
+        request.onsuccess = function(e) {
+            db = e.target.result;
+        };
 
         // Preload Mock Elements matching visual reference
         window.addEventListener('load', () => {
@@ -531,13 +510,13 @@
 
             createCustomCard({
                 type: 'sticky',
-                content: '✨ Welcome to Envizion Creative Board! Drag, Zoom, double-click or use Ctrl+V to paste screens.',
+                content: 'âœ¨ Welcome to Envizion Creative Board! Drag, Zoom, double-click or use Ctrl+V to paste screens.',
                 x: 460,
                 y: 90,
                 width: 250,
                 height: 200,
                 rotation: 5,
-                color: '#10b981'
+                color: '#10a37f'
             });
 
             createCustomCard({
@@ -551,54 +530,13 @@
             });
 
             showNotification("Infinite canvas active. Press SPACE + drag or scroll to pan/zoom!");
-
-            // Load assets sent from the Editor (editor→playground handoff)
-            const urlParams = new URLSearchParams(window.location.search);
-            const editorHandoff = urlParams.get('handoff');
-            if (editorHandoff) loadEditorHandoff(editorHandoff);
         });
-
-        function loadEditorHandoff(handoffId) {
-            const req = indexedDB.open('envizion_studio_db', 3);
-            req.onsuccess = (e) => {
-                const idb = e.target.result;
-                const tx = idb.transaction(['handoffs', 'assets'], 'readonly');
-                tx.objectStore('handoffs').get(handoffId).onsuccess = (ev) => {
-                    const record = ev.target.result;
-                    if (!record || !Array.isArray(record.assets)) return;
-                    const mid = screenToCanvasCoords(window.innerWidth / 2, window.innerHeight / 2);
-                    let offsetX = 0;
-                    record.assets.forEach(item => {
-                        if (item.blobStored) {
-                            tx.objectStore('assets').get(item.id).onsuccess = (bev) => {
-                                const br = bev.target.result;
-                                if (br && br.blob) {
-                                    const file = new File([br.blob], br.fileName || item.fileName, { type: br.mimeType || '' });
-                                    spawnFileCard(file, mid.x - 130 + offsetX, mid.y - 100);
-                                    offsetX += 280;
-                                }
-                            };
-                        } else if (item.url) {
-                            const type = item.type || 'image';
-                            const card = createCustomCard({
-                                type, url: item.url,
-                                fileName: item.fileName,
-                                content: item.fileName || type,
-                                x: mid.x - 130 + offsetX, y: mid.y - 100,
-                                width: 260, height: 200
-                            });
-                            offsetX += 280;
-                        }
-                    });
-                    showNotification(`Loaded ${record.assets.length} item(s) from Editor.`);
-                };
-            };
-        }
 
         function updateCanvasTransform() {
             canvas.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+            // Update CSS variable background-grid pattern dynamically for beautiful responsive visuals
+            canvas.style.backgroundPosition = `0 0`;
             zoomIndicator.textContent = `${Math.round(zoom * 100)}%`;
-            if (typeof drawGrid === 'function') drawGrid();
         }
 
         function adjustZoom(delta) {
@@ -646,6 +584,12 @@
                 isSpacePressed = true;
                 canvas.style.cursor = 'grab';
             }
+            if (e.key === 'Escape') {
+                closePreviewOverlay();
+                closeURLInputPanel();
+                const fp = document.getElementById('folder-panel');
+                if (fp && !fp.classList.contains('hidden')) fp.classList.add('hidden');
+            }
         });
         window.addEventListener('keyup', (e) => {
             if (e.code === 'Space') {
@@ -663,28 +607,37 @@
         }
 
         window.addEventListener('paste', function(e) {
-            // Prevent paste triggering inside input boxes
             if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') return;
-
             const items = e.clipboardData.items;
             for (let i = 0; i < items.length; i++) {
-                if (items[i].type.indexOf('image') !== -1) {
-                    const file = items[i].getAsFile();
-                    const reader = new FileReader();
-                    reader.onload = function(evt) {
-                        const midScreen = screenToCanvasCoords(window.innerWidth / 2, window.innerHeight / 2);
-                        createCustomCard({
-                            type: 'image',
-                            url: evt.target.result,
-                            x: midScreen.x - 150,
-                            y: midScreen.y - 120,
-                            width: 300,
-                            height: 240
-                        });
-                        showNotification("Image pasted directly from clipboard!");
-                    };
-                    reader.readAsDataURL(file);
+                const item = items[i];
+                if (item.kind === 'file') {
+                    const file = item.getAsFile();
+                    if (file) { openFilePreview(file); return; }
                 }
+                if (item.kind === 'string' && item.type === 'text/plain') {
+                    item.getAsString(str => {
+                        str = str.trim();
+                        if (str.startsWith('http://') || str.startsWith('https://')) {
+                            const mid = screenToCanvasCoords(window.innerWidth / 2, window.innerHeight / 2);
+                            createURLCard(str, mid.x - 200, mid.y - 150);
+                        } else if (str.length) {
+                            const mid = screenToCanvasCoords(window.innerWidth / 2, window.innerHeight / 2);
+                            createCustomCard({ type: 'sticky', content: str.slice(0, 400), x: mid.x - 140, y: mid.y - 110, width: 280, height: 220 });
+                            showNotification('Text pasted as sticky note!');
+                        }
+                    });
+                    return;
+                }
+            }
+        });
+
+        // Drag files from OS onto canvas
+        document.addEventListener('dragover', e => { e.preventDefault(); });
+        document.addEventListener('drop', e => {
+            e.preventDefault();
+            if (e.dataTransfer.files && e.dataTransfer.files.length) {
+                Array.from(e.dataTransfer.files).forEach(file => openFilePreview(file));
             }
         });
 
@@ -843,12 +796,8 @@
             });
         });
 
-        let _zCounter = 10; // global z counter for stacking order
-
         function createCustomCard(props) {
             const id = 'card-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
-            // Tables start at z=1 (behind everything), others get next layer
-            const defaultZ = props.type === 'table' ? 1 : ++_zCounter;
             const card = {
                 id: id,
                 type: props.type || 'image',
@@ -859,10 +808,7 @@
                 width: props.width || 240,
                 height: props.height || 180,
                 rotation: props.rotation || 0,
-                color: props.color || activeColor,
-                fileName: props.fileName || '',
-                mimeType: props.mimeType || '',
-                zIndex: props.zIndex !== undefined ? props.zIndex : defaultZ
+                color: props.color || activeColor
             };
 
             cards.push(card);
@@ -872,101 +818,43 @@
 
         function renderCardElement(card) {
             const el = document.createElement('div');
-            const isGroup = card.type === 'group';
-            el.className = 'canvas-card absolute bg-zinc-900 border border-zinc-800/80 rounded-xl overflow-visible p-1.5 shadow-xl select-none group pointer-events-auto transition-shadow duration-150 hover:shadow-2xl' + (isGroup ? ' group-card-wrapper' : '');
+            el.className = 'canvas-card absolute bg-neutral-900 border border-neutral-600/80 rounded-xl overflow-visible p-1.5 shadow-xl select-none group pointer-events-auto transition-shadow duration-150 hover:shadow-2xl';
             el.dataset.id = card.id;
             el.style.width = `${card.width}px`;
             el.style.height = `${card.height}px`;
 
             let innerMarkup = '';
-
             if (card.type === 'image') {
                 innerMarkup = `<div class="w-full h-full rounded-lg overflow-hidden relative">
-                    <img src="${card.url}" class="w-full h-full object-cover pointer-events-none">
-                    <button class="absolute top-1.5 right-1.5 w-6 h-6 bg-black/60 hover:bg-indigo-600 rounded-md text-white text-[10px] flex items-center justify-center" onclick="openPreview('${card.id}')" title="Preview fullscreen">⛶</button>
+                    <img src="${card.url}" class="w-full h-full object-cover pointer-events-none" onerror="this.src='https://placehold.co/300x200/222/aaa?text=Media+Layer'">
                 </div>`;
-
             } else if (card.type === 'video') {
-                innerMarkup = `<div class="w-full h-full rounded-lg overflow-hidden relative bg-black">
-                    <video id="vid-${card.id}" src="${card.url}" loop class="w-full h-full object-cover pointer-events-none"></video>
-                    <div class="absolute bottom-2 left-2 right-2 flex items-center gap-1.5">
-                        <button onclick="toggleVideoPlay('${card.id}')" class="w-7 h-7 bg-black/70 hover:bg-indigo-600 rounded-lg text-white text-[10px] flex items-center justify-center"><i class="fa-solid fa-play" id="vplay-${card.id}"></i></button>
-                        <button onclick="openPreview('${card.id}')" class="w-7 h-7 bg-black/70 hover:bg-indigo-600 rounded-lg text-white text-[10px] flex items-center justify-center">⛶</button>
-                    </div>
+                innerMarkup = `<div class="w-full h-full rounded-lg overflow-hidden relative bg-neutral-950 flex items-center justify-center">
+                    <video src="${card.url}" loop muted autoplay class="w-full h-full object-cover pointer-events-none"></video>
+                    <div class="absolute bottom-2 right-2 bg-neutral-950/60 rounded-md px-1.5 py-0.5 text-[9px] text-neutral-300">VIDEO</div>
                 </div>`;
-
-            } else if (card.type === 'audio') {
-                innerMarkup = `<div class="audio-card-inner">
-                    <div class="flex items-center gap-2">
-                        <i class="fa-solid fa-music text-indigo-400 text-xs"></i>
-                        <span class="text-[10px] text-zinc-300 truncate flex-1">${card.fileName || 'Audio'}</span>
-                    </div>
-                    <div class="audio-wave paused" id="wave-${card.id}">
-                        ${Array(16).fill(0).map((_,i)=>`<span style="animation-delay:${i*0.07}s"></span>`).join('')}
-                    </div>
-                    <audio id="aud-${card.id}" src="${card.url}"></audio>
-                    <div class="flex items-center gap-2">
-                        <button onclick="toggleAudioPlay('${card.id}')" class="flex-1 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-white text-[10px] font-semibold flex items-center justify-center gap-1">
-                            <i class="fa-solid fa-play" id="aplay-${card.id}"></i> <span id="alabel-${card.id}">Play</span>
-                        </button>
-                        <button onclick="openPreview('${card.id}')" class="w-8 h-8 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-white text-[10px] flex items-center justify-center">⛶</button>
-                    </div>
-                </div>`;
-
-            } else if (card.type === 'html') {
-                innerMarkup = `<div class="w-full h-full rounded-lg overflow-hidden relative bg-white">
-                    <iframe src="${card.url}" class="w-full h-full border-0 pointer-events-none" sandbox="allow-scripts allow-same-origin"></iframe>
-                    <button onclick="openPreview('${card.id}')" class="absolute top-1.5 right-1.5 w-6 h-6 bg-indigo-600/90 hover:bg-indigo-500 rounded-md text-white text-[10px] flex items-center justify-center z-10">⛶</button>
-                </div>`;
-
-            } else if (card.type === 'file') {
-                const ext = (card.fileName || '').split('.').pop().toUpperCase();
-                const iconMap = { OBJ:'cube', FBX:'cube', JS:'code', TS:'code', CSS:'palette', JSON:'brackets-curly', PDF:'file-pdf', ZIP:'file-zipper', MP3:'music', WAV:'music' };
-                const icon = iconMap[ext] || 'file';
-                innerMarkup = `<div class="file-card-inner">
-                    <i class="fa-solid fa-${icon} text-3xl text-indigo-400"></i>
-                    <span class="text-xs text-zinc-200 font-semibold truncate w-full text-center">${card.fileName || 'File'}</span>
-                    <span class="text-[10px] text-zinc-500">${ext}</span>
-                    <button onclick="openPreview('${card.id}')" class="mt-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-white text-[10px]">⛶ Preview</button>
-                </div>`;
-
             } else if (card.type === 'text') {
-                innerMarkup = `<div class="w-full h-full flex items-start p-3">
-                    <textarea class="w-full h-full bg-transparent resize-none outline-none text-zinc-100 font-medium text-sm leading-relaxed" placeholder="Write anything…" onchange="updateCardText('${card.id}', this.value)">${card.content || ''}</textarea>
+                innerMarkup = `<div class="w-full h-full flex items-center justify-center p-3 text-center">
+                    <input type="text" value="${card.content}" class="w-full bg-transparent text-center text-neutral-300 font-semibold focus:outline-none border-b border-transparent focus:border-neutral-600 text-sm" onchange="updateCardText('${card.id}', this.value)">
                 </div>`;
-
             } else if (card.type === 'sticky') {
-                innerMarkup = `<div class="w-full h-full p-4 rounded-lg flex flex-col justify-between" style="background-color:${card.color}22;border-left:4px solid ${card.color}">
-                    <textarea class="w-full flex-1 bg-transparent resize-none outline-none text-xs text-zinc-200 leading-normal" onchange="updateCardText('${card.id}', this.value)">${card.content || ''}</textarea>
-                    <span class="text-[8px] text-zinc-500 font-semibold text-right">STICKY</span>
-                </div>`;
-
-            } else if (card.type === 'table') {
-                innerMarkup = `<div class="table-card-inner" id="tbl-${card.id}"></div>`;
-
-            } else if (card.type === 'group') {
-                innerMarkup = `<div class="w-full h-full flex flex-col items-center justify-center gap-2">
-                    <i class="fa-solid fa-object-group text-indigo-400 text-2xl"></i>
-                    <span class="text-[10px] text-zinc-400">Group · ${(card.children||[]).length} items</span>
-                    <button onclick="downloadGroupAsZip('${card.id}')" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-white text-[10px]"><i class="fa-solid fa-file-zipper mr-1"></i>Download ZIP</button>
+                innerMarkup = `<div class="w-full h-full p-4 rounded-lg flex flex-col justify-between" style="background-color: ${card.color}22; border-left: 4px solid ${card.color}">
+                    <textarea class="w-full flex-1 bg-transparent resize-none outline-none text-xs text-neutral-300 leading-normal" onchange="updateCardText('${card.id}', this.value)">${card.content}</textarea>
+                    <span class="text-[8px] text-neutral-400 font-semibold text-right">STICKY</span>
                 </div>`;
             }
 
             el.innerHTML = `
                 ${innerMarkup}
-                <div class="selection-ring absolute -inset-[2px] border-2 border-transparent rounded-xl pointer-events-none transition-colors group-hover:border-zinc-700/60"></div>
+                <!-- Selection boundary highlighting ring overlay -->
+                <div class="selection-ring absolute -inset-[2px] border-2 border-transparent rounded-xl pointer-events-none transition-colors group-hover:border-neutral-600/60"></div>
+                <!-- Controls and Rotate, scale indicators -->
                 <div class="edit-controls hidden">
-                    <div class="layer-controls">
-                        <button class="layer-btn" onclick="layerCard('${card.id}','front')" title="Bring to Front">Front</button>
-                        <button class="layer-btn" onclick="layerCard('${card.id}','forward')" title="Bring Forward">▲</button>
-                        <button class="layer-btn" onclick="layerCard('${card.id}','back')" title="Send Back">▼</button>
-                        <button class="layer-btn" onclick="layerCard('${card.id}','behind')" title="Send to Back">Behind</button>
-                    </div>
                     <div class="rotate-line"></div>
-                    <div class="rotate-handle" onmousedown="startRotate(event,'${card.id}')"></div>
-                    <div class="resize-handle bottom-right -right-1 -bottom-1 cursor-se-resize" onmousedown="startResize(event,'${card.id}','resize-se')"></div>
-                    <div class="resize-handle bottom-left -left-1 -bottom-1 cursor-sw-resize" onmousedown="startResize(event,'${card.id}','resize-sw')"></div>
-                    <button class="absolute -top-3 -right-3 w-6 h-6 rounded-full bg-red-600 hover:bg-red-500 text-white flex items-center justify-center shadow-lg cursor-pointer text-xs" onclick="deleteCard('${card.id}')">
+                    <div class="rotate-handle" onmousedown="startRotate(event, '${card.id}')"></div>
+                    <div class="resize-handle bottom-right -right-1 -bottom-1 cursor-se-resize" onmousedown="startResize(event, '${card.id}', 'resize-se')"></div>
+                    <div class="resize-handle bottom-left -left-1 -bottom-1 cursor-sw-resize" onmousedown="startResize(event, '${card.id}', 'resize-sw')"></div>
+                    <button class="absolute -top-3 -right-3 w-6 h-6 rounded-full bg-neutral-600 hover:bg-neutral-700 text-neutral-100 flex items-center justify-center shadow-lg cursor-pointer text-xs" onclick="deleteCard('${card.id}')">
                         <i class="fa-solid fa-xmark text-[10px]"></i>
                     </button>
                 </div>
@@ -974,9 +862,6 @@
 
             cardsContainer.appendChild(el);
             updateCardElement(card);
-
-            // Build table after DOM insertion
-            if (card.type === 'table') buildTable(card);
         }
 
         function updateCardElement(card) {
@@ -985,47 +870,7 @@
                 el.style.transform = `translate3d(${card.x}px, ${card.y}px, 0) rotate(${card.rotation}deg)`;
                 el.style.width = `${card.width}px`;
                 el.style.height = `${card.height}px`;
-                el.style.zIndex = card.zIndex ?? 10;
             }
-        }
-
-        function layerCard(id, direction) {
-            const card = cards.find(c => c.id === id);
-            if (!card) return;
-            const zValues = cards.map(c => c.zIndex);
-            const minZ = Math.min(...zValues);
-            const maxZ = Math.max(...zValues);
-
-            if (direction === 'front') {
-                card.zIndex = maxZ + 1;
-            } else if (direction === 'behind') {
-                // push all others up by 1 so this one can be 1 below them
-                cards.forEach(c => { if (c.id !== id) c.zIndex += 1; });
-                card.zIndex = Math.max(1, minZ - 1);
-            } else if (direction === 'forward') {
-                // find the next card above and swap
-                const above = cards
-                    .filter(c => c.id !== id && c.zIndex > card.zIndex)
-                    .sort((a, b) => a.zIndex - b.zIndex)[0];
-                if (above) {
-                    const tmp = above.zIndex;
-                    above.zIndex = card.zIndex;
-                    card.zIndex = tmp;
-                    updateCardElement(above);
-                }
-            } else if (direction === 'back') {
-                const below = cards
-                    .filter(c => c.id !== id && c.zIndex < card.zIndex)
-                    .sort((a, b) => b.zIndex - a.zIndex)[0];
-                if (below) {
-                    const tmp = below.zIndex;
-                    below.zIndex = card.zIndex;
-                    card.zIndex = tmp;
-                    updateCardElement(below);
-                }
-            }
-            updateCardElement(card);
-            showNotification(`Layer: ${direction}`);
         }
 
         function updateCardText(id, newVal) {
@@ -1049,7 +894,7 @@
             
             const el = document.querySelector(`[data-id="${card.id}"]`);
             if (el) {
-                el.querySelector('.selection-ring').style.borderColor = '#3b82f6';
+                el.querySelector('.selection-ring').style.borderColor = '#10a37f';
                 el.querySelector('.edit-controls').classList.remove('hidden');
             }
             updateSelectedPanel();
@@ -1117,18 +962,50 @@
             document.getElementById(`${type}-file-input`).click();
         }
 
-        function handleFilesSelected(input, hint) {
-            const files = Array.from(input.files || []);
-            if (!files.length) return;
-            const mid = screenToCanvasCoords(window.innerWidth / 2, window.innerHeight / 2);
-            files.forEach((file, i) => {
-                spawnFileCard(file, mid.x - 130 + i * 280, mid.y - 100);
-            });
-            input.value = ''; // reset so same file can be re-selected
+        function handleFileSelected(input, type) {
+            if (input.files && input.files[0]) {
+                const file = input.files[0];
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const mid = screenToCanvasCoords(window.innerWidth / 2, window.innerHeight / 2);
+                    createCustomCard({
+                        type: type,
+                        url: e.target.result,
+                        x: mid.x - 120,
+                        y: mid.y - 90,
+                        width: 260,
+                        height: 200
+                    });
+                    showNotification(`Added your workspace ${type}!`);
+                };
+                reader.readAsDataURL(file);
+            }
         }
 
         function triggerAudioUpload() {
             document.getElementById('audio-file-input').click();
+        }
+
+        function handleAudioSelected(input) {
+            if(input.files && input.files[0]) {
+                const file = input.files[0];
+                const url = URL.createObjectURL(file);
+                const mid = screenToCanvasCoords(window.innerWidth / 2, window.innerHeight / 2);
+                const id = 'card-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
+                const card = { id, type: 'audio', url, content: file.name, x: mid.x - 150, y: mid.y - 60, width: 300, height: 100, rotation: 0, color: activeColor };
+                cards.push(card);
+                const el = document.createElement('div');
+                el.className = 'canvas-card absolute bg-neutral-900 border border-neutral-600/80 rounded-xl overflow-visible shadow-xl select-none group pointer-events-auto';
+                el.dataset.id = card.id;
+                el.style.width = `${card.width}px`;
+                el.style.height = `${card.height}px`;
+                el.innerHTML = `<div style="padding:12px;display:flex;flex-direction:column;gap:6px;height:100%;"><p style="font-size:10px;color:#888;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><i class="fa-solid fa-wave-square" style="margin-right:4px;"></i>${escapeHTML(file.name)}</p><audio controls src="${url}" style="width:100%;height:36px;"></audio></div>
+                    <div class="selection-ring absolute -inset-[2px] border-2 border-transparent rounded-xl pointer-events-none transition-colors group-hover:border-neutral-600/60"></div>
+                    <div class="edit-controls hidden"><div class="rotate-line"></div><div class="rotate-handle" onmousedown="startRotate(event,'${card.id}')"></div><div class="resize-handle bottom-right -right-1 -bottom-1 cursor-se-resize" onmousedown="startResize(event,'${card.id}','resize-se')"></div><button class="absolute -top-3 -right-3 w-6 h-6 rounded-full bg-neutral-600 hover:bg-neutral-700 text-neutral-100 flex items-center justify-center shadow-lg cursor-pointer text-xs" onclick="deleteCard('${card.id}')"><i class="fa-solid fa-xmark text-[10px]"></i></button></div>`;
+                cardsContainer.appendChild(el);
+                updateCardElement(card);
+                showNotification(`Audio added: ${file.name}`);
+            }
         }
 
         function addTextCard() {
@@ -1154,283 +1031,6 @@
                 height: 200,
                 color: activeColor
             });
-        }
-
-        // ── spawnFileCard ──────────────────────────────────────────────────────
-        function spawnFileCard(file, x, y) {
-            const mime = file.type;
-            const name = file.name;
-            const ext  = name.split('.').pop().toLowerCase();
-            const id   = 'card-' + Date.now() + '-' + Math.floor(Math.random() * 9999);
-            const url  = URL.createObjectURL(file);
-
-            // store blob for ZIP / send-to-editor
-            blobCache[id] = { blob: file, objectUrl: url, fileName: name, mimeType: mime };
-
-            let type = 'file';
-            let w = 240, h = 180;
-
-            if (mime.startsWith('image/'))       { type = 'image'; w = 280; h = 210; }
-            else if (mime.startsWith('video/'))  { type = 'video'; w = 300; h = 200; }
-            else if (mime.startsWith('audio/'))  { type = 'audio'; w = 240; h = 140; }
-            else if (ext === 'html' || ext === 'htm') { type = 'html'; w = 340; h = 240; }
-
-            const card = {
-                id, type, url,
-                fileName: name, mimeType: mime,
-                content: name,
-                x: x ?? 0, y: y ?? 0,
-                width: w, height: h, rotation: 0,
-                color: activeColor
-            };
-            cards.push(card);
-            renderCardElement(card);
-            showNotification(`Added: ${name}`);
-            return card;
-        }
-
-        // ── Preview modal ──────────────────────────────────────────────────────
-        let _previewCardId = null;
-        function openPreview(cardId) {
-            _previewCardId = cardId;
-            const card = cards.find(c => c.id === cardId);
-            if (!card) return;
-            const modal = document.getElementById('preview-modal');
-            const inner = document.getElementById('preview-modal-inner');
-            inner.innerHTML = '';
-
-            if (card.type === 'image') {
-                const img = document.createElement('img');
-                img.src = card.url;
-                img.style.cssText = 'max-width:90vw;max-height:82vh;border-radius:8px;display:block;';
-                inner.appendChild(img);
-            } else if (card.type === 'video') {
-                const vid = document.createElement('video');
-                vid.src = card.url; vid.controls = true; vid.autoplay = true;
-                vid.style.cssText = 'max-width:90vw;max-height:82vh;border-radius:8px;display:block;background:#000;';
-                inner.appendChild(vid);
-            } else if (card.type === 'audio') {
-                const wrap = document.createElement('div');
-                wrap.style.cssText = 'padding:32px;text-align:center;min-width:320px;';
-                wrap.innerHTML = `<i class="fa-solid fa-music" style="font-size:48px;color:#6366f1;margin-bottom:16px;display:block;"></i>
-                    <p style="color:#e4e4e7;font-size:14px;margin-bottom:16px;">${card.fileName||'Audio'}</p>`;
-                const aud = document.createElement('audio');
-                aud.src = card.url; aud.controls = true; aud.autoplay = true;
-                aud.style.width = '100%';
-                wrap.appendChild(aud);
-                inner.appendChild(wrap);
-            } else if (card.type === 'html') {
-                const iframe = document.createElement('iframe');
-                iframe.src = card.url;
-                iframe.style.cssText = 'width:90vw;height:82vh;border:0;border-radius:8px;background:#fff;';
-                iframe.sandbox = 'allow-scripts allow-same-origin allow-forms allow-popups';
-                inner.appendChild(iframe);
-            } else {
-                // Generic file
-                const ext = (card.fileName||'').split('.').pop().toUpperCase();
-                const wrap = document.createElement('div');
-                wrap.style.cssText = 'padding:40px;text-align:center;min-width:280px;';
-                wrap.innerHTML = `<i class="fa-solid fa-file" style="font-size:56px;color:#6366f1;margin-bottom:16px;display:block;"></i>
-                    <p style="color:#e4e4e7;font-size:14px;margin-bottom:8px;">${card.fileName||'File'}</p>
-                    <span style="color:#71717a;font-size:12px;">${ext}</span>
-                    <br><br>
-                    <button onclick="downloadCardFile('${cardId}')" style="padding:8px 20px;background:#6366f1;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px;">Download File</button>`;
-                inner.appendChild(wrap);
-            }
-            modal.classList.remove('hidden');
-        }
-
-        function closePreview() {
-            const modal = document.getElementById('preview-modal');
-            modal.classList.add('hidden');
-            // stop any playing media
-            const inner = document.getElementById('preview-modal-inner');
-            inner.querySelectorAll('video,audio').forEach(el => { el.pause(); el.src = ''; });
-            inner.innerHTML = '';
-            _previewCardId = null;
-        }
-
-        function goNativeFullscreen() {
-            const inner = document.getElementById('preview-modal-inner');
-            const el = inner.firstElementChild || inner;
-            if (el.requestFullscreen) el.requestFullscreen();
-            else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
-        }
-
-        function downloadCardFile(cardId) {
-            const cache = blobCache[cardId];
-            if (!cache) return;
-            const a = document.createElement('a');
-            a.href = cache.objectUrl;
-            a.download = cache.fileName || 'download';
-            a.click();
-        }
-
-        // Close preview on backdrop click
-        document.getElementById('preview-modal').addEventListener('click', function(e) {
-            if (e.target === this) closePreview();
-        });
-
-        // ── Video / Audio play controls ────────────────────────────────────────
-        function toggleVideoPlay(cardId) {
-            const vid = document.getElementById('vid-' + cardId);
-            const icon = document.getElementById('vplay-' + cardId);
-            if (!vid) return;
-            if (vid.paused) {
-                vid.play();
-                icon.className = 'fa-solid fa-pause';
-            } else {
-                vid.pause();
-                icon.className = 'fa-solid fa-play';
-            }
-        }
-
-        function toggleAudioPlay(cardId) {
-            const aud = document.getElementById('aud-' + cardId);
-            const icon = document.getElementById('aplay-' + cardId);
-            const label = document.getElementById('alabel-' + cardId);
-            const wave = document.getElementById('wave-' + cardId);
-            if (!aud) return;
-            if (aud.paused) {
-                aud.play();
-                icon.className = 'fa-solid fa-pause';
-                if (label) label.textContent = 'Stop';
-                if (wave) wave.classList.remove('paused');
-            } else {
-                aud.pause();
-                icon.className = 'fa-solid fa-play';
-                if (label) label.textContent = 'Play';
-                if (wave) wave.classList.add('paused');
-            }
-        }
-
-        // ── Fullscreen canvas ──────────────────────────────────────────────────
-        function toggleFullscreen() {
-            if (!document.fullscreenElement) {
-                document.documentElement.requestFullscreen && document.documentElement.requestFullscreen();
-            } else {
-                document.exitFullscreen && document.exitFullscreen();
-            }
-        }
-
-        // ── Table card ────────────────────────────────────────────────────────
-        function addTableCard() {
-            const mid = screenToCanvasCoords(window.innerWidth / 2, window.innerHeight / 2);
-            const card = createCustomCard({
-                type: 'table',
-                content: '',
-                x: mid.x - 150, y: mid.y - 100,
-                width: 300, height: 200
-            });
-            // tableData stored on card object
-            card.tableRows = [['Header A','Header B','Header C'],['','',''],['','','']];
-        }
-
-        function buildTable(card) {
-            const container = document.getElementById('tbl-' + card.id);
-            if (!container) return;
-            if (!card.tableRows) card.tableRows = [['Col A','Col B'],['','']];
-
-            function render() {
-                container.innerHTML = '';
-                const tbl = document.createElement('table');
-                card.tableRows.forEach((row, ri) => {
-                    const tr = document.createElement('tr');
-                    row.forEach((cell, ci) => {
-                        const td = document.createElement('td');
-                        td.contentEditable = true;
-                        td.textContent = cell;
-                        td.addEventListener('input', () => { card.tableRows[ri][ci] = td.textContent; });
-                        tr.appendChild(td);
-                    });
-                    tbl.appendChild(tr);
-                });
-                container.appendChild(tbl);
-                // Add row / col buttons
-                const btnRow = document.createElement('div');
-                btnRow.style.cssText = 'display:flex;gap:4px;padding:4px;';
-                btnRow.innerHTML = `<button class="add-row-btn" onclick="tableAddRow('${card.id}')">+ Row</button>
-                    <button class="add-col-btn" onclick="tableAddCol('${card.id}')">+ Col</button>`;
-                container.appendChild(btnRow);
-            }
-            render();
-        }
-
-        function tableAddRow(cardId) {
-            const card = cards.find(c => c.id === cardId);
-            if (!card || !card.tableRows) return;
-            const cols = card.tableRows[0]?.length || 2;
-            card.tableRows.push(Array(cols).fill(''));
-            buildTable(card);
-        }
-
-        function tableAddCol(cardId) {
-            const card = cards.find(c => c.id === cardId);
-            if (!card || !card.tableRows) return;
-            card.tableRows.forEach(row => row.push(''));
-            buildTable(card);
-        }
-
-        // ── Group selected ────────────────────────────────────────────────────
-        function groupSelected() {
-            if (selectedCards.length < 2) { showNotification('Select 2+ cards to group.'); return; }
-            // Compute bounding box
-            const minX = Math.min(...selectedCards.map(c => c.x));
-            const minY = Math.min(...selectedCards.map(c => c.y));
-            const maxX = Math.max(...selectedCards.map(c => c.x + c.width));
-            const maxY = Math.max(...selectedCards.map(c => c.y + c.height));
-            const pad = 16;
-            const groupCard = createCustomCard({
-                type: 'group',
-                x: minX - pad, y: minY - pad,
-                width: (maxX - minX) + pad*2,
-                height: (maxY - minY) + pad*2,
-                color: activeColor
-            });
-            groupCard.children = selectedCards.map(c => c.id);
-            clearSelections();
-            showNotification(`Grouped ${groupCard.children.length} items.`);
-        }
-
-        // ── ZIP download ──────────────────────────────────────────────────────
-        async function downloadSelectedAsZip() {
-            const targets = selectedCards.length > 0 ? selectedCards : cards;
-            if (!targets.length) { showNotification('Nothing to download.'); return; }
-            await _buildAndDownloadZip(targets, 'envizion-selection.zip');
-        }
-
-        async function downloadGroupAsZip(groupId) {
-            const group = cards.find(c => c.id === groupId);
-            if (!group || !group.children) return;
-            const children = cards.filter(c => group.children.includes(c.id));
-            await _buildAndDownloadZip(children, `group-${groupId}.zip`);
-        }
-
-        async function _buildAndDownloadZip(targets, filename) {
-            if (typeof JSZip === 'undefined') { showNotification('JSZip not loaded.'); return; }
-            const zip = new JSZip();
-            let added = 0;
-            for (const card of targets) {
-                const cache = blobCache[card.id];
-                if (cache && cache.blob) {
-                    zip.file(cache.fileName || `file-${card.id}`, cache.blob);
-                    added++;
-                } else if (card.url && card.url.startsWith('data:')) {
-                    // data URL fallback — convert to blob
-                    const res = await fetch(card.url);
-                    const blob = await res.blob();
-                    const ext = card.type === 'image' ? 'png' : card.type === 'video' ? 'mp4' : 'bin';
-                    zip.file(card.fileName || `${card.id}.${ext}`, blob);
-                    added++;
-                }
-            }
-            if (!added) { showNotification('No downloadable files in selection.'); return; }
-            const blob = await zip.generateAsync({ type: 'blob' });
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = filename;
-            a.click();
-            showNotification(`Downloaded ${added} file(s) as ZIP.`);
         }
 
         function setSelectedColor(colorCode) {
@@ -1471,53 +1071,51 @@
             clearSelections();
         }
 
-        // Send selected items to the Envizion Editor via IndexedDB
-        async function sendSelectedToEditor() {
-            if (selectedCards.length === 0) { showNotification('Select cards first.'); return; }
+        // Send selected items dynamically to the composite editor (local_video_image_mask_merger.html)
+        function sendSelectedToEditor() {
+            if (selectedCards.length === 0) return;
 
-            const handoffId = "handoff-" + Date.now();
-            const assets = [];
-
-            for (const c of selectedCards) {
-                const entry = {
-                    id: c.id, type: c.type,
-                    fileName: c.fileName || c.content || c.id,
-                    mimeType: c.mimeType || '',
-                    content: c.content || '',
-                    width: c.width, height: c.height,
-                    url: null, blobStored: false
-                };
-
-                const cache = blobCache[c.id];
-                if (cache && cache.blob && db) {
-                    // Store blob in IndexedDB assets store
-                    try {
-                        await new Promise((res, rej) => {
-                            const tx2 = db.transaction("assets", "readwrite");
-                            tx2.objectStore("assets").put({ id: c.id, blob: cache.blob, fileName: cache.fileName, mimeType: cache.mimeType });
-                            tx2.oncomplete = res; tx2.onerror = rej;
-                        });
-                        entry.blobStored = true;
-                    } catch(e) { entry.url = c.url; }
-                } else {
-                    entry.url = c.url; // data URL or object URL fallback
-                }
-                assets.push(entry);
-            }
+            // Generate an ordered batch handoff ID
+            const handoffId = "batch-" + Date.now();
+            
+            // Collect metadata & assets locally in IndexedDB objectStore
+            const assets = selectedCards.map(c => ({
+                type: c.type,
+                url: c.url,
+                content: c.content,
+                width: c.width,
+                height: c.height
+            }));
 
             if (!db) {
-                showNotification('DB not ready — opening editor directly.');
-                window.location.href = 'envizion_editor.html';
+                // Fallback direct url generation parameters if DB is yet uninitialized
+                showNotification("IndexedDB caching. Preparing preview launch...");
+                setTimeout(() => {
+                    window.location.href = `./local_video_image_mask_merger.html`;
+                }, 1000);
                 return;
             }
 
             const tx = db.transaction("handoffs", "readwrite");
-            tx.objectStore("handoffs").put({ id: handoffId, assets });
-            tx.oncomplete = () => {
-                showNotification(`Sending ${assets.length} item(s) to Editor…`);
-                setTimeout(() => { window.location.href = `envizion_editor.html?handoff=${handoffId}`; }, 800);
+            const store = tx.objectStore("handoffs");
+            
+            store.put({ id: handoffId, assets: assets, createdAt: Date.now() });
+            
+            tx.oncomplete = function() {
+                showNotification("Sending selected layers to composite merger editor!");
+                setTimeout(() => {
+                    // Navigate to the companion mask editor, passing the handoff id as a
+                    // trailing path segment (matches envizion.work/tools/s/ routing).
+                    // Also append ?handoff= as a redundant fallback in case path-segment
+                    // routing isn't preserved by however this is hosted/opened.
+                    window.location.href = `./local_video_image_mask_merger.html/${handoffId}?handoff=${handoffId}`;
+                }, 1200);
             };
-            tx.onerror = () => { window.location.href = 'envizion_editor.html'; };
+
+            tx.onerror = function() {
+                showNotification("Saving payload error. Directing to merge editor directly...");
+                window.location.href = `./local_video_image_mask_merger.html`;
+            };
         }
 
         function toggleChatPanel() {
@@ -1552,12 +1150,12 @@
 
             let avatar = '';
             if (sender === 'user') {
-                avatar = `<div class="w-6 h-6 rounded-lg bg-sky-500/20 text-sky-400 flex items-center justify-center text-[10px] order-last">ME</div>`;
+                avatar = `<div class="w-6 h-6 rounded-lg bg-neutral-700/20 text-neutral-300 flex items-center justify-center text-[10px] order-last">ME</div>`;
             } else {
-                avatar = `<div class="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center flex-shrink-0 text-[10px] text-zinc-400"><i class="fa-solid fa-robot"></i></div>`;
+                avatar = `<div class="w-6 h-6 rounded-lg bg-neutral-800 flex items-center justify-center flex-shrink-0 text-[10px] text-neutral-300"><i class="fa-solid fa-robot"></i></div>`;
             }
 
-            const bodyClass = sender === 'user' ? 'bg-sky-500/10 border-sky-500/20 text-sky-200' : 'bg-zinc-900/80 border-zinc-800 text-zinc-300';
+            const bodyClass = sender === 'user' ? 'bg-neutral-700/10 border-neutral-600/20 text-neutral-300' : 'bg-neutral-900/80 border-neutral-600 text-neutral-300';
 
             wrapper.innerHTML = `
                 ${avatar}
@@ -1575,13 +1173,13 @@
 
             if (lower.includes('sticky') || lower.includes('note')) {
                 let noteColor = activeColor;
-                if (lower.includes('red') || lower.includes('rose')) noteColor = '#f43f5e';
-                else if (lower.includes('yellow') || lower.includes('amber')) noteColor = '#f59e0b';
-                else if (lower.includes('blue') || lower.includes('sky')) noteColor = '#0ea5e9';
+                if (lower.includes('red') || lower.includes('rose')) noteColor = '#10a37f';
+                else if (lower.includes('yellow') || lower.includes('amber')) noteColor = '#b4b4b4';
+                else if (lower.includes('blue') || lower.includes('sky')) noteColor = '#b4b4b4';
 
                 const card = createCustomCard({
                     type: 'sticky',
-                    content: '🤖 Created by AI Assistant prompt!',
+                    content: 'ðŸ¤– Created by AI Assistant prompt!',
                     x: mid.x - 110,
                     y: mid.y - 100,
                     color: noteColor
@@ -1609,7 +1207,7 @@
                 selectCard(card);
                 appendChatMsg('assistant', `Added a colorful concept placeholder image onto your canvas.`);
             } else {
-                appendChatMsg('assistant', `I heard you! I can create cards on this infinite board. Try typing: <span class="text-sky-400 italic font-mono">"create a blue sticky note"</span>.`);
+                appendChatMsg('assistant', `I heard you! I can create cards on this infinite board. Try typing: <span class="text-neutral-300 italic font-mono">"create a blue sticky note"</span>.`);
             }
         }
 
@@ -1661,63 +1259,533 @@
         }
 
         function toggleGridPattern(checked) {
-            const gc = document.getElementById('grid-canvas');
-            if (gc) gc.style.opacity = checked ? '1' : '0';
-        }
-
-        // ── Infinite dot grid ──────────────────────────────────────────────────
-        // Drawn in SCREEN space using pan/zoom offset mod spacing.
-        // No matter how far you pan or zoom, dots tile seamlessly forever.
-        const gridCanvas = document.getElementById('grid-canvas');
-        const gridCtx = gridCanvas.getContext('2d');
-
-        function resizeGridCanvas() {
-            gridCanvas.width  = window.innerWidth;
-            gridCanvas.height = window.innerHeight;
-        }
-        window.addEventListener('resize', () => { resizeGridCanvas(); drawGrid(); });
-        resizeGridCanvas();
-
-        function drawGrid() {
-            const w = gridCanvas.width;
-            const h = gridCanvas.height;
-            gridCtx.clearRect(0, 0, w, h);
-            gridCtx.fillStyle = '#0e0e11';
-            gridCtx.fillRect(0, 0, w, h);
-
-            // Base spacing in canvas units, scaled by zoom
-            const baseSpacing = 24;
-            const spacing = baseSpacing * zoom;
-
-            // Offset of the first dot in screen space (pan mod spacing)
-            const offsetX = ((panX % spacing) + spacing) % spacing;
-            const offsetY = ((panY % spacing) + spacing) % spacing;
-
-            // Dot radius scales subtly with zoom, clamped
-            const r = Math.max(0.6, Math.min(1.4, zoom * 0.9));
-            gridCtx.fillStyle = '#2a2a35';
-
-            for (let x = offsetX - spacing; x < w + spacing; x += spacing) {
-                for (let y = offsetY - spacing; y < h + spacing; y += spacing) {
-                    gridCtx.beginPath();
-                    gridCtx.arc(x, y, r, 0, Math.PI * 2);
-                    gridCtx.fill();
-                }
+            if(checked) {
+                canvas.style.backgroundImage = 'radial-gradient(#b4b4b4 1px, transparent 1px)';
+            } else {
+                canvas.style.backgroundImage = 'none';
             }
         }
 
-        drawGrid(); // initial draw
+        // ==================== UNIVERSAL FILE SYSTEM ====================
+
+        // State for preview overlay
+        let previewCurrentText = '';
+        let previewCurrentFile = null;
+        let previewCurrentURL = '';
+
+        // Extension → category map
+        function getFileCategory(ext) {
+            const e = ext.toLowerCase();
+            if (['png','jpg','jpeg','gif','webp','avif','bmp','ico','svg','tiff','tif'].includes(e)) return 'image';
+            if (['mp4','webm','mov','avi','mkv','ogv','m4v','flv'].includes(e)) return 'video';
+            if (['mp3','wav','ogg','flac','aac','m4a','opus','weba'].includes(e)) return 'audio';
+            if (['pdf'].includes(e)) return 'pdf';
+            if (['docx','doc'].includes(e)) return 'docx';
+            if (['xlsx','xls','ods'].includes(e)) return 'xlsx';
+            if (['csv','tsv'].includes(e)) return 'csv';
+            if (['pptx','ppt'].includes(e)) return 'pptx';
+            if (['glb','gltf'].includes(e)) return '3d-gltf';
+            if (['obj'].includes(e)) return '3d-obj';
+            if (['stl'].includes(e)) return '3d-stl';
+            if (['html','htm'].includes(e)) return 'html';
+            if (['js','mjs','cjs','ts'].includes(e)) return 'code-js';
+            if (['json','jsonc'].includes(e)) return 'code-json';
+            if (['css','scss','sass','less'].includes(e)) return 'code-css';
+            if (['py'].includes(e)) return 'code-py';
+            if (['md','markdown'].includes(e)) return 'markdown';
+            if (['txt','text','log','ini','conf','cfg','env','sh','bash','bat','ps1','yaml','yml','xml','toml','lua','rs','go','java','c','cpp','h','hpp','cs','rb','php','sql','r','swift','kt'].includes(e)) return 'text';
+            if (['ttf','otf','woff','woff2'].includes(e)) return 'font';
+            if (['zip','rar','7z','tar','gz','bz2'].includes(e)) return 'archive';
+            if (['epub'].includes(e)) return 'epub';
+            return 'binary';
+        }
+
+        function getCategoryIcon(cat) {
+            const map = {
+                image:'fa-image', video:'fa-circle-play', audio:'fa-wave-square', pdf:'fa-file-pdf',
+                docx:'fa-file-word', xlsx:'fa-file-excel', csv:'fa-table', pptx:'fa-file-powerpoint',
+                '3d-gltf':'fa-cube', '3d-obj':'fa-cube', '3d-stl':'fa-cube', html:'fa-code',
+                'code-js':'fa-js', 'code-json':'fa-brackets-curly', 'code-css':'fa-css3-alt',
+                'code-py':'fa-python', markdown:'fa-markdown', text:'fa-file-lines',
+                font:'fa-font', archive:'fa-file-zipper', epub:'fa-book', binary:'fa-file'
+            };
+            return map[cat] || 'fa-file';
+        }
+
+        function handleUniversalFileSelected(input) {
+            if (!input.files || !input.files.length) return;
+            Array.from(input.files).forEach(file => openFilePreview(file));
+            input.value = '';
+        }
+
+        function openFilePreview(file) {
+            previewCurrentFile = file;
+            previewCurrentText = '';
+            const ext = file.name.split('.').pop() || '';
+            const cat = getFileCategory(ext);
+            const overlay = document.getElementById('preview-overlay');
+            const body = document.getElementById('preview-body');
+            const copyBtn = document.getElementById('preview-copy-btn');
+
+            document.getElementById('preview-filename').textContent = file.name;
+            document.getElementById('preview-type-badge').textContent = (ext.toUpperCase() || 'FILE');
+            document.getElementById('preview-icon').className = `fa-solid ${getCategoryIcon(cat)} text-neutral-400 text-sm`;
+            copyBtn.classList.add('hidden');
+            body.innerHTML = '<div class="fallback-info"><i class="fa-solid fa-spinner fa-spin"></i><p>Loading preview…</p></div>';
+            overlay.style.display = 'flex';
+
+            const url = URL.createObjectURL(file);
+            previewCurrentURL = url;
+
+            if (cat === 'image') {
+                body.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;padding:20px;"><img src="${url}" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;box-shadow:0 0 40px rgba(0,0,0,0.6);" alt="${file.name}"></div>`;
+            } else if (cat === 'video') {
+                body.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;background:#000;"><video controls autoplay style="max-width:100%;max-height:100%;" src="${url}"></video></div>`;
+            } else if (cat === 'audio') {
+                body.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:20px;"><i class="fa-solid fa-wave-square" style="font-size:48px;color:#555;"></i><p style="color:#888;font-size:14px;">${file.name}</p><audio controls autoplay src="${url}" style="width:400px;max-width:90%;"></audio></div>`;
+            } else if (cat === 'pdf') {
+                previewPDF(url, body);
+            } else if (cat === 'docx') {
+                previewDOCX(file, body, copyBtn);
+            } else if (cat === 'xlsx') {
+                previewXLSX(file, body, copyBtn);
+            } else if (cat === 'csv' || cat === 'tsv') {
+                previewCSV(file, body, copyBtn);
+            } else if (cat === 'html') {
+                body.innerHTML = `<iframe src="${url}" style="width:100%;height:100%;border:none;background:#fff;"></iframe>`;
+            } else if (cat === 'font') {
+                previewFont(file, url, body);
+            } else if (cat === 'archive') {
+                body.innerHTML = `<div class="fallback-info"><i class="fa-solid fa-file-zipper"></i><p>${file.name}<br><span style="font-size:12px;color:#666;">${formatBytes(file.size)}</span><br><br>Archive preview is not supported in-browser. Download to extract.</p><a href="${url}" download="${file.name}"><button>Download Archive</button></a></div>`;
+            } else if (cat === 'markdown') {
+                previewText(file, body, copyBtn, true);
+            } else if (cat.startsWith('code') || cat === 'text') {
+                previewText(file, body, copyBtn, false);
+            } else if (cat === 'binary') {
+                body.innerHTML = `<div class="fallback-info"><i class="fa-solid fa-file"></i><p><strong style="color:#ccc;">${file.name}</strong><br><span style="color:#666;">${formatBytes(file.size)} · ${ext.toUpperCase() || 'Unknown'}</span><br><br>No preview available for this file type. You can still download it.</p><a href="${url}" download="${file.name}"><button>Download File</button></a></div>`;
+            } else {
+                previewText(file, body, copyBtn, false);
+            }
+        }
+
+        function previewPDF(url, body) {
+            // Use pdf.js to render first pages
+            if (typeof pdfjsLib === 'undefined') {
+                body.innerHTML = `<iframe src="${url}" style="width:100%;height:100%;border:none;"></iframe>`;
+                return;
+            }
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+            body.innerHTML = '<div style="padding:20px;overflow-y:auto;height:100%;display:flex;flex-direction:column;gap:12px;" id="pdf-pages-container"></div>';
+            const container = body.querySelector('#pdf-pages-container');
+            pdfjsLib.getDocument(url).promise.then(pdf => {
+                const total = pdf.numPages;
+                for (let i = 1; i <= Math.min(total, 30); i++) {
+                    pdf.getPage(i).then(page => {
+                        const viewport = page.getViewport({ scale: 1.4 });
+                        const canvas = document.createElement('canvas');
+                        canvas.width = viewport.width;
+                        canvas.height = viewport.height;
+                        canvas.style.maxWidth = '100%';
+                        canvas.style.borderRadius = '6px';
+                        canvas.style.boxShadow = '0 2px 20px rgba(0,0,0,0.5)';
+                        container.appendChild(canvas);
+                        page.render({ canvasContext: canvas.getContext('2d'), viewport });
+                    });
+                }
+            }).catch(() => {
+                body.innerHTML = `<iframe src="${url}" style="width:100%;height:100%;border:none;background:#fff;"></iframe>`;
+            });
+        }
+
+        function previewDOCX(file, body, copyBtn) {
+            if (typeof mammoth === 'undefined') { body.innerHTML = '<div class="fallback-info"><i class="fa-solid fa-file-word"></i><p>mammoth.js not loaded. Cannot preview DOCX.</p></div>'; return; }
+            const reader = new FileReader();
+            reader.onload = e => {
+                mammoth.convertToHtml({ arrayBuffer: e.target.result }).then(result => {
+                    const wrapper = document.createElement('div');
+                    wrapper.className = 'docx-render';
+                    wrapper.style.userSelect = 'text';
+                    wrapper.innerHTML = result.value;
+                    body.innerHTML = '';
+                    body.appendChild(wrapper);
+                    previewCurrentText = wrapper.innerText;
+                    copyBtn.classList.remove('hidden');
+                }).catch(() => {
+                    body.innerHTML = '<div class="fallback-info"><i class="fa-solid fa-file-word"></i><p>Could not parse DOCX file.</p></div>';
+                });
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function previewXLSX(file, body, copyBtn) {
+            if (typeof XLSX === 'undefined') { body.innerHTML = '<div class="fallback-info"><i class="fa-solid fa-file-excel"></i><p>SheetJS not loaded.</p></div>'; return; }
+            const reader = new FileReader();
+            reader.onload = e => {
+                try {
+                    const wb = XLSX.read(e.target.result, { type: 'array' });
+                    const tabs = wb.SheetNames.map((name, i) => `<button onclick="showSheet(${i})" id="sheet-tab-${i}" style="padding:4px 12px;font-size:11px;border-radius:6px;border:1px solid #333;background:${i===0?'#333':'transparent'};color:${i===0?'#fff':'#888'};cursor:pointer;margin-right:4px;">${name}</button>`).join('');
+                    let sheetsHTML = wb.SheetNames.map((name, i) => {
+                        const html = XLSX.utils.sheet_to_html(wb.Sheets[name]);
+                        return `<div id="sheet-${i}" style="display:${i===0?'block':'none'};overflow:auto;height:calc(100% - 44px);">${html}</div>`;
+                    }).join('');
+                    body.innerHTML = `<div style="height:100%;display:flex;flex-direction:column;"><div style="padding:8px 16px;border-bottom:1px solid #2a2a2a;background:#111;display:flex;align-items:center;gap:4px;">${tabs}</div><div style="flex:1;overflow:auto;">${sheetsHTML}</div></div>`;
+                    body.querySelectorAll('table').forEach(t => { t.style.borderCollapse='collapse'; t.style.fontSize='12px'; t.style.color='#d4d4d4'; });
+                    body.querySelectorAll('td,th').forEach(c => { c.style.border='1px solid #2a2a2a'; c.style.padding='4px 10px'; });
+                    body.querySelectorAll('th').forEach(c => { c.style.background='#1e1e1e'; c.style.fontWeight='600'; });
+                    window.showSheet = (idx) => {
+                        wb.SheetNames.forEach((_, i) => { document.getElementById(`sheet-${i}`).style.display = i===idx?'block':'none'; document.getElementById(`sheet-tab-${i}`).style.background=i===idx?'#333':'transparent'; document.getElementById(`sheet-tab-${i}`).style.color=i===idx?'#fff':'#888'; });
+                    };
+                    previewCurrentText = wb.SheetNames.map(n => XLSX.utils.sheet_to_csv(wb.Sheets[n])).join('\n\n');
+                    copyBtn.classList.remove('hidden');
+                } catch(err) {
+                    body.innerHTML = '<div class="fallback-info"><i class="fa-solid fa-file-excel"></i><p>Could not parse spreadsheet.</p></div>';
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function previewCSV(file, body, copyBtn) {
+            const reader = new FileReader();
+            reader.onload = e => {
+                const text = e.target.result;
+                previewCurrentText = text;
+                copyBtn.classList.remove('hidden');
+                const lines = text.split('\n').slice(0, 500);
+                const sep = file.name.endsWith('.tsv') ? '\t' : ',';
+                const rows = lines.map(l => l.split(sep));
+                const headers = rows[0] || [];
+                const thHTML = headers.map(h => `<th>${escapeHTML(h)}</th>`).join('');
+                const trHTML = rows.slice(1).map(r => `<tr>${r.map(c => `<td>${escapeHTML(c)}</td>`).join('')}</tr>`).join('');
+                body.innerHTML = `<div class="xlsx-table"><table><thead><tr>${thHTML}</tr></thead><tbody>${trHTML}</tbody></table></div>`;
+            };
+            reader.readAsText(file);
+        }
+
+        function previewText(file, body, copyBtn, isMarkdown) {
+            const reader = new FileReader();
+            reader.onload = e => {
+                const text = e.target.result;
+                previewCurrentText = text;
+                copyBtn.classList.remove('hidden');
+                if (isMarkdown) {
+                    // Simple markdown render
+                    let html = escapeHTML(text)
+                        .replace(/^### (.+)$/gm, '<h3 style="color:#e0e0e0;margin:1em 0 0.3em;">$1</h3>')
+                        .replace(/^## (.+)$/gm, '<h2 style="color:#fff;margin:1em 0 0.4em;">$1</h2>')
+                        .replace(/^# (.+)$/gm, '<h1 style="color:#fff;margin:1em 0 0.5em;font-size:1.6em;">$1</h1>')
+                        .replace(/\*\*(.+?)\*\*/g, '<strong style="color:#fff;">$1</strong>')
+                        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+                        .replace(/`(.+?)`/g, '<code style="background:#2a2a2a;padding:1px 5px;border-radius:4px;font-family:monospace;color:#c9d1d9;">$1</code>')
+                        .replace(/^- (.+)$/gm, '<li style="margin:4px 0;">$1</li>')
+                        .replace(/\n\n/g, '</p><p>');
+                    body.innerHTML = `<div class="docx-render" style="user-select:text;"><p>${html}</p></div>`;
+                } else {
+                    const ext = file.name.split('.').pop().toLowerCase();
+                    body.innerHTML = `<pre style="user-select:text;">${escapeHTML(text)}</pre>`;
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function previewFont(file, url, body) {
+            const fontName = `preview-font-${Date.now()}`;
+            const style = document.createElement('style');
+            style.textContent = `@font-face { font-family: '${fontName}'; src: url('${url}'); }`;
+            document.head.appendChild(style);
+            body.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:16px;padding:40px;">
+                <p style="font-family:'${fontName}';font-size:48px;color:#fff;letter-spacing:-1px;">${file.name.split('.')[0]}</p>
+                <p style="font-family:'${fontName}';font-size:28px;color:#aaa;">The quick brown fox jumps over the lazy dog</p>
+                <p style="font-family:'${fontName}';font-size:18px;color:#666;">ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789</p>
+            </div>`;
+        }
+
+        function copyPreviewText() {
+            if (!previewCurrentText) return;
+            navigator.clipboard.writeText(previewCurrentText).then(() => {
+                showNotification('Text copied to clipboard!');
+            }).catch(() => {
+                // Fallback
+                const ta = document.createElement('textarea');
+                ta.value = previewCurrentText;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                ta.remove();
+                showNotification('Text copied!');
+            });
+        }
+
+        function addPreviewToCanvas() {
+            const cat = previewCurrentFile ? getFileCategory(previewCurrentFile.name.split('.').pop()) : 'url';
+            const mid = screenToCanvasCoords(window.innerWidth / 2, window.innerHeight / 2);
+            if (cat === 'image' && previewCurrentURL) {
+                createCustomCard({ type: 'image', url: previewCurrentURL, x: mid.x - 150, y: mid.y - 110, width: 300, height: 220 });
+            } else if (cat === 'video' && previewCurrentURL) {
+                createCustomCard({ type: 'video', url: previewCurrentURL, x: mid.x - 160, y: mid.y - 110, width: 320, height: 220 });
+            } else if (previewCurrentText) {
+                createCustomCard({ type: 'sticky', content: previewCurrentText.slice(0, 400), x: mid.x - 140, y: mid.y - 120, width: 280, height: 240 });
+            } else if (previewCurrentURL) {
+                createURLCard(previewCurrentURL, mid.x - 180, mid.y - 130);
+            }
+            closePreviewOverlay();
+            showNotification('Added to canvas!');
+        }
+
+        function closePreviewOverlay() {
+            document.getElementById('preview-overlay').style.display = 'none';
+            // Don't revoke url yet — may be on canvas
+            previewCurrentFile = null;
+        }
+
+        function escapeHTML(str) {
+            return String(str ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[ch]));
+        }
+
+        function formatBytes(b) {
+            if (b < 1024) return b + ' B';
+            if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+            return (b/1048576).toFixed(1) + ' MB';
+        }
+
+        // ==================== URL PANEL ====================
+
+        function openURLInputPanel() {
+            const panel = document.getElementById('url-input-panel');
+            panel.classList.toggle('hidden');
+            if (!panel.classList.contains('hidden')) document.getElementById('url-panel-input').focus();
+        }
+        function closeURLInputPanel() {
+            document.getElementById('url-input-panel').classList.add('hidden');
+        }
+        function openURLCard() {
+            const url = document.getElementById('url-panel-input').value.trim();
+            if (!url) return;
+            closeURLInputPanel();
+            const mid = screenToCanvasCoords(window.innerWidth / 2, window.innerHeight / 2);
+            createURLCard(url, mid.x - 200, mid.y - 150);
+            document.getElementById('url-panel-input').value = '';
+        }
+        function createURLCard(url, x, y) {
+            const id = 'card-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
+            const card = { id, type: 'url', url, content: url, x: x || 0, y: y || 0, width: 400, height: 300, rotation: 0, color: activeColor };
+            cards.push(card);
+            renderURLCard(card);
+            showNotification('URL card added to canvas!');
+            return card;
+        }
+        function renderURLCard(card) {
+            const el = document.createElement('div');
+            el.className = 'canvas-card absolute border border-neutral-600/80 rounded-xl overflow-visible shadow-xl select-none group pointer-events-auto';
+            el.dataset.id = card.id;
+            el.style.width = `${card.width}px`;
+            el.style.height = `${card.height}px`;
+            el.style.background = '#111';
+            el.innerHTML = `
+                <div class="w-full" style="height:28px;background:#1a1a1a;border-bottom:1px solid #2a2a2a;display:flex;align-items:center;gap:6px;padding:0 10px;border-radius:10px 10px 0 0;">
+                    <span style="font-size:10px;color:#666;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${escapeHTML(card.url)}</span>
+                    <button onclick="event.stopPropagation();openURLPreview('${encodeURIComponent(card.url)}')" style="font-size:9px;color:#888;background:#2a2a2a;border:1px solid #3a3a3a;border-radius:4px;padding:2px 6px;cursor:pointer;">Preview</button>
+                </div>
+                <iframe src="${card.url}" style="width:100%;height:calc(100% - 28px);border:none;border-radius:0 0 10px 10px;" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
+                <div class="selection-ring absolute -inset-[2px] border-2 border-transparent rounded-xl pointer-events-none transition-colors group-hover:border-neutral-600/60"></div>
+                <div class="edit-controls hidden">
+                    <div class="rotate-line"></div>
+                    <div class="rotate-handle" onmousedown="startRotate(event, '${card.id}')"></div>
+                    <div class="resize-handle bottom-right -right-1 -bottom-1 cursor-se-resize" onmousedown="startResize(event, '${card.id}', 'resize-se')"></div>
+                    <div class="resize-handle bottom-left -left-1 -bottom-1 cursor-sw-resize" onmousedown="startResize(event, '${card.id}', 'resize-sw')"></div>
+                    <button class="absolute -top-3 -right-3 w-6 h-6 rounded-full bg-neutral-600 hover:bg-neutral-700 text-neutral-100 flex items-center justify-center shadow-lg cursor-pointer text-xs" onclick="deleteCard('${card.id}')"><i class="fa-solid fa-xmark text-[10px]"></i></button>
+                </div>`;
+            cardsContainer.appendChild(el);
+            updateCardElement(card);
+        }
+        window.openURLPreview = (encodedURL) => {
+            const url = decodeURIComponent(encodedURL);
+            previewCurrentFile = null;
+            previewCurrentText = '';
+            previewCurrentURL = url;
+            const overlay = document.getElementById('preview-overlay');
+            document.getElementById('preview-filename').textContent = url;
+            document.getElementById('preview-type-badge').textContent = 'URL';
+            document.getElementById('preview-icon').className = 'fa-solid fa-link text-neutral-400 text-sm';
+            document.getElementById('preview-copy-btn').classList.add('hidden');
+            document.getElementById('preview-body').innerHTML = `<iframe src="${url}" style="width:100%;height:100%;border:none;" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation"></iframe>`;
+            overlay.style.display = 'flex';
+        };
+
+        // ==================== FOLDER / WORKSPACE PANEL ====================
+
+        let folders = JSON.parse(localStorage.getItem('envizion_folders') || '[]');
+        let activeFolder = null;
+
+        function saveFolders() { localStorage.setItem('envizion_folders', JSON.stringify(folders)); }
+
+        function renderFolderTree() {
+            const tree = document.getElementById('folder-tree');
+            if (!tree) return;
+            tree.innerHTML = folders.length ? folders.map((f, i) => `
+                <div class="folder-item ${activeFolder === i ? 'active' : ''}" onclick="setActiveFolder(${i})" style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;cursor:pointer;font-size:12px;color:${activeFolder===i?'#e0e0e0':'#9a9a9a'};background:${activeFolder===i?'rgba(255,255,255,0.08)':'transparent'};">
+                    <i class="fa-solid fa-folder text-xs" style="color:${activeFolder===i?'#f0c060':'#555'};"></i>
+                    <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHTML(f.name)}</span>
+                    <span style="font-size:10px;color:#555;">${f.files.length}</span>
+                    <button onclick="event.stopPropagation();deleteFolder(${i})" style="background:none;border:none;color:#555;cursor:pointer;padding:2px;font-size:10px;" title="Delete"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+            `).join('') : '<p style="font-size:11px;color:#555;padding:12px 8px;text-align:center;">No folders yet.<br>Create one to organise your files.</p>';
+        }
+
+        function toggleFolderPanel() {
+            const panel = document.getElementById('folder-panel');
+            const isHidden = panel.classList.toggle('hidden');
+            if (!isHidden) renderFolderTree();
+        }
+
+        function createFolder() {
+            const name = prompt('Folder name:');
+            if (!name || !name.trim()) return;
+            folders.push({ name: name.trim(), files: [], created: Date.now() });
+            saveFolders();
+            renderFolderTree();
+        }
+
+        function deleteFolder(idx) {
+            if (!confirm(`Delete folder "${folders[idx].name}"?`)) return;
+            folders.splice(idx, 1);
+            if (activeFolder === idx) activeFolder = null;
+            else if (activeFolder > idx) activeFolder--;
+            saveFolders();
+            renderFolderTree();
+        }
+
+        function setActiveFolder(idx) {
+            activeFolder = idx;
+            renderFolderTree();
+            showNotification(`Workspace: ${folders[idx].name}`);
+        }
+
+        // ==================== QUERY STRING HANDLER ====================
+
+        (function handleQueryParams() {
+            const params = new URLSearchParams(window.location.search);
+            const openurl = params.get('openurl');
+            if (openurl) {
+                setTimeout(() => {
+                    try { createURLCard(decodeURIComponent(openurl), 200, 100); } catch(e) {}
+                    // Clean URL
+                    history.replaceState({}, '', window.location.pathname);
+                }, 800);
+            }
+            if (params.get('action') === 'openfile') {
+                setTimeout(() => {
+                    document.getElementById('universal-file-input').click();
+                    history.replaceState({}, '', window.location.pathname);
+                }, 800);
+            }
+        })();
 
         function showNotification(text) {
             const wrapper = document.getElementById('toast-wrapper');
             const toast = document.createElement('div');
-            toast.className = 'bg-zinc-900/95 border border-zinc-800 text-zinc-100 px-4 py-2.5 rounded-xl shadow-2xl premium-blur text-xs flex items-center gap-2 animate-bounce';
-            toast.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-500"></i> ${text}`;
+            toast.className = 'bg-neutral-900/95 border border-neutral-600 text-neutral-300 px-4 py-2.5 rounded-xl shadow-2xl premium-blur text-xs flex items-center gap-2 animate-bounce';
+            toast.innerHTML = `<i class="fa-solid fa-circle-check text-neutral-400"></i> ${text}`;
             wrapper.appendChild(toast);
             setTimeout(() => {
                 toast.remove();
             }, 3000);
         }
     </script>
+</div>
+
+<!-- ENVIZION_AD_SLOT_START -->
+<section class="envizion-ad-slot" aria-label="Advertisement" style="--toolkit-seo-accent:#10a37f;--toolkit-seo-accent-2:#0d8f6f;--toolkit-seo-bg:#212121;--toolkit-seo-accent-soft:rgba(16, 163, 127, 0.14);--toolkit-seo-accent-border:rgba(16, 163, 127, 0.28);--toolkit-seo-surface:#2f2f2f;--toolkit-seo-text:#ececec;--toolkit-seo-muted:#b4b4b4;--toolkit-seo-line:rgba(255, 255, 255, 0.12)">
+  <div class="envizion-ad-box">
+    <span class="envizion-ad-label">Advertisement</span>
+    <ins class="adsbygoogle"
+         style="display:block"
+         data-ad-client="ca-pub-5812524294035974"
+         data-ad-slot="9312358743"
+         data-ad-format="auto"
+         data-full-width-responsive="true"></ins>
+  </div>
+</section>
+<!-- ENVIZION_AD_SLOT_END -->
+
+<!-- ENVIZION_STATIC_SEO_START -->
+<section class="envizion-static-seo" id="envizion-page-guide" aria-label="Envizion Playground explanation" style="--toolkit-seo-accent:#10a37f;--toolkit-seo-accent-2:#0d8f6f;--toolkit-seo-bg:#212121;--toolkit-seo-accent-soft:rgba(16, 163, 127, 0.14);--toolkit-seo-accent-border:rgba(16, 163, 127, 0.28);--toolkit-seo-surface:#2f2f2f;--toolkit-seo-text:#ececec;--toolkit-seo-muted:#b4b4b4;--toolkit-seo-line:rgba(255, 255, 255, 0.12)">
+  <div class="envizion-static-seo__shell">
+    <div class="envizion-static-seo__hero">
+      <div>
+        <p class="envizion-static-seo__kicker">Creative canvas</p>
+        <h2>Envizion Playground</h2>
+        <p>Arrange images, videos, audio, notes, and references on a local creative canvas for planning and visual organization.</p>
+      </div>
+      <div class="envizion-static-seo__badges">
+        <span class="envizion-static-seo__badge">Envizion Tools</span>
+        <span class="envizion-static-seo__badge">Local browser workflow</span>
+        <span class="envizion-static-seo__badge">Tool guide</span>
+      </div>
+    </div>
+    <div class="envizion-static-seo__grid">
+      <article class="envizion-static-seo__panel">
+        <h3>What this tool does</h3>
+        <ul><li>Drag media and notes onto a canvas.</li><li>Zoom and arrange assets freely.</li><li>Plan edits, boards, and visual concepts.</li></ul>
+      </article>
+      <article class="envizion-static-seo__panel">
+        <h3>How to use it</h3>
+        <ol><li>Open the playground.</li><li>Add canvas elements.</li><li>Arrange and continue into an editor workflow.</li></ol>
+      </article>
+      <article class="envizion-static-seo__panel">
+        <h3>Helpful notes</h3>
+        <ul><li>This page is intentionally centered on the working tool first, then the guide below documents what the tool does, what it does not promise, and how to verify the output.</li><li>The safest workflow is to keep original files, test settings on a small sample, and inspect the exported result before replacing anything important.</li><li>Because the tool runs in a browser page, performance can vary by browser, device memory, and file size.</li></ul>
+      </article>
+    </div>
+    <div class="envizion-static-seo__body">
+      <h3>Detailed explanation</h3>
+      <div class="envizion-static-seo__article">
+        <p>Envizion Playground is part of the Envizion Tools collection, a set of focused browser-based utilities for practical file preparation, editing, conversion, compression, previewing, and creative production.</p>
+        <p>Arrange images, videos, audio, notes, and references on a local creative canvas for planning and visual organization. The working controls stay at the top of the page, while this guide gives visitors and search engines clear context about what the tool does, when it is useful, and how to approach the workflow.</p>
+        <p>The normal workflow is straightforward: Open the playground. Add canvas elements. Arrange and continue into an editor workflow. For best results, test with a small file first, inspect the output, and then process larger or more important files once the settings look correct.</p>
+        <p>Many Envizion tools run directly in the browser, which helps keep everyday work fast and private. Some tools still depend on browser APIs, local device performance, media encoders, canvas features, PDF handling, or WebGL support, so behavior can differ between browsers.</p>
+      </div>
+      <h3>Best use cases</h3>
+      <ul><li>Use Envizion Playground when you need a focused creative planning task without opening a large desktop suite.</li><li>Use it as a quick verification step before sending files to a client, teammate, upload portal, chat app, or production workflow.</li><li>Use the page for repeatable local work where privacy, speed, and predictable browser controls matter more than cloud storage.</li></ul>
+      <h3>Before you export</h3>
+      <ul><li>This page is intentionally centered on the working tool first, then the guide below documents what the tool does, what it does not promise, and how to verify the output.</li><li>The safest workflow is to keep original files, test settings on a small sample, and inspect the exported result before replacing anything important.</li><li>Because the tool runs in a browser page, performance can vary by browser, device memory, and file size.</li></ul>
+      <h3>Troubleshooting</h3>
+      <ul><li>Refresh the page if browser state gets stuck.</li><li>Try a smaller input to confirm the workflow.</li><li>Use a current browser when a local API is unavailable.</li></ul>
+      <h3>Common questions</h3>
+      <dl class="envizion-static-seo__faq">
+        <div><dt>How do I use this tool?</dt><dd>Open the playground. Add canvas elements. Arrange and continue into an editor workflow.</dd></div>
+        <div><dt>What is this page best for?</dt><dd>Arrange images, videos, audio, notes, and references on a local creative canvas for planning and visual organization.</dd></div>
+        <div><dt>Are my files uploaded?</dt><dd>These tools are designed around local browser workflows where supported. If a page uses a third-party library or browser API, review your browser permissions and keep sensitive originals until you have verified the output.</dd></div>
+        <div><dt>Does this page include ads?</dt><dd>Yes. The page includes a restrained AdSense slot using the configured Envizion publisher client and shared ad styling.</dd></div>
+        <div><dt>Where is the published page?</dt><dd>https://envizion.work/tools2/envizion_playground.html</dd></div>
+      </dl>
+      <h3>Publisher and privacy links</h3>
+      <div class="envizion-static-seo__links">
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/about.html">About Envizion Tools</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/privacy.html">Privacy and cookies</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/contact.html">Contact and corrections</a>
+      </div>
+      <h3>Related Envizion tools</h3>
+      <div class="envizion-static-seo__links">
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/index.html">Envizion Tools</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/advanced_editor_converter.html">Advanced Paste, Edit and Convert</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/animator_studio.html">Mixamo Animator Studio</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/bulk_webp_converter.html">Local WebP Converter</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/CodeWeb.html">Localhost Server Manager</a>
+        <a class="envizion-static-seo__link" href="https://envizion.work/tools2/envizion_editor.html">Envizion Studio Editor</a>
+      </div>
+    </div>
+  </div>
+</section>
+<!-- ENVIZION_STATIC_SEO_END -->
+
+<!-- ENVIZION_TRUST_FOOTER_START -->
+<footer class="envizion-trust-footer" aria-label="Envizion site links">
+  <a href="https://envizion.work/tools2/index.html">Tools</a>
+  <a href="https://envizion.work/tools2/about.html">About</a>
+  <a href="https://envizion.work/tools2/privacy.html">Privacy</a>
+  <a href="https://envizion.work/tools2/contact.html">Contact</a>
+</footer>
+<!-- ENVIZION_TRUST_FOOTER_END -->
+  <script src="toolkit-enhance.js"></script>
 </body>
 </html>
