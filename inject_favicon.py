@@ -2,8 +2,8 @@ import os, re
 
 # ── CONFIG ──────────────────────────────────────────────────────────────────
 # Path to your logo relative to the repo root (adjust if needed)
-LOGO_PATH = "/logo.png"   # e.g. if it lives at repo root
-# If the logo is in a subfolder, use something like "/assets/logo.png"
+LOGO_PATH = "logo.png"   # e.g. if it lives at repo root
+# If the logo is in a subfolder, use something like "/assetslogo.png"
 # ────────────────────────────────────────────────────────────────────────────
 
 FAVICON_TAG = f'<link rel="icon" type="image/png" href="{LOGO_PATH}">'

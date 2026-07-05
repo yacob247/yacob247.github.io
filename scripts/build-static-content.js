@@ -254,7 +254,7 @@ function buildTrendIndex(creators) {
   <meta property="og:description" content="Permanent creator research pages with original local visuals, clear editorial notes, and no generated filler inventory.">
   <meta property="og:url" content="${SITE}/trending-research/">
   <meta property="og:image" content="${SITE}/assets/content/creator-mrbeast.svg">
-  <link rel="icon" type="image/png" href="../logo.png" sizes="32x32">
+  <link rel="icon" type="image/png" href="..logo.png" sizes="32x32">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800;900&display=swap" rel="stylesheet">
@@ -434,7 +434,7 @@ function pageShell({ title, description, canonical, image, section, body, schema
   <meta property="og:description" content="${escapeHtml(description)}">
   <meta property="og:url" content="${canonical}">
   <meta property="og:image" content="${SITE}/${image}">
-  <link rel="icon" type="image/png" href="../../logo.png">
+  <link rel="icon" type="image/png" href="../..logo.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800;900&display=swap" rel="stylesheet">
@@ -547,7 +547,7 @@ function articleSchema(url, title, description, image, date) {
     datePublished: date || TODAY,
     dateModified: TODAY,
     author: { "@type": "Organization", name: "Envizion Editorial Desk" },
-    publisher: { "@type": "Organization", name: "Envizion", logo: { "@type": "ImageObject", url: `${SITE}/logo.png` } },
+    publisher: { "@type": "Organization", name: "Envizion", logo: { "@type": "ImageObject", url: `${SITE}logo.png` } },
     mainEntityOfPage: url
   };
 }
