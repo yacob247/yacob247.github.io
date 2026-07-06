@@ -1370,33 +1370,74 @@ async function processFile(file, fullPath, name) {
 // Uses Babel standalone (CDN) to transpile in-browser, no server needed.
 // ============================================================
 function buildJsxShell(entryPath) {
-    // Collect all .js/.jsx/.ts/.tsx files from VFS so we can inline them
-    // in dependency order (entry last so its exports win).
+    // Collect all .js/.jsx/.ts/.tsx files from VFS
     const jsFiles = Object.keys(vfs).filter(p =>
-        /\.(jsx?|tsx?)$/i.test(p) && vfs[p].isText
+        /\.(jsx?|tsx?)$/i.test(p) && vfs[p].isText && p !== '__jsx_preview__.html'
     );
-    // Put entry at the end so its default export is what we mount
     const ordered = [...jsFiles.filter(p => p !== entryPath), entryPath];
+    const inlined = ordered.map(p => `/* ---- ${p} ---- */\n${vfs[p].content || ''}`).join('\n\n');
 
-    const inlined = ordered.map(p => {
-        const safeName = JSON.stringify(p);
-        return `/* ---- ${p} ---- */\n${vfs[p].content || ''}`;
-    }).join('\n\n');
+    // Rewrite imports: extract named/default bindings and map to CDN globals
+    // so e.g. `import { useState } from 'react'` becomes `const { useState } = React;`
+    function rewriteImports(code) {
+        return code.replace(
+            /^import\s+([\s\S]*?)\s+from\s+['"]([^'"]+)['"];?$/gm,
+            (match, bindings, pkg) => {
+                const globalMap = {
+                    'react':            'React',
+                    'react-dom':        'ReactDOM',
+                    'react-dom/client': 'ReactDOM',
+                    'lucide-react':     'LucideReact',
+                    'framer-motion':    'FramerMotion',
+                    'recharts':         'Recharts',
+                    'lodash':           '_',
+                    'd3':               'd3',
+                };
+                const g = globalMap[pkg] || globalMap[pkg.split('/')[0]];
+                if (!g) return `/* skipped: import from '${pkg}' */`;
+                bindings = bindings.trim();
+                // default import: `import Foo from 'pkg'`
+                if (/^[A-Za-z_$][\w$]*$/.test(bindings)) {
+                    return `const ${bindings} = ${g};`;
+                }
+                // namespace: `import * as Foo from 'pkg'`
+                if (bindings.startsWith('* as ')) {
+                    return `const ${bindings.slice(5)} = ${g};`;
+                }
+                // named + optional default: `import React, { useState } from 'react'`
+                const defaultMatch = bindings.match(/^([A-Za-z_$][\w$]*)\s*,\s*\{([^}]+)\}/);
+                if (defaultMatch) {
+                    return `const ${defaultMatch[1]} = ${g};\nconst { ${defaultMatch[2].trim()} } = ${g};`;
+                }
+                // named only: `import { useState, useEffect } from 'react'`
+                const namedMatch = bindings.match(/^\{([^}]+)\}$/);
+                if (namedMatch) {
+                    return `const { ${namedMatch[1].trim()} } = ${g};`;
+                }
+                return `/* unhandled import: ${match} */`;
+            }
+        );
+    }
+
+    const processed = rewriteImports(inlined)
+        .replace(/^export\s+default\s+/gm, 'const __defaultExport = ')
+        .replace(/^export\s+/gm, '');
 
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>JSX Preview</title>
+  <title>JSX Preview — ${entryPath}</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"><\/script>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"><\/script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"><\/script>
+  <script src="https://unpkg.com/lucide-react@latest/dist/umd/lucide-react.js"><\/script>
   <script src="https://cdn.tailwindcss.com"><\/script>
   <style>
     *,*::before,*::after{box-sizing:border-box}
     body{margin:0;font-family:system-ui,sans-serif}
-    #__jsx_error{display:none;position:fixed;bottom:0;left:0;right:0;background:#1e1e1e;color:#f87171;
+    #__jsx_error{display:none;position:fixed;bottom:0;left:0;right:0;background:#1a1a1a;color:#f87171;
       padding:12px 16px;font-family:monospace;font-size:12px;white-space:pre-wrap;z-index:9999;
       border-top:2px solid #f87171;max-height:40vh;overflow:auto}
   </style>
@@ -1404,38 +1445,34 @@ function buildJsxShell(entryPath) {
 <body>
   <div id="root"></div>
   <div id="__jsx_error"></div>
+  <script>
+    // Expose CDN globals so rewritten imports resolve
+    window.LucideReact = window.lucideReact || window.LucideReact || {};
+    window.FramerMotion = window.FramerMotion || {};
+    window.Recharts = window.Recharts || {};
+  <\/script>
   <script type="text/babel" data-presets="react,env">
-    // ── shim: strip import/export so Babel standalone handles it inline ──
-    // We inline all source files and rewrite imports to no-ops.
-    const __modules = {};
-    function __define(name, factory) {
-      const exp = {};
-      factory(exp);
-      __modules[name] = exp;
-    }
+${processed}
 
-    ${inlined
-        .replace(/^import\s+.*?from\s+['"][^'"]+['"];?$/gm, '// $&')
-        .replace(/^export\s+default\s+/gm, 'const __defaultExport = ')
-        .replace(/^export\s+/gm, '')
-    }
-
-    // Mount: find the default export from the entry file
     const __App = typeof __defaultExport !== 'undefined' ? __defaultExport : undefined;
     if (__App) {
-      const __container = document.getElementById('root');
-      const __root = ReactDOM.createRoot(__container);
+      const __root = ReactDOM.createRoot(document.getElementById('root'));
       __root.render(React.createElement(React.StrictMode, null, React.createElement(__App)));
     } else {
       document.getElementById('root').innerHTML =
-        '<p style="padding:2rem;color:#888;font-family:monospace">No default export found in ${entryPath}</p>';
+        '<p style="padding:2rem;color:#888;font-family:monospace">⚠ No default export found in ${entryPath}</p>';
     }
   <\/script>
   <script>
     window.addEventListener('error', e => {
       const el = document.getElementById('__jsx_error');
       el.style.display = 'block';
-      el.textContent = '\u26a0 ' + (e.message || e) + (e.filename ? ' — ' + e.filename + ':' + e.lineno : '');
+      el.textContent = '⚠ ' + (e.message||e) + (e.filename?' — '+e.filename+':'+e.lineno:'');
+    });
+    window.addEventListener('unhandledrejection', e => {
+      const el = document.getElementById('__jsx_error');
+      el.style.display = 'block';
+      el.textContent = '⚠ Unhandled promise: ' + (e.reason?.message || e.reason || e);
     });
   <\/script>
 </body>
