@@ -543,9 +543,9 @@
         <pre style="white-space:pre-wrap;font-size:13px;">${String(err.message).replace(/</g,'&lt;')}</pre>
       </body></html>`;
     }
-
-    // Encode transpiled code as a data URI so we can import() it as a module
-    const dataUri = 'data:text/javascript;charset=utf-8,' + encodeURIComponent(transpiledCode);
+    
+    // Safely Base64 encode the transpiled JS module to pass it to the sandboxed frame
+    const encodedJs = btoa(unescape(encodeURIComponent(transpiledCode)));
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -591,7 +591,14 @@
     import { createRoot } from 'react-dom/client';
     (async () => {
       try {
-        const mod = await import("${dataUri}");
+        // Decode the compiled source code inside the iframe context
+        const code = decodeURIComponent(escape(atob("${encodedJs}")));
+        // Generate an internal Blob URL, ensuring seamless imports in sandboxed frames
+        const blob = new Blob([code], { type: 'text/javascript' });
+        const blobUrl = URL.createObjectURL(blob);
+        const mod = await import(blobUrl);
+        URL.revokeObjectURL(blobUrl);
+
         const App = mod.default || mod.App;
         if (!App) throw new Error("No 'export default function App()' found in your file.");
         createRoot(document.getElementById('root')).render(React.createElement(App));
