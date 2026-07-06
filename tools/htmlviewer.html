@@ -464,15 +464,17 @@
 
 <!-- React JSX Sandbox Integration Script (Injects silently without modifying your main js) -->
 <script>
-  // 1. Setup Dynamic Imports Plugin for Babel (ESM auto-linker)
+  // ── 1. Register Babel plugin: rewrites bare npm imports → esm.sh CDN ──────────
+  // Runs after Babel loads (it's in <head> so it's ready before htmlviewer.js)
   if (typeof Babel !== 'undefined') {
     Babel.registerPlugin('dynamic-imports', function() {
       return {
         visitor: {
           ImportDeclaration(path) {
             const source = path.node.source.value;
+            // Only rewrite bare specifiers that aren't already React core or absolute
             if (!source.startsWith('.') && !source.startsWith('/') && !source.startsWith('http')) {
-              if (source !== 'react' && source !== 'react-dom/client' && !source.startsWith('react/jsx-')) {
+              if (source !== 'react' && source !== 'react-dom' && source !== 'react-dom/client' && !source.startsWith('react/jsx-')) {
                 path.node.source.value = `https://esm.sh/${source}?external=react,react-dom`;
               }
             }
@@ -482,208 +484,332 @@
     });
   }
 
-  // Helpers to check and extract code gracefully
-  function extractJSX(htmlString) {
-    if (!htmlString || !htmlString.toLowerCase().includes('<html')) return htmlString;
-    const bodyMatch = htmlString.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-    if (bodyMatch) {
-        let inner = bodyMatch[1];
-        inner = inner.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
-        return inner.trim();
-    }
-    return htmlString;
-  }
-
+  // ── 2. Detection helpers ───────────────────────────────────────────────────────
+  // Returns true if the code string looks like React/JSX (handles both raw JSX
+  // files and HTML files that contain a JSX <script> block)
   function isReactJSX(code) {
-    if (typeof code !== 'string') return false;
-    const clean = extractJSX(code);
-    return clean.includes('import React') || clean.includes('export default') || clean.includes('from \'react\'') || clean.includes('from "react"') || (clean.includes('function App()') && clean.includes('return'));
+    if (typeof code !== 'string' || !code.trim()) return false;
+    // Pure JSX/JS file (no <html> wrapper)
+    const trimmed = code.trim();
+    if (!trimmed.toLowerCase().startsWith('<!doctype') && !trimmed.toLowerCase().startsWith('<html')) {
+      return (
+        trimmed.includes("from 'react'") ||
+        trimmed.includes('from "react"') ||
+        trimmed.includes('import React') ||
+        (trimmed.includes('export default') && (trimmed.includes('jsx') || trimmed.includes('return ('))) ||
+        (trimmed.includes('function App(') && trimmed.includes('return'))
+      );
+    }
+    // HTML wrapper — check if it contains a JSX script block
+    return (
+      code.includes("from 'react'") ||
+      code.includes('from "react"') ||
+      code.includes('import React') ||
+      (code.includes('export default') && code.includes('return ('))
+    );
   }
 
-  // Secure Sandbox Wrapper Generator
+  // Extract the raw JSX source from either a pure JSX string or an HTML wrapper
+  function extractJSXSource(code) {
+    const trimmed = code.trim();
+    // Pure JSX — return as-is
+    if (!trimmed.toLowerCase().startsWith('<!doctype') && !trimmed.toLowerCase().startsWith('<html')) {
+      return trimmed;
+    }
+    // Wrapped in HTML — pull the content of a <script> that has JSX
+    const scriptMatches = [...code.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/gi)];
+    for (const m of scriptMatches) {
+      const src = m[1].trim();
+      if (src.includes("from 'react'") || src.includes('from "react"') || src.includes('export default')) {
+        return src;
+      }
+    }
+    return trimmed;
+  }
+
+  // ── 3. Build the full sandboxed HTML document for a JSX string ────────────────
   function buildReactSandbox(rawCode) {
-    let code = extractJSX(rawCode);
+    const jsxSource = extractJSXSource(rawCode);
+
     let transpiledCode;
     try {
-      transpiledCode = Babel.transform(code, { 
-        presets: [['react', { runtime: 'automatic' }]],
+      transpiledCode = Babel.transform(jsxSource, {
+        presets: [['react', { runtime: 'automatic' }], ['env', { targets: { esmodules: true }, modules: false }]],
         plugins: ['dynamic-imports']
       }).code;
     } catch (err) {
-      return `<html><body style="background:#1e1e1e;color:#f87171;font-family:monospace;padding:20px;">
-        <h3>JSX Syntax Error</h3>
-        <pre>${err.message}</pre>
+      return `<!DOCTYPE html><html><body style="background:#1e1e1e;color:#f87171;font-family:'JetBrains Mono',monospace;padding:24px;">
+        <h3 style="margin-bottom:12px;color:#fca5a5;">⚠ JSX Syntax Error</h3>
+        <pre style="white-space:pre-wrap;font-size:13px;">${String(err.message).replace(/</g,'&lt;')}</pre>
       </body></html>`;
     }
 
-    const dataUri = "data:text/javascript;charset=utf-8," + encodeURIComponent(transpiledCode);
+    // Encode transpiled code as a data URI so we can import() it as a module
+    const dataUri = 'data:text/javascript;charset=utf-8,' + encodeURIComponent(transpiledCode);
 
     return `<!DOCTYPE html>
-      <html lang="en">
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <script src="https://cdn.tailwindcss.com"><\/script>
-        <script>
-          window.process = { env: { NODE_ENV: 'development' } };
-          // Tunnel logs back to HyperLive native console
-          const captureLog = (level, args) => {
-            const msg = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
-            window.parent.postMessage({ type: 'console-intercept', level: level, msg: msg }, '*');
-          };
-          const _log = console.log, _warn = console.warn, _err = console.error;
-          console.log = (...args) => { _log(...args); captureLog('info', args); };
-          console.warn = (...args) => { _warn(...args); captureLog('warning', args); };
-          console.error = (...args) => { _err(...args); captureLog('error', args); };
-
-          window.onerror = function(msg) { window.parent.postMessage({ type: 'runtime-error', message: msg }, '*'); return true; };
-          window.addEventListener('unhandledrejection', function(e) { window.parent.postMessage({ type: 'runtime-error', message: e.reason ? e.reason.message : 'Promise Rejection' }, '*'); });
-          window.onbeforeunload = function() { window.parent.postMessage({ type: 'attempted-redirect' }, '*'); };
-        <\/script>
-        <script type="importmap">
-          {
-            "imports": {
-              "react": "https://esm.sh/react@18.2.0",
-              "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
-              "react/jsx-runtime": "https://esm.sh/react@18.2.0/jsx-runtime",
-              "react/jsx-dev-runtime": "https://esm.sh/react@18.2.0/jsx-runtime"
-            }
-          }
-        <\/script>
-      </head>
-      <body class="bg-white text-slate-900 min-h-screen">
-        <div id="root"></div>
-        <script type="module">
-          import React from 'react';
-          import { createRoot } from 'react-dom/client';
-          async function mount() {
-            try {
-              const UserModule = await import("${dataUri}");
-              const App = UserModule.default || UserModule.App;
-              if (App) {
-                 const root = createRoot(document.getElementById('root'));
-                 root.render(React.createElement(App));
-              } else {
-                 window.parent.postMessage({ type: 'runtime-error', message: "No 'export default function App()' found." }, '*');
-              }
-            } catch(e) {
-              window.parent.postMessage({ type: 'runtime-error', message: "Module Load Error:\\n" + e.message }, '*');
-            }
-          }
-          mount();
-        <\/script>
-      </body>
-      </html>`;
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdn.tailwindcss.com"><\/script>
+  <script>
+    window.process = { env: { NODE_ENV: 'development' } };
+    // Forward console messages to HyperLive's bottom panel
+    (function() {
+      const send = (level, args) => {
+        const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+        window.parent.postMessage({ type: 'console-intercept', level, msg }, '*');
+      };
+      const _l = console.log, _w = console.warn, _e = console.error;
+      console.log   = (...a) => { _l(...a); send('info',    a); };
+      console.warn  = (...a) => { _w(...a); send('warning', a); };
+      console.error = (...a) => { _e(...a); send('error',   a); };
+      window.onerror = (msg) => { window.parent.postMessage({ type: 'runtime-error', message: msg }, '*'); return true; };
+      window.addEventListener('unhandledrejection', e => {
+        window.parent.postMessage({ type: 'runtime-error', message: (e.reason && e.reason.message) || 'Promise Rejection' }, '*');
+      });
+      window.onbeforeunload = () => window.parent.postMessage({ type: 'attempted-redirect' }, '*');
+    })();
+  <\/script>
+  <script type="importmap">
+  {
+    "imports": {
+      "react":                "https://esm.sh/react@18.2.0",
+      "react-dom":            "https://esm.sh/react-dom@18.2.0",
+      "react-dom/client":     "https://esm.sh/react-dom@18.2.0/client",
+      "react/jsx-runtime":    "https://esm.sh/react@18.2.0/jsx-runtime",
+      "react/jsx-dev-runtime":"https://esm.sh/react@18.2.0/jsx-runtime"
+    }
+  }
+  <\/script>
+</head>
+<body style="margin:0;min-height:100vh;">
+  <div id="root"></div>
+  <script type="module">
+    import React from 'react';
+    import { createRoot } from 'react-dom/client';
+    (async () => {
+      try {
+        const mod = await import("${dataUri}");
+        const App = mod.default || mod.App;
+        if (!App) throw new Error("No 'export default function App()' found in your file.");
+        createRoot(document.getElementById('root')).render(React.createElement(App));
+      } catch(e) {
+        window.parent.postMessage({ type: 'runtime-error', message: 'Module Load Error: ' + e.message }, '*');
+        document.getElementById('root').innerHTML =
+          '<div style="padding:24px;font-family:monospace;color:#f87171;background:#1e1e1e;min-height:100vh;">' +
+          '<h3 style="color:#fca5a5;margin-bottom:12px;">⚠ Runtime Error</h3>' +
+          '<pre style="white-space:pre-wrap;font-size:13px;">' + String(e.message).replace(/</g,'&lt;') + '</pre></div>';
+      }
+    })();
+  <\/script>
+</body>
+</html>`;
   }
 
-  // 2. Intercept Iframe Source Updates securely without modifying original HTMLViewer logic
-  const originalSrcDoc = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'srcdoc');
-  if (originalSrcDoc) {
-    Object.defineProperty(HTMLIFrameElement.prototype, 'srcdoc', {
-      set: function(val) {
-        if (this.id === 'live-frame' && isReactJSX(val)) {
-           val = buildReactSandbox(val);
+  // ── 4. Override refreshPreview & openFile after htmlviewer.js loads ───────────
+  window.addEventListener('load', () => {
+
+    // 4a. Wrap refreshPreview — intercept JSX/TSX files before compileVFS runs
+    const origRefresh = window.refreshPreview;
+    if (typeof origRefresh === 'function') {
+      window.refreshPreview = function() {
+        if (typeof vfs !== 'undefined' && typeof activeIframeFile !== 'undefined' && activeIframeFile) {
+          const ext = activeIframeFile.split('.').pop().toLowerCase();
+          const file = vfs[activeIframeFile];
+          if (file && file.isText && (ext === 'jsx' || ext === 'tsx')) {
+            _renderJSXPreview(activeIframeFile, file.content);
+            return;
+          }
+          // Also handle .js/.ts files that contain React code
+          if (file && file.isText && (ext === 'js' || ext === 'ts') && isReactJSX(file.content)) {
+            _renderJSXPreview(activeIframeFile, file.content);
+            return;
+          }
         }
-        originalSrcDoc.set.call(this, val);
-      },
-      get: originalSrcDoc.get
+        origRefresh.call(this);
+      };
+    }
+
+    // 4b. Wrap openFile — clicking a .jsx file in the sidebar should preview it
+    const origOpenFile = window.openFile;
+    if (typeof origOpenFile === 'function') {
+      window.openFile = function(path) {
+        origOpenFile.call(this, path);
+        if (typeof vfs !== 'undefined' && vfs[path] && vfs[path].isText) {
+          const ext = path.split('.').pop().toLowerCase();
+          if (ext === 'jsx' || ext === 'tsx') {
+            window.activeIframeFile = path;
+            window.activeIframeQuery = '';
+            _renderJSXPreview(path, vfs[path].content || '');
+          } else if ((ext === 'js' || ext === 'ts') && isReactJSX(vfs[path].content || '')) {
+            window.activeIframeFile = path;
+            window.activeIframeQuery = '';
+            _renderJSXPreview(path, vfs[path].content || '');
+          }
+        }
+      };
+    }
+
+    // 4c. Also patch the Monaco live-update to fire for jsx/tsx (htmlviewer.js
+    //     only checks html/htm/js/css). We do this by watching vfs mutations
+    //     via a MutationObserver-style polling on the editor content debounce.
+    //     Instead, we simply extend refreshPreview (already done above) — the
+    //     htmlviewer.js save-timeout calls refreshPreview() for 'js', which will
+    //     now be caught by our wrapper. For .jsx/.tsx we add explicit handling:
+    const origDidChange = window._jsxLiveUpdateInstalled;
+    if (!origDidChange && typeof window.editor !== 'undefined') {
+      _installJSXEditorListener();
+    } else {
+      // editor may not be ready yet — wait for it
+      const waitForEditor = setInterval(() => {
+        if (typeof window.editor !== 'undefined' && !window._jsxLiveUpdateInstalled) {
+          clearInterval(waitForEditor);
+          _installJSXEditorListener();
+        }
+      }, 300);
+    }
+  });
+
+  function _renderJSXPreview(filePath, content) {
+    const frame = document.getElementById('live-frame');
+    if (!frame) return;
+    const bar = document.getElementById('address-bar');
+    if (bar) bar.textContent = `hyperlive://local/${filePath}`;
+    const html = buildReactSandbox(content);
+    // Directly set via descriptor to bypass our own srcdoc interceptor loop
+    const desc = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'srcdoc');
+    if (desc && desc.set) {
+      desc.set.call(frame, '');
+      setTimeout(() => desc.set.call(frame, html), 0);
+    } else {
+      frame.srcdoc = html;
+    }
+  }
+
+  function _installJSXEditorListener() {
+    window._jsxLiveUpdateInstalled = true;
+    let _jsxDebounce = null;
+    window.editor.onDidChangeModelContent(() => {
+      if (!window.activeFile || !window.vfs || !window.vfs[window.activeFile]) return;
+      const ext = window.activeFile.split('.').pop().toLowerCase();
+      if (ext === 'jsx' || ext === 'tsx') {
+        clearTimeout(_jsxDebounce);
+        _jsxDebounce = setTimeout(() => {
+          window.vfs[window.activeFile].content = window.editor.getValue();
+          if (window.activeIframeFile === window.activeFile) {
+            _renderJSXPreview(window.activeFile, window.vfs[window.activeFile].content);
+          }
+        }, 500);
+      }
     });
   }
 
-  const originalSetAttribute = Element.prototype.setAttribute;
-  Element.prototype.setAttribute = function(name, val) {
-    if (this.id === 'live-frame' && name === 'srcdoc' && isReactJSX(val)) {
-       val = buildReactSandbox(val);
-    }
-    originalSetAttribute.call(this, name, val);
-  };
+  // ── 5. Also intercept srcdoc setter for HTML files that embed JSX scripts ─────
+  // (handles the case where compileVFS returns an HTML file containing JSX)
+  (function() {
+    const desc = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'srcdoc');
+    if (!desc) return;
+    Object.defineProperty(HTMLIFrameElement.prototype, 'srcdoc', {
+      set(val) {
+        if (this.id === 'live-frame' && typeof val === 'string' && isReactJSX(val)) {
+          val = buildReactSandbox(val);
+        }
+        desc.set.call(this, val);
+      },
+      get: desc.get,
+      configurable: true
+    });
+  })();
 
-  // 3. Listen for Messages from Sandbox and connect to original UI
+  // ── 6. Message listener: connect sandbox events to HyperLive's UI panels ──────
   window.addEventListener('message', (e) => {
-    if (!e.data) return;
+    if (!e.data || typeof e.data !== 'object') return;
 
-    // Trigger Redirect prevention mask
+    // Redirect-prevention mask
     if (e.data.type === 'attempted-redirect') {
       const mask = document.getElementById('navigation-mask');
       if (mask) mask.classList.remove('hidden');
     }
 
-    // Connect to original Bottom Panel Console/Problems
-    if (e.data.type === 'console-intercept' || e.data.type === 'runtime-error') {
-      const consolePanel = document.getElementById('bp-console');
-      const problemsPanel = document.getElementById('bp-problems');
-      
-      if (e.data.type === 'runtime-error' && problemsPanel) {
-        const errLine = document.createElement('div');
-        errLine.className = 'text-red-400 py-0.5 border-b border-[#2d2d2d] break-all';
-        errLine.textContent = '[Sandbox] ' + e.data.message;
-        problemsPanel.appendChild(errLine);
-        problemsPanel.scrollTop = problemsPanel.scrollHeight;
-        
-        const errBadge = document.getElementById('sb-errors');
-        if (errBadge) errBadge.textContent = parseInt(errBadge.textContent || '0') + 1;
-      }
+    // Route console messages to bottom panel
+    if (e.data.type === 'console-intercept') {
+      const panel = document.getElementById('bp-console');
+      if (!panel) return;
+      if (typeof openBottomPanel === 'function') openBottomPanel('console');
+      else if (typeof toggleBottomPanel === 'function' && document.getElementById('bottom-panel')?.style.height === '0px') toggleBottomPanel();
+      const line = document.createElement('div');
+      line.className = 'py-0.5 border-b border-[#2d2d2d] break-all flex gap-2';
+      const colors = { info: 'text-[#cccccc]', warning: 'text-yellow-400', error: 'text-red-400' };
+      const color = colors[e.data.level] || 'text-[#cccccc]';
+      const t = new Date().toLocaleTimeString();
+      line.innerHTML = `<span class="text-gray-500 shrink-0 select-none">[${t}]</span><span class="${color}">${String(e.data.msg).replace(/</g,'&lt;')}</span>`;
+      panel.appendChild(line);
+      panel.scrollTop = panel.scrollHeight;
+    }
 
-      if (e.data.type === 'console-intercept' && consolePanel) {
-        const logLine = document.createElement('div');
-        logLine.className = 'py-0.5 border-b border-[#2d2d2d] break-all flex gap-2';
-        
-        let colorClass = 'text-[#cccccc]';
-        if (e.data.level === 'warning') colorClass = 'text-yellow-400';
-        if (e.data.level === 'error') colorClass = 'text-red-400';
-
-        const time = new Date().toLocaleTimeString().split(' ')[0];
-        logLine.innerHTML = `<span class="text-gray-500 shrink-0">[${time}]</span><span class="${colorClass}">${e.data.msg}</span>`;
-        
-        consolePanel.appendChild(logLine);
-        consolePanel.scrollTop = consolePanel.scrollHeight;
-      }
+    // Runtime errors → Problems panel
+    if (e.data.type === 'runtime-error') {
+      const panel = document.getElementById('bp-problems');
+      if (!panel) return;
+      const line = document.createElement('div');
+      line.className = 'text-red-400 py-0.5 border-b border-[#2d2d2d] break-all';
+      line.textContent = '[React Sandbox] ' + e.data.message;
+      panel.appendChild(line);
+      panel.scrollTop = panel.scrollHeight;
+      const badge = document.getElementById('sb-errors');
+      if (badge) badge.textContent = parseInt(badge.textContent || '0') + 1;
     }
   });
 
-  // 4. Sandboxed About Page replacing old inline expanding div
+  // ── 7. Sandboxed About page ────────────────────────────────────────────────────
   function toggleExplanation() {
-    const addressBar = document.getElementById('address-bar');
-    if (addressBar) addressBar.textContent = 'hyperlive://about';
-    
+    const bar = document.getElementById('address-bar');
+    if (bar) bar.textContent = 'hyperlive://about';
     const frame = document.getElementById('live-frame');
-    if (frame) {
-      frame.srcdoc = `
-        <!DOCTYPE html>
-        <html class="dark">
-        <head>
-          <script src="https://cdn.tailwindcss.com"><\/script>
-        </head>
-        <body class="bg-gray-950 text-slate-300 p-8 min-h-screen flex flex-col items-center justify-center font-sans">
-          <div class="max-w-2xl w-full rounded-2xl p-8 shadow-2xl bg-gray-900 border border-gray-800">
-            <h2 class="text-2xl font-bold mb-4 flex items-center gap-3 text-white">
-              <span class="text-blue-500">⚡</span> HyperLive Pro IDE
-            </h2>
-            <div class="space-y-4 text-sm leading-relaxed text-gray-400">
-              <p><strong>HyperLive Pro</strong> is a completely free, browser-based HTML viewer, editor, and live preview IDE. It allows you to open, read, edit, and instantly preview <code class="text-xs bg-gray-800 px-1.5 py-0.5 rounded text-gray-300">.html</code> and <code class="text-xs bg-gray-800 px-1.5 py-0.5 rounded text-gray-300">.jsx</code> files directly inside your browser tab — with no installation required.</p>
-              
-              <p>The editor is powered by Monaco Editor (VS Code), giving you a professional-grade editing experience in the browser with full syntax highlighting, bracket pair colorisation, code folding, and autocomplete.</p>
-              
-              <div class="p-4 rounded-xl bg-gray-950 border border-gray-800 mt-4">
-                <h4 class="text-white font-semibold mb-2">Security & Sandboxing Engine</h4>
-                <ul class="list-disc pl-5 space-y-1 text-xs">
-                  <li><strong>Compile Sandbox:</strong> React 18 & Babel Standalone compiling JSX on-the-fly</li>
-                  <li><strong>NPM Bridge:</strong> Dynamic esm.sh CDN rewriting for modern imports</li>
-                  <li><strong>Redirect Mask:</strong> Prevents top-level viewport replacement from malicious scripts</li>
-                  <li><strong>Console Hooks:</strong> Intercepts and visualizes sandboxed frame logs instantly</li>
-                </ul>
-              </div>
-            </div>
-            
-            <button onclick="window.parent.postMessage({ type: 'runtime-error', message: 'Returned to IDE mode. Click Refresh to restore live canvas.' }, '*')" class="mt-8 px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-semibold transition-colors w-full sm:w-auto">
-              Close About Screen
-            </button>
-          </div>
-        </body>
-        </html>
-      `;
-    }
+    if (!frame) return;
+    // Set via direct descriptor to skip JSX detection (this is plain HTML)
+    const desc = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'srcdoc');
+    desc.set.call(frame, `<!DOCTYPE html>
+<html class="dark">
+<head>
+  <meta charset="UTF-8">
+  <script src="https://cdn.tailwindcss.com"><\/script>
+  <style>body{font-family:'Inter',sans-serif;}</style>
+</head>
+<body class="bg-gray-950 text-slate-300 p-8 min-h-screen flex flex-col items-center justify-center">
+  <div class="max-w-2xl w-full rounded-2xl p-8 shadow-2xl bg-gray-900 border border-gray-800">
+    <h2 class="text-2xl font-bold mb-4 flex items-center gap-3 text-white">
+      <span class="text-blue-400">⚡</span> HyperLive Pro IDE
+    </h2>
+    <div class="space-y-3 text-sm leading-relaxed text-gray-400">
+      <p><strong class="text-gray-200">HyperLive Pro</strong> is a free, browser-based HTML &amp; React/JSX viewer and live-preview IDE — no install required.</p>
+      <p>Powered by Monaco Editor (VS Code engine) with syntax highlighting, code folding, and autocomplete.</p>
+      <div class="p-4 rounded-xl bg-gray-950 border border-gray-800 mt-4">
+        <h4 class="text-white font-semibold mb-2">What's supported</h4>
+        <ul class="list-disc pl-5 space-y-1 text-xs text-gray-400">
+          <li><strong class="text-gray-300">HTML files</strong> — full multi-file VFS with relative imports</li>
+          <li><strong class="text-gray-300">React / JSX / TSX</strong> — compiled live with Babel, any npm package via esm.sh</li>
+          <li><strong class="text-gray-300">Redirect mask</strong> — sandboxed iframe prevents top-level navigation hijacking</li>
+          <li><strong class="text-gray-300">Console bridge</strong> — logs from the sandbox appear in the bottom panel</li>
+        </ul>
+      </div>
+    </div>
+    <button onclick="window.parent.postMessage({type:'DISMISS_ABOUT'},'*')" class="mt-8 px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-semibold transition-colors">
+      Close
+    </button>
+  </div>
+</body>
+</html>`);
   }
+
+  // Handle close button from About page
+  window.addEventListener('message', e => {
+    if (e.data && e.data.type === 'DISMISS_ABOUT') {
+      if (typeof refreshPreview === 'function') refreshPreview();
+    }
+  });
 </script>
 
 <!-- Monaco Loader -->
