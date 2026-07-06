@@ -12,11 +12,11 @@ let editor = null;
 let isMonacoReady = false;
 let saveTimeout = null;
 function maybeRebuildJsxShell() {
-    if (!activeFile || !/\.(jsx?|tsx?)$/i.test(activeFile)) return;
+    if (!activeFile || !/\.(jsx?|tsx?|js|ts)$/i.test(activeFile)) return;
     if (vfs['__jsx_preview__.html']) {
         // entry is whichever jsx file is the current activeIframeFile's basis
-        const entry = Object.keys(vfs).find(p => /index\.(jsx|tsx)$/i.test(p))
-            || Object.keys(vfs).find(p => /\.(jsx|tsx)$/i.test(p) && p !== '__jsx_preview__.html');
+        const entry = Object.keys(vfs).find(p => /index\.(jsx|tsx|js|ts)$/i.test(p))
+            || Object.keys(vfs).find(p => /\.(jsx|tsx|js|ts)$/i.test(p) && p !== '__jsx_preview__.html');
         if (entry) vfs['__jsx_preview__.html'].content = buildJsxShell(entry);
     }
 }
@@ -1372,7 +1372,7 @@ async function processFile(file, fullPath, name) {
 function buildJsxShell(entryPath) {
     // Collect all .js/.jsx/.ts/.tsx files from VFS
     const jsFiles = Object.keys(vfs).filter(p =>
-        /\.(jsx?|tsx?)$/i.test(p) && vfs[p].isText && p !== '__jsx_preview__.html'
+        /\.(jsx?|tsx?|js|ts)$/i.test(p) && vfs[p].isText && p !== '__jsx_preview__.html'
     );
     const ordered = [...jsFiles.filter(p => p !== entryPath), entryPath];
     const inlined = ordered.map(p => `/* ---- ${p} ---- */\n${vfs[p].content || ''}`).join('\n\n');
@@ -1484,8 +1484,8 @@ function finalizeMount() {
     renderFileTree();
     updateGitPanel();
     activeIframeQuery = '';
-    let entry = Object.keys(vfs).find(p => /index\.(jsx|tsx)$/i.test(p))
-        || Object.keys(vfs).find(p => /\.(jsx|tsx)$/i.test(p))
+    let entry = Object.keys(vfs).find(p => /index\.(jsx|tsx|js|ts)$/i.test(p))
+        || Object.keys(vfs).find(p => /\.(jsx|tsx|js|ts)$/i.test(p))
         || Object.keys(vfs).find(p => p.toLowerCase() === 'index.html')
         || Object.keys(vfs).find(p => p.toLowerCase().endsWith('.html'))
         || Object.keys(vfs).find(p => vfs[p].isText);
