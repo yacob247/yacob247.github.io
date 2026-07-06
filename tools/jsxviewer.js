@@ -11,6 +11,15 @@ let activeIframeQuery = '';    // Virtual query string
 let editor = null;
 let isMonacoReady = false;
 let saveTimeout = null;
+function maybeRebuildJsxShell() {
+    if (!activeFile || !/\.(jsx?|tsx?)$/i.test(activeFile)) return;
+    if (vfs['__jsx_preview__.html']) {
+        // entry is whichever jsx file is the current activeIframeFile's basis
+        const entry = Object.keys(vfs).find(p => /index\.(jsx|tsx)$/i.test(p))
+            || Object.keys(vfs).find(p => /\.(jsx|tsx)$/i.test(p) && p !== '__jsx_preview__.html');
+        if (entry) vfs['__jsx_preview__.html'].content = buildJsxShell(entry);
+    }
+}
 let liveServers = [];          // Pop-out live server windows
 
 // Editor state
@@ -588,7 +597,7 @@ function applyBookmarkDecorations() {
             isWholeLine: true,
             className: 'bookmark-line',
             glyphMarginClassName: 'bm-dot',
-            overviewRuler: { color: '#00acc1', position: monaco.editor.OverviewRulerLane.Left }
+            overviewRuler: { color: '#007acc', position: monaco.editor.OverviewRulerLane.Left }
         }
     }));
     editor.createDecorationsCollection(decorations);
@@ -648,8 +657,8 @@ function termSetMode(mode) {
     const sym = document.getElementById('terminal-prompt-symbol');
     const shBtn = document.getElementById('term-mode-shell');
     const jsBtn = document.getElementById('term-mode-js');
-    const active = 'px-1.5 py-0.5 text-[10px] rounded bg-[#00acc1] text-white font-mono';
-    const inactive = 'px-1.5 py-0.5 text-[10px] rounded border border-[#555] text-gray-400 hover:border-[#00acc1] font-mono';
+    const active = 'px-1.5 py-0.5 text-[10px] rounded bg-[#007acc] text-white font-mono';
+    const inactive = 'px-1.5 py-0.5 text-[10px] rounded border border-[#555] text-gray-400 hover:border-[#007acc] font-mono';
     if (mode === 'js') {
         sym.textContent = '>'; sym.className = 'text-yellow-400 text-xs font-mono shrink-0 select-none';
         shBtn.className = inactive; jsBtn.className = active;
@@ -669,7 +678,7 @@ function resolveTermPath(name) {
 
 const terminalCommands = {
     help: () => [
-        { t: '─── File System ──────────────────────────', c: 'text-[#00acc1]' },
+        { t: '─── File System ──────────────────────────', c: 'text-[#007acc]' },
         { t: '  ls [path]            list files', c: 'text-gray-300' },
         { t: '  cat [file]           print contents (up to 200 lines)', c: 'text-gray-300' },
         { t: '  head [-n] [file]     first N lines (default 10)', c: 'text-gray-300' },
@@ -682,20 +691,20 @@ const terminalCommands = {
         { t: '  rm [file]            delete file', c: 'text-gray-300' },
         { t: '  mv [old] [new]       rename / move', c: 'text-gray-300' },
         { t: '  cp [src] [dst]       copy file', c: 'text-gray-300' },
-        { t: '─── Editor ───────────────────────────────', c: 'text-[#00acc1]' },
+        { t: '─── Editor ───────────────────────────────', c: 'text-[#007acc]' },
         { t: '  open [file]          open in editor', c: 'text-gray-300' },
         { t: '  preview [file]       load in preview pane', c: 'text-gray-300' },
         { t: '  format               format current file', c: 'text-gray-300' },
         { t: '  minify [file]        minify CSS or JS', c: 'text-gray-300' },
         { t: '  validate [file]      validate JSON', c: 'text-gray-300' },
-        { t: '─── Utilities ────────────────────────────', c: 'text-[#00acc1]' },
+        { t: '─── Utilities ────────────────────────────', c: 'text-[#007acc]' },
         { t: '  echo [text]          print text', c: 'text-gray-300' },
         { t: '  pwd                  working directory', c: 'text-gray-300' },
         { t: '  date                 current date/time', c: 'text-gray-300' },
         { t: '  history              command history', c: 'text-gray-300' },
         { t: '  zip                  export project as ZIP', c: 'text-gray-300' },
         { t: '  clear                clear terminal', c: 'text-gray-300' },
-        { t: '─── Tips ─────────────────────────────────', c: 'text-[#00acc1]' },
+        { t: '─── Tips ─────────────────────────────────', c: 'text-[#007acc]' },
         { t: '  ↑ / ↓               navigate history', c: 'text-gray-500' },
         { t: '  Tab                  autocomplete command or filename', c: 'text-gray-500' },
         { t: '  ls | grep .js        basic pipe + grep', c: 'text-gray-500' },
@@ -714,7 +723,7 @@ const terminalCommands = {
         if (!unique.length) return [{ t: '(empty)', c: 'text-gray-500' }];
         return unique.map(f => ({
             t: '  ' + f,
-            c: f.endsWith('/') ? 'text-[#00acc1]'
+            c: f.endsWith('/') ? 'text-[#007acc]'
               : /\.(js|ts|jsx|tsx)$/.test(f) ? 'text-yellow-300'
               : /\.(html|htm)$/.test(f) ? 'text-orange-300'
               : /\.css$/.test(f) ? 'text-blue-300'
@@ -995,7 +1004,7 @@ function switchBottomTab(tab) {
         if (el)  el.classList.toggle('hidden', t !== tab);
         if (btn) {
             btn.classList.toggle('text-white',           t === tab);
-            btn.classList.toggle('border-[#00acc1]',     t === tab);
+            btn.classList.toggle('border-[#007acc]',     t === tab);
             btn.classList.toggle('text-gray-400',        t !== tab);
             btn.classList.toggle('border-transparent',   t !== tab);
         }
@@ -1356,6 +1365,83 @@ async function processFile(file, fullPath, name) {
     }
 }
 
+// ============================================================
+// JSX SHELL BUILDER  — wraps a .jsx/.tsx entry in a full HTML doc
+// Uses Babel standalone (CDN) to transpile in-browser, no server needed.
+// ============================================================
+function buildJsxShell(entryPath) {
+    // Collect all .js/.jsx/.ts/.tsx files from VFS so we can inline them
+    // in dependency order (entry last so its exports win).
+    const jsFiles = Object.keys(vfs).filter(p =>
+        /\.(jsx?|tsx?)$/i.test(p) && vfs[p].isText
+    );
+    // Put entry at the end so its default export is what we mount
+    const ordered = [...jsFiles.filter(p => p !== entryPath), entryPath];
+
+    const inlined = ordered.map(p => {
+        const safeName = JSON.stringify(p);
+        return `/* ---- ${p} ---- */\n${vfs[p].content || ''}`;
+    }).join('\n\n');
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>JSX Preview</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"><\/script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"><\/script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"><\/script>
+  <script src="https://cdn.tailwindcss.com"><\/script>
+  <style>
+    *,*::before,*::after{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,sans-serif}
+    #__jsx_error{display:none;position:fixed;bottom:0;left:0;right:0;background:#1e1e1e;color:#f87171;
+      padding:12px 16px;font-family:monospace;font-size:12px;white-space:pre-wrap;z-index:9999;
+      border-top:2px solid #f87171;max-height:40vh;overflow:auto}
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <div id="__jsx_error"></div>
+  <script type="text/babel" data-presets="react,env">
+    // ── shim: strip import/export so Babel standalone handles it inline ──
+    // We inline all source files and rewrite imports to no-ops.
+    const __modules = {};
+    function __define(name, factory) {
+      const exp = {};
+      factory(exp);
+      __modules[name] = exp;
+    }
+
+    ${inlined
+        .replace(/^import\s+.*?from\s+['"][^'"]+['"];?$/gm, '// $&')
+        .replace(/^export\s+default\s+/gm, 'const __defaultExport = ')
+        .replace(/^export\s+/gm, '')
+    }
+
+    // Mount: find the default export from the entry file
+    const __App = typeof __defaultExport !== 'undefined' ? __defaultExport : undefined;
+    if (__App) {
+      const __container = document.getElementById('root');
+      const __root = ReactDOM.createRoot(__container);
+      __root.render(React.createElement(React.StrictMode, null, React.createElement(__App)));
+    } else {
+      document.getElementById('root').innerHTML =
+        '<p style="padding:2rem;color:#888;font-family:monospace">No default export found in ${entryPath}</p>';
+    }
+  <\/script>
+  <script>
+    window.addEventListener('error', e => {
+      const el = document.getElementById('__jsx_error');
+      el.style.display = 'block';
+      el.textContent = '\u26a0 ' + (e.message || e) + (e.filename ? ' — ' + e.filename + ':' + e.lineno : '');
+    });
+  <\/script>
+</body>
+</html>`;
+}
+
 function finalizeMount() {
     gitChanges = {};
     renderFileTree();
@@ -1368,7 +1454,20 @@ function finalizeMount() {
         || Object.keys(vfs).find(p => vfs[p].isText);
     if (entry) {
         openFile(entry);
-        activeIframeFile = entry.endsWith('.html') ? entry : null;
+        if (entry.endsWith('.html')) {
+            activeIframeFile = entry;
+        } else if (/\.(jsx|tsx|js|ts)$/i.test(entry)) {
+            // Auto-wrap: synthesise an index.html that loads this JSX via Babel
+            const syntheticKey = '__jsx_preview__.html';
+            vfs[syntheticKey] = {
+                name: '__jsx_preview__.html',
+                isText: true,
+                fileObj: null,
+                blobUrl: null,
+                content: buildJsxShell(entry)
+            };
+            activeIframeFile = syntheticKey;
+        }
         refreshPreview();
     }
     logOutput('Workspace mounted.', 'system');
@@ -1500,7 +1599,7 @@ function renderFileTree() {
             <div class="p-5 text-center text-gray-500 mt-6">
                 <i data-lucide="folder-open" class="w-10 h-10 mx-auto mb-3 opacity-40"></i>
                 <p class="text-sm mb-4">No folder opened</p>
-                <button onclick="triggerFolderUpload()" class="w-full px-3 py-1.5 bg-[#00acc1] hover:bg-[#005f9e] text-white rounded text-xs transition mb-2">Open Folder</button>
+                <button onclick="triggerFolderUpload()" class="w-full px-3 py-1.5 bg-[#007acc] hover:bg-[#005f9e] text-white rounded text-xs transition mb-2">Open Folder</button>
                 <button onclick="loadDemo()" class="w-full px-3 py-1.5 border border-[#454545] hover:bg-[#37373d] text-gray-300 rounded text-xs transition">Load Demo</button>
             </div>`;
         lucide.createIcons();
@@ -1623,7 +1722,7 @@ document.addEventListener('click', () => document.getElementById('context-menu')
 function toggleSearchOption(opt) {
     searchOptions[opt] = !searchOptions[opt];
     const btn = document.getElementById('search-opt-' + opt);
-    btn.classList.toggle('border-[#00acc1]', searchOptions[opt]);
+    btn.classList.toggle('border-[#007acc]', searchOptions[opt]);
     btn.classList.toggle('text-white', searchOptions[opt]);
     performGlobalSearch();
 }
@@ -2013,7 +2112,7 @@ function toggleDeviceMode() {
         frame.style.border = '8px solid #222';
         frame.style.borderRadius = '20px';
         frame.style.boxShadow = '0 8px 32px rgba(0,0,0,0.5)';
-        btn.style.color = '#00acc1';
+        btn.style.color = '#007acc';
     } else {
         wrapper.style.background = '';
         frame.style.width = '100%';
@@ -2216,6 +2315,7 @@ function refreshPreview() {
         return;
     }
     document.getElementById('address-bar').textContent = `hyperlive://local/${activeIframeFile}${activeIframeQuery}`;
+    maybeRebuildJsxShell();
     document.getElementById('live-frame').srcdoc = compileVFS(activeIframeFile, false, activeIframeQuery);
 }
 
@@ -2398,7 +2498,7 @@ h1 { font-size: 2.5rem; margin-bottom: 1rem; }
 p { color: rgba(255,255,255,0.7); font-size: 1.1rem; line-height: 1.7; margin-bottom: 1.5rem; }
 .button-row { display: flex; gap: 1rem; justify-content: center; margin-bottom: 1.5rem; }
 .btn-primary {
-  background: #00acc1;
+  background: #007acc;
   color: #fff;
   border: none;
   padding: 10px 28px;
