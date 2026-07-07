@@ -245,6 +245,7 @@ form.addEventListener('submit', function (e) {
   setLoading(true);
   showStatus('Sending…', 'info');
 
+  
   const payload = {
     to:          RECIPIENT,
     senderName:  verifiedUser.name,
@@ -323,6 +324,10 @@ form.addEventListener('submit', function (e) {
   formData.append('text',        payload.text);
   formData.append('html',        payload.html);
 
+  let secondsLeft = 20;
+  showStatus(`Sending... (${secondsLeft}s remaining)`, 'info');
+
+  // Send the request immediately to Apps Script
   fetch(APPS_SCRIPT_URL, {
     method: 'POST',
     mode:   'no-cors',
@@ -332,24 +337,33 @@ form.addEventListener('submit', function (e) {
     body:   formData
   });
 
-  showStatus("Enquiry sent! We'll get back to you soon.", 'success');
-  form.reset();
-  setLoading(false);
+  // Maintain visual "sending..." state for 20 seconds to guarantee full delivery transit
+  const timer = setInterval(() => {
+    secondsLeft--;
+    if (secondsLeft > 0) {
+      showStatus(`Sending... (${secondsLeft}s remaining)`, 'info');
+      btn.textContent = `Sending (${secondsLeft}s)...`;
+    } else {
+      clearInterval(timer);
+      showStatus("Enquiry sent! We'll get back to you soon.", 'success');
+      form.reset();
+      setLoading(false);
 
-  // Reset verification state
-  verifiedUser = null;
-  verifyBanner.classList.remove('verified');
-  verifyAvatar.style.display = 'none';
-  verifyIcon.style.display   = '';
-  verifyText.innerHTML = `
-    <div style="font-size:13px;font-weight:700;color:#1e3a5f;">Verify with Google</div>
-    <div style="font-size:11px;color:#64748b;margin-top:1px;">Confirm you're a real person</div>
-  `;
-  verifyBtn.textContent = 'Verify';
-  verifyBtn.classList.remove('verified');
-  verifyBtn.disabled = false;
+      // Reset verification state
+      verifiedUser = null;
+      verifyBanner.classList.remove('verified');
+      verifyAvatar.style.display = 'none';
+      verifyIcon.style.display   = '';
+      verifyText.innerHTML = `
+        <div style="font-size:13px;font-weight:700;color:#1e3a5f;">Verify with Google</div>
+        <div style="font-size:11px;color:#64748b;margin-top:1px;">Confirm you're a real person</div>
+      `;
+      verifyBtn.textContent = 'Verify';
+      verifyBtn.classList.remove('verified');
+      verifyBtn.disabled = false;
+    }
+  }, 1000);
 });
-
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function setLoading(on) {
   btn.disabled    = on;
