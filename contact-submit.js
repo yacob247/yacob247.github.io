@@ -47,22 +47,94 @@
 
     const payload = {
       to: RECIPIENT,
+      replyTo: `${name} <${email}>`,
       subject: subject
         ? `[Yacob Digital] ${subject}`
         : `[Yacob Digital] New enquiry from ${name}`,
-      html: `
-        <div style="font-family:Arial,sans-serif;max-width:600px;color:#1e293b">
-          <h2 style="color:#2563eb;margin-bottom:4px">New contact enquiry</h2>
-          <hr style="border:none;border-top:1px solid #e2e8f0;margin-bottom:20px"/>
-          <p><strong>Name:</strong> ${escHtml(name)}</p>
-          <p><strong>Email:</strong> <a href="mailto:${escHtml(email)}">${escHtml(email)}</a></p>
-          ${subject ? `<p><strong>Subject:</strong> ${escHtml(subject)}</p>` : ''}
-          <p><strong>Message:</strong></p>
-          <div style="background:#f8fafc;border-left:3px solid #2563eb;padding:12px 16px;border-radius:4px;white-space:pre-wrap">${escHtml(message)}</div>
-          <hr style="border:none;border-top:1px solid #e2e8f0;margin-top:24px"/>
-          <p style="color:#94a3b8;font-size:12px">Sent via the Yacob Digital contact form</p>
-        </div>
-      `,
+      html: `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><title>New Enquiry</title></head>
+<body style="margin:0;padding:0;background-color:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:40px 0;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+
+        <!-- Header -->
+        <tr>
+          <td style="background:#2563eb;border-radius:12px 12px 0 0;padding:32px 40px;text-align:left;">
+            <div style="display:inline-block;background:rgba(255,255,255,0.15);border-radius:8px;padding:6px 14px;margin-bottom:16px;">
+              <span style="color:#fff;font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;">Yacob Digital</span>
+            </div>
+            <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;line-height:1.3;">New contact enquiry</h1>
+            <p style="margin:8px 0 0;color:rgba(255,255,255,0.75);font-size:13px;">Someone submitted the contact form on your website.</p>
+          </td>
+        </tr>
+
+        <!-- Body -->
+        <tr>
+          <td style="background:#ffffff;padding:36px 40px;">
+
+            <!-- Sender card -->
+            <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;margin-bottom:28px;">
+              <tr>
+                <td style="padding:20px 24px;">
+                  <div style="display:flex;align-items:center;margin-bottom:4px;">
+                    <div style="width:40px;height:40px;border-radius:50%;background:#2563eb;display:inline-flex;align-items:center;justify-content:center;margin-right:14px;vertical-align:middle;">
+                      <span style="color:#fff;font-size:16px;font-weight:700;line-height:40px;display:inline-block;width:40px;text-align:center;">${escHtml(name.charAt(0).toUpperCase())}</span>
+                    </div>
+                    <div style="display:inline-block;vertical-align:middle;">
+                      <div style="font-size:15px;font-weight:700;color:#0f172a;line-height:1.2;">${escHtml(name)}</div>
+                      <div style="font-size:13px;color:#2563eb;margin-top:2px;"><a href="mailto:${escHtml(email)}" style="color:#2563eb;text-decoration:none;">${escHtml(email)}</a></div>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            </table>
+
+            <!-- Subject row -->
+            ${subject ? `
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+              <tr>
+                <td style="padding:0;">
+                  <p style="margin:0 0 6px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#94a3b8;">Subject</p>
+                  <p style="margin:0;font-size:15px;font-weight:600;color:#0f172a;">${escHtml(subject)}</p>
+                </td>
+              </tr>
+            </table>
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;"><tr><td style="border-top:1px solid #f1f5f9;font-size:0;">&nbsp;</td></tr></table>
+            ` : ''}
+
+            <!-- Message -->
+            <p style="margin:0 0 10px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#94a3b8;">Message</p>
+            <div style="background:#f8fafc;border-left:3px solid #2563eb;border-radius:0 8px 8px 0;padding:16px 20px;font-size:14px;line-height:1.75;color:#334155;white-space:pre-wrap;">${escHtml(message)}</div>
+
+            <!-- Reply CTA -->
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:32px;">
+              <tr>
+                <td>
+                  <a href="mailto:${escHtml(email)}?subject=Re: ${escHtml(subject || 'Your enquiry')}" style="display:inline-block;background:#2563eb;color:#ffffff;font-size:13px;font-weight:700;text-decoration:none;padding:12px 28px;border-radius:8px;letter-spacing:0.3px;">Reply to ${escHtml(name)}</a>
+                </td>
+              </tr>
+            </table>
+
+          </td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+          <td style="background:#f8fafc;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 12px 12px;padding:20px 40px;text-align:center;">
+            <p style="margin:0;font-size:11px;color:#94a3b8;line-height:1.6;">
+              This message was submitted via the contact form at <strong>yacobdigital.com</strong><br/>
+              © ${new Date().getFullYear()} Yacob Digital · <a href="mailto:envizionupdates@gmail.com" style="color:#94a3b8;text-decoration:underline;">envizionupdates@gmail.com</a>
+            </p>
+          </td>
+        </tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`,
       text: `Name: ${name}\nEmail: ${email}\n${subject ? 'Subject: ' + subject + '\n' : ''}\nMessage:\n${message}`,
     };
 
