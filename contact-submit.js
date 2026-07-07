@@ -1,57 +1,23 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+/**
+ * contact-submit.js
+ * Submits the Yacob Digital contact form to Google Apps Script via JSON POST.
+ * Includes a strict email format validator and a smart mailto: modal interceptor.
+ */
 
 (function () {
   'use strict';
-
-  // Get Firebase configuration dynamically or use default fallback parameters
-  let firebaseConfig = {};
-  if (typeof __firebase_config !== 'undefined') {
-    try {
-      firebaseConfig = JSON.parse(__firebase_config);
-    } catch (e) {
-      console.error("Error parsing native __firebase_config:", e);
-    }
-  } else {
-    // Fallback template config
-    // For Firebase JS SDK v7.20.0 and later, measurementId is optional
-firebaseConfig = {
-  apiKey: "AIzaSyDLeM4MrsA1Q8zq7_QcQfTJKk049vOVOO4",
-  authDomain: "envizionwork.firebaseapp.com",
-  databaseURL: "https://envizionwork-default-rtdb.firebaseio.com",
-  projectId: "envizionwork",
-  storageBucket: "envizionwork.firebasestorage.app",
-  messagingSenderId: "706251024837",
-  appId: "1:706251024837:web:4c931733d3a9f430a703ac",
-  measurementId: "G-9CL929H67Z"
-};
-  }
-
-  // Initialize Firebase App
-  const app = initializeApp(firebaseConfig);
-  const auth = getAuth(app);
-  const provider = new GoogleAuthProvider();
 
   const APPS_SCRIPT_URL =
     'https://script.google.com/macros/s/AKfycbyYsr03oyOeBTaI2wImBWVjbsVwR0LHYT_6o0R6-vUuZVb9VmjtWiYFZgSduppvPhpj/exec';
 
   const RECIPIENT = 'envizionupdates@gmail.com';
 
-  const form             = document.getElementById('contact-form');
-  const btn              = document.getElementById('submit-btn');
-  const status           = document.getElementById('form-status');
-  const inputName        = document.getElementById('name');
-  const inputEmail       = document.getElementById('email');
+  const form   = document.getElementById('contact-form');
+  const btn    = document.getElementById('submit-btn');
+  const status = document.getElementById('form-status');
 
-  // Google Sign-In Card Selectors
-  const authUnverified   = document.getElementById('auth-unverified');
-  const authVerified     = document.getElementById('auth-verified');
-  const googleSigninBtn  = document.getElementById('google-signin-btn');
-  const googleSignoutBtn = document.getElementById('google-signout-btn');
-  const userAvatar       = document.getElementById('user-avatar');
-  const verifiedName     = document.getElementById('verified-name');
-  const verifiedEmail    = document.getElementById('verified-email');
-
+  /* ── SMART EMAIL INTERCEPTOR MODAL ─────────────────────────────────── */
+  
   const style = document.createElement('style');
   style.textContent = `
     .email-modal-overlay {
@@ -114,9 +80,9 @@ firebaseConfig = {
   modalOverlay.innerHTML = modalHTML;
   document.body.appendChild(modalOverlay);
 
-  const closeBtn = document.getElementById('close-email-modal');
-  const optGmail = document.getElementById('email-opt-gmail');
-  const optCopy  = document.getElementById('email-opt-copy');
+  const closeBtn  = document.getElementById('close-email-modal');
+  const optGmail  = document.getElementById('email-opt-gmail');
+  const optCopy   = document.getElementById('email-opt-copy');
   const copyTitle = document.getElementById('copy-title');
   const copyDesc  = document.getElementById('copy-desc');
 
@@ -171,78 +137,26 @@ firebaseConfig = {
     }
   });
 
-  // Listen to Auth State Changes
-  onAuthStateChanged(auth, (user) => {
-    if (user) {
-      // User is verified and signed in
-      inputName.value = user.displayName || 'Google User';
-      inputEmail.value = user.email;
-
-      // Update Verification UI
-      verifiedName.textContent = user.displayName || 'Google User';
-      verifiedEmail.textContent = user.email;
-      userAvatar.src = user.photoURL || '';
-
-      authUnverified.classList.add('hidden');
-      authVerified.classList.remove('hidden');
-
-      // Enable Form Interactive state
-      form.classList.remove('opacity-50', 'pointer-events-none');
-      btn.disabled = false;
-      btn.className = "w-full px-8 py-3 bg-envizion-primary hover:bg-envizion-primaryHover text-white text-sm font-bold rounded-md shadow-lg transition-colors cursor-pointer";
-      btn.textContent = "Send Enquiry";
-    } else {
-      // User is logged out
-      inputName.value = '';
-      inputEmail.value = '';
-
-      authUnverified.classList.remove('hidden');
-      authVerified.classList.add('hidden');
-
-      // Lock Form Interactive state
-      form.classList.add('opacity-50', 'pointer-events-none');
-      btn.disabled = true;
-      btn.className = "w-full px-8 py-3 bg-gray-400 text-white text-sm font-bold rounded-md shadow-lg transition-colors cursor-not-allowed";
-      btn.textContent = "Please Verify Above First";
-    }
-  });
-
-  // Google Sign-In click triggers
-  googleSigninBtn.addEventListener('click', async () => {
-    try {
-      await signInWithPopup(auth, provider);
-    } catch (err) {
-      console.error("Sign-in authentication error:", err);
-      showStatus("Google login failed. Please reload and try again.", "error");
-    }
-  });
-
-  // Google Sign-Out click triggers
-  googleSignoutBtn.addEventListener('click', async () => {
-    try {
-      await signOut(auth);
-    } catch (err) {
-      console.error("Sign-out authentication error:", err);
-    }
-  });
+  /* ── FORM SUBMISSION LOGIC ────────────────────────────────────────── */
 
   if (!form) return;
 
   form.addEventListener('submit', async function (e) {
     e.preventDefault();
 
-    const name    = inputName.value.trim();
-    const email   = inputEmail.value.trim();
+    const name    = form.querySelector('#name').value.trim();
+    const email   = form.querySelector('#email').value.trim();
     const subject = form.querySelector('#subject').value.trim();
     const message = form.querySelector('#message').value.trim();
 
-    // Verify identity parameters exist
-    if (!name || !email) {
-      showStatus('Please authenticate your Google identity first.', 'error');
+    if (!name || !email || !message) {
+      showStatus('Please fill in your name, email, and message.', 'error');
       return;
     }
-    if (!message) {
-      showStatus('Please fill in your message.', 'error');
+    
+    // Strict Regex check to ensure format is valid (detects basic fake formatting)
+    if (!isValidEmail(email)) {
+      showStatus('Please enter a valid, properly formatted email address.', 'error');
       return;
     }
 
@@ -391,6 +305,8 @@ firebaseConfig = {
     }
   });
 
+  /* ── helpers ───────────────────────────────────────────────────────── */
+
   function setLoading(on) {
     btn.disabled    = on;
     btn.textContent = on ? 'Sending…' : 'Send Enquiry';
@@ -404,6 +320,11 @@ firebaseConfig = {
     const colours = { success: 'text-emerald-600', error: 'text-red-500', info: 'text-gray-400' };
     status.classList.add(colours[type] || 'text-gray-400');
     status.classList.remove('hidden');
+  }
+  
+  // Stricter Regex Email Validation
+  function isValidEmail(v) {
+    return /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*$/.test(v);
   }
 
   function escHtml(str) {
