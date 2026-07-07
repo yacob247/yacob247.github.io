@@ -106,7 +106,7 @@
     .git-file-deleted { color:#c74e39; }
     #find-replace-panel { display:none; }
     #find-replace-panel.visible { display:flex; }
-    .status-item { display:flex; align-items:center; height:100%; padding:0 6px; cursor:pointer; transition:background 0.15s; gap:4px; font-size:11px; }
+    .status-item { display:flex; align-items:center; height:100%; padding:0 font-size:11px; }
     .status-item:hover { background:rgba(255,255,255,0.15); }
     .editor-tab { border-top:2px solid transparent; flex-shrink:0; }
     .editor-tab.active { border-top-color:#007acc; background:#1e1e1e; }
@@ -156,7 +156,6 @@
       </div>
       <div class="flex" id="top-menu-bar"></div>
     </div>
-    <!-- Returned to exact original far-right alignment on desktop next to header filename -->
     <div class="flex items-center gap-2 pr-2 text-gray-400 text-[11px]">
       <span id="header-filename" class="text-gray-400"></span>
       <button id="what-is-btn" onclick="toggleExplanation()" style="background:none;border:1px solid #3a3a3a;color:#666;font-size:11px;padding:3px 10px;border-radius:3px;cursor:pointer;font-family:'Inter',sans-serif;white-space:nowrap;">What is this?</button>
@@ -182,7 +181,6 @@
           </div>
           <button onclick="mobileNavigate(1)" class="p-1.5 text-gray-400 hover:text-white transition active:bg-[#333] rounded"><i data-lucide="chevron-right" class="w-4 h-4"></i></button>
       </div>
-      <!-- Returned to exact original far-right position on mobile navigation bar -->
       <button onclick="toggleExplanation()" class="p-1.5 bg-[#333] text-gray-300 hover:text-white rounded text-xs border border-dashed border-[#555] ml-1.5 shrink-0" title="What is this?"><i data-lucide="info" class="w-4 h-4"></i></button>
   </div>
 
@@ -355,10 +353,11 @@
         <div id="editor-empty" class="absolute inset-0 flex items-center justify-center bg-[#1e1e1e] z-10">
           <div class="text-center">
             <i data-lucide="code-2" class="w-16 h-16 text-gray-700 mx-auto mb-4"></i>
-            <p class="text-gray-600 font-mono text-sm mb-2">HyperLive Pro</p>
+            <p class="text-gray-600 font-mono text-sm mb-2">Saasify / HyperLive Pro</p>
             <p class="text-gray-700 text-xs hidden md:block mb-6">Ctrl+N — New File &nbsp;|&nbsp; Ctrl+O — Open Folder</p>
-            <!-- Specific buttons requested for Mobile / Empty view -->
-            <div class="mt-6 flex flex-wrap gap-3 justify-center max-w-[300px] mx-auto md:max-w-none">
+            <!-- Premium Direct Preview Scratchpad button added -->
+            <div class="mt-6 flex flex-wrap gap-3 justify-center max-w-[320px] mx-auto md:max-w-none">
+              <button onclick="openScratchpad()" class="px-4 py-2 bg-[#10b981] hover:bg-[#059669] text-white rounded text-xs transition shadow w-full font-bold md:w-auto">Open Fast Scratchpad (Instant Preview)</button>
               <button onclick="createNewFile()" class="px-4 py-2 bg-[#007acc] hover:bg-[#005f9e] text-white rounded text-xs transition shadow w-full sm:w-auto">New File</button>
               <button onclick="document.getElementById('file-input').click()" class="px-4 py-2 border border-[#454545] hover:bg-[#37373d] text-gray-300 rounded text-xs transition shadow w-full sm:w-auto">Upload File</button>
               <button onclick="createNewFolder()" class="px-4 py-2 border border-[#454545] hover:bg-[#37373d] text-gray-300 rounded text-xs transition shadow w-full sm:w-auto">New Folder</button>
@@ -523,7 +522,7 @@
         <div class="space-y-4">
           <h4 class="text-white font-bold text-base border-b border-[#2d2d2d] pb-1">1. Architectural Design Philosophy & VFS Engine</h4>
           <p>
-            Welcome to the technical handbook for <strong>HyperLive Pro</strong>, a modern client-side environment engineered for browser-based prototyping. Traditional development workflows require heavy server-side bundlers, compilation daemons, Node.js environments, and remote virtual machines. This platform eliminates those barriers by running an entire bundler pipeline entirely in-memory.
+            Welcome to the technical handbook for <strong>Saasify / HyperLive Pro</strong>, a modern client-side environment engineered for browser-based prototyping. Traditional development workflows require heavy server-side bundlers, compilation daemons, Node.js environments, and remote virtual machines. This platform eliminates those barriers by running an entire bundler pipeline entirely in-memory.
           </p>
           <p>
             The foundation of HyperLive Pro starts with the high-performance <strong>Monaco Code Editor engine</strong>. As you write code, editor mutations stream directly into a high-performance **Virtual File System (VFS)**. The VFS acts as a local key-value register holding file contents in-browser. This architecture enables features like instant file generation, automatic file traversal, workspace ZIP exports, and folder mounting without a local backend.
@@ -872,6 +871,26 @@
       return html;
     }
 
+    // Proxy the monaco initialization setter before document loads to inject the compiler listeners automatically
+    let _monacoObj = undefined;
+    Object.defineProperty(window, 'monaco', {
+      get() { return _monaco; },
+      set(val) {
+        _monaco = val;
+        if (val && val.editor && !val.editor._customHooked) {
+          val.editor._customHooked = true;
+          const origCreate = val.editor.create;
+          val.editor.create = function(...args) {
+            const ed = origCreate.apply(this, args);
+            window.editor = ed; // Expose Monaco globally to bypass lexical scoping barriers!
+            _installJSXEditorListener();
+            return ed;
+          };
+        }
+      },
+      configurable: true
+    });
+
     window.addEventListener('load', () => {
       const origRefresh = window.refreshPreview;
       if (typeof origRefresh === 'function') {
@@ -888,7 +907,7 @@
               return;
             }
           }
-          // Scratchpad File-Free Fallback compiling
+          // Dynamic Scratchpad compilation fallback
           if ((!activeIframeFile || typeof vfs === 'undefined' || !vfs[activeIframeFile]) && window.editor) {
              const fallbackContent = window.editor.getValue();
              if (fallbackContent && fallbackContent.trim()) {
@@ -907,20 +926,23 @@
         };
       }
 
+      // Fully wrap openFile to explicitly support non-HTML files as active preview targets!
       const origOpenFile = window.openFile;
       if (typeof origOpenFile === 'function') {
         window.openFile = function(path) {
           origOpenFile.call(this, path);
           if (typeof vfs !== 'undefined' && vfs[path] && vfs[path].isText) {
             const ext = path.split('.').pop().toLowerCase();
+            window.activeIframeFile = path;
+            window.activeIframeQuery = '';
+            
             if (ext === 'jsx' || ext === 'tsx') {
-              window.activeIframeFile = path;
-              window.activeIframeQuery = '';
               _renderJSXPreview(path, vfs[path].content || '');
             } else if ((ext === 'js' || ext === 'ts') && isReactJSX(vfs[path].content || '')) {
-              window.activeIframeFile = path;
-              window.activeIframeQuery = '';
               _renderJSXPreview(path, vfs[path].content || '');
+            } else if (ext === 'html' || ext === 'htm') {
+              const liveFrame = document.getElementById('live-frame');
+              if (liveFrame) liveFrame.srcdoc = compileVFS(path, false, '');
             }
           }
         };
@@ -939,7 +961,6 @@
             return;
           }
         }
-        // Fallback for file-free standalone tab launch
         if ((!activeIframeFile || typeof vfs === 'undefined' || !vfs[activeIframeFile]) && window.editor) {
           const content = window.editor.getValue();
           const html = isReactJSX(content) ? buildReactSandbox(content, 'scratchpad.jsx') : content;
@@ -953,16 +974,8 @@
         }
       };
 
-      const origDidChange = window._jsxLiveUpdateInstalled;
-      if (!origDidChange && typeof window.editor !== 'undefined') {
+      if (window.editor && !window._jsxLiveUpdateInstalled) {
         _installJSXEditorListener();
-      } else {
-        const waitForEditor = setInterval(() => {
-          if (typeof window.editor !== 'undefined' && !window._jsxLiveUpdateInstalled) {
-            clearInterval(waitForEditor);
-            _installJSXEditorListener();
-          }
-        }, 300);
       }
     });
 
@@ -981,33 +994,52 @@
       }
     }
 
-    // Explicit listener configuration to update changes automatically
+    // Expose powerful unified Real-time editor compiler
+    window.unifiedRealTimePreview = function() {
+      if (!window.editor) return;
+      const code = window.editor.getValue();
+      if (!code) return;
+
+      const bar = document.getElementById('address-bar');
+
+      if (window.activeFile) {
+        if (window.vfs && window.vfs[window.activeFile]) {
+          window.vfs[window.activeFile].content = code;
+        }
+        const ext = window.activeFile.split('.').pop().toLowerCase();
+        if (ext === 'jsx' || ext === 'tsx' || ((ext === 'js' || ext === 'ts') && isReactJSX(code))) {
+          _renderJSXPreview(window.activeFile, code);
+        } else if (ext === 'html' || ext === 'htm') {
+          if (bar) bar.textContent = `hyperlive://local/${window.activeFile}`;
+          const liveFrame = document.getElementById('live-frame');
+          if (liveFrame) liveFrame.srcdoc = compileVFS(window.activeFile, false, '');
+        } else if (ext === 'css') {
+          const htmlFile = window.activeIframeFile || Object.keys(window.vfs).find(p => p.endsWith('.html')) || 'index.html';
+          if (window.vfs[htmlFile]) {
+             const liveFrame = document.getElementById('live-frame');
+             if (liveFrame) liveFrame.srcdoc = compileVFS(htmlFile, false, '');
+          }
+        }
+      } else {
+        // Direct Scratchpad Paste Mode (Instant live compiling with no files loaded)
+        if (bar) bar.textContent = 'hyperlive://scratchpad/editor';
+        const liveFrame = document.getElementById('live-frame');
+        if (isReactJSX(code)) {
+          _renderJSXPreview('scratchpad.jsx', code);
+        } else {
+          if (liveFrame) liveFrame.srcdoc = code;
+        }
+      }
+    };
+
     function _installJSXEditorListener() {
       window._jsxLiveUpdateInstalled = true;
       let _jsxDebounce = null;
       window.editor.onDidChangeModelContent(() => {
-        if (!window.activeFile || !window.vfs || !window.vfs[window.activeFile]) {
-          // Robust instant file-free preview compilation hot-reloader fallback
-          clearTimeout(_jsxDebounce);
-          _jsxDebounce = setTimeout(() => {
-             refreshPreview();
-          }, 300);
-          return;
-        }
-        const ext = window.activeFile.split('.').pop().toLowerCase();
-        
-        window.vfs[window.activeFile].content = window.editor.getValue();
-
-        if (ext === 'jsx' || ext === 'tsx' || ((ext === 'js' || ext === 'ts') && isReactJSX(window.vfs[window.activeFile].content))) {
-          clearTimeout(_jsxDebounce);
-          _jsxDebounce = setTimeout(() => {
-            if (window.activeIframeFile === window.activeFile) {
-              _renderJSXPreview(window.activeFile, window.vfs[window.activeFile].content);
-            } else if (window.activeIframeFile && (window.activeIframeFile.endsWith('.jsx') || window.activeIframeFile.endsWith('.tsx') || isReactJSX(window.vfs[window.activeIframeFile]?.content || ''))) {
-              _renderJSXPreview(window.activeIframeFile, window.vfs[window.activeIframeFile].content);
-            }
-          }, 500);
-        }
+        clearTimeout(_jsxDebounce);
+        _jsxDebounce = setTimeout(() => {
+          unifiedRealTimePreview();
+        }, 150);
       });
     }
 
@@ -1095,7 +1127,6 @@
       openFile(allFiles[nextIdx]);
     }
 
-    // Instantly tracks UI updates without throwing null pointer errors
     function updateMobileUI() {
       if (typeof vfs === 'undefined') return;
       const nameEl = document.getElementById('mobile-filename');
@@ -1227,6 +1258,20 @@
         updateMobileUI();
       }, 150);
     });
+
+    // Expose direct scratchpad capability for completely file-free editing (paste & preview instantly!)
+    window.openScratchpad = function() {
+      if (typeof closeAllTabs === 'function') {
+         closeAllTabs();
+      }
+      if (window.editor) {
+         window.editor.setValue('<!-- Paste HTML or React JSX Code Here to Preview Instantly! -->\n');
+         window.activeFile = null;
+         window.activeIframeFile = null;
+         document.getElementById('editor-empty').style.display = 'none';
+         refreshPreview();
+      }
+    };
 
   </script>
 
