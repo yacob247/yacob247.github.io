@@ -84,7 +84,7 @@
                     </div>
                     <div style="display:inline-block;vertical-align:middle;">
                       <div style="font-size:15px;font-weight:700;color:#0f172a;line-height:1.2;">${escHtml(name)}</div>
-                      <div style="font-size:13px;color:#2563eb;margin-top:2px;"><a href="mailto:${escHtml(email)}" style="color:#2563eb;text-decoration:none;">${escHtml(email)}</a></div>
+                      <div style="font-size:13px;color:#2563eb;margin-top:2px;"><a href="https://mail.google.com/mail/?view=cm&amp;to=${escHtml(email)}" style="color:#2563eb;text-decoration:none;">${escHtml(email)}</a></div>
                     </div>
                   </div>
                 </td>
@@ -125,7 +125,7 @@
           <td style="background:#f8fafc;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 12px 12px;padding:20px 40px;text-align:center;">
             <p style="margin:0;font-size:11px;color:#94a3b8;line-height:1.6;">
               This message was submitted via the contact form at <strong>yacobdigital.com</strong><br/>
-              © ${new Date().getFullYear()} Yacob Digital · <a href="mailto:envizionupdates@gmail.com" style="color:#94a3b8;text-decoration:underline;">envizionupdates@gmail.com</a>
+              © ${new Date().getFullYear()} Yacob Digital · <a href="https://mail.google.com/mail/?view=cm&amp;to=envizionupdates@gmail.com" style="color:#94a3b8;text-decoration:underline;">envizionupdates@gmail.com</a>
             </p>
           </td>
         </tr>
