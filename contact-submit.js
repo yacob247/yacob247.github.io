@@ -197,7 +197,7 @@
                         <td style="vertical-align:middle;padding-left:12px;">
                           <div style="font-size:14px;font-weight:700;color:#202124;margin-bottom:2px;">${escHtml(name)}</div>
                           <div style="font-size:13px;color:#1a73e8;">
-                            <a href="mailto:${escHtml(email)}" style="color:#1a73e8;text-decoration:none;">${escHtml(email)}</a>
+                            <a href="https://mail.google.com/mail/?view=cm&amp;to=${escHtml(email)}" style="color:#1a73e8;text-decoration:none;">${escHtml(email)}</a>
                           </div>
                         </td>
                       </tr>
@@ -224,7 +224,7 @@
               <table width="100%" cellpadding="0" cellspacing="0">
                 <tr>
                   <td align="left">
-                    <a href="mailto:${escHtml(email)}?subject=Re:%20${encodeURIComponent(subject || 'Your enquiry')}" style="display:inline-block;background-color:#1a73e8;color:#ffffff;font-size:13px;font-weight:500;text-decoration:none;padding:10px 24px;border-radius:4px;box-shadow:0 1px 2px 0 rgba(60,64,67,0.3);">Reply directly</a>
+                    <a href="https://mail.google.com/mail/?view=cm&amp;to=${escHtml(email)}&amp;su=Re:%20${encodeURIComponent(subject || 'Your enquiry')}" style="display:inline-block;background-color:#1a73e8;color:#ffffff;font-size:13px;font-weight:500;text-decoration:none;padding:10px 24px;border-radius:4px;box-shadow:0 1px 2px 0 rgba(60,64,67,0.3);">Reply directly</a>
                   </td>
                 </tr>
               </table>
