@@ -1,0 +1,58 @@
+/* =====================================================
+   mobile.js — HyperLive Pro Mobile Interactivity
+   Loaded by htmlviewer.html after htmlviewer.js
+   All mobile nav, swipe, and UI-sync logic lives here.
+   Desktop behaviour is untouched.
+   ===================================================== */
+
+// Navigate between open files on mobile (-1 = prev, +1 = next)
+function mobileNavigate(dir) {
+  if (typeof vfs === 'undefined' || !window.activeFile) return;
+  const allFiles = Object.keys(vfs).filter(f => !f.endsWith('.gitkeep'));
+  if (!allFiles.length) return;
+  const idx = allFiles.indexOf(window.activeFile);
+  const nextIdx = (idx + dir + allFiles.length) % allFiles.length;
+  if (typeof openFile === 'function') openFile(allFiles[nextIdx]);
+}
+
+// Update the mobile filename + counter display
+function updateMobileUI() {
+  if (typeof vfs === 'undefined' || !window.activeFile) return;
+  const allFiles = Object.keys(vfs).filter(f => !f.endsWith('.gitkeep'));
+  const idx = allFiles.indexOf(window.activeFile);
+  const nameEl  = document.getElementById('mobile-filename');
+  const ctrEl   = document.getElementById('mobile-counter');
+  if (nameEl) nameEl.textContent = window.activeFile.split('/').pop();
+  if (ctrEl)  ctrEl.textContent  = `${idx + 1} / ${allFiles.length}`;
+}
+
+// Poll every 200 ms so the mobile header stays in sync with
+// tab clicks and file operations handled by htmlviewer.js
+let _lastActiveFileTracker = null;
+setInterval(() => {
+  if (typeof window.activeFile !== 'undefined' &&
+      window.activeFile !== _lastActiveFileTracker) {
+    _lastActiveFileTracker = window.activeFile;
+    updateMobileUI();
+  }
+}, 200);
+
+// Attach touch-swipe on the swipe area once the DOM is ready
+window.addEventListener('load', () => {
+  const swipeArea = document.getElementById('swipe-area');
+  if (!swipeArea) return;
+
+  let touchStartX = 0;
+  let touchEndX   = 0;
+
+  swipeArea.addEventListener('touchstart', e => {
+    touchStartX = e.changedTouches[0].screenX;
+  }, { passive: true });
+
+  swipeArea.addEventListener('touchend', e => {
+    touchEndX = e.changedTouches[0].screenX;
+    const delta = touchEndX - touchStartX;
+    if (delta < -30) mobileNavigate(1);   // swipe left  → next file
+    if (delta >  30) mobileNavigate(-1);  // swipe right → prev file
+  }, { passive: true });
+});
