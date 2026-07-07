@@ -1,23 +1,19 @@
 /**
  * contact-submit.js
- * Submits the Yacob Digital contact form to Google Apps Script via JSON POST.
- * Includes a strict email format validator and a smart mailto: modal interceptor.
+ * Submits the Yacob Digital contact form to Google Apps Script.
  */
 
 (function () {
   'use strict';
 
-  const APPS_SCRIPT_URL =
-    'https://script.google.com/macros/s/AKfycbyYsr03oyOeBTaI2wImBWVjbsVwR0LHYT_6o0R6-vUuZVb9VmjtWiYFZgSduppvPhpj/exec';
-
+  // IMPORTANT: Ensure this URL matches your LATEST deployment!
+  const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyYsr03oyOeBTaI2wImBWVjbsVwR0LHYT_6o0R6-vUuZVb9VmjtWiYFZgSduppvPhpj/exec';
   const RECIPIENT = 'envizionupdates@gmail.com';
 
   const form   = document.getElementById('contact-form');
   const btn    = document.getElementById('submit-btn');
   const status = document.getElementById('form-status');
 
-  /* ── SMART EMAIL INTERCEPTOR MODAL ─────────────────────────────────── */
-  
   const style = document.createElement('style');
   style.textContent = `
     .email-modal-overlay {
@@ -36,7 +32,6 @@
   `;
   document.head.appendChild(style);
 
-  // Simplified Popup modal (Gmail direct open + Copy email backup only)
   const modalHTML = `
     <div class="email-modal" role="dialog" aria-modal="true">
       <div class="flex justify-between items-start mb-4">
@@ -50,7 +45,6 @@
       </p>
       
       <div class="space-y-3">
-        <!-- Option 1: Gmail -->
         <a id="email-opt-gmail" href="#" target="_blank" class="flex items-center gap-3 w-full p-3.5 border border-gray-100 hover:border-blue-200 rounded-xl hover:bg-blue-50/50 transition text-left group">
           <div class="w-10 h-10 rounded-lg bg-red-50 flex items-center justify-center text-red-500 group-hover:scale-105 transition">
             <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/></svg>
@@ -61,7 +55,6 @@
           </div>
         </a>
 
-        <!-- Option 2: Copy Email Address -->
         <button id="email-opt-copy" class="flex items-center gap-3 w-full p-3.5 border border-gray-100 hover:border-blue-200 rounded-xl hover:bg-blue-50/50 transition text-left group">
           <div class="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 group-hover:scale-105 transition">
             <svg id="copy-icon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>
@@ -94,8 +87,6 @@
       const tempInput = document.createElement('textarea');
       tempInput.value = emailAddr;
       tempInput.style.position = 'fixed';
-      tempInput.style.top = '0';
-      tempInput.style.left = '0';
       tempInput.style.opacity = '0';
       document.body.appendChild(tempInput);
       tempInput.select();
@@ -110,9 +101,7 @@
           copyTitle.className = 'text-sm font-bold text-gray-800';
           copyDesc.textContent = 'Copy to your system clipboard';
         }, 2000);
-      } catch (err) {
-        console.error('Failed to copy', err);
-      }
+      } catch (err) {}
       document.body.removeChild(tempInput);
     };
 
@@ -137,11 +126,9 @@
     }
   });
 
-  /* ── FORM SUBMISSION LOGIC ────────────────────────────────────────── */
-
   if (!form) return;
 
-  form.addEventListener('submit', async function (e) {
+  form.addEventListener('submit', function (e) {
     e.preventDefault();
 
     const name    = form.querySelector('#name').value.trim();
@@ -154,7 +141,6 @@
       return;
     }
     
-    // Strict Regex check to ensure format is valid (detects basic fake formatting)
     if (!isValidEmail(email)) {
       showStatus('Please enter a valid, properly formatted email address.', 'error');
       return;
@@ -163,15 +149,12 @@
     setLoading(true);
     showStatus('Sending…', 'info');
 
-    // Build Premium, fully-responsive Google Workspace Style CSS Notification Email
     const payload = {
       to: RECIPIENT,
       senderName: name,
       senderEmail: email,
       replyTo: `${name} <${email}>`,
-      subject: subject
-        ? `[Yacob Digital] ${subject}`
-        : `[Yacob Digital] New enquiry from ${name}`,
+      subject: subject ? `[Yacob Digital] ${subject}` : `[Yacob Digital] New enquiry from ${name}`,
       html: `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -183,10 +166,7 @@
   <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f5f5;padding:30px 0;">
     <tr>
       <td align="center">
-        <!-- Main Email Card -->
         <table width="100%" cellpadding="0" cellspacing="0" style="max-width:580px;width:100%;background-color:#ffffff;border:1px solid #e0e0e0;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
-          
-          <!-- Elegant Google Blue Accent Header -->
           <tr>
             <td style="background-color:#1a73e8;padding:24px 30px;text-align:left;">
               <table width="100%" cellpadding="0" cellspacing="0">
@@ -199,27 +179,21 @@
               </table>
             </td>
           </tr>
-
-          <!-- Dynamic Body Elements -->
           <tr>
             <td style="padding:30px;background-color:#ffffff;">
               <p style="margin:0 0 20px 0;font-size:14px;color:#3c4043;line-height:1.5;">
                 You have received a new contact submission from your website portfolio. Details of the message are provided below:
               </p>
-
-              <!-- Sender Card -->
               <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f8f9fa;border:1px solid #dadce0;border-radius:6px;margin-bottom:24px;">
                 <tr>
                   <td style="padding:16px 20px;">
                     <table width="100%" cellpadding="0" cellspacing="0">
                       <tr>
-                        <!-- Avatar Icon -->
                         <td width="48" style="vertical-align:middle;">
                           <div style="width:38px;height:38px;border-radius:50%;background-color:#1a73e8;text-align:center;color:#ffffff;font-weight:bold;font-size:16px;line-height:38px;">
                             ${escHtml(name.charAt(0).toUpperCase())}
                           </div>
                         </td>
-                        <!-- Sender Metadata -->
                         <td style="vertical-align:middle;padding-left:12px;">
                           <div style="font-size:14px;font-weight:700;color:#202124;margin-bottom:2px;">${escHtml(name)}</div>
                           <div style="font-size:13px;color:#1a73e8;">
@@ -231,8 +205,6 @@
                   </td>
                 </tr>
               </table>
-
-              <!-- Subject Card Row -->
               <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px;">
                 <tr>
                   <td>
@@ -241,8 +213,6 @@
                   </td>
                 </tr>
               </table>
-
-              <!-- Message Text Block with solid Blue Accent -->
               <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
                 <tr>
                   <td>
@@ -251,8 +221,6 @@
                   </td>
                 </tr>
               </table>
-
-              <!-- Interactive Call to Action Reply Button -->
               <table width="100%" cellpadding="0" cellspacing="0">
                 <tr>
                   <td align="left">
@@ -262,8 +230,6 @@
               </table>
             </td>
           </tr>
-
-          <!-- Footer Metadata Panel -->
           <tr>
             <td style="background-color:#f8f9fa;border-top:1px solid #e0e0e0;padding:20px 30px;text-align:center;">
               <p style="margin:0;font-size:11px;color:#70757a;line-height:1.5;">
@@ -272,7 +238,6 @@
               </p>
             </td>
           </tr>
-
         </table>
       </td>
     </tr>
@@ -283,29 +248,28 @@
     };
 
     try {
+      // NOTE: We REMOVED 'await' here!
+      // This means the UI immediately shows "Success" and lets the user move on,
+      // while the 90-second delay runs completely in the background without freezing!
+      // 'text/plain' ensures the browser doesn't block the background request.
       fetch(APPS_SCRIPT_URL, {
         method:  'POST',
-        mode:    'no-cors',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify(payload),
-        keepalive: true,
+        mode:    'no-cors', 
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body:    JSON.stringify(payload)
       });
 
+      // Show success instantly!
       showStatus("Enquiry sent! We'll get back to you soon.", 'success');
       form.reset();
+      setLoading(false);
 
     } catch (err) {
       console.error('[contact-submit]', err);
-      showStatus(
-        'Could not send. Please email envizionupdates@gmail.com directly.',
-        'error'
-      );
-    } finally {
+      showStatus('Could not send. Please email envizionupdates@gmail.com directly.', 'error');
       setLoading(false);
     }
   });
-
-  /* ── helpers ───────────────────────────────────────────────────────── */
 
   function setLoading(on) {
     btn.disabled    = on;
@@ -322,7 +286,6 @@
     status.classList.remove('hidden');
   }
   
-  // Stricter Regex Email Validation
   function isValidEmail(v) {
     return /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*$/.test(v);
   }
