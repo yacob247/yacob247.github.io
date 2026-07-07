@@ -39,7 +39,7 @@
   `;
   document.head.appendChild(style);
 
-  // Build the Modal markup dynamically
+  // Build the Modal markup dynamically (Useless default mail/Outlook client option removed!)
   const modalHTML = `
     <div class="email-modal" role="dialog" aria-modal="true">
       <div class="flex justify-between items-start mb-4">
@@ -49,7 +49,7 @@
         </button>
       </div>
       <p class="text-sm text-gray-500 mb-6 leading-relaxed">
-        Sometimes standard mail links don't open on your device. Choose your preferred method below to get in touch with us at <span class="font-semibold text-gray-800">${RECIPIENT}</span>:
+        Choose your preferred method below to get in touch with us at <span class="font-semibold text-gray-800">${RECIPIENT}</span>:
       </p>
       
       <div class="space-y-3">
@@ -64,18 +64,7 @@
           </div>
         </a>
 
-        <!-- Option 2: Default Mail Client -->
-        <a id="email-opt-default" href="#" class="flex items-center gap-3 w-full p-3.5 border border-gray-100 hover:border-blue-200 rounded-xl hover:bg-blue-50/50 transition text-left group">
-          <div class="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600 group-hover:scale-105 transition">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 19v-8.93a2 2 0 01.89-1.664l8-5.333a2 2 0 012.22 0l8 5.333A2 2 0 0121 10.07V19M3 19a2 2 0 002 2h14a2 2 0 002-2M3 19l6.75-4.5M21 19l-6.75-4.5M3 10l6.75 4.5M21 10l-6.75 4.5m0 0l-2.25-1.5a2 2 0 00-2.22 0l-2.25 1.5"/></svg>
-          </div>
-          <div>
-            <div class="text-sm font-bold text-gray-800">Use Default Mail Client</div>
-            <div class="text-xs text-gray-500">Outlook, Apple Mail, Windows Mail</div>
-          </div>
-        </a>
-
-        <!-- Option 3: Copy Email -->
+        <!-- Option 2: Copy Email -->
         <button id="email-opt-copy" class="flex items-center gap-3 w-full p-3.5 border border-gray-100 hover:border-blue-200 rounded-xl hover:bg-blue-50/50 transition text-left group">
           <div class="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 group-hover:scale-105 transition">
             <svg id="copy-icon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>
@@ -97,7 +86,6 @@
   // Modal Control Elements
   const closeBtn = document.getElementById('close-email-modal');
   const optGmail = document.getElementById('email-opt-gmail');
-  const optDefault = document.getElementById('email-opt-default');
   const optCopy = document.getElementById('email-opt-copy');
   const copyTitle = document.getElementById('copy-title');
   const copyDesc = document.getElementById('copy-desc');
@@ -106,7 +94,6 @@
     // Populate action links
     const encEmail = encodeURIComponent(emailAddr);
     optGmail.href = `https://mail.google.com/mail/?view=cm&fs=1&to=${encEmail}`;
-    optDefault.href = `mailto:${emailAddr}`;
     
     // Copy logic setup
     optCopy.onclick = function() {
