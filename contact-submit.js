@@ -1,24 +1,54 @@
-/**
- * contact-submit.js
- * Submits the Yacob Digital contact form to Google Apps Script via JSON POST.
- *
- * Works on Chrome, Edge, Firefox, Safari — no email client, no new tab.
- * Also intercepts mailto links with an elegant UX modal supporting direct Gmail redirection.
- */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
 (function () {
   'use strict';
 
+  // Get Firebase configuration dynamically or use default fallback parameters
+  let firebaseConfig = {};
+  if (typeof __firebase_config !== 'undefined') {
+    try {
+      firebaseConfig = JSON.parse(__firebase_config);
+    } catch (e) {
+      console.error("Error parsing native __firebase_config:", e);
+    }
+  } else {
+    // Fallback template config
+    firebaseConfig = {
+      apiKey: "AIzaSyAs-FakeConfigKeyForTestingOnly",
+      authDomain: "yacob-digital.firebaseapp.com",
+      projectId: "yacob-digital",
+      storageBucket: "yacob-digital.appspot.com",
+      messagingSenderId: "1234567890",
+      appId: "1:1234567890:web:abcdef012345"
+    };
+  }
+
+  // Initialize Firebase App
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const provider = new GoogleAuthProvider();
+
   const APPS_SCRIPT_URL =
-    'https://script.google.com/macros/s/AKfycbzAW6uVNde6I0DGnnrWqncLNX78Auyfnji9mXoIQp2HREOntBz2dnVJeIM3PDqGLhzD_g/exec';
+    'https://script.google.com/macros/s/AKfycbyYsr03oyOeBTaI2wImBWVjbsVwR0LHYT_6o0R6-vUuZVb9VmjtWiYFZgSduppvPhpj/exec';
 
   const RECIPIENT = 'envizionupdates@gmail.com';
 
-  const form   = document.getElementById('contact-form');
-  const btn    = document.getElementById('submit-btn');
-  const status = document.getElementById('form-status');
+  const form             = document.getElementById('contact-form');
+  const btn              = document.getElementById('submit-btn');
+  const status           = document.getElementById('form-status');
+  const inputName        = document.getElementById('name');
+  const inputEmail       = document.getElementById('email');
 
-  // Inject custom styles for our gorgeous dynamic modal
+  // Google Sign-In Card Selectors
+  const authUnverified   = document.getElementById('auth-unverified');
+  const authVerified     = document.getElementById('auth-verified');
+  const googleSigninBtn  = document.getElementById('google-signin-btn');
+  const googleSignoutBtn = document.getElementById('google-signout-btn');
+  const userAvatar       = document.getElementById('user-avatar');
+  const verifiedName     = document.getElementById('verified-name');
+  const verifiedEmail    = document.getElementById('verified-email');
+
   const style = document.createElement('style');
   style.textContent = `
     .email-modal-overlay {
@@ -37,7 +67,7 @@
   `;
   document.head.appendChild(style);
 
-  // We removed the useless "Default client/Outlook" option entirely as requested!
+  // Simplified Popup modal (Gmail direct open + Copy email backup only)
   const modalHTML = `
     <div class="email-modal" role="dialog" aria-modal="true">
       <div class="flex justify-between items-start mb-4">
@@ -51,7 +81,7 @@
       </p>
       
       <div class="space-y-3">
-        <!-- Option 1: Gmail (100% Free, opens instant compose tab) -->
+        <!-- Option 1: Gmail -->
         <a id="email-opt-gmail" href="#" target="_blank" class="flex items-center gap-3 w-full p-3.5 border border-gray-100 hover:border-blue-200 rounded-xl hover:bg-blue-50/50 transition text-left group">
           <div class="w-10 h-10 rounded-lg bg-red-50 flex items-center justify-center text-red-500 group-hover:scale-105 transition">
             <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/></svg>
@@ -62,7 +92,7 @@
           </div>
         </a>
 
-        <!-- Option 2: Copy Email (Universal fallback option) -->
+        <!-- Option 2: Copy Email Address -->
         <button id="email-opt-copy" class="flex items-center gap-3 w-full p-3.5 border border-gray-100 hover:border-blue-200 rounded-xl hover:bg-blue-50/50 transition text-left group">
           <div class="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 group-hover:scale-105 transition">
             <svg id="copy-icon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>
@@ -83,13 +113,12 @@
 
   const closeBtn = document.getElementById('close-email-modal');
   const optGmail = document.getElementById('email-opt-gmail');
-  const optCopy = document.getElementById('email-opt-copy');
+  const optCopy  = document.getElementById('email-opt-copy');
   const copyTitle = document.getElementById('copy-title');
-  const copyDesc = document.getElementById('copy-desc');
+  const copyDesc  = document.getElementById('copy-desc');
 
   function openEmailModal(emailAddr) {
     const encEmail = encodeURIComponent(emailAddr);
-    // Directly pre-compose an email to your recipient with custom visual redirection
     optGmail.href = `https://mail.google.com/mail/?view=cm&fs=1&to=${encEmail}`;
     
     optCopy.onclick = function() {
@@ -139,32 +168,85 @@
     }
   });
 
+  // Listen to Auth State Changes
+  onAuthStateChanged(auth, (user) => {
+    if (user) {
+      // User is verified and signed in
+      inputName.value = user.displayName || 'Google User';
+      inputEmail.value = user.email;
 
-  /* ── STREAMING_CHUNK:Listening to form submit and packaging payload... ────────────────────────────────────────── */
+      // Update Verification UI
+      verifiedName.textContent = user.displayName || 'Google User';
+      verifiedEmail.textContent = user.email;
+      userAvatar.src = user.photoURL || '';
+
+      authUnverified.classList.add('hidden');
+      authVerified.classList.remove('hidden');
+
+      // Enable Form Interactive state
+      form.classList.remove('opacity-50', 'pointer-events-none');
+      btn.disabled = false;
+      btn.className = "w-full px-8 py-3 bg-envizion-primary hover:bg-envizion-primaryHover text-white text-sm font-bold rounded-md shadow-lg transition-colors cursor-pointer";
+      btn.textContent = "Send Enquiry";
+    } else {
+      // User is logged out
+      inputName.value = '';
+      inputEmail.value = '';
+
+      authUnverified.classList.remove('hidden');
+      authVerified.classList.add('hidden');
+
+      // Lock Form Interactive state
+      form.classList.add('opacity-50', 'pointer-events-none');
+      btn.disabled = true;
+      btn.className = "w-full px-8 py-3 bg-gray-400 text-white text-sm font-bold rounded-md shadow-lg transition-colors cursor-not-allowed";
+      btn.textContent = "Please Verify Above First";
+    }
+  });
+
+  // Google Sign-In click triggers
+  googleSigninBtn.addEventListener('click', async () => {
+    try {
+      await signInWithPopup(auth, provider);
+    } catch (err) {
+      console.error("Sign-in authentication error:", err);
+      showStatus("Google login failed. Please reload and try again.", "error");
+    }
+  });
+
+  // Google Sign-Out click triggers
+  googleSignoutBtn.addEventListener('click', async () => {
+    try {
+      await signOut(auth);
+    } catch (err) {
+      console.error("Sign-out authentication error:", err);
+    }
+  });
 
   if (!form) return;
 
   form.addEventListener('submit', async function (e) {
     e.preventDefault();
 
-    const name    = form.querySelector('#name').value.trim();
-    const email   = form.querySelector('#email').value.trim();
+    const name    = inputName.value.trim();
+    const email   = inputEmail.value.trim();
     const subject = form.querySelector('#subject').value.trim();
     const message = form.querySelector('#message').value.trim();
 
-    if (!name || !email || !message) {
-      showStatus('Please fill in your name, email, and message.', 'error');
+    // Verify identity parameters exist
+    if (!name || !email) {
+      showStatus('Please authenticate your Google identity first.', 'error');
       return;
     }
-    if (!isValidEmail(email)) {
-      showStatus('Please enter a valid email address.', 'error');
+    if (!message) {
+      showStatus('Please fill in your message.', 'error');
       return;
     }
 
     setLoading(true);
     showStatus('Sending…', 'info');
 
-    // Packages distinct sender identity attributes for Google Apps Script
+    // Build Premium, fully-responsive Google Workspace Style CSS Notification Email
     const payload = {
       to: RECIPIENT,
       senderName: name,
@@ -184,8 +266,10 @@
   <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f5f5;padding:30px 0;">
     <tr>
       <td align="center">
+        <!-- Main Email Card -->
         <table width="100%" cellpadding="0" cellspacing="0" style="max-width:580px;width:100%;background-color:#ffffff;border:1px solid #e0e0e0;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
           
+          <!-- Elegant Google Blue Accent Header -->
           <tr>
             <td style="background-color:#1a73e8;padding:24px 30px;text-align:left;">
               <table width="100%" cellpadding="0" cellspacing="0">
@@ -199,22 +283,26 @@
             </td>
           </tr>
 
+          <!-- Dynamic Body Elements -->
           <tr>
             <td style="padding:30px;background-color:#ffffff;">
               <p style="margin:0 0 20px 0;font-size:14px;color:#3c4043;line-height:1.5;">
                 You have received a new contact submission from your website portfolio. Details of the message are provided below:
               </p>
 
+              <!-- Sender Card -->
               <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f8f9fa;border:1px solid #dadce0;border-radius:6px;margin-bottom:24px;">
                 <tr>
                   <td style="padding:16px 20px;">
                     <table width="100%" cellpadding="0" cellspacing="0">
                       <tr>
+                        <!-- Avatar Icon -->
                         <td width="48" style="vertical-align:middle;">
                           <div style="width:38px;height:38px;border-radius:50%;background-color:#1a73e8;text-align:center;color:#ffffff;font-weight:bold;font-size:16px;line-height:38px;">
                             ${escHtml(name.charAt(0).toUpperCase())}
                           </div>
                         </td>
+                        <!-- Sender Metadata -->
                         <td style="vertical-align:middle;padding-left:12px;">
                           <div style="font-size:14px;font-weight:700;color:#202124;margin-bottom:2px;">${escHtml(name)}</div>
                           <div style="font-size:13px;color:#1a73e8;">
@@ -227,6 +315,7 @@
                 </tr>
               </table>
 
+              <!-- Subject Card Row -->
               <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px;">
                 <tr>
                   <td>
@@ -236,6 +325,7 @@
                 </tr>
               </table>
 
+              <!-- Message Text Block with solid Blue Accent -->
               <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
                 <tr>
                   <td>
@@ -245,6 +335,7 @@
                 </tr>
               </table>
 
+              <!-- Interactive Call to Action Reply Button -->
               <table width="100%" cellpadding="0" cellspacing="0">
                 <tr>
                   <td align="left">
@@ -255,6 +346,7 @@
             </td>
           </tr>
 
+          <!-- Footer Metadata Panel -->
           <tr>
             <td style="background-color:#f8f9fa;border-top:1px solid #e0e0e0;padding:20px 30px;text-align:center;">
               <p style="margin:0;font-size:11px;color:#70757a;line-height:1.5;">
@@ -296,8 +388,6 @@
     }
   });
 
-  /* ── STREAMING_CHUNK:Defining status and text utility helpers... ───────────────────────────────────────── */
-
   function setLoading(on) {
     btn.disabled    = on;
     btn.textContent = on ? 'Sending…' : 'Send Enquiry';
@@ -311,10 +401,6 @@
     const colours = { success: 'text-emerald-600', error: 'text-red-500', info: 'text-gray-400' };
     status.classList.add(colours[type] || 'text-gray-400');
     status.classList.remove('hidden');
-  }
-
-  function isValidEmail(v) {
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
   }
 
   function escHtml(str) {
