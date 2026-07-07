@@ -245,7 +245,6 @@ form.addEventListener('submit', function (e) {
   setLoading(true);
   showStatus('Sending…', 'info');
 
-  
   const payload = {
     to:          RECIPIENT,
     senderName:  verifiedUser.name,
@@ -313,28 +312,18 @@ form.addEventListener('submit', function (e) {
 </html>`
   };
 
-  // Encode as URL params — Apps Script reads these via e.parameter
-  // This avoids CORS preflight while still delivering all fields
-  const formData = new URLSearchParams();
-  formData.append('to',          payload.to);
-  formData.append('senderName',  payload.senderName);
-  formData.append('senderEmail', payload.senderEmail);
-  formData.append('replyTo',     payload.replyTo);
-  formData.append('subject',     payload.subject);
-  formData.append('text',        payload.text);
-  formData.append('html',        payload.html);
-
   let secondsLeft = 20;
   showStatus(`Sending... (${secondsLeft}s remaining)`, 'info');
 
-  // Send the request immediately to Apps Script
+  // Send the request immediately to Apps Script using text/plain JSON payload.
+  // This completely avoids CORS preflight checks and delivers fast!
   fetch(APPS_SCRIPT_URL, {
     method: 'POST',
     mode:   'no-cors',
     headers: {
-      'Content-Type': 'application/x-www-form-urlencoded'
+      'Content-Type': 'text/plain'
     },
-    body:   formData
+    body:   JSON.stringify(payload)
   });
 
   // Maintain visual "sending..." state for 20 seconds to guarantee full delivery transit
