@@ -165,7 +165,6 @@
   <!-- Mobile Navigation Bar (Visible ONLY on Mobile) -->
   <div id="mobile-nav" class="flex md:hidden items-center justify-between bg-[#1e1e1e] border-b border-[#333] p-2 shrink-0 select-none z-50">
       <div class="flex items-center gap-1.5 overflow-x-auto scrollbar-none pr-2">
-          <!-- Updated specific buttons per user request -->
           <button onclick="createNewFile()" class="p-1.5 bg-[#007acc] text-white rounded text-xs shadow shrink-0" title="New File"><i data-lucide="file-plus" class="w-4 h-4"></i></button>
           <button onclick="document.getElementById('file-input').click()" class="p-1.5 bg-[#333] text-gray-300 hover:text-white rounded text-xs shadow shrink-0" title="Upload File"><i data-lucide="file-up" class="w-4 h-4"></i></button>
           <button onclick="createNewFolder()" class="p-1.5 bg-[#333] text-gray-300 hover:text-white rounded text-xs shadow shrink-0" title="New Folder"><i data-lucide="folder-plus" class="w-4 h-4"></i></button>
@@ -173,11 +172,9 @@
           <button onclick="openPreviewInNewWindow()" class="p-1.5 bg-[#333] text-green-400 hover:text-green-300 rounded text-xs shadow shrink-0" title="Open in New Tab"><i data-lucide="external-link" class="w-4 h-4"></i></button>
       </div>
       <div id="swipe-area" class="flex items-center bg-[#111] rounded border border-[#333] px-1 touch-pan-y flex-1 ml-1 justify-between max-w-[160px]">
-          <!-- Arrows added for explicit click navigation in addition to swipe -->
           <button onclick="mobileNavigate(-1)" class="p-1.5 text-gray-400 hover:text-white transition active:bg-[#333] rounded"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
-          <div class="flex flex-col items-center px-1 cursor-ew-resize overflow-hidden flex-1">
-              <span id="mobile-filename" class="text-[11px] font-mono text-gray-200 truncate w-full text-center">loading...</span>
-              <span id="mobile-counter" class="text-[9px] text-gray-500 whitespace-nowrap">Swipe/Click</span>
+          <div class="flex flex-col items-center px-1 cursor-ew-resize overflow-hidden flex-1 justify-center">
+              <span id="mobile-filename" class="text-[11px] font-mono text-gray-200 truncate w-full text-center py-1">No file</span>
           </div>
           <button onclick="mobileNavigate(1)" class="p-1.5 text-gray-400 hover:text-white transition active:bg-[#333] rounded"><i data-lucide="chevron-right" class="w-4 h-4"></i></button>
       </div>
@@ -1052,23 +1049,24 @@
     }
 
     function updateMobileUI() {
-      if (typeof vfs === 'undefined' || !window.activeFile) return;
-      const allFiles = Object.keys(vfs).filter(f => !f.endsWith('.gitkeep'));
-      const idx = allFiles.indexOf(window.activeFile);
+      if (typeof vfs === 'undefined') return;
       const nameEl = document.getElementById('mobile-filename');
-      const counterEl = document.getElementById('mobile-counter');
-      if (nameEl) nameEl.textContent = window.activeFile.split('/').pop();
-      if (counterEl) counterEl.textContent = `${idx + 1} of ${allFiles.length} (Swipe)`;
+      if (!nameEl) return;
+      if (!window.activeFile) {
+        nameEl.textContent = "No file";
+        return;
+      }
+      nameEl.textContent = window.activeFile.split('/').pop();
     }
 
-    // Interval to keep the mobile header in-sync seamlessly with `htmlviewer.js` tab interactions
+    // Instantly track and update when the user switches tabs, drops files, or uploads items
     let _lastActiveFileTracker = null;
     setInterval(() => {
       if (typeof window.activeFile !== 'undefined' && window.activeFile !== _lastActiveFileTracker) {
         _lastActiveFileTracker = window.activeFile;
         updateMobileUI();
       }
-    }, 200);
+    }, 50);
 
     // Initialise Mobile Swipe Actions
     window.addEventListener('load', () => {
@@ -1083,6 +1081,14 @@
           if (touchendX > touchstartX + 30) mobileNavigate(-1);
         }, {passive: true});
       }
+    });
+
+    // Handle immediate updates upon upload triggers
+    document.getElementById('file-input').addEventListener('change', () => {
+      setTimeout(updateMobileUI, 50);
+    });
+    document.getElementById('folder-input').addEventListener('change', () => {
+      setTimeout(updateMobileUI, 50);
     });
 
   </script>
