@@ -1,10 +1,3 @@
-/**
- * contact-submit.js
- * Yacob Digital contact form — Firebase Google Auth verification + Apps Script submission.
- * Users must verify with a real Google account before sending. No sign-in wall —
- * just a one-click Google popup that confirms identity, then the form submits.
- */
-
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js';
 import { getAuth, signInWithPopup, GoogleAuthProvider } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
 
@@ -26,12 +19,10 @@ const app      = initializeApp(firebaseConfig);
 const auth     = getAuth(app);
 const provider = new GoogleAuthProvider();
 
-// ── DOM refs ────────────────────────────────────────────────────────────────
 const form   = document.getElementById('contact-form');
 const btn    = document.getElementById('submit-btn');
 const status = document.getElementById('form-status');
 
-// ── Email modal (for mailto: links on the page) ──────────────────────────────
 const style = document.createElement('style');
 style.textContent = `
   .email-modal-overlay {
@@ -53,6 +44,7 @@ style.textContent = `
     display:flex;align-items:center;gap:12px;
     background:#f0f7ff;border:1px solid #bfdbfe;border-radius:10px;
     padding:14px 16px;margin-bottom:20px;
+    transition: all 0.3s ease;
   }
   #google-verify-banner.verified {
     background:#f0fdf4;border-color:#bbf7d0;
@@ -74,7 +66,6 @@ style.textContent = `
 `;
 document.head.appendChild(style);
 
-// ── Inject Google verify banner into the form ────────────────────────────────
 if (form) {
   const banner = document.createElement('div');
   banner.id = 'google-verify-banner';
@@ -97,7 +88,6 @@ if (form) {
   form.insertBefore(banner, form.firstChild);
 }
 
-// ── Mailto intercept modal ───────────────────────────────────────────────────
 const modalOverlay = document.createElement('div');
 modalOverlay.className = 'email-modal-overlay';
 modalOverlay.innerHTML = `
@@ -169,7 +159,6 @@ document.addEventListener('click', e => {
   if (link) { e.preventDefault(); openEmailModal(link.getAttribute('href').replace('mailto:', '') || RECIPIENT); }
 });
 
-// ── Google verification logic ────────────────────────────────────────────────
 if (!form) throw new Error('contact-form not found');
 
 let verifiedUser = null; // { name, email, photoURL }
@@ -189,7 +178,6 @@ verifyBtn.addEventListener('click', async () => {
     const user   = result.user;
     verifiedUser = { name: user.displayName, email: user.email, photoURL: user.photoURL };
 
-    // Update banner to verified state
     verifyBanner.classList.add('verified');
     if (user.photoURL) {
       verifyAvatar.src = user.photoURL;
@@ -203,11 +191,18 @@ verifyBtn.addEventListener('click', async () => {
     verifyBtn.textContent = '✓ Done';
     verifyBtn.classList.add('verified');
 
-    // Auto-fill name + email if fields are empty
     const nameField  = form.querySelector('#name');
     const emailField = form.querySelector('#email');
-    if (!nameField.value.trim())  nameField.value  = user.displayName || '';
-    if (!emailField.value.trim()) emailField.value = user.email || '';
+    
+    // Set values
+    nameField.value  = user.displayName || '';
+    emailField.value = user.email || '';
+    
+    // Lock them from editing to completely stop email spoofing/mismatch attacks!
+    nameField.readOnly = true;
+    emailField.readOnly = true;
+    nameField.classList.add('bg-gray-100', 'cursor-not-allowed', 'text-gray-500');
+    emailField.classList.add('bg-gray-100', 'cursor-not-allowed', 'text-gray-500');
 
   } catch (err) {
     verifyBtn.textContent = 'Verify';
@@ -218,7 +213,6 @@ verifyBtn.addEventListener('click', async () => {
   }
 });
 
-// ── Form submission ──────────────────────────────────────────────────────────
 form.addEventListener('submit', function (e) {
   e.preventDefault();
 
@@ -236,6 +230,11 @@ form.addEventListener('submit', function (e) {
   const email   = form.querySelector('#email').value.trim();
   const subject = form.querySelector('#subject').value.trim();
   const message = form.querySelector('#message').value.trim();
+
+  if (email.toLowerCase() !== verifiedUser.email.toLowerCase()) {
+    showStatus('Security Error: Entered email must match your verified Google account.', 'error');
+    return;
+  }
 
   if (!name || !message) {
     showStatus('Please fill in your name and message.', 'error');
@@ -312,11 +311,6 @@ form.addEventListener('submit', function (e) {
 </html>`
   };
 
-  let secondsLeft = 20;
-  showStatus(`Sending... (${secondsLeft}s remaining)`, 'info');
-
-  // Send the request immediately to Apps Script using text/plain JSON payload.
-  // This completely avoids CORS preflight checks and delivers fast!
   fetch(APPS_SCRIPT_URL, {
     method: 'POST',
     mode:   'no-cors',
@@ -326,7 +320,7 @@ form.addEventListener('submit', function (e) {
     body:   JSON.stringify(payload)
   });
 
-  // Maintain visual "sending..." state for 20 seconds to guarantee full delivery transit
+  let secondsLeft = 20;
   const timer = setInterval(() => {
     secondsLeft--;
     if (secondsLeft > 0) {
@@ -350,13 +344,21 @@ form.addEventListener('submit', function (e) {
       verifyBtn.textContent = 'Verify';
       verifyBtn.classList.remove('verified');
       verifyBtn.disabled = false;
+
+      // Unlock form inputs
+      const nameField  = form.querySelector('#name');
+      const emailField = form.querySelector('#email');
+      nameField.readOnly = false;
+      emailField.readOnly = false;
+      nameField.classList.remove('bg-gray-100', 'cursor-not-allowed', 'text-gray-500');
+      emailField.classList.remove('bg-gray-100', 'cursor-not-allowed', 'text-gray-500');
     }
   }, 1000);
 });
-// ── Helpers ──────────────────────────────────────────────────────────────────
+
 function setLoading(on) {
   btn.disabled    = on;
-  btn.textContent = on ? 'Sending…' : 'Send Enquiry';
+  btn.textContent = on ? 'Sending (20s)...' : 'Send Enquiry';
   btn.style.opacity = on ? '0.7' : '';
   btn.style.cursor  = on ? 'not-allowed' : '';
 }
