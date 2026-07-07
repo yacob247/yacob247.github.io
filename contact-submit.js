@@ -10,7 +10,7 @@
   'use strict';
 
   const APPS_SCRIPT_URL =
-    'https://script.google.com/macros/s/AKfycbyYsr03oyOeBTaI2wImBWVjbsVwR0LHYT_6o0R6-vUuZVb9VmjtWiYFZgSduppvPhpj/exec';
+    'https://script.google.com/macros/s/AKfycbzAW6uVNde6I0DGnnrWqncLNX78Auyfnji9mXoIQp2HREOntBz2dnVJeIM3PDqGLhzD_g/exec';
 
   const RECIPIENT = 'envizionupdates@gmail.com';
 
@@ -18,8 +18,6 @@
   const btn    = document.getElementById('submit-btn');
   const status = document.getElementById('form-status');
 
-  /* ── SMART EMAIL INTERCEPTOR MODAL ─────────────────────────────────── */
-  
   // Inject custom styles for our gorgeous dynamic modal
   const style = document.createElement('style');
   style.textContent = `
@@ -39,7 +37,7 @@
   `;
   document.head.appendChild(style);
 
-  // Build the Modal markup dynamically (Useless default mail/Outlook client option removed!)
+  // We removed the useless "Default client/Outlook" option entirely as requested!
   const modalHTML = `
     <div class="email-modal" role="dialog" aria-modal="true">
       <div class="flex justify-between items-start mb-4">
@@ -53,7 +51,7 @@
       </p>
       
       <div class="space-y-3">
-        <!-- Option 1: Gmail -->
+        <!-- Option 1: Gmail (100% Free, opens instant compose tab) -->
         <a id="email-opt-gmail" href="#" target="_blank" class="flex items-center gap-3 w-full p-3.5 border border-gray-100 hover:border-blue-200 rounded-xl hover:bg-blue-50/50 transition text-left group">
           <div class="w-10 h-10 rounded-lg bg-red-50 flex items-center justify-center text-red-500 group-hover:scale-105 transition">
             <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/></svg>
@@ -64,7 +62,7 @@
           </div>
         </a>
 
-        <!-- Option 2: Copy Email -->
+        <!-- Option 2: Copy Email (Universal fallback option) -->
         <button id="email-opt-copy" class="flex items-center gap-3 w-full p-3.5 border border-gray-100 hover:border-blue-200 rounded-xl hover:bg-blue-50/50 transition text-left group">
           <div class="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 group-hover:scale-105 transition">
             <svg id="copy-icon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>
@@ -83,7 +81,6 @@
   modalOverlay.innerHTML = modalHTML;
   document.body.appendChild(modalOverlay);
 
-  // Modal Control Elements
   const closeBtn = document.getElementById('close-email-modal');
   const optGmail = document.getElementById('email-opt-gmail');
   const optCopy = document.getElementById('email-opt-copy');
@@ -91,16 +88,14 @@
   const copyDesc = document.getElementById('copy-desc');
 
   function openEmailModal(emailAddr) {
-    // Populate action links
     const encEmail = encodeURIComponent(emailAddr);
+    // Directly pre-compose an email to your recipient with custom visual redirection
     optGmail.href = `https://mail.google.com/mail/?view=cm&fs=1&to=${encEmail}`;
     
-    // Copy logic setup
     optCopy.onclick = function() {
-      // Create fallback legacy textarea to copy stably inside any iframe / Sandbox setup
       const tempInput = document.createElement('textarea');
       tempInput.value = emailAddr;
-      tempInput.style.position = 'fixed'; // prevent scrolling
+      tempInput.style.position = 'fixed';
       tempInput.style.top = '0';
       tempInput.style.left = '0';
       tempInput.style.opacity = '0';
@@ -135,7 +130,6 @@
     if (e.target === modalOverlay) closeEmailModal();
   });
 
-  // Intercept all links starting with mailto:
   document.addEventListener('click', function (e) {
     const targetLink = e.target.closest('a[href^="mailto:"]');
     if (targetLink) {
@@ -146,7 +140,7 @@
   });
 
 
-  /* ── FORM SUBMISSION LOGIC ────────────────────────────────────────── */
+  /* ── STREAMING_CHUNK:Listening to form submit and packaging payload... ────────────────────────────────────────── */
 
   if (!form) return;
 
@@ -170,9 +164,11 @@
     setLoading(true);
     showStatus('Sending…', 'info');
 
-    // Build standard, clean Google Notification-inspired layout
+    // Packages distinct sender identity attributes for Google Apps Script
     const payload = {
       to: RECIPIENT,
+      senderName: name,
+      senderEmail: email,
       replyTo: `${name} <${email}>`,
       subject: subject
         ? `[Yacob Digital] ${subject}`
@@ -188,10 +184,8 @@
   <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f5f5;padding:30px 0;">
     <tr>
       <td align="center">
-        <!-- Email Container -->
         <table width="100%" cellpadding="0" cellspacing="0" style="max-width:580px;width:100%;background-color:#ffffff;border:1px solid #e0e0e0;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
           
-          <!-- Google-style Minimal Header Bar -->
           <tr>
             <td style="background-color:#1a73e8;padding:24px 30px;text-align:left;">
               <table width="100%" cellpadding="0" cellspacing="0">
@@ -205,26 +199,22 @@
             </td>
           </tr>
 
-          <!-- Content Body -->
           <tr>
             <td style="padding:30px;background-color:#ffffff;">
               <p style="margin:0 0 20px 0;font-size:14px;color:#3c4043;line-height:1.5;">
                 You have received a new contact submission from your website portfolio. Details of the message are provided below:
               </p>
 
-              <!-- Sender Info Card -->
               <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f8f9fa;border:1px solid #dadce0;border-radius:6px;margin-bottom:24px;">
                 <tr>
                   <td style="padding:16px 20px;">
                     <table width="100%" cellpadding="0" cellspacing="0">
                       <tr>
-                        <!-- Avatar -->
                         <td width="48" style="vertical-align:middle;">
                           <div style="width:38px;height:38px;border-radius:50%;background-color:#1a73e8;text-align:center;color:#ffffff;font-weight:bold;font-size:16px;line-height:38px;">
                             ${escHtml(name.charAt(0).toUpperCase())}
                           </div>
                         </td>
-                        <!-- Sender Details -->
                         <td style="vertical-align:middle;padding-left:12px;">
                           <div style="font-size:14px;font-weight:700;color:#202124;margin-bottom:2px;">${escHtml(name)}</div>
                           <div style="font-size:13px;color:#1a73e8;">
@@ -237,7 +227,6 @@
                 </tr>
               </table>
 
-              <!-- Topic / Subject Block -->
               <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px;">
                 <tr>
                   <td>
@@ -247,7 +236,6 @@
                 </tr>
               </table>
 
-              <!-- Message Body -->
               <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
                 <tr>
                   <td>
@@ -257,7 +245,6 @@
                 </tr>
               </table>
 
-              <!-- Action button: Reply -->
               <table width="100%" cellpadding="0" cellspacing="0">
                 <tr>
                   <td align="left">
@@ -268,7 +255,6 @@
             </td>
           </tr>
 
-          <!-- Footer Area -->
           <tr>
             <td style="background-color:#f8f9fa;border-top:1px solid #e0e0e0;padding:20px 30px;text-align:center;">
               <p style="margin:0;font-size:11px;color:#70757a;line-height:1.5;">
@@ -288,8 +274,6 @@
     };
 
     try {
-      // Fire and forget — Apps Script sleeps for delay build cycles.
-      // keepalive:true ensures execution completes.
       fetch(APPS_SCRIPT_URL, {
         method:  'POST',
         mode:    'no-cors',
@@ -312,7 +296,7 @@
     }
   });
 
-  /* ── helpers ───────────────────────────────────────────────────────── */
+  /* ── STREAMING_CHUNK:Defining status and text utility helpers... ───────────────────────────────────────── */
 
   function setLoading(on) {
     btn.disabled    = on;
