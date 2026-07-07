@@ -239,16 +239,16 @@
     };
 
     fetch(APPS_SCRIPT_URL, {
-      method:  'POST',
-      body:    JSON.stringify(payload)
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify(payload)
     }).then(response => {
       showStatus("Enquiry sent! We'll get back to you soon.", 'success');
       form.reset();
       setLoading(false);
     }).catch(err => {
-      console.error('[contact-submit]', err);
-      showStatus("Enquiry sent! We'll get back to you soon.", 'success'); // Fail gracefully for CORS
-      form.reset();
+      console.error('[contact-submit] fetch error:', err);
+      showStatus("Could not send. Please email envizionupdates@gmail.com directly.", 'error');
       setLoading(false);
     });
   });
