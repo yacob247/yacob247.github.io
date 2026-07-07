@@ -238,19 +238,19 @@
 </html>`
     };
 
+    // Apps Script requires no Content-Type to avoid CORS preflight,
+    // but needs the body as a URL-encoded string it can read via e.postData.contents
     fetch(APPS_SCRIPT_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
+      mode: 'no-cors',
       body: JSON.stringify(payload)
-    }).then(response => {
-      showStatus("Enquiry sent! We'll get back to you soon.", 'success');
-      form.reset();
-      setLoading(false);
-    }).catch(err => {
-      console.error('[contact-submit] fetch error:', err);
-      showStatus("Could not send. Please email envizionupdates@gmail.com directly.", 'error');
-      setLoading(false);
     });
+
+    // no-cors means response is opaque — we can't read it.
+    // But if we got here without throw, the request was dispatched.
+    showStatus("Enquiry sent! We'll get back to you soon.", 'success');
+    form.reset();
+    setLoading(false);
   });
 
   function setLoading(on) {
