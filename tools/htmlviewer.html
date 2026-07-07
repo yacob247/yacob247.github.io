@@ -120,6 +120,50 @@
     #breadcrumb { font-size:11px; color:#888; padding:2px 12px; background:#1e1e1e; border-bottom:1px solid #2a2a2a; }
     #breadcrumb span { color:#ccc; }
     #breadcrumb .sep { margin:0 4px; color:#555; }
+
+    /* ── Mobile responsive ── */
+    @media (max-width: 768px) {
+      body { overflow:hidden; }
+      /* Hide sidebar activity bar on mobile — use bottom nav instead */
+      #workspace > div:first-child { display:none; }
+      /* Sidebar starts hidden on mobile */
+      #sidebar { position:absolute; left:0; top:0; bottom:0; z-index:50; transform:translateX(-100%); transition:transform 0.2s; width:80vw !important; max-width:300px; }
+      #sidebar.mobile-open { transform:translateX(0); }
+      /* Hide preview pane on mobile by default */
+      #preview-pane { display:none !important; }
+      #resizer-preview, #resizer-sidebar { display:none; }
+      /* Mobile bottom nav bar */
+      #mobile-nav { display:flex; }
+      /* Shrink tab bar text */
+      .editor-tab { font-size:11px; }
+      /* Make header more compact */
+      #top-menu-bar { display:none; }
+      #header-filename { display:none; }
+    }
+    @media (min-width: 769px) {
+      #mobile-nav { display:none !important; }
+      #mobile-overlay { display:none !important; }
+      #mobile-new-file-btn { display:none !important; }
+    }
+    #mobile-nav {
+      display:none;
+      position:fixed; bottom:0; left:0; right:0; z-index:100;
+      background:#252526; border-top:1px solid #1e1e1e;
+      height:52px; align-items:stretch; justify-content:space-around;
+    }
+    .mob-nav-btn {
+      flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
+      color:#888; font-size:9px; gap:3px; border:none; background:none; cursor:pointer;
+      padding:4px 2px; transition:color 0.15s;
+    }
+    .mob-nav-btn:active, .mob-nav-btn.active { color:#007acc; }
+    #mobile-overlay {
+      display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:49;
+    }
+    /* Push content up on mobile to avoid bottom nav overlap */
+    @media (max-width: 768px) {
+      #workspace { padding-bottom:52px; }
+    }
   </style>
 </head>
 <body class="flex flex-col h-screen antialiased selection:bg-[#264f78]">
@@ -150,6 +194,7 @@
     </div>
     <div class="flex items-center gap-2 pr-2 text-gray-400 text-[11px]">
       <span id="header-filename" class="text-gray-400"></span>
+      <button id="mobile-new-file-btn" onclick="createNewFile()" style="display:none;background:#007acc;border:none;color:#fff;font-size:11px;padding:4px 10px;border-radius:3px;cursor:pointer;">+ New File</button>
       <button id="what-is-btn" onclick="toggleExplanation()" style="background:none;border:1px solid #3a3a3a;color:#666;font-size:11px;padding:3px 10px;border-radius:3px;cursor:pointer;font-family:'Inter',sans-serif;white-space:nowrap;">What is this?</button>
     </div>
     <input type="file" id="folder-input" class="hidden" webkitdirectory directory multiple>
@@ -1001,6 +1046,92 @@
     window.addEventListener('message', e => {
       if (e.data && e.data.type === 'DISMISS_ABOUT') {
         toggleExplanation();
+      }
+    });
+  </script>
+
+  <!-- Mobile sidebar overlay -->
+  <div id="mobile-overlay" onclick="closeMobileSidebar()"></div>
+
+  <!-- Mobile bottom navigation bar -->
+  <nav id="mobile-nav" aria-label="Mobile navigation">
+    <button class="mob-nav-btn" onclick="createNewFile()" title="New File">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>
+      New
+    </button>
+    <button class="mob-nav-btn" onclick="triggerFileUpload()" title="Upload File">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+      Upload
+    </button>
+    <button class="mob-nav-btn" onclick="toggleMobileSidebar()" id="mob-btn-explorer" title="Files">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+      Files
+    </button>
+    <button class="mob-nav-btn" onclick="toggleMobilePreview()" id="mob-btn-preview" title="Preview">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+      Preview
+    </button>
+    <button class="mob-nav-btn" onclick="loadDemo()" title="Demo">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+      Demo
+    </button>
+  </nav>
+
+  <script>
+    function toggleMobileSidebar() {
+      const sidebar = document.getElementById('sidebar');
+      const overlay = document.getElementById('mobile-overlay');
+      const btn = document.getElementById('mob-btn-explorer');
+      const isOpen = sidebar.classList.contains('mobile-open');
+      if (isOpen) {
+        sidebar.classList.remove('mobile-open');
+        overlay.style.display = 'none';
+        btn && btn.classList.remove('active');
+      } else {
+        sidebar.classList.add('mobile-open');
+        overlay.style.display = 'block';
+        btn && btn.classList.add('active');
+        // Make sure explorer panel is visible
+        if (typeof switchSidebar === 'function') switchSidebar('explorer');
+      }
+    }
+    function closeMobileSidebar() {
+      const sidebar = document.getElementById('sidebar');
+      const overlay = document.getElementById('mobile-overlay');
+      const btn = document.getElementById('mob-btn-explorer');
+      sidebar.classList.remove('mobile-open');
+      overlay.style.display = 'none';
+      btn && btn.classList.remove('active');
+    }
+    let _mobilePreviewVisible = false;
+    function toggleMobilePreview() {
+      const pane = document.getElementById('preview-pane');
+      const edPane = document.getElementById('editor-pane');
+      const btn = document.getElementById('mob-btn-preview');
+      if (!pane) return;
+      _mobilePreviewVisible = !_mobilePreviewVisible;
+      if (_mobilePreviewVisible) {
+        pane.style.display = 'flex';
+        pane.style.width = '100%';
+        edPane && (edPane.style.display = 'none');
+        btn && btn.classList.add('active');
+      } else {
+        pane.style.display = 'none';
+        edPane && (edPane.style.display = 'flex');
+        btn && btn.classList.remove('active');
+      }
+    }
+    // On mobile, also close sidebar when a file is clicked
+    const _origOpenFile2 = window.openFile;
+    document.addEventListener('DOMContentLoaded', () => {
+      if (window.innerWidth <= 768) {
+        const origOpen = window.openFile;
+        if (origOpen) {
+          window.openFile = function(path) {
+            origOpen.call(this, path);
+            closeMobileSidebar();
+          };
+        }
       }
     });
   </script>

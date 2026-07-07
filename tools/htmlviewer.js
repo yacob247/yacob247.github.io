@@ -1142,9 +1142,68 @@ function getFileIcon(name) {
 }
 
 function createNewFile() {
-    const name = prompt('New file name (e.g. index.html):', 'untitled.html');
-    if (!name) return;
-    if (vfs[name]) { alert('File already exists.'); return; }
+    // Build modal HTML
+    const modalHtml = `
+    <div id="new-file-modal" style="position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(4px);">
+      <div style="background:#252526;border:1px solid #454545;border-radius:8px;width:100%;max-width:560px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,0.6);overflow:hidden;">
+        <div style="padding:12px 16px;border-bottom:1px solid #333;display:flex;align-items:center;justify-content:space-between;background:#2d2d2d;flex-shrink:0;">
+          <span style="color:#fff;font-weight:600;font-size:13px;">New File</span>
+          <button onclick="document.getElementById('new-file-modal').remove()" style="background:none;border:none;color:#888;cursor:pointer;font-size:18px;line-height:1;padding:0 4px;">&times;</button>
+        </div>
+        <div style="padding:16px;display:flex;flex-direction:column;gap:12px;overflow-y:auto;flex:1;">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <input id="nf-name" type="text" value="untitled.html" placeholder="filename.html"
+              style="flex:1;min-width:160px;background:#3c3c3c;border:1px solid #555;color:#ccc;padding:7px 10px;border-radius:4px;font-size:13px;font-family:'JetBrains Mono',monospace;outline:none;"
+              oninput="nfUpdatePlaceholder()" />
+            <div style="display:flex;gap:4px;flex-wrap:wrap;">
+              <button onclick="nfSetExt('html')" style="padding:5px 10px;font-size:11px;border-radius:3px;background:#333;border:1px solid #555;color:#ccc;cursor:pointer;">.html</button>
+              <button onclick="nfSetExt('jsx')" style="padding:5px 10px;font-size:11px;border-radius:3px;background:#333;border:1px solid #555;color:#ccc;cursor:pointer;">.jsx</button>
+              <button onclick="nfSetExt('css')" style="padding:5px 10px;font-size:11px;border-radius:3px;background:#333;border:1px solid #555;color:#ccc;cursor:pointer;">.css</button>
+              <button onclick="nfSetExt('js')" style="padding:5px 10px;font-size:11px;border-radius:3px;background:#333;border:1px solid #555;color:#ccc;cursor:pointer;">.js</button>
+            </div>
+          </div>
+          <textarea id="nf-code" placeholder="Paste your HTML / JSX / CSS / JS code here (optional — leave blank for empty file)"
+            style="width:100%;height:220px;background:#1e1e1e;border:1px solid #454545;color:#ccc;padding:10px;border-radius:4px;font-size:12px;font-family:'JetBrains Mono',monospace;resize:vertical;outline:none;box-sizing:border-box;line-height:1.5;"></textarea>
+        </div>
+        <div style="padding:10px 16px;border-top:1px solid #333;display:flex;justify-content:flex-end;gap:8px;background:#2d2d2d;flex-shrink:0;">
+          <button onclick="document.getElementById('new-file-modal').remove()" style="padding:7px 16px;background:transparent;border:1px solid #555;color:#ccc;border-radius:4px;font-size:12px;cursor:pointer;">Cancel</button>
+          <button onclick="nfCreate()" style="padding:7px 16px;background:#007acc;border:none;color:#fff;border-radius:4px;font-size:12px;font-weight:600;cursor:pointer;">Create File</button>
+        </div>
+      </div>
+    </div>`;
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    const inp = document.getElementById('nf-name');
+    if (inp) { inp.focus(); inp.select(); }
+    // Allow Enter on name field to create
+    inp && inp.addEventListener('keydown', e => { if (e.key === 'Enter') nfCreate(); if (e.key === 'Escape') document.getElementById('new-file-modal')?.remove(); });
+}
+
+function nfSetExt(ext) {
+    const inp = document.getElementById('nf-name');
+    if (!inp) return;
+    const cur = inp.value;
+    const dot = cur.lastIndexOf('.');
+    inp.value = (dot > 0 ? cur.substring(0, dot) : cur) + '.' + ext;
+    nfUpdatePlaceholder();
+}
+
+function nfUpdatePlaceholder() {
+    const inp = document.getElementById('nf-name');
+    const ta = document.getElementById('nf-code');
+    if (!inp || !ta) return;
+    const ext = inp.value.split('.').pop().toLowerCase();
+    const hints = { html:'Paste HTML here…', jsx:'Paste JSX / React component here…', tsx:'Paste TSX / React + TypeScript here…', css:'Paste CSS here…', js:'Paste JavaScript here…', ts:'Paste TypeScript here…' };
+    ta.placeholder = hints[ext] || 'Paste code here (optional — leave blank for empty file)';
+}
+
+function nfCreate() {
+    const inp = document.getElementById('nf-name');
+    const ta = document.getElementById('nf-code');
+    if (!inp) return;
+    const name = inp.value.trim();
+    if (!name) { inp.focus(); return; }
+    if (vfs[name]) { inp.style.borderColor='#f87171'; inp.focus(); return; }
+    const pastedCode = ta ? ta.value : '';
     const defaultContent = {
         html: '<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8">\n  <meta name="viewport" content="width=device-width, initial-scale=1.0">\n  <title>Document</title>\n</head>\n<body>\n  \n</body>\n</html>',
         css: '/* Styles */\n',
@@ -1152,9 +1211,11 @@ function createNewFile() {
         json: '{\n  \n}\n',
     };
     const ext = name.split('.').pop().toLowerCase();
-    vfs[name] = { name, isText: isTextBased(name), content: defaultContent[ext] || '', fileObj: null, blobUrl: null };
+    const content = pastedCode || defaultContent[ext] || '';
+    vfs[name] = { name, isText: isTextBased(name), content, fileObj: null, blobUrl: null };
     markGitChanged(name, 'A');
     renderFileTree();
+    document.getElementById('new-file-modal')?.remove();
     openFile(name);
     logOutput(`Created: ${name}`, 'system');
 }
@@ -1468,6 +1529,9 @@ function openFile(path) {
         activeIframeFile = path;
         activeIframeQuery = '';
         refreshPreview();
+    } else if (path.endsWith('.jsx') || path.endsWith('.tsx') || path.endsWith('.js') || path.endsWith('.ts')) {
+        activeIframeFile = path;
+        activeIframeQuery = '';
     }
 
     document.getElementById('header-filename').textContent = vfs[path].name;
