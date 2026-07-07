@@ -326,6 +326,9 @@ form.addEventListener('submit', function (e) {
   fetch(APPS_SCRIPT_URL, {
     method: 'POST',
     mode:   'no-cors',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
     body:   formData
   });
 
