@@ -14,14 +14,17 @@ import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChang
     }
   } else {
     // Fallback template config
-    firebaseConfig = {
-      apiKey: "AIzaSyAs-FakeConfigKeyForTestingOnly",
-      authDomain: "yacob-digital.firebaseapp.com",
-      projectId: "yacob-digital",
-      storageBucket: "yacob-digital.appspot.com",
-      messagingSenderId: "1234567890",
-      appId: "1:1234567890:web:abcdef012345"
-    };
+    // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+firebaseConfig = {
+  apiKey: "AIzaSyDLeM4MrsA1Q8zq7_QcQfTJKk049vOVOO4",
+  authDomain: "envizionwork.firebaseapp.com",
+  databaseURL: "https://envizionwork-default-rtdb.firebaseio.com",
+  projectId: "envizionwork",
+  storageBucket: "envizionwork.firebasestorage.app",
+  messagingSenderId: "706251024837",
+  appId: "1:706251024837:web:4c931733d3a9f430a703ac",
+  measurementId: "G-9CL929H67Z"
+};
   }
 
   // Initialize Firebase App
