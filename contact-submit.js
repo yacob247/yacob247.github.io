@@ -7,7 +7,7 @@
   'use strict';
 
   // IMPORTANT: Ensure this URL matches your LATEST deployment!
-  const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyYsr03oyOeBTaI2wImBWVjbsVwR0LHYT_6o0R6-vUuZVb9VmjtWiYFZgSduppvPhpj/exec';
+  const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxKxmcEkwjl4GkNnvrEC1ee_hzkD06WyigpO1Ab1jIpgjUqVrDadscTh1bnrec1hSO3/exec';
   const RECIPIENT = 'envizionupdates@gmail.com';
 
   const form   = document.getElementById('contact-form');

@@ -1,7 +1,7 @@
 (function () {
   const FIREBASE_VERSION = '10.13.0';
   const BASE = `https://www.gstatic.com/firebasejs/${FIREBASE_VERSION}`;
-  const DEFAULT_MAIL_APP_URL = 'https://script.google.com/macros/s/AKfycbyYsr03oyOeBTaI2wImBWVjbsVwR0LHYT_6o0R6-vUuZVb9VmjtWiYFZgSduppvPhpj/exec';
+  const DEFAULT_MAIL_APP_URL = 'https://script.google.com/macros/s/AKfycbyVj-EZqqltTdrzpPOoE2Kxtfqs9hqeHudX8A-LrVtXVyl6d4V_ZRPRa14PI003wWq1dg/exec';
   const SUBSCRIBERS_COLLECTION = 'newsletter_subscribers';
   const EVENTS_COLLECTION = 'notification_events';
   const DELIVERY_COLLECTION = 'notification_deliveries';
