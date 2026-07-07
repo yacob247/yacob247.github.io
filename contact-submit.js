@@ -312,10 +312,21 @@ form.addEventListener('submit', function (e) {
 </html>`
   };
 
+  // Encode as URL params — Apps Script reads these via e.parameter
+  // This avoids CORS preflight while still delivering all fields
+  const formData = new URLSearchParams();
+  formData.append('to',          payload.to);
+  formData.append('senderName',  payload.senderName);
+  formData.append('senderEmail', payload.senderEmail);
+  formData.append('replyTo',     payload.replyTo);
+  formData.append('subject',     payload.subject);
+  formData.append('text',        payload.text);
+  formData.append('html',        payload.html);
+
   fetch(APPS_SCRIPT_URL, {
     method: 'POST',
     mode:   'no-cors',
-    body:   JSON.stringify(payload)
+    body:   formData
   });
 
   showStatus("Enquiry sent! We'll get back to you soon.", 'success');
