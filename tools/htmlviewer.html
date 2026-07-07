@@ -166,6 +166,9 @@
   <!-- Mobile Navigation Bar (Visible ONLY on Mobile) -->
   <div id="mobile-nav" class="flex md:hidden items-center justify-between bg-[#1e1e1e] border-b border-[#333] p-2 shrink-0 select-none z-50">
       <div class="flex items-center gap-1.5 overflow-x-auto scrollbar-none pr-2">
+          <!-- Mobile Sidebar Toggle Button -->
+          <button onclick="toggleMobileSidebar()" class="p-1.5 bg-[#333] text-[#007acc] rounded text-xs shadow shrink-0" title="Workspace Files"><i data-lucide="menu" class="w-4 h-4"></i></button>
+          <div class="h-4 w-[1px] bg-[#333] self-center shrink-0"></div>
           <button onclick="createNewFile()" class="p-1.5 bg-[#007acc] text-white rounded text-xs shadow shrink-0" title="New File"><i data-lucide="file-plus" class="w-4 h-4"></i></button>
           <button onclick="document.getElementById('file-input').click()" class="p-1.5 bg-[#333] text-gray-300 hover:text-white rounded text-xs shadow shrink-0" title="Upload File"><i data-lucide="file-up" class="w-4 h-4"></i></button>
           <button onclick="createNewFolder()" class="p-1.5 bg-[#333] text-gray-300 hover:text-white rounded text-xs shadow shrink-0" title="New Folder"><i data-lucide="folder-plus" class="w-4 h-4"></i></button>
@@ -182,6 +185,18 @@
       <!-- Returned to exact original far-right position on mobile navigation bar -->
       <button onclick="toggleExplanation()" class="p-1.5 bg-[#333] text-gray-300 hover:text-white rounded text-xs border border-dashed border-[#555] ml-1.5 shrink-0" title="What is this?"><i data-lucide="info" class="w-4 h-4"></i></button>
   </div>
+
+  <!-- Mobile Only Slide-out Sidebar Drawer Overlay -->
+  <div id="mobile-sidebar-drawer" class="fixed inset-y-0 left-0 w-64 bg-[#252526] border-r border-[#454545] shadow-2xl z-[100] transform -translate-x-full transition-transform duration-300 flex flex-col md:hidden">
+    <div class="panel-header justify-between p-3 border-b border-[#1e1e1e] flex items-center bg-[#2d2d2d] shrink-0">
+      <span class="font-bold text-xs tracking-wider text-gray-300 flex items-center gap-1.5"><i data-lucide="folder-open" class="w-4 h-4 text-[#007acc]"></i> WORKSPACE</span>
+      <button onclick="toggleMobileSidebar()" class="text-gray-400 hover:text-white p-1 rounded hover:bg-[#37373d] transition"><i data-lucide="x" class="w-4 h-4"></i></button>
+    </div>
+    <div id="mobile-file-tree" class="flex-1 overflow-y-auto p-2 text-xs space-y-1 bg-[#1e1e1e]">
+      <div class="text-gray-500 text-center p-4">No files uploaded.</div>
+    </div>
+  </div>
+  <div id="mobile-sidebar-backdrop" onclick="toggleMobileSidebar()" class="fixed inset-0 bg-black/50 z-[90] hidden md:hidden"></div>
 
   <input type="file" id="folder-input" class="hidden" webkitdirectory directory multiple>
   <input type="file" id="file-input" class="hidden" multiple>
@@ -876,6 +891,21 @@
               return;
             }
           }
+          // Scratchpad File-Free Fallback compiling
+          if ((!activeIframeFile || typeof vfs === 'undefined' || !vfs[activeIframeFile]) && window.editor) {
+             const fallbackContent = window.editor.getValue();
+             if (fallbackContent && fallbackContent.trim()) {
+                const addressBar = document.getElementById('address-bar');
+                if (addressBar) addressBar.textContent = 'hyperlive://scratchpad/editor';
+                if (isReactJSX(fallbackContent)) {
+                   _renderJSXPreview('scratchpad.jsx', fallbackContent);
+                } else {
+                   const liveFrame = document.getElementById('live-frame');
+                   if (liveFrame) liveFrame.srcdoc = fallbackContent;
+                }
+                return;
+             }
+          }
           origRefresh.call(this);
         };
       }
@@ -911,6 +941,15 @@
             window.open(url, '_blank');
             return;
           }
+        }
+        // Fallback for file-free standalone tab launch
+        if ((!activeIframeFile || typeof vfs === 'undefined' || !vfs[activeIframeFile]) && window.editor) {
+          const content = window.editor.getValue();
+          const html = isReactJSX(content) ? buildReactSandbox(content, 'scratchpad.jsx') : content;
+          const blob = new Blob([html], { type: 'text/html' });
+          const url = URL.createObjectURL(blob);
+          window.open(url, '_blank');
+          return;
         }
         if (typeof origOpenPreviewInNewWindow === 'function') {
           origOpenPreviewInNewWindow.call(this);
@@ -950,7 +989,14 @@
       window._jsxLiveUpdateInstalled = true;
       let _jsxDebounce = null;
       window.editor.onDidChangeModelContent(() => {
-        if (!window.activeFile || !window.vfs || !window.vfs[window.activeFile]) return;
+        if (!window.activeFile || !window.vfs || !window.vfs[window.activeFile]) {
+          // Robust instant file-free preview compilation hot-reloader fallback
+          clearTimeout(_jsxDebounce);
+          _jsxDebounce = setTimeout(() => {
+             refreshPreview();
+          }, 300);
+          return;
+        }
         const ext = window.activeFile.split('.').pop().toLowerCase();
         
         window.vfs[window.activeFile].content = window.editor.getValue();
@@ -1087,6 +1133,24 @@
       }
     });
 
+    // Mobile Sidebar Drawer Toggle Bridge
+    function toggleMobileDrawer() {
+       const sidebar = document.getElementById('sidebar');
+       if (sidebar) {
+          sidebar.classList.toggle('hidden');
+          sidebar.classList.toggle('md:flex');
+          sidebar.style.width = sidebar.classList.contains('hidden') ? '0px' : '100vw';
+       }
+    }
+
+    // Interactive VFS Mobile Drawer list renderer
+    function renderMobileDrawerList() {
+       const list = document.getElementById('file-tree');
+       if (list) {
+          renderFileTree();
+       }
+    }
+
     // Auto-open first candidate file as soon as files populate via upload methods
     function autoOpenFirstFile() {
       if (typeof vfs === 'undefined' || typeof openFile !== 'function') return;
@@ -1099,6 +1163,58 @@
           openFile(entry);
         }
       }
+    }
+
+    // Mobile specific Sidebar view controllers
+    function mobileNavigateToVFS(path) {
+       if (typeof openFile === 'function') {
+          openFile(path);
+          toggleMobileDrawer();
+       }
+    }
+
+    function toggleMobileSidebar() {
+      const sidebar = document.getElementById('sidebar');
+      const backdrop = document.getElementById('mobile-sidebar-backdrop');
+      if (sidebar && backdrop) {
+        const isOpen = sidebar.style.width === '240px' && !sidebar.classList.contains('hidden');
+        if (isOpen) {
+          sidebar.style.width = '0px';
+          sidebar.classList.add('hidden');
+          backdrop.classList.add('hidden');
+        } else {
+          sidebar.style.width = '240px';
+          sidebar.classList.remove('hidden');
+          sidebar.classList.add('flex');
+          backdrop.classList.remove('hidden');
+          renderMobileFileTree();
+        }
+      }
+    }
+
+    function renderMobileFileTree() {
+      const container = document.getElementById('mobile-file-tree');
+      if (!container) return;
+      const paths = Object.keys(vfs).filter(p => !p.endsWith('.gitkeep'));
+      if (!paths.length) {
+        container.innerHTML = `
+          <div class="p-5 text-center text-gray-500 mt-6">
+            <i data-lucide="folder-open" class="w-10 h-10 mx-auto mb-3 opacity-40"></i>
+            <p class="text-sm">No files uploaded</p>
+          </div>`;
+        lucide.createIcons();
+        return;
+      }
+      container.innerHTML = paths.map(path => {
+        const name = path.split('/').pop();
+        const activeClass = activeFile === path ? 'bg-[#37373d] text-white font-semibold' : 'text-gray-300';
+        return `
+          <div onclick="openFile('${path}'); toggleMobileSidebar();" class="flex items-center gap-2 p-2 rounded hover:bg-[#2a2d2e] cursor-pointer ${activeClass}">
+            <i data-lucide="file-code" class="w-4 h-4 text-orange-400"></i>
+            <span class="truncate flex-1 font-mono">${path}</span>
+          </div>`;
+      }).join('');
+      lucide.createIcons();
     }
 
     // Bind instantaneous loading trigger directly to file/folder inputs
