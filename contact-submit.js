@@ -112,7 +112,7 @@
             <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:32px;">
               <tr>
                 <td>
-                  <a href="mailto:${escHtml(email)}?subject=Re: ${escHtml(subject || 'Your enquiry')}" style="display:inline-block;background:#2563eb;color:#ffffff;font-size:13px;font-weight:700;text-decoration:none;padding:12px 28px;border-radius:8px;letter-spacing:0.3px;">Reply to ${escHtml(name)}</a>
+                  <a href="https://mail.google.com/mail/?view=cm&amp;to=${escHtml(email)}&amp;su=Re%3A%20${encodeURIComponent(subject || 'Your enquiry')}" style="display:inline-block;background:#2563eb;color:#ffffff;font-size:13px;font-weight:700;text-decoration:none;padding:12px 28px;border-radius:8px;letter-spacing:0.3px;">Reply to ${escHtml(name)}</a>
                 </td>
               </tr>
             </table>
