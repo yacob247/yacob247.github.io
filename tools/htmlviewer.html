@@ -106,7 +106,7 @@
     .git-file-deleted { color:#c74e39; }
     #find-replace-panel { display:none; }
     #find-replace-panel.visible { display:flex; }
-    .status-item { display:flex; align-items:center; height:100%; padding:0 font-size:11px; }
+    .status-item { display:flex; align-items:center; height:100%; padding:0 6px; cursor:pointer; transition:background 0.15s; gap:4px; font-size:11px; }
     .status-item:hover { background:rgba(255,255,255,0.15); }
     .editor-tab { border-top:2px solid transparent; flex-shrink:0; }
     .editor-tab.active { border-top-color:#007acc; background:#1e1e1e; }
@@ -874,9 +874,9 @@
     // Proxy the monaco initialization setter before document loads to inject the compiler listeners automatically
     let _monacoObj = undefined;
     Object.defineProperty(window, 'monaco', {
-      get() { return _monaco; },
+      get() { return _monacoObj; },
       set(val) {
-        _monaco = val;
+        _monacoObj = val;
         if (val && val.editor && !val.editor._customHooked) {
           val.editor._customHooked = true;
           const origCreate = val.editor.create;
@@ -889,6 +889,24 @@
         }
       },
       configurable: true
+    });
+
+    // Mirroring global lexical variables inside htmlviewer.js to window context securely
+    Object.defineProperty(window, 'vfs', {
+      get() { return typeof vfs !== 'undefined' ? vfs : undefined; },
+      set(val) { if (typeof vfs !== 'undefined') vfs = val; }
+    });
+    Object.defineProperty(window, 'activeFile', {
+      get() { return typeof activeFile !== 'undefined' ? activeFile : undefined; },
+      set(val) { if (typeof activeFile !== 'undefined') activeFile = val; }
+    });
+    Object.defineProperty(window, 'activeIframeFile', {
+      get() { return typeof activeIframeFile !== 'undefined' ? activeIframeFile : undefined; },
+      set(val) { if (typeof activeIframeFile !== 'undefined') activeIframeFile = val; }
+    });
+    Object.defineProperty(window, 'activeIframeQuery', {
+      get() { return typeof activeIframeQuery !== 'undefined' ? activeIframeQuery : undefined; },
+      set(val) { if (typeof activeIframeQuery !== 'undefined') activeIframeQuery = val; }
     });
 
     window.addEventListener('load', () => {
@@ -908,7 +926,7 @@
             }
           }
           // Dynamic Scratchpad compilation fallback
-          if ((!activeIframeFile || typeof vfs === 'undefined' || !vfs[activeIframeFile]) && window.editor) {
+          if ((typeof activeIframeFile === 'undefined' || !activeIframeFile || typeof vfs === 'undefined' || !vfs[activeIframeFile]) && window.editor) {
              const fallbackContent = window.editor.getValue();
              if (fallbackContent && fallbackContent.trim()) {
                 const addressBar = document.getElementById('address-bar');
@@ -933,8 +951,8 @@
           origOpenFile.call(this, path);
           if (typeof vfs !== 'undefined' && vfs[path] && vfs[path].isText) {
             const ext = path.split('.').pop().toLowerCase();
-            window.activeIframeFile = path;
-            window.activeIframeQuery = '';
+            if (typeof activeIframeFile !== 'undefined') activeIframeFile = path;
+            if (typeof activeIframeQuery !== 'undefined') activeIframeQuery = '';
             
             if (ext === 'jsx' || ext === 'tsx') {
               _renderJSXPreview(path, vfs[path].content || '');
@@ -961,7 +979,7 @@
             return;
           }
         }
-        if ((!activeIframeFile || typeof vfs === 'undefined' || !vfs[activeIframeFile]) && window.editor) {
+        if ((typeof activeIframeFile === 'undefined' || !activeIframeFile || typeof vfs === 'undefined' || !vfs[activeIframeFile]) && window.editor) {
           const content = window.editor.getValue();
           const html = isReactJSX(content) ? buildReactSandbox(content, 'scratchpad.jsx') : content;
           const blob = new Blob([html], { type: 'text/html' });
@@ -1002,20 +1020,20 @@
 
       const bar = document.getElementById('address-bar');
 
-      if (window.activeFile) {
-        if (window.vfs && window.vfs[window.activeFile]) {
-          window.vfs[window.activeFile].content = code;
+      if (typeof activeFile !== 'undefined' && activeFile) {
+        if (typeof vfs !== 'undefined' && vfs[activeFile]) {
+          vfs[activeFile].content = code;
         }
-        const ext = window.activeFile.split('.').pop().toLowerCase();
+        const ext = activeFile.split('.').pop().toLowerCase();
         if (ext === 'jsx' || ext === 'tsx' || ((ext === 'js' || ext === 'ts') && isReactJSX(code))) {
-          _renderJSXPreview(window.activeFile, code);
+          _renderJSXPreview(activeFile, code);
         } else if (ext === 'html' || ext === 'htm') {
-          if (bar) bar.textContent = `hyperlive://local/${window.activeFile}`;
+          if (bar) bar.textContent = `hyperlive://local/${activeFile}`;
           const liveFrame = document.getElementById('live-frame');
-          if (liveFrame) liveFrame.srcdoc = compileVFS(window.activeFile, false, '');
+          if (liveFrame) liveFrame.srcdoc = compileVFS(activeFile, false, '');
         } else if (ext === 'css') {
-          const htmlFile = window.activeIframeFile || Object.keys(window.vfs).find(p => p.endsWith('.html')) || 'index.html';
-          if (window.vfs[htmlFile]) {
+          const htmlFile = (typeof activeIframeFile !== 'undefined' ? activeIframeFile : undefined) || (typeof vfs !== 'undefined' ? Object.keys(vfs).find(p => p.endsWith('.html')) : undefined) || 'index.html';
+          if (typeof vfs !== 'undefined' && vfs[htmlFile]) {
              const liveFrame = document.getElementById('live-frame');
              if (liveFrame) liveFrame.srcdoc = compileVFS(htmlFile, false, '');
           }
@@ -1033,6 +1051,7 @@
     };
 
     function _installJSXEditorListener() {
+      if (!window.editor) return;
       window._jsxLiveUpdateInstalled = true;
       let _jsxDebounce = null;
       window.editor.onDidChangeModelContent(() => {
@@ -1049,7 +1068,7 @@
       Object.defineProperty(HTMLIFrameElement.prototype, 'srcdoc', {
         set(val) {
           if (this.id === 'live-frame' && typeof val === 'string' && isReactJSX(val)) {
-            val = buildReactSandbox(val, window.activeIframeFile || '');
+            val = buildReactSandbox(val, (typeof activeIframeFile !== 'undefined' ? activeIframeFile : ''));
           }
           desc.set.call(this, val);
         },
@@ -1103,8 +1122,8 @@
           if (bar) bar.textContent = 'hyperlive://about-panel';
         } else {
           const bar = document.getElementById('address-bar');
-          if (bar && window.activeIframeFile) {
-            bar.textContent = `hyperlive://local/${window.activeIframeFile}`;
+          if (bar && typeof activeIframeFile !== 'undefined' && activeIframeFile) {
+            bar.textContent = `hyperlive://local/${activeIframeFile}`;
           }
         }
       }
@@ -1122,7 +1141,7 @@
       const allFiles = Object.keys(vfs).filter(f => !f.endsWith('.gitkeep'));
       if (!allFiles.length) return;
       
-      const currentIdx = window.activeFile ? allFiles.indexOf(window.activeFile) : -1;
+      const currentIdx = (typeof activeFile !== 'undefined' && activeFile) ? allFiles.indexOf(activeFile) : -1;
       const nextIdx = (currentIdx + dir + allFiles.length) % allFiles.length;
       openFile(allFiles[nextIdx]);
     }
@@ -1131,18 +1150,18 @@
       if (typeof vfs === 'undefined') return;
       const nameEl = document.getElementById('mobile-filename');
       if (!nameEl) return;
-      if (!window.activeFile) {
+      if (typeof activeFile === 'undefined' || !activeFile) {
         nameEl.textContent = "No file";
         return;
       }
-      nameEl.textContent = window.activeFile.split('/').pop();
+      nameEl.textContent = activeFile.split('/').pop();
     }
 
     // Instantly track and update when the user switches tabs, drops files, or uploads items
     let _lastActiveFileTracker = null;
     setInterval(() => {
-      if (typeof window.activeFile !== 'undefined' && window.activeFile !== _lastActiveFileTracker) {
-        _lastActiveFileTracker = window.activeFile;
+      if (typeof activeFile !== 'undefined' && activeFile !== _lastActiveFileTracker) {
+        _lastActiveFileTracker = activeFile;
         updateMobileUI();
       }
     }, 50);
@@ -1222,6 +1241,7 @@
     function renderMobileFileTree() {
       const container = document.getElementById('mobile-file-tree');
       if (!container) return;
+      if (typeof vfs === 'undefined') return;
       const paths = Object.keys(vfs).filter(p => !p.endsWith('.gitkeep'));
       if (!paths.length) {
         container.innerHTML = `
@@ -1234,7 +1254,7 @@
       }
       container.innerHTML = paths.map(path => {
         const name = path.split('/').pop();
-        const activeClass = activeFile === path ? 'bg-[#37373d] text-white font-semibold' : 'text-gray-300';
+        const activeClass = (typeof activeFile !== 'undefined' && activeFile === path) ? 'bg-[#37373d] text-white font-semibold' : 'text-gray-300';
         return `
           <div onclick="openFile('${path}'); toggleMobileSidebar();" class="flex items-center gap-2 p-2 rounded hover:bg-[#2a2d2e] cursor-pointer ${activeClass}">
             <i data-lucide="file-code" class="w-4 h-4 text-orange-400"></i>
@@ -1266,8 +1286,8 @@
       }
       if (window.editor) {
          window.editor.setValue('<!-- Paste HTML or React JSX Code Here to Preview Instantly! -->\n');
-         window.activeFile = null;
-         window.activeIframeFile = null;
+         if (typeof activeFile !== 'undefined') activeFile = null;
+         if (typeof activeIframeFile !== 'undefined') activeIframeFile = null;
          document.getElementById('editor-empty').style.display = 'none';
          refreshPreview();
       }
