@@ -1,0 +1,1258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OmniPlay Studio | Secure Local Media Player</title>
+  
+  <!-- SEO Meta Tags -->
+  <meta name="description" content="OmniPlay Studio is a secure, 100% offline local media player in your browser. Review audio and video files with playback speed control, A-B looping, and playlists without cloud uploads.">
+  <meta name="keywords" content="local media player, browser video player, offline audio player, A-B loop player, playback speed controller, secure media review, OmniPlay Studio, Envizion Tools, no cloud storage">
+  <meta name="author" content="Envizion Tools">
+
+  <!-- Google AdSense Script -->
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5812524294035974" crossorigin="anonymous"></script>
+
+  <!-- Tailwind CSS for styling -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Phosphor Icons for high-quality SVG icons -->
+  <script src="https://unpkg.com/@phosphor-icons/web"></script>
+  
+  <!-- Google Fonts: Inter -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #0f172a; /* Tailwind slate-900 */
+      color: #f8fafc; /* Tailwind slate-50 */
+      overflow: hidden; /* Prevent body scroll, manage scroll internally */
+    }
+
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #1e293b; 
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #475569; 
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #64748b; 
+    }
+
+    /* Range Slider Styling */
+    input[type=range] {
+      -webkit-appearance: none;
+      width: 100%;
+      background: transparent;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      height: 14px;
+      width: 14px;
+      border-radius: 50%;
+      background: #3b82f6;
+      cursor: pointer;
+      margin-top: -5px;
+      box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+    }
+    input[type=range]::-webkit-slider-runnable-track {
+      width: 100%;
+      height: 4px;
+      cursor: pointer;
+      background: #334155;
+      border-radius: 2px;
+    }
+    input[type=range]:focus {
+      outline: none;
+    }
+
+    /* Hide standard file input */
+    input[type="file"] {
+      display: none;
+    }
+
+    .glass-panel {
+      background: rgba(30, 41, 59, 0.7);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .active-track {
+      background-color: #1e293b;
+      border-left: 4px solid #3b82f6;
+    }
+    
+    /* Expandable Info Section Styles */
+    .info-container {
+      display: grid;
+      grid-template-rows: 0fr;
+      transition: grid-template-rows 0.5s ease-in-out;
+      background-color: #0f172a; /* slate-900 */
+    }
+    .info-container.open {
+      grid-template-rows: 1fr;
+    }
+    .info-inner {
+      overflow: hidden;
+    }
+    
+    /* Custom scrollbar for text areas */
+    /* Info Drawer Styles */
+    .drawer {
+      transition: transform 0.3s ease-in-out;
+      transform: translateX(100%);
+    }
+    .drawer.open {
+      transform: translateX(0);
+    }
+    
+    /* Custom scrollbar for text areas */
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+
+    /* Sidebar tabs */
+    .tab-btn { transition: all 0.15s; }
+    .tab-btn.active { background: #1e293b; color: #fff; border-bottom: 2px solid #3b82f6; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
+
+    /* Bookmark items */
+    .bookmark-item { cursor: pointer; transition: background 0.15s; }
+    .bookmark-item:hover { background: #1e293b; }
+
+    /* Notes pad */
+    #notesArea {
+      background: #0f172a;
+      color: #cbd5e1;
+      resize: none;
+      font-family: 'Inter', monospace;
+      font-size: 0.8rem;
+      line-height: 1.6;
+      border: none;
+      outline: none;
+    }
+
+    /* Canvas visualizer */
+    #audioCanvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* Clip export progress */
+    #clipProgress {
+      transition: width 0.3s;
+    }
+
+    /* Keyboard shortcuts grid */
+    .shortcut-row { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #1e293b; font-size: 0.75rem; }
+    .shortcut-key { background: #1e293b; border: 1px solid #334155; border-radius: 4px; padding: 1px 6px; font-family: monospace; color: #93c5fd; }
+  </style>
+</head>
+<body class="h-screen flex flex-col md:flex-row relative overflow-hidden">
+
+  <!-- Main Player Container -->
+  <main class="flex-1 flex flex-col relative h-full">
+    
+    <!-- Top Bar -->
+    <header class="p-4 flex justify-between items-center z-10 glass-panel absolute top-0 w-full border-b-0">
+      <div class="flex items-center gap-2">
+        <div class="w-8 h-8 rounded bg-blue-600 flex items-center justify-center font-bold text-lg">O</div>
+        <h1 class="font-bold text-lg tracking-tight text-white">OmniPlay Studio</h1>
+      </div>
+      <div class="flex items-center gap-4">
+        <span class="text-xs font-medium bg-green-500/20 text-green-400 px-2 py-1 rounded border border-green-500/30 hidden md:flex items-center gap-1">
+          <i class="ph ph-shield-check"></i> 100% Local (Offline)
+        </span>
+        <button id="btnToggleInfo" class="text-sm bg-slate-800 hover:bg-slate-700 text-white px-3 py-1.5 rounded-lg border border-slate-600 transition flex items-center gap-2 shadow-lg group">
+          <i class="ph ph-info text-blue-400 group-hover:animate-pulse"></i>
+          <span>About / Guide</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Video/Audio Presentation Area -->
+    <div class="flex-1 bg-black flex items-center justify-center relative w-full h-full" id="mediaContainer">
+      <!-- Media Element -->
+      <video id="player" class="max-w-full max-h-full w-full h-full object-contain hidden" playsinline></video>
+      
+      <!-- Placeholder/Empty State -->
+      <div id="emptyState" class="flex flex-col items-center justify-center text-slate-400 p-8 text-center">
+        <i class="ph ph-film-strip text-6xl mb-4 opacity-50"></i>
+        <h2 class="text-xl font-semibold text-slate-200 mb-2">No Media Loaded</h2>
+        <p class="max-w-md text-sm mb-6">Select local audio or video files to begin. Files never leave your device.</p>
+        <button onclick="document.getElementById('fileInput').click()" class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-lg font-medium transition flex items-center gap-2 shadow-lg shadow-blue-500/20">
+          <i class="ph ph-plus-circle text-lg"></i> Add Media
+        </button>
+      </div>
+
+      <!-- Audio Canvas Visualizer (Shows when playing audio only) -->
+      <div id="audioVisualizer" class="hidden flex-col items-center justify-center text-slate-400 w-full h-full bg-slate-900 relative">
+        <canvas id="audioCanvas"></canvas>
+        <div class="absolute bottom-8 text-center pointer-events-none">
+          <h3 id="currentAudioTitle" class="text-2xl font-bold text-white mb-1">Audio Track</h3>
+          <p class="text-slate-500 text-sm">OmniPlay Studio</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Playback Controls -->
+    <div class="glass-panel p-4 pb-6 z-10 w-full shrink-0">
+      
+      <!-- Progress Bar -->
+      <div class="flex items-center gap-3 mb-3 text-sm font-medium text-slate-300">
+        <span id="currentTimeDisplay">00:00</span>
+        <div class="flex-1 relative flex items-center h-4">
+          <input type="range" id="progressBar" min="0" max="100" value="0" class="w-full z-10">
+          <!-- A-B Loop visual indicators -->
+          <div id="loopMarkerA" class="hidden absolute top-0 bottom-0 w-1 bg-green-500 ml-[-2px] z-0 h-4 rounded" style="left: 0%;"></div>
+          <div id="loopMarkerB" class="hidden absolute top-0 bottom-0 w-1 bg-red-500 ml-[-2px] z-0 h-4 rounded" style="left: 0%;"></div>
+          <!-- Loop Range Highlight -->
+          <div id="loopRange" class="hidden absolute top-1.5 bottom-1.5 bg-blue-500/30 z-0 h-1" style="left: 0%; width: 0%;"></div>
+        </div>
+        <span id="durationDisplay">00:00</span>
+      </div>
+
+      <!-- Controls Row -->
+      <div class="flex flex-wrap items-center justify-between gap-4">
+        
+        <!-- Left: A-B Loop & Speed -->
+        <div class="flex items-center gap-2 flex-1 min-w-[200px]">
+          <div class="bg-slate-800 rounded-lg p-1 flex items-center">
+            <button id="btnSetA" class="px-2 py-1 text-xs font-bold rounded text-slate-400 hover:text-white hover:bg-slate-700 transition" title="Set Loop Start (A)">
+              [A
+            </button>
+            <button id="btnToggleLoop" class="px-2 py-1 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition" title="Toggle Loop">
+              <i class="ph ph-arrows-left-right"></i>
+            </button>
+            <button id="btnSetB" class="px-2 py-1 text-xs font-bold rounded text-slate-400 hover:text-white hover:bg-slate-700 transition" title="Set Loop End (B)">
+              B]
+            </button>
+          </div>
+          
+          <div class="relative group">
+            <button class="bg-slate-800 hover:bg-slate-700 text-sm font-medium px-3 py-1.5 rounded-lg flex items-center gap-1 transition">
+              <span id="speedDisplay">1.0x</span>
+              <i class="ph ph-caret-up text-xs"></i>
+            </button>
+            <div class="absolute bottom-full left-0 mb-1 hidden group-hover:flex flex-col bg-slate-800 border border-slate-700 rounded-lg overflow-hidden shadow-xl z-20">
+              <button class="speed-btn px-4 py-2 hover:bg-slate-700 text-left text-sm" data-speed="2.0">2.0x</button>
+              <button class="speed-btn px-4 py-2 hover:bg-slate-700 text-left text-sm" data-speed="1.75">1.75x</button>
+              <button class="speed-btn px-4 py-2 hover:bg-slate-700 text-left text-sm" data-speed="1.5">1.5x</button>
+              <button class="speed-btn px-4 py-2 hover:bg-slate-700 text-left text-sm" data-speed="1.25">1.25x</button>
+              <button class="speed-btn px-4 py-2 hover:bg-slate-700 text-left text-sm text-blue-400 font-bold" data-speed="1.0">1.0x (Normal)</button>
+              <button class="speed-btn px-4 py-2 hover:bg-slate-700 text-left text-sm" data-speed="0.75">0.75x</button>
+              <button class="speed-btn px-4 py-2 hover:bg-slate-700 text-left text-sm" data-speed="0.5">0.5x</button>
+              <button class="speed-btn px-4 py-2 hover:bg-slate-700 text-left text-sm" data-speed="0.25">0.25x</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Center: Play/Pause/Skip -->
+        <div class="flex items-center justify-center gap-4 flex-1">
+          <button id="btnPrev" class="text-slate-300 hover:text-white transition p-2" title="Previous Track">
+            <i class="ph-fill ph-skip-back text-2xl"></i>
+          </button>
+          
+          <button id="btnSkipBack" class="text-slate-300 hover:text-white transition p-2" title="Rewind 10s">
+            <i class="ph ph-rewind-circle text-3xl"></i>
+          </button>
+
+          <button id="btnPlayPause" class="bg-blue-600 hover:bg-blue-500 text-white rounded-full w-14 h-14 flex items-center justify-center shadow-lg shadow-blue-500/30 transition transform hover:scale-105" title="Play / Pause">
+            <i id="playIcon" class="ph-fill ph-play text-2xl ml-1"></i>
+          </button>
+
+          <button id="btnSkipForward" class="text-slate-300 hover:text-white transition p-2" title="Forward 10s">
+            <i class="ph ph-fast-forward-circle text-3xl"></i>
+          </button>
+
+          <button id="btnNext" class="text-slate-300 hover:text-white transition p-2" title="Next Track">
+            <i class="ph-fill ph-skip-forward text-2xl"></i>
+          </button>
+        </div>
+
+        <!-- Right: Volume, Screenshot, Fullscreen -->
+        <div class="flex items-center justify-end gap-3 flex-1 min-w-[200px]">
+          <button id="btnMute" class="text-slate-300 hover:text-white transition">
+            <i id="volumeIcon" class="ph-fill ph-speaker-high text-xl"></i>
+          </button>
+          <input type="range" id="volumeBar" min="0" max="1" step="0.01" value="1" class="w-24">
+          
+          <button id="btnBookmark" class="text-slate-300 hover:text-yellow-400 transition ml-1" title="Add Bookmark (B)">
+            <i class="ph ph-bookmark text-xl"></i>
+          </button>
+
+          <button id="btnScreenshot" class="text-slate-300 hover:text-green-400 transition" title="Screenshot Frame (S)">
+            <i class="ph ph-camera text-xl"></i>
+          </button>
+
+          <button id="btnExportClip" class="text-slate-300 hover:text-purple-400 transition" title="Export A-B Clip">
+            <i class="ph ph-export text-xl"></i>
+          </button>
+          
+          <button id="btnFullscreen" class="text-slate-300 hover:text-white transition ml-1" title="Fullscreen (F)">
+            <i class="ph ph-corners-out text-xl"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Sidebar with Tabs -->
+  <aside class="w-full md:w-80 lg:w-96 bg-slate-900 border-l border-slate-800 flex flex-col shrink-0 h-1/3 md:h-full z-20 shadow-2xl relative">
+    
+    <!-- Tab Bar -->
+    <div class="flex border-b border-slate-800 bg-slate-900 shrink-0">
+      <button class="tab-btn active flex-1 py-2.5 text-xs font-semibold text-slate-400 flex flex-col items-center gap-0.5" data-tab="playlist">
+        <i class="ph ph-list-dashes text-base"></i> Playlist
+      </button>
+      <button class="tab-btn flex-1 py-2.5 text-xs font-semibold text-slate-400 flex flex-col items-center gap-0.5" data-tab="bookmarks">
+        <i class="ph ph-bookmark text-base"></i> Marks
+      </button>
+      <button class="tab-btn flex-1 py-2.5 text-xs font-semibold text-slate-400 flex flex-col items-center gap-0.5" data-tab="notes">
+        <i class="ph ph-notepad text-base"></i> Notes
+      </button>
+      <button class="tab-btn flex-1 py-2.5 text-xs font-semibold text-slate-400 flex flex-col items-center gap-0.5" data-tab="shortcuts">
+        <i class="ph ph-keyboard text-base"></i> Keys
+      </button>
+    </div>
+
+    <!-- Tab: Playlist -->
+    <div class="tab-panel active" id="tab-playlist">
+      <div class="p-3 border-b border-slate-800 flex justify-between items-center bg-slate-900 shrink-0">
+        <span class="text-sm font-semibold text-slate-300">Queue</span>
+        <div class="flex gap-2">
+          <button id="btnClear" class="text-xs text-red-400 hover:text-red-300 hover:bg-red-900/30 px-2 py-1 rounded transition">Clear</button>
+          <button onclick="document.getElementById('fileInput').click()" class="text-xs bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-white transition flex items-center gap-1">
+            <i class="ph ph-plus"></i> Add
+          </button>
+        </div>
+        <input type="file" id="fileInput" multiple accept="audio/*, video/*, .mkv, .avi, .mov, .mp4, .mp3, .wav, .ogg, .webm">
+      </div>
+      <div class="flex-1 overflow-y-auto p-2 custom-scrollbar" id="playlistContainer">
+        <div id="playlistEmpty" class="text-center text-slate-500 text-sm mt-10 px-4">
+          Your playlist is empty.<br>Click 'Add' or drag files in.
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab: Bookmarks -->
+    <div class="tab-panel" id="tab-bookmarks">
+      <div class="p-3 border-b border-slate-800 flex justify-between items-center shrink-0">
+        <span class="text-sm font-semibold text-slate-300">Timestamp Bookmarks</span>
+        <button id="btnClearBookmarks" class="text-xs text-red-400 hover:text-red-300 px-2 py-1 rounded hover:bg-red-900/30 transition">Clear</button>
+      </div>
+      <div class="flex-1 overflow-y-auto custom-scrollbar p-2" id="bookmarkList">
+        <p class="text-center text-slate-500 text-xs mt-8 px-4">Press <span class="shortcut-key">B</span> or click <i class="ph ph-bookmark"></i> to save a timestamp.<br>Click any bookmark to jump there.</p>
+      </div>
+    </div>
+
+    <!-- Tab: Notes -->
+    <div class="tab-panel" id="tab-notes">
+      <div class="p-3 border-b border-slate-800 flex justify-between items-center shrink-0">
+        <span class="text-sm font-semibold text-slate-300">Playback Notes</span>
+        <div class="flex gap-2">
+          <button id="btnInsertTimestamp" class="text-xs bg-blue-600/30 hover:bg-blue-600/50 text-blue-300 px-2 py-1 rounded transition" title="Insert current timestamp">
+            <i class="ph ph-clock"></i> [T]
+          </button>
+          <button id="btnDownloadNotes" class="text-xs bg-slate-700 hover:bg-slate-600 text-white px-2 py-1 rounded transition">
+            <i class="ph ph-download-simple"></i> Save
+          </button>
+        </div>
+      </div>
+      <textarea id="notesArea" class="flex-1 w-full p-3 custom-scrollbar" placeholder="Type notes here... Press [T] or the button above to insert the current timestamp automatically.&#10;&#10;Example:&#10;[00:42] — intro ends&#10;[01:15] — main point starts"></textarea>
+    </div>
+
+    <!-- Tab: Shortcuts -->
+    <div class="tab-panel" id="tab-shortcuts">
+      <div class="p-3 border-b border-slate-800 shrink-0">
+        <span class="text-sm font-semibold text-slate-300">Keyboard Shortcuts</span>
+      </div>
+      <div class="flex-1 overflow-y-auto p-3 custom-scrollbar text-slate-400">
+        <div class="shortcut-row"><span>Play / Pause</span><span class="shortcut-key">Space</span></div>
+        <div class="shortcut-row"><span>Rewind 10s</span><span class="shortcut-key">J</span></div>
+        <div class="shortcut-row"><span>Forward 10s</span><span class="shortcut-key">L</span></div>
+        <div class="shortcut-row"><span>Rewind 5s</span><span class="shortcut-key">←</span></div>
+        <div class="shortcut-row"><span>Forward 5s</span><span class="shortcut-key">→</span></div>
+        <div class="shortcut-row"><span>Volume Up</span><span class="shortcut-key">↑</span></div>
+        <div class="shortcut-row"><span>Volume Down</span><span class="shortcut-key">↓</span></div>
+        <div class="shortcut-row"><span>Mute / Unmute</span><span class="shortcut-key">M</span></div>
+        <div class="shortcut-row"><span>Fullscreen</span><span class="shortcut-key">F</span></div>
+        <div class="shortcut-row"><span>Set Loop A</span><span class="shortcut-key">A</span></div>
+        <div class="shortcut-row"><span>Set Loop B</span><span class="shortcut-key">Z</span></div>
+        <div class="shortcut-row"><span>Add Bookmark</span><span class="shortcut-key">B</span></div>
+        <div class="shortcut-row"><span>Screenshot Frame</span><span class="shortcut-key">S</span></div>
+        <div class="shortcut-row"><span>Insert Timestamp</span><span class="shortcut-key">T</span></div>
+        <div class="shortcut-row"><span>Speed Up</span><span class="shortcut-key">+</span></div>
+        <div class="shortcut-row"><span>Speed Down</span><span class="shortcut-key">-</span></div>
+        <div class="shortcut-row"><span>Next Track</span><span class="shortcut-key">N</span></div>
+        <div class="shortcut-row"><span>Prev Track</span><span class="shortcut-key">P</span></div>
+      </div>
+    </div>
+
+    <!-- Clip Export Progress Bar (hidden by default) -->
+    <div id="clipExportBar" class="hidden border-t border-slate-800 bg-slate-900 shrink-0 p-3">
+      <p class="text-xs text-slate-400 mb-1 flex items-center gap-1"><i class="ph ph-spinner animate-spin"></i> <span id="clipExportStatus">Recording clip…</span></p>
+      <div class="w-full bg-slate-700 rounded-full h-1.5">
+        <div id="clipProgress" class="bg-purple-500 h-1.5 rounded-full" style="width: 0%"></div>
+      </div>
+    </div>
+
+    <!-- AdSense -->
+    <div class="border-t border-slate-800 bg-slate-900 shrink-0 w-full flex items-center justify-center overflow-hidden min-h-[100px] p-2">
+      <ins class="adsbygoogle"
+           style="display:block; width:100%; height:90px;"
+           data-ad-client="ca-pub-5812524294035974"
+           data-ad-slot="auto"
+           data-ad-format="auto"
+           data-full-width-responsive="true"></ins>
+      <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+    </div>
+  </aside>
+
+  <!-- Notification Toast -->
+  <div id="toast" class="fixed top-4 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white px-4 py-2 rounded-lg shadow-lg border border-slate-700 opacity-0 transition-opacity duration-300 pointer-events-none z-50 flex items-center gap-2">
+    <i class="ph-fill ph-info text-blue-400"></i>
+    <span id="toastMessage">Notification</span>
+  </div>
+
+  <!-- Collapsible SEO & Info Drawer -->
+  <div id="infoDrawer" class="drawer absolute top-0 right-0 h-full w-full md:w-[600px] bg-slate-900 border-l border-slate-700 z-[100] shadow-2xl flex flex-col overflow-hidden">
+    <div class="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-800/95 backdrop-blur shrink-0 shadow-sm">
+      <h2 class="font-bold text-xl text-white flex items-center gap-2"><i class="ph ph-book-open text-blue-400"></i> About OmniPlay Studio</h2>
+      <button id="btnCloseInfo" class="w-8 h-8 flex items-center justify-center rounded-full bg-slate-700 hover:bg-slate-600 hover:text-red-400 text-white transition cursor-pointer">
+        <i class="ph ph-x"></i>
+      </button>
+    </div>
+    <div class="flex-1 overflow-y-auto p-6 text-slate-300 space-y-6 leading-relaxed custom-scrollbar bg-slate-900">
+      
+      <!-- SEO 700 Word Explanation -->
+      <article class="prose prose-invert prose-blue max-w-none">
+        <h3 class="text-2xl font-bold text-white mb-4">The Premier Local Media Player for Professionals</h3>
+        <p>Welcome to OmniPlay Studio, the most secure, lightweight, and versatile local media player designed to run entirely within your web browser. In an era where data privacy is under constant threat and cloud applications require mandatory uploads, OmniPlay Studio takes a radically different approach. We believe your media should remain yours. Whether you are reviewing highly confidential legal depositions, analyzing unreleased musical tracks, transcribing sensitive medical podcasts, or simply watching a draft cut of your latest video project, OmniPlay Studio ensures that zero bytes of your data ever leave your device.</p>
+
+        <h4 class="text-xl font-semibold text-white mt-8 mb-3">Uncompromising Offline Privacy</h4>
+        <p>The core philosophy of OmniPlay Studio is strict, uncompromising local execution. When you add a file to the OmniPlay playlist, you are not uploading it to a server. Instead, our application utilizes the modern HTML5 File API to create a secure, temporary, and localized reference to the file existing on your hard drive. This means there is no cloud storage, no remote processing, and no background tracking of your media consumption. Because it operates entirely locally, OmniPlay Studio functions flawlessly even if you completely disconnect from the internet after loading the page. Once you close your browser tab or clear the playlist, the session memory is permanently wiped, leaving absolutely no digital footprint behind. This architecture makes it the ultimate playback tool for professionals bound by Non-Disclosure Agreements (NDAs), strict corporate data governance policies, or individual privacy concerns.</p>
+
+        <h4 class="text-xl font-semibold text-white mt-8 mb-3">Advanced Playback Controls for Maximum Efficiency</h4>
+        <p>OmniPlay Studio is not merely a passive viewing tool; it is an active productivity workstation. We have engineered a comprehensive suite of playback controls specifically tailored for individuals who need to analyze, transcribe, and review media meticulously, rather than just passively consume it.</p>
+        <ul class="list-disc pl-5 mt-4 space-y-3">
+            <li><strong>Variable Playback Speed Controller:</strong> Time is your most valuable asset. Our granular speed controller allows you to accelerate playback up to 2.0x for rapid review of long lectures, podcasts, or meeting recordings. Alternatively, you can decelerate playback down to 0.25x without heavily distorting the fundamental audio pitch. This is an indispensable feature for musicians learning complex guitar solos, or transcribers capturing fast-paced, overlapping dialogue accurately.</li>
+            <li><strong>Precision A-B Looping:</strong> Need to focus your attention on a specific, challenging segment? The built-in A-B loop feature allows you to set precise start (A) and end (B) markers dynamically on the timeline. The player will continuously and seamlessly cycle through this isolated section. This feature is perfect for analyzing a difficult line of code in an instructional video, practicing a specific step in a dance routine, or meticulously editing a short audio soundbite.</li>
+            <li><strong>Unified Audio and Video Playlist Management:</strong> Seamlessly mix and match audio files (MP3, WAV, OGG) and video formats (MP4, WEBM, MKV, MOV) within a single, unified session. Drag and drop entire folders directly into the browser or select multiple files at once. The robust, highly responsive playlist sidebar keeps your queue organized and easily accessible, letting you jump between tracks instantly.</li>
+        </ul>
+
+        <h4 class="text-xl font-semibold text-white mt-8 mb-3">Who Benefits from OmniPlay Studio?</h4>
+        <p>Because of its robust feature set and offline-first nature, OmniPlay Studio serves a wide array of demanding users:</p>
+        <p class="mt-3"><strong>Video Editors & Filmmakers:</strong> Review daily production rushes or rough cuts instantly in the browser without having to import them back into a heavy, resource-intensive Non-Linear Editor (NLE). Use the playback controls to scrutinize frame pacing and audio sync.</p>
+        <p class="mt-3"><strong>Students & Academics:</strong> Accelerate through recorded university lectures to save massive amounts of time during revision, or slow down complex mathematical explanations to ensure you grasp intricate concepts fully. Use the A-B loop to replay crucial segments continuously before critical exams.</p>
+        <p class="mt-3"><strong>Musicians & Audio Engineers:</strong> Check uncompressed master files before commercial release, or loop difficult passages of a song to practice playing along. The localized environment ensures unreleased, copyrighted tracks stay strictly unreleased and secure.</p>
+        <p class="mt-3"><strong>Transcriptionists, Journalists & Linguists:</strong> Combine the rapid 10-second skip-back functionality with the variable speed control to accurately capture fast, mumbled, or technically dense speech during interviews.</p>
+
+        <h4 class="text-xl font-semibold text-white mt-8 mb-3">Technical Simplicity Meets Raw Power</h4>
+        <p>OmniPlay Studio proves unequivocally that you do not need to install bloated, proprietary desktop software to achieve professional-grade media control. By intelligently leveraging the native, highly optimized capabilities of modern web browsers like Chrome, Edge, and Safari, we provide a lightning-fast, highly responsive interface that consumes minimal system resources and battery life. There are zero user accounts to create, no monthly subscriptions to manage, and no annoying software updates to download. It is instantly available whenever you need it, accessible directly via a simple browser bookmark.</p>
+        <p class="mt-4 pb-12">Experience the ultimate freedom of secure, efficient, and private media review today. Add your local files, adjust your playback speed, set your precision loops, and take absolute control over your digital workflow with OmniPlay Studio.</p>
+      </article>
+    </div>
+  </div>
+
+  <script>
+    // Elements
+    const player = document.getElementById('player');
+    const fileInput = document.getElementById('fileInput');
+    const playlistContainer = document.getElementById('playlistContainer');
+    const playlistEmpty = document.getElementById('playlistEmpty');
+    const mediaContainer = document.getElementById('mediaContainer');
+    const emptyState = document.getElementById('emptyState');
+    const audioVisualizer = document.getElementById('audioVisualizer');
+    const currentAudioTitle = document.getElementById('currentAudioTitle');
+    const toast = document.getElementById('toast');
+    const toastMessage = document.getElementById('toastMessage');
+
+    // New feature elements
+    const btnBookmark = document.getElementById('btnBookmark');
+    const btnScreenshot = document.getElementById('btnScreenshot');
+    const btnExportClip = document.getElementById('btnExportClip');
+    const btnClearBookmarks = document.getElementById('btnClearBookmarks');
+    const bookmarkList = document.getElementById('bookmarkList');
+    const notesArea = document.getElementById('notesArea');
+    const btnInsertTimestamp = document.getElementById('btnInsertTimestamp');
+    const btnDownloadNotes = document.getElementById('btnDownloadNotes');
+    const clipExportBar = document.getElementById('clipExportBar');
+    const clipProgress = document.getElementById('clipProgress');
+    const clipExportStatus = document.getElementById('clipExportStatus');
+    const audioCanvas = document.getElementById('audioCanvas');
+
+    // --- SIDEBAR TABS ---
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+      });
+    });
+
+    // --- AUDIO CANVAS VISUALIZER ---
+    let audioCtx, analyser, source, animFrame;
+    function startVisualizer() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 256;
+        source = audioCtx.createMediaElementSource(player);
+        source.connect(analyser);
+        analyser.connect(audioCtx.destination);
+      }
+      const canvas = audioCanvas;
+      const ctx = canvas.getContext('2d');
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+
+      function resize() {
+        canvas.width = canvas.offsetWidth;
+        canvas.height = canvas.offsetHeight;
+      }
+      resize();
+      window.addEventListener('resize', resize);
+
+      function draw() {
+        animFrame = requestAnimationFrame(draw);
+        analyser.getByteFrequencyData(dataArray);
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        const barWidth = (canvas.width / bufferLength) * 2.5;
+        let x = 0;
+        for (let i = 0; i < bufferLength; i++) {
+          const barHeight = (dataArray[i] / 255) * canvas.height * 0.8;
+          const hue = (i / bufferLength) * 220 + 180;
+          ctx.fillStyle = `hsla(${hue}, 80%, 60%, 0.85)`;
+          ctx.fillRect(x, canvas.height - barHeight, barWidth - 1, barHeight);
+          x += barWidth;
+        }
+      }
+      draw();
+    }
+    function stopVisualizer() {
+      if (animFrame) cancelAnimationFrame(animFrame);
+    }
+
+    // --- BOOKMARKS ---
+    let bookmarks = [];
+    function addBookmark() {
+      if (!player.duration) return;
+      const t = player.currentTime;
+      const label = prompt('Bookmark label (optional):', '') || '';
+      bookmarks.push({ t, label });
+      bookmarks.sort((a, b) => a.t - b.t);
+      renderBookmarks();
+      // Switch to bookmark tab
+      document.querySelector('[data-tab="bookmarks"]').click();
+      showToast(`Bookmark added: ${formatTime(t)}`);
+    }
+    function renderBookmarks() {
+      if (bookmarks.length === 0) {
+        bookmarkList.innerHTML = `<p class="text-center text-slate-500 text-xs mt-8 px-4">Press <span class="shortcut-key">B</span> or click <i class="ph ph-bookmark"></i> to save a timestamp.<br>Click any bookmark to jump there.</p>`;
+        return;
+      }
+      bookmarkList.innerHTML = '';
+      bookmarks.forEach((bm, i) => {
+        const el = document.createElement('div');
+        el.className = 'bookmark-item flex items-center gap-2 px-2 py-2 rounded-lg mb-1';
+        el.innerHTML = `
+          <button class="w-16 text-xs font-mono text-blue-400 hover:text-blue-300 shrink-0 text-left" title="Jump to ${formatTime(bm.t)}">${formatTime(bm.t)}</button>
+          <span class="flex-1 text-xs text-slate-300 truncate">${bm.label || '—'}</span>
+          <button class="del-bm text-slate-600 hover:text-red-400 text-xs transition" data-i="${i}"><i class="ph ph-x"></i></button>
+        `;
+        el.querySelector('button:first-child').addEventListener('click', () => { player.currentTime = bm.t; });
+        el.querySelector('.del-bm').addEventListener('click', (e) => {
+          e.stopPropagation();
+          bookmarks.splice(i, 1);
+          renderBookmarks();
+        });
+        bookmarkList.appendChild(el);
+      });
+    }
+    btnBookmark.addEventListener('click', addBookmark);
+    btnClearBookmarks.addEventListener('click', () => { bookmarks = []; renderBookmarks(); });
+
+    // --- SCREENSHOT ---
+    function takeScreenshot() {
+      if (player.classList.contains('hidden') || !player.duration) {
+        showToast('No video to screenshot');
+        return;
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = player.videoWidth;
+      canvas.height = player.videoHeight;
+      canvas.getContext('2d').drawImage(player, 0, 0);
+      const link = document.createElement('a');
+      const name = (playlist[currentIndex]?.name || 'frame').replace(/\.[^.]+$/, '');
+      link.download = `${name}_${formatTime(player.currentTime).replace(/:/g, '-')}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+      showToast('Frame saved as PNG');
+    }
+    btnScreenshot.addEventListener('click', takeScreenshot);
+
+    // --- CLIP EXPORT (A-B) ---
+    let clipRecorder = null;
+    btnExportClip.addEventListener('click', () => {
+      if (!player.duration) { showToast('No media loaded'); return; }
+      if (loopA === null || loopB === null) { showToast('Set A and B markers first'); return; }
+      if (clipRecorder) { showToast('Export already in progress'); return; }
+
+      const start = loopA;
+      const end = loopB;
+      const duration = end - start;
+
+      // Use MediaRecorder on the media element's stream
+      let stream;
+      try {
+        stream = player.captureStream ? player.captureStream() : player.mozCaptureStream();
+      } catch (e) {
+        showToast('Clip export not supported in this browser');
+        return;
+      }
+
+      const chunks = [];
+      clipRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+      clipRecorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+      clipRecorder.onstop = () => {
+        const blob = new Blob(chunks, { type: 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const name = (playlist[currentIndex]?.name || 'clip').replace(/\.[^.]+$/, '');
+        a.download = `${name}_clip_${formatTime(start).replace(/:/g,'-')}-${formatTime(end).replace(/:/g,'-')}.webm`;
+        a.href = url;
+        a.click();
+        URL.revokeObjectURL(url);
+        clipRecorder = null;
+        clipExportBar.classList.add('hidden');
+        clipProgress.style.width = '0%';
+        showToast('Clip exported!');
+      };
+
+      player.currentTime = start;
+      player.play();
+      clipRecorder.start();
+      clipExportBar.classList.remove('hidden');
+      clipExportStatus.textContent = `Recording ${formatTime(start)} → ${formatTime(end)}…`;
+
+      const interval = setInterval(() => {
+        const elapsed = player.currentTime - start;
+        const pct = Math.min((elapsed / duration) * 100, 100);
+        clipProgress.style.width = pct + '%';
+        if (player.currentTime >= end) {
+          clearInterval(interval);
+          clipRecorder.stop();
+          player.pause();
+        }
+      }, 100);
+    });
+
+    // --- NOTES ---
+    function insertTimestamp() {
+      const t = player.duration ? `[${formatTime(player.currentTime)}] ` : '[--:--] ';
+      const pos = notesArea.selectionStart;
+      notesArea.value = notesArea.value.slice(0, pos) + t + notesArea.value.slice(pos);
+      notesArea.selectionStart = notesArea.selectionEnd = pos + t.length;
+      notesArea.focus();
+    }
+    btnInsertTimestamp.addEventListener('click', insertTimestamp);
+    btnDownloadNotes.addEventListener('click', () => {
+      if (!notesArea.value.trim()) { showToast('Notes are empty'); return; }
+      const blob = new Blob([notesArea.value], { type: 'text/plain' });
+      const a = document.createElement('a');
+      const name = playlist[currentIndex]?.name?.replace(/\.[^.]+$/, '') || 'notes';
+      a.download = `${name}_notes.txt`;
+      a.href = URL.createObjectURL(blob);
+      a.click();
+      showToast('Notes saved');
+    });
+
+    // --- KEYBOARD SHORTCUTS ---
+    const SPEEDS = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
+    document.addEventListener('keydown', (e) => {
+      // Don't fire shortcuts if typing in notes
+      if (e.target === notesArea) {
+        if (e.key === 't' || e.key === 'T') { e.preventDefault(); insertTimestamp(); }
+        return;
+      }
+      switch (e.key) {
+        case ' ': e.preventDefault();
+          if (playlist.length === 0) return;
+          player.paused ? player.play() : player.pause(); break;
+        case 'j': case 'J': player.currentTime = Math.max(player.currentTime - 10, 0); break;
+        case 'l': case 'L': player.currentTime = Math.min(player.currentTime + 10, player.duration || 0); break;
+        case 'ArrowLeft': e.preventDefault(); player.currentTime = Math.max(player.currentTime - 5, 0); break;
+        case 'ArrowRight': e.preventDefault(); player.currentTime = Math.min(player.currentTime + 5, player.duration || 0); break;
+        case 'ArrowUp': e.preventDefault(); player.volume = Math.min(player.volume + 0.1, 1); volumeBar.value = player.volume; updateVolumeIcon(); break;
+        case 'ArrowDown': e.preventDefault(); player.volume = Math.max(player.volume - 0.1, 0); volumeBar.value = player.volume; updateVolumeIcon(); break;
+        case 'm': case 'M': player.muted = !player.muted; updateVolumeIcon(); break;
+        case 'f': case 'F': btnFullscreen.click(); break;
+        case 'a': case 'A': btnSetA.click(); break;
+        case 'z': case 'Z': btnSetB.click(); break;
+        case 'b': case 'B': addBookmark(); break;
+        case 's': case 'S': takeScreenshot(); break;
+        case 't': case 'T': insertTimestamp(); document.querySelector('[data-tab="notes"]').click(); break;
+        case 'n': case 'N': btnNext.click(); break;
+        case 'p': case 'P': btnPrev.click(); break;
+        case '+': case '=': {
+          const cur = parseFloat(speedDisplay.textContent);
+          const idx = SPEEDS.indexOf(cur);
+          if (idx < SPEEDS.length - 1) { player.playbackRate = SPEEDS[idx+1]; speedDisplay.textContent = SPEEDS[idx+1].toFixed(2)+'x'; }
+          break;
+        }
+        case '-': {
+          const cur = parseFloat(speedDisplay.textContent);
+          const idx = SPEEDS.indexOf(cur);
+          if (idx > 0) { player.playbackRate = SPEEDS[idx-1]; speedDisplay.textContent = SPEEDS[idx-1].toFixed(2)+'x'; }
+          break;
+        }
+      }
+    });
+
+    // Controls Elements
+    const btnPlayPause = document.getElementById('btnPlayPause');
+    const playIcon = document.getElementById('playIcon');
+    const btnPrev = document.getElementById('btnPrev');
+    const btnNext = document.getElementById('btnNext');
+    const btnSkipBack = document.getElementById('btnSkipBack');
+    const btnSkipForward = document.getElementById('btnSkipForward');
+    const progressBar = document.getElementById('progressBar');
+    const currentTimeDisplay = document.getElementById('currentTimeDisplay');
+    const durationDisplay = document.getElementById('durationDisplay');
+    
+    // A-B Loop Elements
+    const btnSetA = document.getElementById('btnSetA');
+    const btnSetB = document.getElementById('btnSetB');
+    const btnToggleLoop = document.getElementById('btnToggleLoop');
+    const loopMarkerA = document.getElementById('loopMarkerA');
+    const loopMarkerB = document.getElementById('loopMarkerB');
+    const loopRange = document.getElementById('loopRange');
+
+    // Speed & Audio Elements
+    const speedDisplay = document.getElementById('speedDisplay');
+    const speedBtns = document.querySelectorAll('.speed-btn');
+    const volumeBar = document.getElementById('volumeBar');
+    const btnMute = document.getElementById('btnMute');
+    const volumeIcon = document.getElementById('volumeIcon');
+      const btnFullscreen = document.getElementById('btnFullscreen');
+    const btnClear = document.getElementById('btnClear');
+    
+    // Drawer Elements
+    const btnToggleInfo = document.getElementById('btnToggleInfo');
+    const btnCloseInfo = document.getElementById('btnCloseInfo');
+    const infoDrawer = document.getElementById('infoDrawer');
+
+    // Application State
+    let playlist = [];
+    let currentIndex = -1;
+    let currentObjectUrl = null;
+    
+    // Looping State
+    let loopA = null;
+    let loopB = null;
+    let isLooping = false;
+
+    // Helper: Show Toast message
+    let toastTimeout;
+    function showToast(msg) {
+      toastMessage.textContent = msg;
+      toast.classList.remove('opacity-0');
+      toast.classList.add('opacity-100');
+      clearTimeout(toastTimeout);
+      toastTimeout = setTimeout(() => {
+        toast.classList.remove('opacity-100');
+        toast.classList.add('opacity-0');
+      }, 3000);
+    }
+
+    // Helper: Format Time (seconds to MM:SS)
+    function formatTime(seconds) {
+      if (isNaN(seconds) || seconds < 0) return "00:00";
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      const s = Math.floor(seconds % 60);
+      
+      if (h > 0) {
+        return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+      }
+      return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    }
+
+    // File Selection Handler
+    fileInput.addEventListener('change', (e) => {
+      const files = Array.from(e.target.files);
+      if (files.length === 0) return;
+
+      const startIndex = playlist.length;
+      
+      files.forEach(file => {
+        playlist.push(file);
+      });
+
+      renderPlaylist();
+      
+      // If nothing is playing, start the first newly added file
+      if (currentIndex === -1) {
+        playTrack(startIndex);
+      }
+      
+      showToast(`Added ${files.length} file(s)`);
+      // Reset input to allow adding same file again if desired
+      fileInput.value = ''; 
+    });
+
+    // Render Playlist UI
+    function renderPlaylist() {
+      if (playlist.length === 0) {
+        playlistContainer.innerHTML = '';
+        playlistContainer.appendChild(playlistEmpty);
+        playlistEmpty.style.display = 'block';
+        return;
+      }
+      
+      playlistEmpty.style.display = 'none';
+      playlistContainer.innerHTML = '';
+      
+      playlist.forEach((file, index) => {
+        const item = document.createElement('div');
+        const isActive = index === currentIndex;
+        
+        item.className = `p-3 mb-1 rounded-lg cursor-pointer transition flex items-center gap-3 group 
+                          ${isActive ? 'active-track' : 'hover:bg-slate-800 text-slate-300 hover:text-white'}`;
+        
+        // Icon based on type
+        const isVideo = file.type.startsWith('video');
+        const iconClass = isVideo ? 'ph-video-camera' : 'ph-music-notes';
+        
+        item.innerHTML = `
+          <div class="w-8 h-8 rounded bg-slate-800 flex items-center justify-center shrink-0 group-hover:bg-slate-700 transition">
+            <i class="ph ${iconClass} ${isActive ? 'text-blue-400' : 'text-slate-400'} text-lg"></i>
+          </div>
+          <div class="flex-1 overflow-hidden">
+            <p class="truncate text-sm font-medium ${isActive ? 'text-blue-100' : ''}" title="${file.name}">${file.name}</p>
+            <p class="text-xs text-slate-500 mt-0.5">${(file.size / (1024*1024)).toFixed(2)} MB</p>
+          </div>
+          ${isActive ? '<i class="ph-fill ph-speaker-high text-blue-400 animate-pulse"></i>' : ''}
+          <button class="remove-btn text-slate-600 hover:text-red-400 hidden group-hover:block transition" data-index="${index}" title="Remove">
+            <i class="ph ph-x"></i>
+          </button>
+        `;
+        
+        item.addEventListener('click', (e) => {
+          if(!e.target.closest('.remove-btn')) {
+            playTrack(index);
+          }
+        });
+
+        playlistContainer.appendChild(item);
+      });
+
+      // Bind remove buttons
+      document.querySelectorAll('.remove-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          removeTrack(parseInt(btn.getAttribute('data-index')));
+        });
+      });
+    }
+
+    // Remove Track
+    function removeTrack(index) {
+      playlist.splice(index, 1);
+      if (index === currentIndex) {
+        // Removed currently playing track
+        player.pause();
+        if (playlist.length > 0) {
+          // Play next available
+          playTrack(index >= playlist.length ? playlist.length - 1 : index);
+        } else {
+          // Playlist empty
+          stopPlayback();
+        }
+      } else if (index < currentIndex) {
+        currentIndex--; // Adjust index since array shifted
+      }
+      renderPlaylist();
+    }
+
+    // Clear Playlist
+    btnClear.addEventListener('click', () => {
+      playlist = [];
+      stopPlayback();
+      renderPlaylist();
+      showToast('Playlist cleared');
+    });
+
+    // Stop Playback completely
+    function stopPlayback() {
+      player.pause();
+      currentIndex = -1;
+      player.src = '';
+      if(currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
+      
+      emptyState.classList.remove('hidden');
+      player.classList.add('hidden');
+      audioVisualizer.classList.add('hidden');
+      
+      playIcon.classList.remove('ph-pause');
+      playIcon.classList.add('ph-play');
+      
+      currentTimeDisplay.textContent = '00:00';
+      durationDisplay.textContent = '00:00';
+      progressBar.value = 0;
+      
+      resetLoop();
+    }
+
+    // Play specific track
+    function playTrack(index) {
+      if (index < 0 || index >= playlist.length) return;
+      
+      const file = playlist[index];
+      currentIndex = index;
+      
+      // Cleanup previous URL to avoid memory leaks
+      if (currentObjectUrl) {
+        URL.revokeObjectURL(currentObjectUrl);
+      }
+      
+      currentObjectUrl = URL.createObjectURL(file);
+      player.src = currentObjectUrl;
+      
+      // Restore user set speed
+      const speed = parseFloat(speedDisplay.textContent);
+      player.playbackRate = speed;
+      
+      // UI Updates
+      emptyState.classList.add('hidden');
+      
+      if (file.type.startsWith('video')) {
+        player.classList.remove('hidden');
+        audioVisualizer.classList.add('hidden');
+        stopVisualizer();
+      } else {
+        player.classList.add('hidden');
+        audioVisualizer.classList.remove('hidden');
+        audioVisualizer.classList.add('flex');
+        currentAudioTitle.textContent = file.name;
+        // Start visualizer after play begins
+        player.addEventListener('play', function onPlay() {
+          startVisualizer();
+          player.removeEventListener('play', onPlay);
+        }, { once: true });
+      }
+      
+      renderPlaylist();
+      resetLoop();
+      
+      player.play().catch(e => {
+        showToast("Error playing file. Format might not be supported by browser.");
+        console.error(e);
+      });
+    }
+
+    // Playback Event Listeners
+    player.addEventListener('play', () => {
+      playIcon.classList.remove('ph-play');
+      playIcon.classList.add('ph-pause');
+    });
+
+    player.addEventListener('pause', () => {
+      playIcon.classList.remove('ph-pause');
+      playIcon.classList.add('ph-play');
+    });
+
+    player.addEventListener('loadedmetadata', () => {
+      durationDisplay.textContent = formatTime(player.duration);
+      progressBar.max = player.duration;
+    });
+
+    player.addEventListener('timeupdate', () => {
+      if (!player.duration) return;
+      
+      // Update progress bar
+      progressBar.value = player.currentTime;
+      currentTimeDisplay.textContent = formatTime(player.currentTime);
+      
+      // A-B Looping Logic
+      if (isLooping && loopB !== null && loopA !== null) {
+        if (player.currentTime >= loopB) {
+          player.currentTime = loopA;
+        }
+      }
+    });
+
+    player.addEventListener('ended', () => {
+      // If single file loop is not handled native, go to next
+      if (currentIndex < playlist.length - 1) {
+        playTrack(currentIndex + 1);
+      } else {
+        showToast('Playlist finished');
+        player.currentTime = 0;
+        player.pause();
+      }
+    });
+
+    // Progress Bar Seeking
+    progressBar.addEventListener('input', () => {
+      player.currentTime = progressBar.value;
+      // If seeking past loop B while loop is active, disable loop to prevent getting stuck
+      if(isLooping && loopB !== null && player.currentTime > loopB) {
+         isLooping = false;
+         updateLoopUI();
+         showToast('Loop bypassed');
+      }
+    });
+
+    // Controls Actions
+    btnPlayPause.addEventListener('click', () => {
+      if (playlist.length === 0) return;
+      if (player.paused) player.play();
+      else player.pause();
+    });
+
+    btnNext.addEventListener('click', () => {
+      if (currentIndex < playlist.length - 1) playTrack(currentIndex + 1);
+    });
+
+    btnPrev.addEventListener('click', () => {
+      if (player.currentTime > 3) {
+        player.currentTime = 0; // Restart track if more than 3s in
+      } else if (currentIndex > 0) {
+        playTrack(currentIndex - 1); // Go to previous track
+      }
+    });
+
+    btnSkipForward.addEventListener('click', () => {
+      player.currentTime = Math.min(player.currentTime + 10, player.duration || 0);
+    });
+
+    btnSkipBack.addEventListener('click', () => {
+      player.currentTime = Math.max(player.currentTime - 10, 0);
+    });
+
+    // Playback Speed
+    speedBtns.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const speed = parseFloat(e.target.dataset.speed);
+        player.playbackRate = speed;
+        speedDisplay.textContent = speed.toFixed(2) + 'x';
+        
+        // Visual update
+        speedBtns.forEach(b => b.classList.remove('text-blue-400', 'font-bold'));
+        e.target.classList.add('text-blue-400', 'font-bold');
+        showToast(`Speed set to ${speed}x`);
+      });
+    });
+
+    // Volume Control
+    volumeBar.addEventListener('input', () => {
+      player.volume = volumeBar.value;
+      updateVolumeIcon();
+    });
+
+    btnMute.addEventListener('click', () => {
+      player.muted = !player.muted;
+      updateVolumeIcon();
+    });
+
+    function updateVolumeIcon() {
+      volumeIcon.className = '';
+      if (player.muted || player.volume === 0) {
+        volumeIcon.className = 'ph-fill ph-speaker-none text-xl text-red-400';
+      } else if (player.volume < 0.5) {
+        volumeIcon.className = 'ph-fill ph-speaker-low text-xl';
+      } else {
+        volumeIcon.className = 'ph-fill ph-speaker-high text-xl';
+      }
+      if(!player.muted) volumeBar.value = player.volume;
+    }
+
+    // Fullscreen (Only functional for video, mostly)
+    btnFullscreen.addEventListener('click', () => {
+      if (player.classList.contains('hidden')) {
+        showToast('Only video supports fullscreen');
+        return;
+      }
+      
+      if (!document.fullscreenElement) {
+        if(player.requestFullscreen) {
+            player.requestFullscreen();
+        } else if(player.webkitRequestFullscreen) { /* Safari */
+            player.webkitRequestFullscreen();
+        }
+      } else {
+        if (document.exitFullscreen) {
+          document.exitFullscreen();
+        }
+      }
+    });
+
+    // A-B Looping Functions
+    function resetLoop() {
+      loopA = null;
+      loopB = null;
+      isLooping = false;
+      updateLoopUI();
+    }
+
+    function updateLoopUI() {
+      // Toggle button styling
+      if (isLooping) {
+        btnToggleLoop.classList.add('text-blue-400', 'bg-slate-700');
+        btnToggleLoop.classList.remove('text-slate-400');
+      } else {
+        btnToggleLoop.classList.remove('text-blue-400', 'bg-slate-700');
+        btnToggleLoop.classList.add('text-slate-400');
+      }
+
+      // Marker A
+      if (loopA !== null && player.duration) {
+        const pctA = (loopA / player.duration) * 100;
+        loopMarkerA.style.left = `${pctA}%`;
+        loopMarkerA.classList.remove('hidden');
+        btnSetA.classList.add('text-green-400');
+      } else {
+        loopMarkerA.classList.add('hidden');
+        btnSetA.classList.remove('text-green-400');
+      }
+
+      // Marker B
+      if (loopB !== null && player.duration) {
+        const pctB = (loopB / player.duration) * 100;
+        loopMarkerB.style.left = `${pctB}%`;
+        loopMarkerB.classList.remove('hidden');
+        btnSetB.classList.add('text-red-400');
+      } else {
+        loopMarkerB.classList.add('hidden');
+        btnSetB.classList.remove('text-red-400');
+      }
+
+      // Range visualizer
+      if (loopA !== null && loopB !== null && player.duration) {
+        const pctA = (loopA / player.duration) * 100;
+        const pctB = (loopB / player.duration) * 100;
+        loopRange.style.left = `${pctA}%`;
+        loopRange.style.width = `${pctB - pctA}%`;
+        loopRange.classList.remove('hidden');
+      } else {
+        loopRange.classList.add('hidden');
+      }
+    }
+
+    btnSetA.addEventListener('click', () => {
+      if(!player.duration) return;
+      loopA = player.currentTime;
+      // Ensure A is before B
+      if (loopB !== null && loopA >= loopB) {
+        loopB = null; 
+      }
+      isLooping = (loopB !== null); // Auto start loop if both set
+      updateLoopUI();
+      showToast(`Loop Start set: ${formatTime(loopA)}`);
+    });
+
+    btnSetB.addEventListener('click', () => {
+      if(!player.duration) return;
+      if (loopA !== null && player.currentTime <= loopA) {
+        showToast("End point must be after start point");
+        return;
+      }
+      loopB = player.currentTime;
+      
+      if(loopA === null) loopA = 0; // Default A to 0 if not set
+      
+      isLooping = true;
+      updateLoopUI();
+      showToast(`Loop active: ${formatTime(loopA)} to ${formatTime(loopB)}`);
+    });
+
+    btnToggleLoop.addEventListener('click', () => {
+      if (loopA === null && loopB === null) {
+        // If no markers set, default to looping the whole track
+        player.loop = !player.loop;
+        if(player.loop) {
+          btnToggleLoop.classList.add('text-blue-400', 'bg-slate-700');
+          showToast('Track Loop Enabled');
+        } else {
+          btnToggleLoop.classList.remove('text-blue-400', 'bg-slate-700');
+          showToast('Track Loop Disabled');
+        }
+        return;
+      }
+
+      // Toggle A-B Loop
+      isLooping = !isLooping;
+      updateLoopUI();
+      showToast(isLooping ? 'A-B Loop Enabled' : 'A-B Loop Disabled');
+    });
+    
+    // Support Drag and Drop files onto entire body
+    document.body.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        document.body.classList.add('opacity-80');
+    });
+    
+    document.body.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        document.body.classList.remove('opacity-80');
+    });
+    
+       document.body.addEventListener('drop', (e) => {
+        e.preventDefault();
+        document.body.classList.remove('opacity-80');
+        
+        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+            // Assign files to the file input to reuse the same logic
+            fileInput.files = e.dataTransfer.files;
+            // Trigger change event manually
+            const event = new Event('change', { bubbles: true });
+            fileInput.dispatchEvent(event);
+        }
+    });
+
+    // Expandable Info Section Logic
+    btnToggleInfo.addEventListener('click', (e) => {
+        e.preventDefault();
+        const isOpen = infoDrawer.classList.contains('open');
+        
+        if (isOpen) {
+            infoDrawer.classList.remove('open');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        } else {
+            infoDrawer.classList.add('open');
+            // Allow a tiny delay for the display transition to start before scrolling
+            setTimeout(() => {
+                infoDrawer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 100);
+        }
+    });
+
+    btnCloseInfo.addEventListener('click', () => {
+        infoDrawer.classList.remove('open');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+    
+    // Close drawer when clicking anywhere in the main player area
+    document.querySelector('main').addEventListener('click', () => {
+        if(infoDrawer.classList.contains('open')) {
+            infoDrawer.classList.remove('open');
+        }
+    });
+
+  </script>
+</body>
+</html>
