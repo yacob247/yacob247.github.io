@@ -1,13 +1,17 @@
 """
-1_add_csp.py
-------------
-Adds a Content Security Policy <meta> tag to every .html file
-in your repo (all folders, recursively) if one doesn't already exist.
+fix_csp.py
+----------
+Fixes the Content-Security-Policy <meta> tag in every .html file
+by adding `blob:` to the connect-src directive.
 
-Inserts it right after the <meta charset> line so it's near the top of <head>.
+Before: connect-src 'self' https://www.google-analytics.com
+After:  connect-src 'self' blob: https://www.google-analytics.com
 
 Run from your repo root:
-    python 1_add_csp.py
+    python fix_csp.py
+
+Or pass a path:
+    python fix_csp.py /path/to/repo
 
 Preview without changing files:
     Set DRY_RUN = True below
@@ -20,55 +24,24 @@ import sys
 ROOT    = sys.argv[1] if len(sys.argv) > 1 else "."
 DRY_RUN = False
 
-# ── The CSP tag to inject ─────────────────────────────────────────────────────
-# Covers the scripts/fonts/images used across the Yacob Digital / Envizion site.
-# Adjust domains here if you add new third-party scripts later.
-CSP_TAG = (
-    '<meta http-equiv="Content-Security-Policy" '
-    'content="default-src \'self\'; '
-    'script-src \'self\' \'unsafe-inline\' \'unsafe-eval\' '
-    'https://cdn.tailwindcss.com https://unpkg.com '
-    'https://www.googletagmanager.com https://www.google-analytics.com; '
-    'style-src \'self\' \'unsafe-inline\' https://fonts.googleapis.com; '
-    'font-src https://fonts.gstatic.com; '
-    'img-src \'self\' https://images.unsplash.com https://repository-images.githubusercontent.com data: blob:; '
-    'connect-src \'self\' https://www.google-analytics.com; '
-    'frame-src \'self\';">'
-)
+OLD_CONNECT = "connect-src 'self' https://www.google-analytics.com"
+NEW_CONNECT = "connect-src 'self' blob: https://www.google-analytics.com"
 
-def already_has_csp(html: str) -> bool:
-    return bool(re.search(
-        r'<meta\s[^>]*http-equiv\s*=\s*["\']Content-Security-Policy["\']',
-        html, re.IGNORECASE
-    ))
+def needs_fix(html: str) -> bool:
+    """Returns True if the file has the old connect-src without blob:."""
+    return OLD_CONNECT in html
 
-def inject_csp(html: str) -> str:
-    """Insert CSP tag after the <meta charset> line."""
-
-    # Try to place it right after <meta charset=...>
-    charset_match = re.search(
-        r'(<meta\s[^>]*charset[^>]*>)',
-        html, re.IGNORECASE
-    )
-    if charset_match:
-        insert_pos = charset_match.end()
-        return html[:insert_pos] + "\n  " + CSP_TAG + html[insert_pos:]
-
-    # Fallback: place it right after the opening <head> tag
-    head_match = re.search(r'<head[^>]*>', html, re.IGNORECASE)
-    if head_match:
-        insert_pos = head_match.end()
-        return html[:insert_pos] + "\n  " + CSP_TAG + html[insert_pos:]
-
-    # Last resort: prepend to file
-    return CSP_TAG + "\n" + html
-
+def apply_fix(html: str) -> str:
+    return html.replace(OLD_CONNECT, NEW_CONNECT)
 
 def process_repo(root: str):
-    total_files   = 0
-    modified      = []
+    total_files = 0
+    already_ok  = 0
+    modified    = []
+    no_csp      = 0
 
     for dirpath, dirnames, filenames in os.walk(root):
+        # Skip hidden dirs like .git
         dirnames[:] = [d for d in dirnames if not d.startswith(".")]
 
         for filename in filenames:
@@ -81,28 +54,34 @@ def process_repo(root: str):
             with open(filepath, "r", encoding="utf-8", errors="replace") as f:
                 original = f.read()
 
-            if already_has_csp(original):
-                continue  # already has CSP, skip
+            # Skip files that have no CSP at all
+            if "Content-Security-Policy" not in original:
+                no_csp += 1
+                continue
 
-            fixed = inject_csp(original)
-            modified.append(os.path.relpath(filepath, root))
+            if not needs_fix(original):
+                already_ok += 1
+                continue
+
+            fixed = apply_fix(original)
+            rel_path = os.path.relpath(filepath, root)
+            modified.append(rel_path)
 
             if not DRY_RUN:
                 with open(filepath, "w", encoding="utf-8") as f:
                     f.write(fixed)
 
     mode = "[DRY RUN] " if DRY_RUN else ""
-    print(f"\n{mode}CSP injection complete")
-    print(f"  HTML files scanned : {total_files}")
-    print(f"  Files updated      : {len(modified)}")
+    print(f"\n{mode}connect-src blob: fix complete")
+    print(f"  HTML files scanned  : {total_files}")
+    print(f"  Fixed (blob: added) : {len(modified)}")
+    print(f"  Already correct     : {already_ok}")
+    print(f"  No CSP tag at all   : {no_csp}")
     if modified:
-        print("\nUpdated files:")
+        print("\nFixed files:")
         for p in modified:
-            print(f"  → {p}")
-    else:
-        print("\nAll files already have a CSP tag.")
-
+            print(f"  ✓ {p}")
 
 if __name__ == "__main__":
-    print(f"Root : {os.path.abspath(ROOT)}")
+    print(f"Root: {os.path.abspath(ROOT)}")
     process_repo(ROOT)
