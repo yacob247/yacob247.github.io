@@ -1,23 +1,31 @@
 """
-fix_csp2.py
------------
-Rewrites the Content-Security-Policy <meta> tag in every .html file
-to the fully-corrected version.
+fix_csp_final.py
+----------------
+FINAL comprehensive CSP fix for all .html files.
 
-Fixes applied vs the original injected CSP:
-  1. script-src  — adds https://pagead2.googlesyndication.com  (AdSense)
-  2. media-src   — NEW directive: 'self' blob:  (WaveSurfer audio playback)
-  3. connect-src — adds blob: and https://unpkg.com
+Replaces ANY existing CSP <meta> tag with the fully-corrected version
+that covers every third-party resource used across the Envizion/Yacob site.
 
-Handles files patched by earlier fix_csp.py (v1) as well.
+What's covered and why:
+  script-src  + https://pagead2.googlesyndication.com   (AdSense script)
+  style-src   + https://cdnjs.cloudflare.com            (Font Awesome, etc.)
+  frame-src   + https://googleads.g.doubleclick.net     (AdSense iframes)
+               + https://*.googlesyndication.com
+  connect-src + blob:                                   (WaveSurfer fetch)
+               + https://unpkg.com                      (source maps)
+               + https://ep1.adtrafficquality.google    (AdSense telemetry)
+               + https://*.googlesyndication.com
+               + https://*.doubleclick.net
+  media-src   + blob:                                   (WaveSurfer playback)
+  worker-src  + blob:                                   (mp4tomp3 web worker)
 
-Run from your repo root:
-    python fix_csp2.py
+Run from repo root:
+    python fix_csp_final.py
 
-Pass a specific path:
-    python fix_csp2.py /path/to/site
+Or pass a path:
+    python fix_csp_final.py C:\\path\\to\\site
 
-Preview only (no writes):
+Preview without writing:
     Set DRY_RUN = True
 """
 
@@ -28,26 +36,48 @@ import sys
 ROOT    = sys.argv[1] if len(sys.argv) > 1 else "."
 DRY_RUN = False
 
-# ── Fully-fixed CSP content value ─────────────────────────────────────────────
+# ── THE ONE TRUE CSP ──────────────────────────────────────────────────────────
 NEW_CSP_CONTENT = (
     "default-src 'self'; "
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' "
-    "https://cdn.tailwindcss.com https://unpkg.com "
-    "https://www.googletagmanager.com https://www.google-analytics.com "
-    "https://pagead2.googlesyndication.com; "
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-    "font-src https://fonts.gstatic.com; "
-    "img-src 'self' https://images.unsplash.com "
-    "https://repository-images.githubusercontent.com data: blob:; "
-    "media-src 'self' blob:; "
-    "connect-src 'self' blob: https://unpkg.com https://www.google-analytics.com; "
-    "frame-src 'self';"
-)
 
-# Regex that matches the full CSP <meta> tag regardless of what's in content=
-CSP_META_RE = re.compile(
-    r'<meta\s[^>]*http-equiv\s*=\s*["\']Content-Security-Policy["\'][^>]*>',
-    re.IGNORECASE | re.DOTALL
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' "
+        "https://cdn.tailwindcss.com "
+        "https://unpkg.com "
+        "https://cdnjs.cloudflare.com "
+        "https://www.googletagmanager.com "
+        "https://www.google-analytics.com "
+        "https://pagead2.googlesyndication.com; "
+
+    "style-src 'self' 'unsafe-inline' "
+        "https://fonts.googleapis.com "
+        "https://cdnjs.cloudflare.com; "
+
+    "font-src 'self' "
+        "https://fonts.gstatic.com "
+        "https://cdnjs.cloudflare.com; "
+
+    "img-src 'self' data: blob: "
+        "https://images.unsplash.com "
+        "https://repository-images.githubusercontent.com "
+        "https://pagead2.googlesyndication.com "
+        "https://*.googlesyndication.com "
+        "https://*.doubleclick.net; "
+
+    "media-src 'self' blob:; "
+
+    "worker-src 'self' blob:; "
+
+    "connect-src 'self' blob: "
+        "https://unpkg.com "
+        "https://cdnjs.cloudflare.com "
+        "https://www.google-analytics.com "
+        "https://ep1.adtrafficquality.google "
+        "https://*.googlesyndication.com "
+        "https://*.doubleclick.net; "
+
+    "frame-src 'self' "
+        "https://googleads.g.doubleclick.net "
+        "https://*.googlesyndication.com; "
 )
 
 NEW_CSP_TAG = (
@@ -55,25 +85,35 @@ NEW_CSP_TAG = (
     f'content="{NEW_CSP_CONTENT}">'
 )
 
-def already_correct(html: str) -> bool:
-    """True if the file already has every required directive correctly."""
-    return (
-        "pagead2.googlesyndication.com" in html and
-        "media-src" in html and
-        "blob: https://unpkg.com" in html
-    )
+# Matches any existing CSP meta tag (full tag, any attribute order)
+CSP_META_RE = re.compile(
+    r'<meta\s[^>]*http-equiv\s*=\s*["\']Content-Security-Policy["\'][^>]*/?>',
+    re.IGNORECASE | re.DOTALL
+)
 
 def has_csp(html: str) -> bool:
     return bool(CSP_META_RE.search(html))
 
+def already_correct(html: str) -> bool:
+    """True only if every required piece is already present."""
+    checks = [
+        "cdnjs.cloudflare.com",
+        "googleads.g.doubleclick.net",
+        "ep1.adtrafficquality.google",
+        "worker-src",
+        "media-src",
+    ]
+    return all(c in html for c in checks)
+
 def apply_fix(html: str) -> str:
     return CSP_META_RE.sub(NEW_CSP_TAG, html, count=1)
 
+
 def process_repo(root: str):
-    total_html  = 0
-    fixed       = []
-    already_ok  = 0
-    no_csp      = 0
+    total_html = 0
+    fixed      = []
+    already_ok = 0
+    no_csp     = 0
 
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if not d.startswith(".")]
@@ -105,11 +145,11 @@ def process_repo(root: str):
                     f.write(patched)
 
     mode = "[DRY RUN] " if DRY_RUN else ""
-    print(f"\n{mode}CSP fix complete")
+    print(f"\n{mode}Final CSP fix complete")
     print(f"  HTML files scanned   : {total_html}")
     print(f"  Fixed                : {len(fixed)}")
     print(f"  Already correct      : {already_ok}")
-    print(f"  No CSP tag (skipped) : {no_csp}")
+    print(f"  No CSP (skipped)     : {no_csp}")
 
     if fixed:
         print("\nFixed files:")
