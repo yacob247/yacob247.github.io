@@ -18,9 +18,12 @@ const fs   = require('fs');
 const path = require('path');
 
 // ── CONFIG ──────────────────────────────────────────────────────────────────
-const WIKI_DIR    = path.join(__dirname, 'Wiki');   // folder to scan
-const OUTPUT_FILE = path.join(__dirname, 'wiki-search-index.json'); // output
-const EXTENSIONS  = ['.html', '.htm'];              // file types to index
+// build-index.js lives INSIDE the Wiki/ folder.
+// It scans everything in that same folder (and all sub-folders).
+// It writes wiki-search-index.json one level UP, next to index.html.
+const WIKI_DIR    = __dirname;                                         // scan THIS folder
+const OUTPUT_FILE = path.join(__dirname, 'wiki-search-index.json'); // one level up, next to index.html
+const EXTENSIONS  = ['.html', '.htm'];                                 // file types to index
 // ────────────────────────────────────────────────────────────────────────────
 
 // Walk a directory recursively and return all matching file paths
@@ -81,7 +84,8 @@ for (const filePath of files) {
     }
     const text = stripHtml(html);
     // Store path relative to this script so it works as a URL
-    const relPath = path.relative(__dirname, filePath).replace(/\\/g, '/');
+    // Path relative to index.html (one level up), with forward slashes for URLs
+    const relPath = 'Wiki/' + path.relative(__dirname, filePath).replace(/\\/g, '/');
     index.push({ path: relPath, header, text });
     console.log(`  OK: ${relPath} — "${header}"`);
   } catch (err) {
