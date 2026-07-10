@@ -653,61 +653,122 @@
   <p data-i18n="footer-copy">WikiRare — The Encyclopedia of the Uncovered. Content available under <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a>.</p>
 </footer>
 
+<!-- ── ADMIN PANEL (hidden by default, open via ?admin in URL) ── -->
+<div id="adminPanel" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:9999; align-items:center; justify-content:center;">
+  <div style="background:#fff; border-radius:6px; padding:3rem; max-width:640px; width:95%; box-shadow:0 8px 40px rgba(0,0,0,.3); font-family:var(--sans); position:relative;">
+    <button onclick="document.getElementById('adminPanel').style.display='none'" style="position:absolute;top:1.2rem;right:1.6rem;background:none;border:none;font-size:2rem;cursor:pointer;color:var(--muted)">✕</button>
+    <h2 style="font-family:var(--serif);font-size:2rem;margin-bottom:2rem;color:var(--ink)">Add to <span style="color:var(--gold)">wiki-index.json</span></h2>
+    <p style="font-size:1.3rem;color:var(--muted);margin-bottom:1.6rem;">Type the path of your new file (e.g. <code style="background:#f2eee6;padding:.2rem .5rem;border-radius:3px">Wiki/1/article.html</code>) and click Add. This adds it to the manifest so the search engine picks it up automatically.</p>
+    <div style="display:flex;gap:1rem;margin-bottom:1.2rem;flex-wrap:wrap;">
+      <input id="adminPathInput" type="text" placeholder="Wiki/1/my-article.html" style="flex:1;min-width:200px;height:4.2rem;border:2px solid var(--rule);border-radius:3px;padding:0 1.2rem;font-size:1.5rem;font-family:var(--sans);outline:none;">
+      <button onclick="adminAddFile()" style="height:4.2rem;padding:0 2rem;background:var(--accent);color:#fff;border:none;border-radius:3px;font-size:1.4rem;font-weight:600;cursor:pointer;">Add File</button>
+    </div>
+    <div id="adminStatus" style="font-size:1.3rem;min-height:2rem;color:var(--muted);"></div>
+    <hr style="margin:2rem 0;border:none;border-top:1px solid var(--rule);">
+    <h3 style="font-size:1.5rem;margin-bottom:1rem;color:var(--ink);">Current index <span id="adminCount" style="color:var(--muted);font-weight:400;font-size:1.3rem;"></span></h3>
+    <div id="adminList" style="max-height:180px;overflow-y:auto;font-size:1.3rem;color:var(--muted);line-height:2;"></div>
+  </div>
+</div>
+
 <!-- ── SEARCH ENGINE SCRIPT ── -->
 <script>
-  // Helper function for true multi-language search (handles accents, diacritics, and diverse character sets safely)
+  // ── HELPER: normalize for multi-language search ──
   const normalizeForSearch = (str) => {
     if (!str) return "";
-    // NFD normalizes unicode characters, and the regex removes diacritical marks (accents)
     return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
   };
 
-  // 1. ADD YOUR FILES HERE
-  // Enter all the paths to the HTML files you create in your Wiki folder.
-  const myWikiFiles = [
-    // Example: "Wiki/1/index.html",
-    // Example: "Wiki/1/My Article.html"
-  ];
+  // ── ACTIVE LANGUAGE (used for auto-translate of headers) ──
+  let activeLang = 'en';
 
-  // This index will store the extracted headers
-  let searchIndex = myWikiFiles.map(path => {
-    return {
-      path: path,
-      header: '', // Starts empty, will NOT use the file name as a fallback
-      content: '',
-      searchableContent: ''
-    };
-  });
+  // ── WIKI INDEX: loaded from Wiki/wiki-index.json ──
+  // That file is a simple JSON array of paths, e.g.:
+  // ["Wiki/1/index.html","Wiki/1/2/mystery.html","Wiki/3/rare-topic.html"]
+  // You manage it via the Admin Panel (open with ?admin in the URL).
+  const MANIFEST_PATH = 'Wiki/wiki-index.json';
+  let wikiFilePaths = [];
+  let searchIndex = [];
 
-  // 2. FETCH HEADERS ON LOAD
-  // This automatically scans the files in the background and extracts their <title> or <h1>
-  window.addEventListener('DOMContentLoaded', async () => {
-    for (let i = 0; i < searchIndex.length; i++) {
-      try {
-        const response = await fetch(searchIndex[i].path);
-        if (response.ok) {
-          const htmlText = await response.text();
-          const parser = new DOMParser();
-          const doc = parser.parseFromString(htmlText, "text/html");
-          
-          // Try to get <h1> first, fallback to <title>
-          const h1 = doc.querySelector('h1');
-          const title = doc.querySelector('title');
-          
-          if (h1 && h1.innerText.trim()) {
-            searchIndex[i].header = h1.innerText.trim();
-          } else if (title && title.innerText.trim()) {
-            searchIndex[i].header = title.innerText.trim();
-          }
-          
-          // Store entire text for deep search capability
-          searchIndex[i].content = htmlText;
-          searchIndex[i].searchableContent = normalizeForSearch(htmlText);
-        }
-      } catch (error) {
-        // If a file doesn't exist or fails to fetch, it will be safely ignored
+  async function loadManifestAndIndex() {
+    // Load the manifest
+    try {
+      const res = await fetch(MANIFEST_PATH + '?_=' + Date.now());
+      if (res.ok) {
+        wikiFilePaths = await res.json();
       }
+    } catch(e) {
+      // No manifest yet — search index stays empty
     }
+
+    // Build search index: fetch each file and extract header + body text
+    searchIndex = [];
+    for (const path of wikiFilePaths) {
+      try {
+        const res = await fetch(path);
+        if (!res.ok) continue;
+        const html = await res.text();
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        const h1    = doc.querySelector('h1');
+        const title = doc.querySelector('title');
+        const rawHeader = (h1 && h1.textContent.trim()) || (title && title.textContent.trim()) || '';
+        if (!rawHeader) continue; // skip files with no header
+        searchIndex.push({
+          path,
+          header: rawHeader,
+          searchableContent: normalizeForSearch(doc.body ? doc.body.textContent : html)
+        });
+      } catch(e) { /* file missing or fetch blocked — ignore */ }
+    }
+  }
+
+  // ── ADMIN PANEL ──
+  async function adminAddFile() {
+    const input = document.getElementById('adminPathInput');
+    const status = document.getElementById('adminStatus');
+    const path = input.value.trim();
+    if (!path) { status.textContent = 'Please enter a path.'; return; }
+    if (wikiFilePaths.includes(path)) { status.textContent = '⚠ Already in index.'; return; }
+
+    wikiFilePaths.push(path);
+    const saved = saveManifest();
+    if (saved) {
+      status.innerHTML = `<span style="color:green">✓ Added: ${path}. Re-indexing…</span>`;
+      input.value = '';
+      refreshAdminList();
+      await loadManifestAndIndex();
+      status.innerHTML = `<span style="color:green">✓ Done. "${path}" is now searchable.</span>`;
+    }
+  }
+
+  function saveManifest() {
+    // Since browsers can't write to disk directly, we output the updated JSON
+    // for you to save as Wiki/wiki-index.json on your PC.
+    const json = JSON.stringify(wikiFilePaths, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'wiki-index.json';
+    a.click();
+    return true;
+  }
+
+  function refreshAdminList() {
+    const list  = document.getElementById('adminList');
+    const count = document.getElementById('adminCount');
+    count.textContent = `(${wikiFilePaths.length} file${wikiFilePaths.length !== 1 ? 's' : ''})`;
+    list.innerHTML = wikiFilePaths.length
+      ? wikiFilePaths.map(p => `<div style="padding:.3rem 0;border-bottom:1px solid #f2eee6">${p}</div>`).join('')
+      : '<div style="color:#bbb;font-style:italic;">No files in index yet.</div>';
+  }
+
+  // Open admin panel if URL has ?admin
+  window.addEventListener('DOMContentLoaded', async () => {
+    if (location.search.includes('admin')) {
+      document.getElementById('adminPanel').style.display = 'flex';
+      refreshAdminList();
+    }
+    await loadManifestAndIndex();
+    refreshAdminList();
   });
 
   // 3. HANDLE SEARCH INPUT
@@ -731,16 +792,21 @@
     );
 
     if (matches.length > 0) {
-      matches.slice(0, 8).forEach(match => {
+      const top = matches.slice(0, 8);
+      // Render immediately with original headers, then translate if needed
+      top.forEach(match => {
         const link = document.createElement('a');
-        link.href = match.path; // Redirect directly to your local file path
+        link.href = match.path;
         link.className = 'search-item';
-        // Display ONLY the header, no file paths or names
-        link.innerHTML = `
-          <strong>${match.header}</strong>
-        `;
+        link.dataset.originalHeader = match.header;
+        link.innerHTML = `<strong>${match.header}</strong>`;
         searchDropdown.appendChild(link);
       });
+
+      // Auto-translate headers if the active language is not English
+      if (activeLang && activeLang !== 'en') {
+        translateDropdownHeaders(activeLang);
+      }
     } else {
       searchDropdown.innerHTML = '<div style="padding: 1.2rem; color: var(--muted); text-align:center; font-size:1.3rem;">No articles found.</div>';
     }
@@ -875,6 +941,7 @@
   };
 
   function changeLanguage(langCode) {
+    activeLang = langCode;
     // Default to English if language isn't in dictionary yet
     const dict = translations[langCode] || translations['en'];
     
@@ -907,6 +974,42 @@
   const browserLang = navigator.language.split('-')[0];
   if (translations[browserLang]) {
     changeLanguage(browserLang);
+  }
+
+  // ── AUTO-TRANSLATE SEARCH HEADERS via Claude API ──
+  async function translateDropdownHeaders(targetLang) {
+    const items = document.querySelectorAll('#searchDropdown .search-item');
+    if (!items.length) return;
+
+    const langNames = {
+      ar:'Arabic', fr:'French', es:'Spanish', de:'German',
+      zh:'Chinese', ja:'Japanese', ru:'Russian', hi:'Hindi',
+      pt:'Portuguese', it:'Italian', ko:'Korean', tr:'Turkish'
+    };
+    const langName = langNames[targetLang] || targetLang;
+    const headers = Array.from(items).map(el => el.dataset.originalHeader);
+
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 1000,
+          messages: [{
+            role: 'user',
+            content: `Translate the following article titles to ${langName}. Return ONLY a JSON array of translated strings in the same order, nothing else, no markdown.\n\n${JSON.stringify(headers)}`
+          }]
+        })
+      });
+      const data = await res.json();
+      const text = data.content?.map(b => b.text || '').join('') || '';
+      const clean = text.replace(/```json|```/g, '').trim();
+      const translated = JSON.parse(clean);
+      items.forEach((el, i) => {
+        if (translated[i]) el.querySelector('strong').textContent = translated[i];
+      });
+    } catch(e) { /* translation failed silently — original headers stay */ }
   }
 </script>
 
