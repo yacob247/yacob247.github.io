@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html class="scroll-smooth" lang="en">
+<head>
+  <link rel="icon" type="image/png" href="https://envizion.work/logo.png">
+  <meta charset="utf-8"/>
+  <meta name="robots" content="index, follow, max-image-preview:large"/>
+  <title>Understanding Browser-Based File Encryption | AES-256 vs RSA | Envizion Guide</title>
+  <meta name="description" content="A comprehensive guide to understanding browser-based file encryption. Learn how AES-256 and RSA encryption work, why client-side encryption is safer, and how the Web Cryptography API operates."/>
+  <meta property="og:title" content="Understanding Browser-Based File Encryption | Envizion Guide"/>
+  <meta property="og:description" content="Deep dive into AES-256 vs RSA encryption, the Web Cryptography API, and why browser-based encryption provides superior privacy compared to server-side alternatives."/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:url" content="https://envizion.work/guides/encryption-guide.html"/>
+  <meta property="og:image" content="https://envizion.work/logo.png"/>
+  <link rel="canonical" href="https://envizion.work/guides/encryption-guide.html"/>
+  <link href="../company.css" rel="stylesheet"/>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet"/>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: { envizion: { primary: '#2563eb', primaryHover: '#1d4ed8', dark: '#0f172a', darkLight: '#1e293b', darker: '#020617', accent: '#f97316', gray: '#f8fafc' } },
+          fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'], mono: ['JetBrains Mono', 'Fira Code', 'monospace'] }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; background: #f8fafc; }
+    .hero-gradient { background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%); }
+    .prose-custom h2 { color: #0f172a; font-weight: 700; font-size: 1.5rem; margin-top: 2.5rem; margin-bottom: 0.75rem; border-bottom: 2px solid #e2e8f0; padding-bottom: 0.5rem; }
+    .prose-custom h3 { color: #1e293b; font-weight: 600; font-size: 1.2rem; margin-top: 1.75rem; margin-bottom: 0.5rem; }
+    .prose-custom p { color: #475569; line-height: 1.85; margin-bottom: 1rem; font-size: 0.95rem; }
+    .prose-custom ul { list-style-type: disc; padding-left: 1.5rem; margin-bottom: 1rem; }
+    .prose-custom ul li { color: #475569; margin-bottom: 0.4rem; font-size: 0.95rem; line-height: 1.65; }
+    .prose-custom ol { list-style-type: decimal; padding-left: 1.5rem; margin-bottom: 1rem; }
+    .prose-custom ol li { color: #475569; margin-bottom: 0.4rem; font-size: 0.95rem; line-height: 1.65; }
+    .prose-custom code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 0.85rem; font-family: 'JetBrains Mono', monospace; color: #2563eb; }
+    .prose-custom pre { background: #0f172a; color: #e2e8f0; padding: 1.25rem; border-radius: 10px; overflow-x: auto; font-size: 0.85rem; line-height: 1.6; margin: 1.25rem 0; font-family: 'JetBrains Mono', monospace; }
+    .prose-custom pre code { background: transparent; color: #e2e8f0; padding: 0; font-size: 0.85rem; }
+    .prose-custom strong { color: #0f172a; }
+    .prose-custom blockquote { border-left: 4px solid #2563eb; padding: 1rem 1.5rem; color: #64748b; font-style: italic; margin: 1.5rem 0; background: #f1f5f9; border-radius: 0 8px 8px 0; }
+    .prose-custom table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; font-size: 0.9rem; }
+    .prose-custom th { background: #f1f5f9; text-align: left; padding: 0.75rem 1rem; font-weight: 600; color: #0f172a; border: 1px solid #e2e8f0; }
+    .prose-custom td { padding: 0.75rem 1rem; border: 1px solid #e2e8f0; color: #475569; }
+    .info-box { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: 1.25rem; margin: 1.5rem 0; }
+    .info-box strong { color: #1e40af; }
+    .warning-box { background: #fef3c7; border: 1px solid #fde68a; border-radius: 10px; padding: 1.25rem; margin: 1.5rem 0; }
+    .warning-box strong { color: #92400e; }
+    .toc-card { background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 1.5rem; margin: 2rem 0; }
+    .toc-card a { color: #2563eb; text-decoration: none; }
+    .toc-card a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+<nav class="bg-slate-50 border-b border-slate-200 py-2">
+  <div class="max-w-4xl mx-auto px-6 text-xs">
+    <a href="/" class="text-slate-600 hover:text-envizion-primary font-medium">Home</a>
+    <span class="text-slate-300 mx-2">|</span>
+    <a href="/tools/" class="text-slate-600 hover:text-envizion-primary font-medium">All Tools</a>
+    <span class="text-slate-300 mx-2">|</span>
+    <a href="/guides/" class="text-slate-600 hover:text-envizion-primary font-medium">Guides</a>
+    <span class="text-slate-300 mx-2">|</span>
+    <a href="/privacy.html" class="text-slate-600 hover:text-envizion-primary font-medium">Privacy Policy</a>
+    <span class="text-slate-300 mx-2">|</span>
+    <a href="/contact.html" class="text-slate-600 hover:text-envizion-primary font-medium">Contact</a>
+  </div>
+</nav>
+
+<section class="hero-gradient py-16 lg:py-20 text-white">
+  <div class="max-w-4xl mx-auto px-6">
+    <span class="text-xs font-bold uppercase tracking-widest text-blue-400 bg-blue-500/10 px-3 py-1 rounded-full border border-blue-500/20">Guide · Encryption</span>
+    <h1 class="text-3xl md:text-4xl lg:text-5xl font-black mt-6 mb-6 leading-tight tracking-tight">
+      Understanding Browser-Based File Encryption
+    </h1>
+    <p class="text-lg text-slate-300 max-w-3xl leading-relaxed">
+      A deep-dive into AES-256, RSA, the Web Cryptography API, and why client-side encryption is fundamentally safer than uploading your files to a server.
+    </p>
+    <div class="flex flex-wrap gap-4 mt-8 text-xs text-slate-400">
+      <span class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-blue-400"></span> ~1,500 words</span>
+      <span class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-blue-400"></span> Beginner to Intermediate</span>
+      <span class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-blue-400"></span> Reading time: 8 min</span>
+    </div>
+  </div>
+</section>
+
+<article class="py-12 lg:py-16">
+  <div class="max-w-4xl mx-auto px-6">
+    <div class="prose-custom">
+
+      <!-- Table of Contents -->
+      <div class="toc-card">
+        <h3 style="margin-top: 0; border-bottom: none; padding-bottom: 0;">Table of Contents</h3>
+        <ol style="margin-top: 0.75rem;">
+          <li><a href="#intro">Introduction: What Is Encryption, Really?</a></li>
+          <li><a href="#symmetric">Symmetric Encryption: AES-256 Explained</a></li>
+          <li><a href="#asymmetric">Asymmetric Encryption: RSA Explained</a></li>
+          <li><a href="#comparison">AES-256 vs RSA: When to Use Each</a></li>
+          <li><a href="#webcrypto">How the Web Cryptography API Works</a></li>
+          <li><a href="#client-side">Why Browser-Based Encryption Is Safer</a></li>
+          <li><a href="#best-practices">Security Best Practices for File Encryption</a></li>
+          <li><a href="#conclusion">Conclusion</a></li>
+        </ol>
+      </div>
+
+      <h2 id="intro">1. Introduction: What Is Encryption, Really?</h2>
+
+      <p>
+        At its core, encryption is the process of transforming readable data (plaintext) into an unreadable format (ciphertext) using a mathematical algorithm and a secret value called a <strong>key</strong>. Only someone with the correct key can reverse the process (decryption) and recover the original data.
+      </p>
+
+      <p>
+        Modern encryption is not optional — it is a fundamental requirement for digital privacy. Every HTTPS connection, every password manager, every secure messaging app relies on encryption to protect data from unauthorized access. The same cryptographic primitives that secure bank transactions and government communications are available to anyone with a web browser, thanks to the <strong>Web Cryptography API (WebCrypto)</strong>.
+      </p>
+
+      <p>
+        The two dominant encryption paradigms you will encounter are <strong>symmetric encryption</strong> (same key to encrypt and decrypt) and <strong>asymmetric encryption</strong> (a public key to encrypt, a private key to decrypt). The most widely used standards within these categories are <strong>AES-256</strong> (symmetric) and <strong>RSA</strong> (asymmetric). Understanding the difference between them — and when each is appropriate — is essential for using any file encryption tool effectively.
+      </p>
+
+      <div class="info-box">
+        <strong>Key Concept:</strong> Encryption does not hide the <em>existence</em> of data — it makes the data unintelligible to anyone who does not possess the decryption key. If you encrypt a file and someone intercepts it, they will see gibberish unless they have the key.
+      </div>
+
+      <h2 id="symmetric">2. Symmetric Encryption: AES-256 Explained</h2>
+
+      <h3>What Is AES?</h3>
+      <p>
+        The <strong>Advanced Encryption Standard (AES)</strong> is a symmetric block cipher adopted by the U.S. National Institute of Standards and Technology (NIST) in 2001. It replaced the aging Data Encryption Standard (DES) and has since become the global standard for symmetric encryption. AES is used by the U.S. government for classified information up to the TOP SECRET level.
+      </p>
+
+      <h3>How AES Works</h3>
+      <p>
+        AES operates on fixed-size blocks of data — 128 bits at a time. It applies a series of mathematical transformations (SubBytes, ShiftRows, MixColumns, AddRoundKey) across multiple "rounds." The number of rounds depends on the key size:
+      </p>
+
+      <ul>
+        <li><strong>AES-128:</strong> 10 rounds (128-bit key)</li>
+        <li><strong>AES-192:</strong> 12 rounds (192-bit key)</li>
+        <li><strong>AES-256:</strong> 14 rounds (256-bit key)</li>
+      </ul>
+
+      <p>
+        The "256" in AES-256 refers to the key length: 256 bits. A 256-bit key means there are 2<sup>256</sup> possible key combinations — a number so astronomically large (approximately 1.16 × 10<sup>77</sup>) that brute-forcing it is computationally impossible with any foreseeable technology. To put that in perspective, there are estimated to be only 10<sup>80</sup> atoms in the observable universe.
+      </p>
+
+      <h3>Modes of Operation</h3>
+      <p>
+        AES operates on fixed 128-bit blocks. When encrypting data larger than 128 bits, a <strong>mode of operation</strong> defines how each block is processed. The most common modes are:
+      </p>
+
+      <ul>
+        <li><strong>AES-CBC (Cipher Block Chaining):</strong> Each plaintext block is XORed with the previous ciphertext block before encryption. Requires an Initialization Vector (IV) that must be random and unique per encryption session.</li>
+        <li><strong>AES-GCM (Galois/Counter Mode):</strong> Provides both encryption and built-in authentication (integrity verification). GCM is widely preferred because it detects any tampering with the ciphertext. Envizion's Universal File Encryption tool uses AES-GCM.</li>
+        <li><strong>AES-CTR (Counter Mode):</strong> Turns AES into a stream cipher by encrypting incrementing counter values. Fast and parallelizable, but requires careful IV management.</li>
+      </ul>
+
+      <h3>Strengths and Limitations</h3>
+      <p>
+        AES-256 is extraordinarily secure, fast in hardware (modern CPUs have dedicated AES instruction sets), and widely implemented. Its main limitation is <strong>key distribution</strong>: because AES is symmetric, both the sender and receiver must possess the same secret key. Transmitting that key securely is itself an encryption problem — which is where asymmetric encryption comes in.
+      </p>
+
+      <h2 id="asymmetric">3. Asymmetric Encryption: RSA Explained</h2>
+
+      <h3>What Is RSA?</h3>
+      <p>
+        RSA (named after Rivest, Shamir, and Adleman, who published it in 1977) is an asymmetric encryption algorithm that uses a <strong>pair of mathematically related keys</strong>: a public key and a private key. The public key can be shared freely with anyone; the private key must be kept secret. Data encrypted with the public key can only be decrypted with the corresponding private key, and vice versa.
+      </p>
+
+      <h3>How RSA Works</h3>
+      <p>
+        RSA's security is based on the practical difficulty of factoring the product of two large prime numbers. The algorithm works as follows:
+      </p>
+
+      <ol>
+        <li><strong>Key generation:</strong> Two large prime numbers (p and q) are chosen randomly. Their product (n = p × q) forms part of the public key. A public exponent (e, commonly 65537) is selected, and a private exponent (d) is computed such that (e × d) ≡ 1 mod φ(n), where φ(n) = (p-1)(q-1).</li>
+        <li><strong>Encryption:</strong> The plaintext message m is converted to a number and encrypted as c = m<sup>e</sup> mod n.</li>
+        <li><strong>Decryption:</strong> The ciphertext c is decrypted as m = c<sup>d</sup> mod n.</li>
+      </ol>
+
+      <p>
+        The critical insight is that while multiplying p and q to get n is trivial, factoring n back into p and q is computationally infeasible for sufficiently large primes. Modern RSA uses key sizes of 2048 or 4096 bits. A 2048-bit RSA key provides security roughly equivalent to a 112-bit symmetric key; a 4096-bit RSA key approximates AES-192.
+      </p>
+
+      <h3>Strengths and Limitations</h3>
+      <p>
+        RSA's primary advantage is solving the key distribution problem: anyone can encrypt data using a widely-shared public key, but only the private key holder can decrypt it. However, RSA has significant practical limitations:
+      </p>
+
+      <ul>
+        <li><strong>Speed:</strong> RSA is 100–1000x slower than AES for bulk data encryption. It is not designed for encrypting large files directly.</li>
+        <li><strong>Plaintext size:</strong> RSA can only encrypt data smaller than its key size (e.g., 256 bytes for a 2048-bit key).</li>
+        <li><strong>Quantum vulnerability:</strong> RSA (and other factoring-based cryptosystems) would be broken by a sufficiently large quantum computer using Shor's algorithm.</li>
+      </ul>
+
+      <h2 id="comparison">4. AES-256 vs RSA: When to Use Each</h2>
+
+      <p>
+        Rather than being competitors, AES-256 and RSA are complementary technologies that serve different roles. In practice, secure systems use both:
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Feature</th>
+            <th>AES-256</th>
+            <th>RSA-2048/4096</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Type</td>
+            <td>Symmetric</td>
+            <td>Asymmetric</td>
+          </tr>
+          <tr>
+            <td>Key Relationship</td>
+            <td>Single shared key</td>
+            <td>Public/private key pair</td>
+          </tr>
+          <tr>
+            <td>Speed</td>
+            <td>Very fast (hardware-accelerated)</td>
+            <td>Slow (mathematical operations on large numbers)</td>
+          </tr>
+          <tr>
+            <td>Suitable for</td>
+            <td>Bulk file encryption</td>
+            <td>Key exchange, digital signatures</td>
+          </tr>
+          <tr>
+            <td>Security Level (2026)</td>
+            <td>Quantum-resistant with sufficient key size</td>
+            <td>Vulnerable to quantum attacks</td>
+          </tr>
+          <tr>
+            <td>Typical Use Case</td>
+            <td>Encrypting files, disk volumes, communications</td>
+            <td>SSL/TLS handshake, encrypting symmetric keys</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p>
+        The most common secure pattern is <strong>hybrid encryption</strong>: use RSA to encrypt an AES key, then use AES-256 to encrypt the actual file data. This gives you the key distribution advantages of RSA with the speed and efficiency of AES for bulk data. Envizion's Universal File Encryption implements this hybrid approach automatically when password-based key derivation is used.
+      </p>
+
+      <h2 id="webcrypto">5. How the Web Cryptography API Works</h2>
+
+      <p>
+        The <strong>Web Cryptography API (WebCrypto)</strong> is a W3C-standard JavaScript API that exposes cryptographic primitives to web applications. It is built into all modern browsers (Chrome, Firefox, Safari, Edge) and provides standard, audited implementations of AES, RSA, SHA, HMAC, ECDSA, and other algorithms.
+      </p>
+
+      <p>Key features of WebCrypto include:</p>
+
+      <ul>
+        <li><strong>Subtpke CryptoEngine access:</strong> WebCrypto delegates cryptographic operations to the browser's underlying secure crypto library (e.g., BoringSSL on Chrome, NSS on Firefox) — JavaScript code never directly handles raw key material in user-accessible memory.</li>
+        <li><strong>Key generation and management:</strong> Keys can be generated, imported, exported, and stored as CryptoKey objects. The <code>extractable</code> flag controls whether the raw key bytes can be exported from the browser.</li>
+        <li><strong>SubtleCrypto interface:</strong> All cryptographic operations are exposed through <code>window.crypto.subtle</code>, which includes methods for <code>encrypt()</code>, <code>decrypt()</code>, <code>sign()</code>, <code>verify()</code>, <code>digest()</code>, <code>generateKey()</code>, <code>importKey()</code>, and <code>exportKey()</code>.</li>
+        <li><strong>Password-based key derivation:</strong> WebCrypto supports PBKDF2 (Password-Based Key Derivation Function 2) and HKDF, which derive a cryptographic key from a user-provided password combined with a random salt.</li>
+      </ul>
+
+      <p>Here is a simplified example of how the Universal File Encryption tool uses WebCrypto to encrypt a file:</p>
+
+<pre><code>// 1. Derive an AES-256 key from the user's password
+const salt = crypto.getRandomValues(new Uint8Array(16));
+const keyMaterial = await crypto.subtle.importKey(
+  'raw', encoder.encode(password), 'PBKDF2', false, ['deriveKey']
+);
+const aesKey = await crypto.subtle.deriveKey(
+  { name: 'PBKDF2', salt, iterations: 600000, hash: 'SHA-256' },
+  keyMaterial, { name: 'AES-GCM', length: 256 }, false, ['encrypt']
+);
+
+// 2. Generate a random 12-byte initialization vector (IV)
+const iv = crypto.getRandomValues(new Uint8Array(12));
+
+// 3. Encrypt the file data
+const encryptedData = await crypto.subtle.encrypt(
+  { name: 'AES-GCM', iv }, aesKey, fileData
+);</code></pre>
+
+      <p>
+        The key takeaway: the encryption never leaves the browser. The password, the derived key, and the plaintext file data exist only in the browser's memory. The encrypted output is returned to the user as a downloadable blob.
+      </p>
+
+      <h2 id="client-side">6. Why Browser-Based Encryption Is Safer</h2>
+
+      <p>
+        Many "secure" file encryption services operate by uploading your file to a server, encrypting it there, and sending the encrypted result back. This model has a fundamental security flaw: <strong>the server has access to your plaintext data at the moment of encryption</strong>.
+      </p>
+
+      <p>Browser-based encryption eliminates this attack surface entirely:</p>
+
+      <ul>
+        <li><strong>No data transmission:</strong> Your file never leaves your device. The encryption algorithm runs in your browser's JavaScript engine, operating on data loaded into the browser's memory from your local file system.</li>
+        <li><strong>No server-side vulnerability exposure:</strong> A compromised server cannot leak your plaintext data because the server never sees it. Server-side attacks — SQL injection, SSH key compromise, insider threats — become irrelevant to your file's confidentiality.</li>
+        <li><strong>No residual copies:</strong> Server-side encryption services often retain logs, temporary files, or backup copies of uploaded data. Browser-based encryption inherently avoids this because no copy exists outside your control.</li>
+        <li><strong>No account required:</strong> You do not need to create an account, log in, or trust a third party with your identity. The tool is purely a local utility.</li>
+      </ul>
+
+      <div class="warning-box">
+        <strong>Important Caveat:</strong> Browser-based encryption protects data <em>at rest</em> and <em>in transit</em> (if you choose to send the encrypted file over a network). It does not protect against malware on your device, keyloggers, or browser extensions that can read page content. Always ensure your operating system and browser are up to date, and avoid encrypting sensitive files on shared or untrusted devices.
+      </div>
+
+      <p>
+        This architectural choice — processing everything client-side with no server interaction — is the foundation of Envizion's privacy-first design philosophy. It applies not only to encryption but to every tool in the Envizion ecosystem: video watermarking, file conversion, image processing, audio separation, and more. Your data stays yours.
+      </p>
+
+      <h2 id="best-practices">7. Security Best Practices for File Encryption</h2>
+
+      <p>
+        Using encryption correctly is as important as using it at all. Follow these best practices to maximize the security of your encrypted files:
+      </p>
+
+      <ul>
+        <li><strong>Use strong, unique passwords:</strong> Your encryption is only as strong as your password. Use a minimum of 12 characters (ideally 16+) with a mix of uppercase, lowercase, numbers, and symbols. Consider using a password manager to generate and store strong passwords.</li>
+        <li><strong>Never reuse encryption passwords:</strong> Each encrypted file should use a unique password. If one password is compromised, all files encrypted with that password become vulnerable.</li>
+        <li><strong>Keep your software updated:</strong> Use the latest version of your browser. Browser updates include security patches for the WebCrypto implementation and protect against side-channel attacks.</li>
+        <li><strong>Securely store your encrypted files:</strong> Encrypted files are still data files. Store them with appropriate backups and access controls. Losing the password means losing access to the data permanently — there is no "password reset" for encrypted files.</li>
+        <li><strong>Verify integrity after decryption:</strong> When using authenticated encryption modes like AES-GCM, integrity verification is automatic. If you are using AES-CBC, consider computing and storing a SHA-256 hash of the original file to verify it has not been tampered with.</li>
+      </ul>
+
+      <h2 id="conclusion">8. Conclusion</h2>
+
+      <p>
+        Encryption is one of the most powerful tools available for protecting digital privacy. Understanding the difference between AES-256 and RSA — and knowing when to use each — transforms encryption from a black box into a comprehensible, controllable security measure.
+      </p>
+
+      <p>
+        The Envizion <strong>Universal File Encryption</strong> tool implements industry-standard AES-256-GCM encryption entirely in your browser using the Web Cryptography API. No files are uploaded. No accounts are required. No third party ever has access to your plaintext data. The cryptographic primitives it uses are the same ones that protect classified government communications and global financial infrastructure — and they run entirely on your device.
+      </p>
+
+      <p>
+        For a hands-on demonstration of the concepts covered in this guide, open the <a href="/tools/universal-file-encryption.html" class="text-envizion-primary font-semibold hover:underline">Universal File Encryption</a> tool. You can also learn more about related topics in our <a href="/guides/media-processing-guide.html" class="text-envizion-primary font-semibold hover:underline">Media Processing Guide</a> and <a href="/guides/privacy-tools-guide.html" class="text-envizion-primary font-semibold hover:underline">Privacy Tools Guide</a>.
+      </p>
+
+    </div>
+  </div>
+</article>
+
+<!-- Footer -->
+<footer class="bg-slate-950 text-white pt-12 pb-8">
+  <div class="max-w-4xl mx-auto px-6">
+    <div class="flex flex-col md:flex-row justify-between items-center gap-4 mb-8 text-xs text-slate-400">
+      <span>&copy; 2026 Yacob Digital. All rights reserved.</span>
+      <div class="flex gap-4">
+        <a href="/guides/" class="hover:text-white transition">All Guides</a>
+        <a href="/privacy.html" class="hover:text-white transition">Privacy Policy</a>
+        <a href="/contact.html" class="hover:text-white transition">Contact</a>
+      </div>
+    </div>
+  </div>
+</footer>
+</body>
+</html>
