@@ -1,149 +1,111 @@
 #!/usr/bin/env python3
 """
-build_search_index.py
-Scrapes every HTML page in your site, extracts real text content,
-and writes /search-index.json — used by the live search widget.
-
+build_search_index.py - Fixed version
+Handles double <head> tags caused by injected widgets.
 Run: python build_search_index.py "C:\path\to\your\site"
 """
-
 import os, sys, re, json
 from pathlib import Path
-from html.parser import HTMLParser
 
 SKIP_DIRS  = {".venv", "node_modules", ".git", ".agents", "__pycache__"}
 SKIP_FILES = {"ads.txt", "robots.txt", "sitemap.xml", "CNAME"}
 
-# Tags whose inner text we completely ignore
-SKIP_TAGS  = {"script", "style", "noscript", "head", "meta", "link",
-               "iframe", "svg", "path", "template"}
-
-class TextExtractor(HTMLParser):
-    def __init__(self):
-        super().__init__()
-        self.skip_depth  = 0
-        self.skip_tag    = None
-        self.chunks      = []
-        self.in_heading  = False
-        self.headings    = []
-        self.heading_tag = None
-
-    def handle_starttag(self, tag, attrs):
-        if tag in SKIP_TAGS:
-            self.skip_depth += 1
-            self.skip_tag = tag
-        if tag in ("h1","h2","h3","h4"):
-            self.in_heading  = True
-            self.heading_tag = tag
-
-    def handle_endtag(self, tag):
-        if tag in SKIP_TAGS:
-            self.skip_depth = max(0, self.skip_depth - 1)
-        if tag in ("h1","h2","h3","h4"):
-            self.in_heading = False
-
-    def handle_data(self, data):
-        if self.skip_depth > 0:
-            return
-        text = data.strip()
-        if not text:
-            return
-        if self.in_heading:
-            self.headings.append(text)
-        self.chunks.append(text)
-
-    def get_text(self):
-        return " ".join(self.chunks)
-
-    def get_headings(self):
-        return self.headings
-
-
-def extract_title(html: str) -> str:
+def extract_title(html):
     m = re.search(r'<title[^>]*>(.*?)</title>', html, re.IGNORECASE | re.DOTALL)
-    if m:
-        return re.sub(r'\s+', ' ', m.group(1)).strip()
+    return re.sub(r'\s+', ' ', m.group(1)).strip() if m else ""
+
+def extract_description(html):
+    for pat in [
+        r'<meta[^>]+name=["\']description["\'][^>]+content=["\']([^"\']{10,})',
+        r'<meta[^>]+content=["\']([^"\']{10,})["\'][^>]+name=["\']description["\']',
+        r'<meta[^>]+property=["\']og:description["\'][^>]+content=["\']([^"\']{10,})',
+    ]:
+        m = re.search(pat, html, re.IGNORECASE)
+        if m: return m.group(1).strip()
     return ""
 
+def extract_body_text(html):
+    # Step 1: Remove the FIRST <head>...</head> block only
+    html = re.sub(r'<head\b[^>]*>.*?</head>', '', html, count=1, flags=re.IGNORECASE | re.DOTALL)
 
-def extract_description(html: str) -> str:
-    m = re.search(r'<meta[^>]+name=["\']description["\'][^>]+content=["\']([^"\']+)', html, re.IGNORECASE)
-    if m:
-        return m.group(1).strip()
-    m = re.search(r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']description["\']', html, re.IGNORECASE)
-    if m:
-        return m.group(1).strip()
-    return ""
+    # Step 2: Remove all script, style, noscript, svg blocks
+    for tag in ['script', 'style', 'noscript', 'svg', 'iframe', 'template']:
+        html = re.sub(rf'<{tag}\b[^>]*>.*?</{tag}>', ' ', html, flags=re.IGNORECASE | re.DOTALL)
 
+    # Step 3: Remove our injected widgets
+    html = re.sub(r'<!-- EZ-SEARCH-WIDGET-V2 -->.*?<!-- END-EZ-SEARCH-WIDGET-V2 -->', '', html, flags=re.DOTALL)
+    html = re.sub(r'<!-- ── Cookie Consent Banner ──.*?<!-- ── End Cookie Consent Banner ── -->', '', html, flags=re.DOTALL)
 
-def clean_text(text: str) -> str:
-    # collapse whitespace, remove cookie/search widget text we injected
-    text = re.sub(r'\s+', ' ', text)
-    # strip out our injected widget noise
-    text = re.sub(r'🍪.*?Terms\.', '', text)
-    text = re.sub(r'Press Esc to close.*', '', text)
-    return text.strip()
+    # Step 4: Strip all remaining HTML tags
+    text = re.sub(r'<[^>]+>', ' ', html)
 
+    # Step 5: Decode common HTML entities
+    text = text.replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>') \
+               .replace('&nbsp;', ' ').replace('&#39;', "'").replace('&quot;', '"')
 
-def build_index(root: Path) -> list:
+    # Step 6: Collapse whitespace
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
+
+def extract_headings(html):
+    # Remove first head block first
+    html = re.sub(r'<head\b[^>]*>.*?</head>', '', html, count=1, flags=re.IGNORECASE | re.DOTALL)
+    headings = []
+    for m in re.finditer(r'<h[1-4][^>]*>(.*?)</h[1-4]>', html, re.IGNORECASE | re.DOTALL):
+        text = re.sub(r'<[^>]+>', '', m.group(1)).strip()
+        if text and len(text) < 200:
+            headings.append(text)
+    return headings[:10]
+
+def build_index(root):
     index = []
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
         for fname in sorted(filenames):
-            if not fname.lower().endswith(".html"):
-                continue
-            if fname in SKIP_FILES:
-                continue
-            fp = Path(dirpath) / fname
+            if not fname.lower().endswith(".html"): continue
+            if fname in SKIP_FILES: continue
+            fp  = Path(dirpath) / fname
             rel = "/" + fp.relative_to(root).as_posix()
-
             try:
                 html = fp.read_text(encoding="utf-8", errors="replace")
             except Exception:
                 continue
 
-            title = extract_title(html) or fname.replace(".html","").replace("-"," ").title()
-            desc  = extract_description(html)
-
-            parser = TextExtractor()
-            parser.feed(html)
-            body_text = clean_text(parser.get_text())
-            headings  = parser.get_headings()
-
-            # Limit body to 3000 chars to keep JSON small
-            snippet = body_text[:3000]
+            title    = extract_title(html) or fname.replace(".html","").replace("-"," ").title()
+            desc     = extract_description(html)
+            body     = extract_body_text(html)[:4000]
+            headings = extract_headings(html)
 
             index.append({
                 "title":    title,
                 "url":      rel,
                 "desc":     desc,
-                "headings": headings[:10],   # first 10 headings
-                "body":     snippet
+                "headings": headings,
+                "body":     body
             })
-            print(f"  indexed  {rel}  ({len(snippet)} chars)")
+            print(f"  {'OK ' if body else 'NO '} {rel} ({len(body)} chars)")
 
     return index
 
-
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python build_search_index.py <site-root>")
+        print(r'Usage: python build_search_index.py "C:\path\to\site"')
         sys.exit(1)
-
     root = Path(sys.argv[1]).resolve()
     if not root.exists():
-        print(f"ERROR: {root} not found")
-        sys.exit(1)
+        print(f"ERROR: {root} not found"); sys.exit(1)
 
-    print(f"\nBuilding search index for: {root}\n")
+    print(f"\nBuilding index: {root}\n")
     index = build_index(root)
 
-    out = root / "search-index.json"
-    out.write_text(json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"\n✓ Wrote {len(index)} pages → {out}")
-    print("\nNow run:  python inject_search.py <site-root>")
-    print("to replace the old search widget with the new smart one.\n")
+    # Write to root AND all subfolders
+    for folder in [root] + [p for p in root.iterdir() if p.is_dir() and p.name not in SKIP_DIRS]:
+        out = folder / "search-index.json"
+        out.write_text(json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8")
 
+    filled = sum(1 for p in index if p["body"])
+    print(f"\nDone — {filled}/{len(index)} pages have body content")
+    print(f"Index written to root + all subfolders\n")
 
 if __name__ == "__main__":
     main()
