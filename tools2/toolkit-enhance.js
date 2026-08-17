@@ -48,6 +48,17 @@
     document.head.appendChild(script);
   }
 
+  function ensureConsentScript() {
+    const exists = Array.from(document.scripts).some((script) => script.src.includes('fundingchoicesmessages.google.com/i/pub-'));
+    if (!exists) {
+      const script = document.createElement('script');
+      script.async = true;
+      script.src = 'https://fundingchoicesmessages.google.com/i/pub-5812524294035974?ers=1';
+      document.head.appendChild(script);
+    }
+    document.getElementById('cookie-banner')?.remove();
+  }
+
   function pushAds() {
     document.querySelectorAll('.adsbygoogle').forEach((ad) => {
       if (ad.dataset.envizionPushed) return;
@@ -147,6 +158,7 @@
     ensureMeta('meta[property="og:type"]', { property: 'og:type', content: 'website' });
     ensureMeta('meta[name="twitter:card"]', { name: 'twitter:card', content: 'summary_large_image' });
     ensureCanonical();
+    ensureConsentScript();
     ensureAdsScript();
     applyChatGptGreyTheme();
     requestAnimationFrame(pushAds);

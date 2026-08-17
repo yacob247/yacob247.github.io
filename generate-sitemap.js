@@ -20,6 +20,18 @@ const EXCLUDED_PATH_PARTS = [
     'draft',
     'EMAIL_',
     'indexcopy',
+    'gamevaultoriginal',
+    'blog-post',
+    'game.html',
+    'Worldcup',
+    'WorldCups',
+    'woodbury_getaway',
+    'Gmail',
+    'unsubscribe',
+    '404',
+    'envizion_editor',
+    'envizion_playground',
+    'luma_dashboard_clone',
     'login',
     'luma_dashboard_clone',
     'main...',
@@ -37,10 +49,11 @@ function normalizeUrlPath(filePath) {
         return '';
     }
 
+    const isDirectoryIndex = /\/index\.(html|htm|md)$/i.test(relativePath);
     relativePath = relativePath.replace(/\/index\.(html|htm|md)$/i, '');
     relativePath = relativePath.replace(/\.md$/i, '.html');
 
-    return relativePath;
+    return isDirectoryIndex ? `${relativePath}/` : relativePath;
 }
 
 function hasNoindex(filePath) {
