@@ -1,0 +1,1170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Super Snake 3D Multiplayer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #0f172a; color: white; font-family: 'Inter', sans-serif; }
+        #game-container { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1; }
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 10; pointer-events: none; display: flex; flex-direction: column; }
+        .pointer-events-auto { pointer-events: auto; }
+        
+        /* Custom scrollbar for server list */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.1); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.3); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.5); }
+
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        .btn {
+            transition: all 0.2s ease;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+        }
+        .btn:active {
+            transform: translateY(0);
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container"></div>
+
+    <div id="ui-layer">
+        <!-- Header -->
+        <div class="p-4 flex justify-between items-start pointer-events-none w-full">
+            <h1 class="text-3xl font-black italic tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-blue-500" style="-webkit-text-stroke: 1px rgba(255,255,255,0.2);">
+                SUPER SNAKE 3D
+            </h1>
+            <div id="user-info" class="text-sm font-medium bg-slate-800/80 px-4 py-2 rounded-full border border-slate-600 backdrop-blur-md hidden pointer-events-auto">
+                <span id="player-name-display" class="text-green-400">Loading...</span>
+            </div>
+        </div>
+
+        <!-- Main Menu -->
+        <div id="menu-screen" class="flex-1 flex items-center justify-center pointer-events-auto">
+            <div class="glass-panel p-8 rounded-2xl w-full max-w-4xl flex flex-col md:flex-row gap-8">
+                
+                <!-- Server List -->
+                <div class="flex-1 flex flex-col h-96">
+                    <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
+                        <svg class="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"></path></svg>
+                        Active Servers
+                    </h2>
+                    <div id="server-list" class="flex-1 overflow-y-auto space-y-3 pr-2">
+                        <div class="text-slate-400 text-center mt-10">Loading servers...</div>
+                    </div>
+                </div>
+
+                <!-- Create Server Form -->
+                <div class="flex-1 flex flex-col h-96 border-t md:border-t-0 md:border-l border-slate-700 pt-6 md:pt-0 md:pl-8">
+                    <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
+                        <svg class="w-6 h-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                        Host a Game
+                    </h2>
+                    <div class="space-y-5">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-400 mb-1">Server Name</label>
+                            <input type="text" id="host-name" class="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 focus:outline-none focus:border-green-500 text-white" placeholder="My Awesome Server">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-400 mb-1">Lives per Player (1-10)</label>
+                            <input type="number" id="host-lives" class="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 focus:outline-none focus:border-green-500 text-white" value="3" min="1" max="10">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-400 mb-1">Game Mode</label>
+                            <select id="host-mode" class="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 focus:outline-none focus:border-green-500 text-white">
+                                <option value="ffa">Free-For-All</option>
+                                <option value="duos">Duos (2-player teams)</option>
+                                <option value="squads">Squads (4-player teams)</option>
+                            </select>
+                        </div>
+                        <button id="btn-create" class="btn w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 text-white font-bold py-3 px-4 rounded-lg shadow-lg mt-4">
+                            Create Server
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Lobby Screen -->
+        <div id="lobby-screen" class="flex-1 flex items-center justify-center pointer-events-auto hidden">
+            <div class="glass-panel p-8 rounded-2xl w-full max-w-2xl text-center">
+                <h2 id="lobby-title" class="text-3xl font-bold mb-2 text-white">Server Name</h2>
+                <p class="text-slate-400 mb-6">Waiting for host to start...</p>
+                
+                <div class="bg-slate-900/50 rounded-xl p-4 mb-6 min-h-[200px]">
+                    <h3 class="text-left text-sm font-semibold text-slate-400 uppercase tracking-wider mb-3">Players (<span id="lobby-count">1</span>/10)</h3>
+                    <div id="lobby-players" class="grid grid-cols-2 gap-3 text-left">
+                        <!-- Player list injected here -->
+                    </div>
+                </div>
+
+                <div class="flex gap-4 justify-center">
+                    <button id="btn-leave-lobby" class="btn bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-8 rounded-lg shadow-lg">
+                        Leave
+                    </button>
+                    <button id="btn-start-game" class="btn bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-400 hover:to-indigo-500 text-white font-bold py-3 px-8 rounded-lg shadow-lg hidden">
+                        Start Game
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- In-Game HUD -->
+        <div id="hud-screen" class="flex-1 pointer-events-none hidden flex-col justify-between p-6">
+            <div class="flex justify-between items-start">
+                <div class="glass-panel rounded-xl p-4 min-w-[250px]">
+                    <h3 class="font-bold text-lg mb-2 border-b border-slate-700 pb-2">Scoreboard</h3>
+                    <div id="scoreboard" class="space-y-2">
+                        <!-- Scores injected here -->
+                    </div>
+                </div>
+                
+                <div class="glass-panel rounded-xl p-4 flex flex-col items-center pointer-events-auto">
+                    <button id="btn-leave-game" class="text-sm text-red-400 hover:text-red-300 font-bold transition-colors">
+                        Quit Game
+                    </button>
+                </div>
+            </div>
+            
+            <div class="text-center pb-4">
+                <p id="game-message" class="text-2xl font-bold text-yellow-400 drop-shadow-md transition-opacity duration-300 opacity-0">Game Starting...</p>
+                <div class="mt-2 text-slate-300/60 text-sm font-mono bg-black/40 inline-block px-4 py-2 rounded-full backdrop-blur-sm">
+                    WASD: Move Flat | SPACE: Climb Up | SHIFT: Dive Down
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Error/Alert Modal -->
+    <div id="modal-container" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center hidden pointer-events-auto">
+        <div class="glass-panel p-8 rounded-2xl max-w-sm w-full text-center transform scale-95 transition-transform duration-200" id="modal-content">
+            <h3 id="modal-title" class="text-xl font-bold mb-4 text-red-400">Notice</h3>
+            <p id="modal-message" class="text-slate-300 mb-6">Message goes here.</p>
+            <button id="btn-modal-close" class="btn bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-6 rounded-lg w-full">OK</button>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global App Context
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'super-snake-3d-' + Date.now();
+        const firebaseConfig = {
+            apiKey: "AIzaSyDLeM4MrsA1Q8zq7_QcQfTJKk049vOVOO4",
+            authDomain: "envizionwork.firebaseapp.com",
+            databaseURL: "https://envizionwork-default-rtdb.firebaseio.com",
+            projectId: "envizionwork",
+            storageBucket: "envizionwork.firebasestorage.app",
+            messagingSenderId: "706251024837",
+            appId: "1:706251024837:web:4c931733d3a9f430a703ac",
+            measurementId: "G-9CL929H67Z"
+        };
+        
+        // State variables
+        let app, db, auth;
+        let currentUser = null;
+        let currentRoomId = null;
+        let isHost = false;
+        let roomUnsubscribe = null;
+        let allRoomsUnsubscribe = null;
+        let gameLoopInterval = null;
+        
+        // Game Constants
+        const GRID_SIZE = 21; // -10 to 10
+        const MAX_HEIGHT = 6; // 0 to 5
+        const TICK_RATE = 300; // ms per logic tick
+        const MAX_PLAYERS = 10;
+        
+        // Local Player State
+        const localState = {
+            inputQueue: [],
+            lastProcessedDir: { x: 1, y: 0, z: 0 },
+            playerName: "Player_" + Math.floor(Math.random() * 9999)
+        };
+
+        // Initialize Firebase if config exists, otherwise mock for pure UI testing
+        if (firebaseConfig) {
+            app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+            initAuth();
+        } else {
+            showModal("Configuration Error", "Firebase configuration is missing. Multiplayer features will not work.");
+        }
+
+        async function initAuth() {
+            try {
+                const initialToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+                if (initialToken) {
+                    await signInWithCustomToken(auth, initialToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (error) {
+                console.error("Auth error:", error);
+                showModal("Authentication Failed", "Could not connect to multiplayer services.");
+            }
+
+            onAuthStateChanged(auth, (user) => {
+                if (user) {
+                    currentUser = user;
+                    document.getElementById('user-info').classList.remove('hidden');
+                    // Shorten ID for display name if we don't have one
+                    localState.playerName = "Snake_" + user.uid.substring(0, 4).toUpperCase();
+                    document.getElementById('player-name-display').innerText = localState.playerName;
+                    listenToAllRooms();
+                }
+            });
+        }
+
+        const canvasContainer = document.getElementById('game-container');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0f172a);
+        scene.fog = new THREE.Fog(0x0f172a, 15, 60);
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        // Adjusted camera to see the 3D heights better
+        camera.position.set(0, 28, 28);
+        camera.lookAt(0, 0, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        canvasContainer.appendChild(renderer.domElement);
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+        scene.add(ambientLight);
+        
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight.position.set(10, 20, 10);
+        dirLight.castShadow = true;
+        dirLight.shadow.camera.left = -15;
+        dirLight.shadow.camera.right = 15;
+        dirLight.shadow.camera.top = 15;
+        dirLight.shadow.camera.bottom = -15;
+        scene.add(dirLight);
+
+        // Grid & Floor
+        const gridHelper = new THREE.GridHelper(GRID_SIZE, GRID_SIZE, 0x334155, 0x1e293b);
+        gridHelper.position.y = -0.49;
+        scene.add(gridHelper);
+
+        const floorGeo = new THREE.PlaneGeometry(GRID_SIZE, GRID_SIZE);
+        const floorMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, depthWrite: false });
+        const floor = new THREE.Mesh(floorGeo, floorMat);
+        floor.rotation.x = -Math.PI / 2;
+        floor.position.y = -0.5;
+        floor.receiveShadow = true;
+        scene.add(floor);
+        
+        // Wall boundaries
+        const wallMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, transparent: true, opacity: 0.5 });
+        const wallThickness = 1;
+        const wallHeight = 2;
+        const offset = GRID_SIZE / 2 + wallThickness/2;
+        
+        const createWall = (w, h, d, x, z) => {
+            const wall = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
+            wall.position.set(x, h/2 - 0.5, z);
+            wall.receiveShadow = true;
+            scene.add(wall);
+        };
+        createWall(GRID_SIZE + wallThickness*2, wallHeight, wallThickness, 0, -offset); // Top
+        createWall(GRID_SIZE + wallThickness*2, wallHeight, wallThickness, 0, offset);  // Bottom
+        createWall(wallThickness, wallHeight, GRID_SIZE, -offset, 0); // Left
+        createWall(wallThickness, wallHeight, GRID_SIZE, offset, 0);  // Right
+
+        // Object pools
+        const snakeMeshes = {}; // { uid: { head: Mesh, body: [Mesh] } }
+        let appleMesh = null;
+        let treeMeshes = [];
+        
+        const blockGeo = new THREE.BoxGeometry(0.9, 0.9, 0.9);
+        const appleGeo = new THREE.SphereGeometry(0.5, 16, 16);
+        const appleMat = new THREE.MeshStandardMaterial({ color: 0xff3333, emissive: 0xff0000, emissiveIntensity: 0.5 });
+        const trunkMat = new THREE.MeshStandardMaterial({ color: 0x8B4513 }); // Brown trunk
+        const leafMat = new THREE.MeshStandardMaterial({ color: 0x228B22 }); // Green leaves
+
+        // Resize handler
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        const views = {
+            menu: document.getElementById('menu-screen'),
+            lobby: document.getElementById('lobby-screen'),
+            hud: document.getElementById('hud-screen')
+        };
+
+        function showView(viewName) {
+            Object.values(views).forEach(v => v.classList.add('hidden'));
+            if (views[viewName]) views[viewName].classList.remove('hidden');
+        }
+
+        // Modal Logic
+        const modal = document.getElementById('modal-container');
+        const modalContent = document.getElementById('modal-content');
+        function showModal(title, message) {
+            document.getElementById('modal-title').innerText = title;
+            document.getElementById('modal-message').innerText = message;
+            modal.classList.remove('hidden');
+            setTimeout(() => modalContent.classList.remove('scale-95'), 10);
+        }
+        document.getElementById('btn-modal-close').addEventListener('click', () => {
+            modalContent.classList.add('scale-95');
+            setTimeout(() => modal.classList.add('hidden'), 200);
+        });
+
+        function showGameMessage(msg, duration = 3000) {
+            const el = document.getElementById('game-message');
+            el.innerText = msg;
+            el.style.opacity = 1;
+            if(duration > 0) {
+                setTimeout(() => { el.style.opacity = 0; }, duration);
+            }
+        }
+
+        // Collection reference rule 1 enforced strictly
+        const getRoomsRef = () => collection(db, 'artifacts', appId, 'public', 'data', 'rooms');
+
+        function listenToAllRooms() {
+            if (allRoomsUnsubscribe) allRoomsUnsubscribe();
+            
+            allRoomsUnsubscribe = onSnapshot(getRoomsRef(), (snapshot) => {
+                const list = document.getElementById('server-list');
+                list.innerHTML = '';
+                
+                let activeRooms = 0;
+                snapshot.forEach(docSnap => {
+                    const room = docSnap.data();
+                    if (room.state === 'waiting' || room.state === 'playing') {
+                        activeRooms++;
+                        const playerCount = Object.keys(room.players || {}).length;
+                        
+                        const div = document.createElement('div');
+                        div.className = 'bg-slate-800/50 hover:bg-slate-700 p-4 rounded-xl border border-slate-600 transition-colors cursor-pointer flex justify-between items-center';
+                        div.innerHTML = `
+                            <div>
+                                <h3 class="font-bold text-white text-lg">${escapeHtml(room.name)}</h3>
+                                <div class="text-sm text-slate-400 flex gap-3">
+                                    <span class="uppercase text-yellow-400 font-bold">${room.settings.mode}</span>
+                                    <span>Host: ${escapeHtml(room.hostName || 'Unknown')}</span>
+                                    <span>Lives: ${room.settings.lives}</span>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-4">
+                                <span class="bg-slate-900 px-3 py-1 rounded-full text-sm font-mono ${playerCount >= MAX_PLAYERS ? 'text-red-400' : 'text-green-400'}">
+                                    ${playerCount}/${MAX_PLAYERS}
+                                </span>
+                                <button class="btn bg-blue-500 hover:bg-blue-400 text-white px-4 py-2 rounded-lg font-semibold text-sm transition-colors" ${playerCount >= MAX_PLAYERS ? 'disabled' : ''}>
+                                    Join
+                                </button>
+                            </div>
+                        `;
+                        div.querySelector('button').addEventListener('click', () => joinRoom(docSnap.id, room));
+                        list.appendChild(div);
+                    }
+                });
+
+                if (activeRooms === 0) {
+                    list.innerHTML = '<div class="text-slate-400 text-center mt-10">No active servers found. Create one!</div>';
+                }
+            }, (error) => {
+                console.error("Error listening to rooms:", error);
+                showModal("Network Error", "Could not load server list.");
+            });
+        }
+
+        document.getElementById('btn-create').addEventListener('click', async () => {
+            if (!currentUser) return;
+            const nameInput = document.getElementById('host-name').value.trim();
+            const livesInput = parseInt(document.getElementById('host-lives').value);
+            const mode = document.getElementById('host-mode').value;
+            
+            const roomName = nameInput || `${localState.playerName}'s Server`;
+            const lives = isNaN(livesInput) || livesInput < 1 ? 3 : Math.min(livesInput, 10);
+            const roomId = `room_${Date.now()}_${Math.floor(Math.random()*1000)}`;
+
+            const color = generatePlayerColor(0, mode);
+            const trees = generateMapTrees();
+            
+            const newRoom = {
+                id: roomId,
+                name: roomName,
+                hostId: currentUser.uid,
+                hostName: localState.playerName,
+                state: 'waiting',
+                settings: { lives, mode },
+                trees: trees,
+                players: {
+                    [currentUser.uid]: {
+                        uid: currentUser.uid,
+                        name: localState.playerName,
+                        color: color,
+                        team: 0,
+                        alive: true,
+                        lives: lives,
+                        score: 0,
+                        body: [{x: 0, y: 0, z: 0}], // Will be set on start
+                        dir: {x: 1, y: 0, z: 0}
+                    }
+                },
+                inputs: {
+                    [currentUser.uid]: {x: 1, y: 0, z: 0}
+                },
+                apple: {x: 5, y: 0, z: 5},
+                createdAt: Date.now()
+            };
+
+            try {
+                const roomRef = doc(getRoomsRef(), roomId);
+                await setDoc(roomRef, newRoom);
+
+                isHost = true;
+                currentRoomId = roomId;
+                document.getElementById('btn-start-game').classList.remove('hidden');
+                listenToCurrentRoom(roomId);
+                showView('lobby');
+            } catch (err) {
+                console.error(err);
+                showModal("Error", "Could not create the server.");
+            }
+        });
+
+        async function joinRoom(roomId, roomData) {
+            if (!currentUser) return;
+            
+            const roomRef = doc(getRoomsRef(), roomId);
+            const playerCount = Object.keys(roomData.players || {}).length;
+            
+            if (playerCount >= MAX_PLAYERS) {
+                showModal("Server Full", "This server has reached the maximum number of players.");
+                return;
+            }
+
+            const team = calculateTeam(playerCount, roomData.settings.mode);
+            const color = generatePlayerColor(team, roomData.settings.mode);
+            
+            try {
+                await updateDoc(roomRef, {
+                    [`players.${currentUser.uid}`]: {
+                        uid: currentUser.uid,
+                        name: localState.playerName,
+                        color: color,
+                        team: team,
+                        alive: true,
+                        lives: roomData.settings.lives,
+                        score: 0,
+                        body: [{x: 0, y: 0, z: 0}],
+                        dir: {x: 1, y: 0, z: 0}
+                    },
+                    [`inputs.${currentUser.uid}`]: {x: 1, y: 0, z: 0}
+                });
+
+                isHost = false;
+                currentRoomId = roomId;
+                document.getElementById('btn-start-game').classList.add('hidden');
+                listenToCurrentRoom(roomId);
+                showView('lobby');
+            } catch (err) {
+                console.error(err);
+                showModal("Error", "Could not join the server.");
+            }
+        }
+
+        function listenToCurrentRoom(roomId) {
+            if (roomUnsubscribe) roomUnsubscribe();
+            
+            const roomRef = doc(getRoomsRef(), roomId);
+            roomUnsubscribe = onSnapshot(roomRef, (docSnap) => {
+                if (!docSnap.exists()) {
+                    handleRoomClosed();
+                    return;
+                }
+                
+                const room = docSnap.data();
+                
+                // If I was kicked or room reset and I'm not in it
+                if (!room.players[currentUser.uid]) {
+                    handleRoomClosed();
+                    return;
+                }
+
+                if (room.state === 'waiting') {
+                    updateLobbyUI(room);
+                } else if (room.state === 'playing') {
+                    if (document.getElementById('lobby-screen').classList.contains('hidden') === false) {
+                        showView('hud');
+                        showGameMessage("GO!", 1500);
+                        initClientGame(room);
+                    }
+                    syncGameStateToRenderer(room);
+                    updateHUD(room);
+                } else if (room.state === 'ended') {
+                    showGameMessage("Game Over", 0);
+                    setTimeout(() => {
+                        handleRoomClosed();
+                    }, 5000);
+                }
+            }, (err) => {
+                console.error(err);
+            });
+        }
+
+        function updateLobbyUI(room) {
+            document.getElementById('lobby-title').innerText = room.name;
+            const players = Object.values(room.players || {});
+            document.getElementById('lobby-count').innerText = players.length;
+            
+            const container = document.getElementById('lobby-players');
+            container.innerHTML = '';
+            
+            players.forEach(p => {
+                const isMe = p.uid === currentUser.uid;
+                const isHostPlayer = p.uid === room.hostId;
+                const teamTag = room.settings.mode !== 'ffa' ? `<span class="bg-slate-700 px-2 py-0.5 rounded text-xs ml-2">Team ${p.team + 1}</span>` : '';
+                container.innerHTML += `
+                    <div class="flex items-center gap-3 bg-slate-800 p-2 rounded-lg border ${isMe ? 'border-blue-500' : 'border-slate-700'}">
+                        <div class="w-4 h-4 rounded-full shadow-sm" style="background-color: ${p.color}"></div>
+                        <span class="text-sm font-medium text-slate-200 truncate ${isHostPlayer ? 'text-yellow-400' : ''}">
+                            ${escapeHtml(p.name)} ${isHostPlayer ? '👑' : ''} ${teamTag}
+                        </span>
+                    </div>
+                `;
+            });
+        }
+
+        async function leaveRoom() {
+            if (!currentRoomId || !currentUser) return;
+            const roomId = currentRoomId;
+            currentRoomId = null;
+            
+            if (roomUnsubscribe) { roomUnsubscribe(); roomUnsubscribe = null; }
+            if (gameLoopInterval) { clearInterval(gameLoopInterval); gameLoopInterval = null; }
+            
+            try {
+                const roomRef = doc(getRoomsRef(), roomId);
+                const docSnap = await getDoc(roomRef);
+                if (docSnap.exists()) {
+                    const room = docSnap.data();
+                    if (isHost) {
+                        // Host leaves -> destroy room
+                        await updateDoc(roomRef, { state: 'ended' });
+                    } else {
+                        // Client leaves -> remove them
+                        await updateDoc(roomRef, {
+                            [`players.${currentUser.uid}`]: null, // Delete field simulation if needed, but Firebase requires FieldValue.delete(). Using null here is risky for RULE 2/strict modes. Better to explicitly delete it or set alive to false.
+                            // Since we can't easily import FieldValue without breaking the prompt's import constraints cleanly, we'll mark them as permanently dead.
+                            [`players.${currentUser.uid}.alive`]: false,
+                            [`players.${currentUser.uid}.lives`]: 0
+                        });
+                    }
+                }
+            } catch (err) {
+                console.error("Error leaving room", err);
+            }
+            
+            cleanupThreeJS();
+            isHost = false;
+            showView('menu');
+        }
+
+        function handleRoomClosed() {
+            if (roomUnsubscribe) { roomUnsubscribe(); roomUnsubscribe = null; }
+            if (gameLoopInterval) { clearInterval(gameLoopInterval); gameLoopInterval = null; }
+            currentRoomId = null;
+            isHost = false;
+            cleanupThreeJS();
+            showModal("Disconnected", "You have left the server or it was closed by the host.");
+            showView('menu');
+        }
+
+        document.getElementById('btn-leave-lobby').addEventListener('click', leaveRoom);
+        document.getElementById('btn-leave-game').addEventListener('click', leaveRoom);
+
+        document.getElementById('btn-start-game').addEventListener('click', async () => {
+            if (!isHost || !currentRoomId) return;
+            
+            const roomRef = doc(getRoomsRef(), currentRoomId);
+            const docSnap = await getDoc(roomRef);
+            if (!docSnap.exists()) return;
+            
+            const room = docSnap.data();
+            const startPositions = generateStartPositions(Object.keys(room.players).length);
+            
+            let i = 0;
+            const updatedPlayers = { ...room.players };
+            const initialInputs = { ...room.inputs };
+
+            for (let uid in updatedPlayers) {
+                const pos = startPositions[i++];
+                updatedPlayers[uid].body = [{x: pos.x, y: 0, z: pos.z}];
+                updatedPlayers[uid].dir = pos.dir;
+                updatedPlayers[uid].score = 0;
+                updatedPlayers[uid].lives = room.settings.lives;
+                updatedPlayers[uid].alive = true;
+                initialInputs[uid] = pos.dir;
+            }
+
+            await updateDoc(roomRef, {
+                state: 'playing',
+                players: updatedPlayers,
+                inputs: initialInputs,
+                apple: generateApplePos(updatedPlayers, room.trees)
+            });
+
+            startGameLoop();
+        });
+
+        function startGameLoop() {
+            if (gameLoopInterval) clearInterval(gameLoopInterval);
+            
+            gameLoopInterval = setInterval(async () => {
+                if (!currentRoomId || !isHost) return;
+                
+                const roomRef = doc(getRoomsRef(), currentRoomId);
+                const docSnap = await getDoc(roomRef);
+                if (!docSnap.exists()) {
+                    clearInterval(gameLoopInterval);
+                    return;
+                }
+                
+                const room = docSnap.data();
+                if (room.state !== 'playing') {
+                    clearInterval(gameLoopInterval);
+                    return;
+                }
+
+                // --- TICK LOGIC ---
+                const newPlayers = JSON.parse(JSON.stringify(room.players)); // deep copy
+                let apple = { ...room.apple };
+                let appleEaten = false;
+                
+                let activePlayersCount = 0;
+                let alivePlayersCount = 0;
+
+                // 1. Calculate new heads
+                for (let uid in newPlayers) {
+                    const p = newPlayers[uid];
+                    activePlayersCount++;
+                    
+                    if (!p.alive) {
+                        // Respawn logic
+                        if (p.lives > 0) {
+                            const safePos = findSafeSpawn(newPlayers, room.trees);
+                            p.body = [{x: safePos.x, y: safePos.y, z: safePos.z}];
+                            p.dir = {x: 1, y: 0, z: 0}; // Default
+                            p.alive = true;
+                            // reset inputs to avoid instant death on spawn
+                            room.inputs[uid] = {x: 1, y: 0, z: 0};
+                            alivePlayersCount++;
+                        }
+                        continue;
+                    }
+
+                    alivePlayersCount++;
+
+                    // Determine intended direction securely (prevent 180 flip)
+                    const intendedDir = room.inputs[uid] || p.dir;
+                    if (p.body.length > 1) {
+                        if (intendedDir.x === -p.dir.x && intendedDir.x !== 0) room.inputs[uid] = p.dir;
+                        else if (intendedDir.y === -p.dir.y && intendedDir.y !== 0) room.inputs[uid] = p.dir;
+                        else if (intendedDir.z === -p.dir.z && intendedDir.z !== 0) room.inputs[uid] = p.dir;
+                    }
+                    p.dir = room.inputs[uid];
+
+                    const head = p.body[0];
+                    const newHead = { x: head.x + p.dir.x, y: head.y + p.dir.y, z: head.z + p.dir.z };
+                    
+                    p.newHead = newHead; // Temporary storage for collision phase
+                }
+
+                // 2. Check Collisions (Walls, Apple, Other Snakes)
+                const allNextPositions = [];
+                for(let uid in newPlayers) {
+                    if (newPlayers[uid].alive && newPlayers[uid].newHead) {
+                        allNextPositions.push({uid, pos: newPlayers[uid].newHead});
+                    }
+                }
+
+                for (let uid in newPlayers) {
+                    const p = newPlayers[uid];
+                    if (!p.alive) continue;
+
+                    const newHead = p.newHead;
+                    let dead = false;
+
+                    // Wall / Height Bounds
+                    const limit = Math.floor(GRID_SIZE / 2);
+                    if (newHead.x < -limit || newHead.x > limit || newHead.z < -limit || newHead.z > limit || newHead.y < 0 || newHead.y >= MAX_HEIGHT) {
+                        dead = true;
+                    }
+
+                    // Trees
+                    if (!dead && room.trees) {
+                        for (let tree of room.trees) {
+                            if (tree.x === newHead.x && tree.y === newHead.y && tree.z === newHead.z) {
+                                dead = true; break;
+                            }
+                        }
+                    }
+
+                    // Self / Others body
+                    if (!dead) {
+                        for (let otherUid in newPlayers) {
+                            const otherP = newPlayers[otherUid];
+                            if (!otherP.alive) continue;
+                            
+                            // Check against existing body parts
+                            for (let i = 0; i < otherP.body.length; i++) {
+                                const part = otherP.body[i];
+                                if (part.x === newHead.x && part.y === newHead.y && part.z === newHead.z) {
+                                    // Teammate check for damage immunity (optional, let's keep friendly fire ON for chaos, 
+                                    // but if you want no friendly fire, uncomment below)
+                                    // if (room.settings.mode !== 'ffa' && otherP.team === p.team && otherUid !== uid) continue;
+                                    dead = true;
+                                    break;
+                                }
+                            }
+                            
+                            // Head-to-head tie breaker (both die)
+                            if (otherUid !== uid && otherP.newHead && otherP.newHead.x === newHead.x && otherP.newHead.y === newHead.y && otherP.newHead.z === newHead.z) {
+                                dead = true;
+                            }
+                            
+                            if(dead) break;
+                        }
+                    }
+
+                    if (dead) {
+                        p.alive = false;
+                        p.lives = Math.max(0, p.lives - 1);
+                        p.body = []; // Clear body
+                    } else {
+                        // Move
+                        p.body.unshift(newHead);
+                        
+                        // Check Apple
+                        if (newHead.x === apple.x && newHead.y === apple.y && newHead.z === apple.z) {
+                            p.score += 10;
+                            appleEaten = true;
+                        } else {
+                            p.body.pop(); // Remove tail
+                        }
+                    }
+                    delete p.newHead;
+                }
+
+                if (appleEaten) {
+                    apple = generateApplePos(newPlayers, room.trees);
+                }
+
+                // End condition: Team based or FFA
+                let activeAndAlive = 0;
+                let aliveTeams = new Set();
+                
+                for(let uid in newPlayers) {
+                    if(newPlayers[uid].alive || newPlayers[uid].lives > 0) {
+                        activeAndAlive++;
+                        aliveTeams.add(newPlayers[uid].team);
+                    }
+                }
+
+                let newState = 'playing';
+                if (activePlayersCount > 1) {
+                    if (room.settings.mode === 'ffa' && activeAndAlive <= 1) newState = 'ended';
+                    else if (room.settings.mode !== 'ffa' && aliveTeams.size <= 1) newState = 'ended';
+                } else if (activeAndAlive === 0) {
+                    newState = 'ended'; // Single player death
+                }
+
+                // 3. Write back
+                try {
+                    await updateDoc(roomRef, {
+                        players: newPlayers,
+                        apple: apple,
+                        state: newState
+                    });
+                } catch(e) {
+                    console.error("Tick write failed", e);
+                }
+
+                if (newState === 'ended') {
+                    clearInterval(gameLoopInterval);
+                }
+
+            }, TICK_RATE);
+        }
+
+        
+        function initClientGame(room) {
+            localState.inputQueue = [];
+            if(room.players[currentUser.uid]) {
+                localState.lastProcessedDir = room.players[currentUser.uid].dir;
+            }
+            
+            // Input Listener
+            window.addEventListener('keydown', handleInput);
+        }
+
+        function handleInput(e) {
+            if (!currentRoomId || !currentUser) return;
+            
+            const key = e.key.toLowerCase();
+            let newDir = null;
+            
+            if (key === 'w' || key === 'arrowup') newDir = {x: 0, y: 0, z: -1};
+            if (key === 's' || key === 'arrowdown') newDir = {x: 0, y: 0, z: 1};
+            if (key === 'a' || key === 'arrowleft') newDir = {x: -1, y: 0, z: 0};
+            if (key === 'd' || key === 'arrowright') newDir = {x: 1, y: 0, z: 0};
+            if (key === ' ' || key === 'spacebar') newDir = {x: 0, y: 1, z: 0};
+            if (key === 'shift') newDir = {x: 0, y: -1, z: 0};
+
+            if (newDir) {
+                // Prevent quick self-reversals purely client side before sending
+                const last = localState.lastProcessedDir;
+                if ((newDir.x !== 0 && newDir.x === -last.x) || 
+                    (newDir.y !== 0 && newDir.y === -last.y) || 
+                    (newDir.z !== 0 && newDir.z === -last.z)) {
+                    return; // Ignore reversal
+                }
+                
+                localState.lastProcessedDir = newDir;
+                
+                // Send intent to server directly
+                const roomRef = doc(getRoomsRef(), currentRoomId);
+                updateDoc(roomRef, {
+                    [`inputs.${currentUser.uid}`]: newDir
+                }).catch(err => console.error("Input send error", err));
+            }
+        }
+
+        function syncGameStateToRenderer(room) {
+            // Update Apple
+            if (!appleMesh) {
+                appleMesh = new THREE.Mesh(appleGeo, appleMat);
+                scene.add(appleMesh);
+            }
+            // Smoothly move apple if it teleported
+            appleMesh.position.set(room.apple.x, room.apple.y, room.apple.z);
+
+            // Render Trees if not already rendered
+            if (treeMeshes.length === 0 && room.trees) {
+                room.trees.forEach(treeData => {
+                    const mat = treeData.type === 'leaf' ? leafMat : trunkMat;
+                    const mesh = new THREE.Mesh(blockGeo, mat);
+                    mesh.position.set(treeData.x, treeData.y, treeData.z);
+                    mesh.castShadow = true;
+                    mesh.receiveShadow = true;
+                    scene.add(mesh);
+                    treeMeshes.push(mesh);
+                });
+            }
+
+            // Update Snakes
+            const activeUids = new Set(Object.keys(room.players));
+            
+            // Remove disconnected players
+            for (let uid in snakeMeshes) {
+                if (!activeUids.has(uid) || !room.players[uid].alive) {
+                    snakeMeshes[uid].forEach(mesh => scene.remove(mesh));
+                    delete snakeMeshes[uid];
+                }
+            }
+
+            for (let uid in room.players) {
+                const p = room.players[uid];
+                if (!p.alive) continue;
+
+                if (uid === currentUser.uid) {
+                    localState.lastProcessedDir = p.dir; // Sync confirmed dir
+                }
+
+                if (!snakeMeshes[uid]) snakeMeshes[uid] = [];
+                const meshes = snakeMeshes[uid];
+                const bodyData = p.body;
+
+                // Adjust mesh count
+                while (meshes.length < bodyData.length) {
+                    const mat = new THREE.MeshStandardMaterial({ 
+                        color: parseInt(p.color.replace('#', '0x')),
+                        roughness: 0.2,
+                        metalness: 0.1
+                    });
+                    const mesh = new THREE.Mesh(blockGeo, mat);
+                    mesh.castShadow = true;
+                    mesh.receiveShadow = true;
+                    // Scale down slightly for gaps
+                    mesh.scale.set(0.95, 0.95, 0.95);
+                    scene.add(mesh);
+                    meshes.push(mesh);
+                }
+                while (meshes.length > bodyData.length) {
+                    const m = meshes.pop();
+                    scene.remove(m);
+                }
+
+                // Position meshes (we snap them instantly on tick for retro feel, 
+                // smooth lerping would happen in the render loop if we tracked targets)
+                // For simplicity and stability in this prompt, snap to grid is extremely solid.
+                for (let i = 0; i < bodyData.length; i++) {
+                    // Head is slightly larger/brighter
+                    if (i === 0) {
+                        meshes[i].scale.set(1.05, 1.05, 1.05);
+                        meshes[i].material.emissive = new THREE.Color(p.color);
+                        meshes[i].material.emissiveIntensity = 0.3;
+                    } else {
+                        meshes[i].scale.set(0.9, 0.9, 0.9);
+                        meshes[i].material.emissiveIntensity = 0;
+                    }
+                    
+                    // We store target position for render loop lerping
+                    meshes[i].userData.targetPos = new THREE.Vector3(bodyData[i].x, bodyData[i].y, bodyData[i].z);
+                    
+                    // If mesh is new (far away), snap it immediately
+                    if (meshes[i].position.distanceTo(meshes[i].userData.targetPos) > 2) {
+                        meshes[i].position.copy(meshes[i].userData.targetPos);
+                    }
+                }
+            }
+        }
+
+        function updateHUD(room) {
+            const board = document.getElementById('scoreboard');
+            board.innerHTML = '';
+            
+            const players = Object.values(room.players).sort((a, b) => b.score - a.score);
+            
+            players.forEach(p => {
+                const isMe = p.uid === currentUser.uid;
+                const status = !p.alive && p.lives === 0 ? '💀 DEAD' : p.alive ? `Lives: ${p.lives}` : 'RESPAWNING...';
+                const teamTag = room.settings.mode !== 'ffa' ? `(T${p.team + 1}) ` : '';
+                
+                board.innerHTML += `
+                    <div class="flex justify-between items-center bg-slate-800/50 p-2 rounded border ${isMe ? 'border-blue-500' : 'border-slate-700/50'} text-sm">
+                        <div class="flex items-center gap-2">
+                            <div class="w-3 h-3 rounded-full" style="background-color: ${p.color}"></div>
+                            <span class="${!p.alive ? 'text-slate-500 line-through' : 'text-slate-200'} font-bold truncate max-w-[120px]">
+                                ${teamTag}${escapeHtml(p.name)}
+                            </span>
+                        </div>
+                        <div class="text-right flex flex-col">
+                            <span class="text-green-400 font-mono">${p.score} pts</span>
+                            <span class="text-xs text-slate-400">${status}</span>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+
+        function cleanupThreeJS() {
+            window.removeEventListener('keydown', handleInput);
+            if (appleMesh) {
+                scene.remove(appleMesh);
+                appleMesh = null;
+            }
+            for(let uid in snakeMeshes) {
+                snakeMeshes[uid].forEach(m => scene.remove(m));
+                delete snakeMeshes[uid];
+            }
+            treeMeshes.forEach(m => scene.remove(m));
+            treeMeshes = [];
+        }
+
+        function calculateTeam(playerIndex, mode) {
+            if (mode === 'ffa') return playerIndex;
+            if (mode === 'duos') return Math.floor(playerIndex / 2); // 0,0, 1,1, 2,2
+            if (mode === 'squads') return Math.floor(playerIndex / 4); // 0,0,0,0, 1,1,1,1
+            return 0;
+        }
+
+        function generatePlayerColor(teamIndex, mode) {
+            const teamColors = ['#f87171', '#60a5fa', '#34d399', '#fbbf24', '#a78bfa', '#f472b6', '#2dd4bf', '#fb923c'];
+            if (mode !== 'ffa' && teamIndex < teamColors.length) {
+                return teamColors[teamIndex];
+            }
+            return teamColors[Math.floor(Math.random() * teamColors.length)];
+        }
+
+        function escapeHtml(unsafe) {
+            return (unsafe || '').replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+        }
+
+        function generateStartPositions(playerIndex) {
+            // Max 10 players, distribute them around the edges on floor
+            const limit = Math.floor(GRID_SIZE / 2) - 2;
+            const positions = [
+                {x: 0, z: -limit, dir: {x: 0, y:0, z: 1}},
+                {x: 0, z: limit, dir: {x: 0, y:0, z: -1}},
+                {x: -limit, z: 0, dir: {x: 1, y:0, z: 0}},
+                {x: limit, z: 0, dir: {x: -1, y:0, z: 0}},
+                {x: -limit, z: -limit, dir: {x: 1, y:0, z: 0}},
+                {x: limit, z: limit, dir: {x: -1, y:0, z: 0}},
+                {x: limit, z: -limit, dir: {x: 0, y:0, z: 1}},
+                {x: -limit, z: limit, dir: {x: 0, y:0, z: -1}},
+                {x: -5, z: -limit, dir: {x: 0, y:0, z: 1}},
+                {x: 5, z: limit, dir: {x: 0, y:0, z: -1}}
+            ];
+            return positions;
+        }
+
+        function generateMapTrees() {
+            // Generate some random trees for the Fortnite vibe
+            const trees = [];
+            const numTrees = 8;
+            const limit = Math.floor(GRID_SIZE / 2) - 3;
+            
+            for(let i=0; i<numTrees; i++) {
+                const tx = Math.floor(Math.random() * (limit*2)) - limit;
+                const tz = Math.floor(Math.random() * (limit*2)) - limit;
+                
+                // Keep center clear for chaos
+                if (Math.abs(tx) < 2 && Math.abs(tz) < 2) continue;
+
+                // Trunk (Height 0 to 2)
+                for (let y = 0; y <= 2; y++) {
+                    trees.push({x: tx, y: y, z: tz, type: 'trunk'});
+                }
+                
+                // Leaves (Height 2 to 3) around trunk
+                const leafPositions = [
+                    {x: tx-1, y: 2, z: tz}, {x: tx+1, y: 2, z: tz},
+                    {x: tx, y: 2, z: tz-1}, {x: tx, y: 2, z: tz+1},
+                    {x: tx-1, y: 3, z: tz}, {x: tx+1, y: 3, z: tz},
+                    {x: tx, y: 3, z: tz-1}, {x: tx, y: 3, z: tz+1},
+                    {x: tx, y: 3, z: tz}, {x: tx, y: 4, z: tz} // Top
+                ];
+                
+                leafPositions.forEach(pos => {
+                    trees.push({...pos, type: 'leaf'});
+                });
+            }
+            return trees;
+        }
+
+        function findSafeSpawn(players, trees) {
+            const limit = Math.floor(GRID_SIZE / 2) - 1;
+            let attempts = 0;
+            while(attempts < 50) {
+                const x = Math.floor(Math.random() * (limit*2)) - limit;
+                const z = Math.floor(Math.random() * (limit*2)) - limit;
+                const y = 0; // Always spawn on ground
+                let safe = true;
+                
+                for(let uid in players) {
+                    if(!players[uid].alive) continue;
+                    for(let part of players[uid].body) {
+                        if(Math.abs(part.x - x) < 3 && Math.abs(part.z - z) < 3 && part.y === y) {
+                            safe = false; break;
+                        }
+                    }
+                    if(!safe) break;
+                }
+
+                if (safe && trees) {
+                    for (let tree of trees) {
+                        if (tree.x === x && tree.y === y && tree.z === z) {
+                            safe = false; break;
+                        }
+                    }
+                }
+
+                if(safe) return {x, y, z};
+                attempts++;
+            }
+            return {x: 0, y: 0, z: 0}; // Fallback
+        }
+
+        function generateApplePos(players, trees) {
+            const limit = Math.floor(GRID_SIZE / 2) - 1;
+            let pos = {x: 0, y: 0, z: 0};
+            let attempts = 0;
+            while(attempts < 100) {
+                pos.x = Math.floor(Math.random() * (limit*2 + 1)) - limit;
+                pos.z = Math.floor(Math.random() * (limit*2 + 1)) - limit;
+                // Apple can spawn on ground or in trees (up to max height - 1)
+                pos.y = Math.floor(Math.random() * (MAX_HEIGHT - 1));
+                
+                let collision = false;
+                for(let uid in players) {
+                    if(!players[uid].alive) continue;
+                    for(let part of players[uid].body) {
+                        if(part.x === pos.x && part.y === pos.y && part.z === pos.z) {
+                            collision = true; break;
+                        }
+                    }
+                    if(collision) break;
+                }
+                
+                if (!collision && trees) {
+                    for (let tree of trees) {
+                        if (tree.x === pos.x && tree.y === pos.y && tree.z === pos.z) {
+                            collision = true; break;
+                        }
+                    }
+                }
+
+                if(!collision) return pos;
+                attempts++;
+            }
+            return pos;
+        }
+
+        // Main Render Loop
+        const clock = new THREE.Clock();
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+
+            // Smoothly interpolate snake body meshes to their grid targets
+            for (let uid in snakeMeshes) {
+                snakeMeshes[uid].forEach(mesh => {
+                    if (mesh.userData.targetPos) {
+                        mesh.position.lerp(mesh.userData.targetPos, delta * 15);
+                    }
+                });
+            }
+            
+            // Rotate apple
+            if (appleMesh) {
+                appleMesh.rotation.y += delta * 2;
+                // Add base Y to sine wave bounce
+                appleMesh.position.y = appleMesh.userData.targetPos ? appleMesh.userData.targetPos.y + (Math.sin(clock.getElapsedTime() * 4) * 0.15) : Math.sin(clock.getElapsedTime() * 4) * 0.15;
+                if (!appleMesh.userData.targetPos) appleMesh.userData.targetPos = new THREE.Vector3(appleMesh.position.x, appleMesh.position.y, appleMesh.position.z);
+                else appleMesh.userData.targetPos.y = Math.floor(appleMesh.position.y); // lock the base height
+            }
+
+            // Slight camera sway
+            camera.position.x = Math.sin(clock.getElapsedTime() * 0.2) * 2;
+            camera.lookAt(0, 0, 0);
+
+            renderer.render(scene, camera);
+        }
+
+        // Start render loop
+        window.onload = () => {
+            animate();
+        };
+
+    </script>
+</body>
+</html>
