@@ -1426,7 +1426,7 @@ function renderCards(){
     }
 
     const cardTag = isTool ? 'div' : 'a';
-    const cardNav = isTool ? `onclick="openModal('${e.id}')"` : `href="game.html?id=${e.id}"`;
+    const cardNav = isTool ? `onclick="openModal('${e.id}')"` : `href="games/${e.id}.html"`;
     return `<${cardTag} class="card ${isTool?'tool-card':''}" ${cardNav}>
       <div class="card-header">
         <div class="card-title">${e.title}</div>

@@ -57,6 +57,13 @@ def extract_headings(html):
             headings.append(text)
     return headings[:10]
 
+def is_noindex(html):
+    return bool(re.search(
+        r'<meta[^>]*(?:name=["\']robots["\'][^>]*content=["\'][^"\']*noindex|content=["\'][^"\']*noindex[^"\']*["\'][^>]*name=["\']robots["\'])',
+        html,
+        re.IGNORECASE
+    ))
+
 def build_index(root):
     index = []
     for dirpath, dirnames, filenames in os.walk(root):
@@ -69,6 +76,9 @@ def build_index(root):
             try:
                 html = fp.read_text(encoding="utf-8", errors="replace")
             except Exception:
+                continue
+
+            if is_noindex(html):
                 continue
 
             title    = extract_title(html) or fname.replace(".html","").replace("-"," ").title()

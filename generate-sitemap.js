@@ -21,11 +21,9 @@ const EXCLUDED_PATH_PARTS = [
     'EMAIL_',
     'indexcopy',
     'gamevaultoriginal',
-    'blog-post',
-    'game.html',
     'Worldcup',
     'WorldCups',
-    'Game',
+    'game/',
     'Texts',
     'super_snake',
     'woodbury_getaway',
@@ -35,7 +33,6 @@ const EXCLUDED_PATH_PARTS = [
     'envizion_playground',
     'luma_dashboard_clone',
     'login',
-    'main...',
     'RREADME',
     'signup',
     'untitled'
@@ -68,6 +65,7 @@ function shouldExcludeFromSitemap(filePath) {
     const lowerPath = urlPath.toLowerCase();
 
     if (hasNoindex(filePath)) return true;
+    if (lowerPath.endsWith('reviews-blog/blog-post.html') || lowerPath.endsWith('reviews-blog/game.html')) return true;
     if (urlPath.includes(' ') || urlPath.includes('(') || urlPath.includes(')')) return true;
     if (urlPath.includes('#') || lowerPath.includes('404')) return true;
 
@@ -122,7 +120,9 @@ function getDynamicContentUrls() {
 
 function generateSitemap() {
     const htmlFiles = getHtmlFiles(ROOT_DIR).sort();
-    const dynamicUrls = getDynamicContentUrls();
+    // Editorial posts and reviews are generated as crawlable static pages.
+    // Do not publish query-string template URLs as duplicate sitemap entries.
+    const dynamicUrls = [];
     const today = new Date().toISOString().split('T')[0];
 
     let sitemap = '<?xml version="1.0" encoding="UTF-8"?>\n';
