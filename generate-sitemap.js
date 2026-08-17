@@ -25,21 +25,20 @@ const EXCLUDED_PATH_PARTS = [
     'game.html',
     'Worldcup',
     'WorldCups',
+    'Game',
+    'Texts',
+    'super_snake',
     'woodbury_getaway',
     'Gmail',
     'unsubscribe',
     '404',
-    'envizion_editor',
     'envizion_playground',
     'luma_dashboard_clone',
     'login',
-    'luma_dashboard_clone',
     'main...',
     'RREADME',
     'signup',
-    'unsubscribe',
-    'untitled',
-    'woodbury_getaway'
+    'untitled'
 ];
 
 function normalizeUrlPath(filePath) {
@@ -99,8 +98,31 @@ function getHtmlFiles(dir, fileList = []) {
     return fileList;
 }
 
+function getDynamicContentUrls() {
+    const urls = [];
+    const blogDataPath = path.join(ROOT_DIR, 'reviews-blog', 'blog-data.js');
+    const gameDataPath = path.join(ROOT_DIR, 'reviews-blog', 'gamevault.js');
+
+    if (fs.existsSync(blogDataPath)) {
+        const source = fs.readFileSync(blogDataPath, 'utf8');
+        for (const match of source.matchAll(/"slug"\s*:\s*"([a-z0-9-]+)"/g)) {
+            urls.push(`${BASE_URL}/reviews-blog/blog-post.html?id=${encodeURIComponent(match[1])}`);
+        }
+    }
+
+    if (fs.existsSync(gameDataPath)) {
+        const source = fs.readFileSync(gameDataPath, 'utf8');
+        for (const match of source.matchAll(/\bid\s*:\s*"([a-z0-9-]+)"/g)) {
+            urls.push(`${BASE_URL}/reviews-blog/game.html?id=${encodeURIComponent(match[1])}`);
+        }
+    }
+
+    return [...new Set(urls)].sort();
+}
+
 function generateSitemap() {
     const htmlFiles = getHtmlFiles(ROOT_DIR).sort();
+    const dynamicUrls = getDynamicContentUrls();
     const today = new Date().toISOString().split('T')[0];
 
     let sitemap = '<?xml version="1.0" encoding="UTF-8"?>\n';
@@ -117,10 +139,18 @@ function generateSitemap() {
         sitemap += '  </url>\n';
     }
 
+    for (const fullUrl of dynamicUrls) {
+        sitemap += '  <url>\n';
+        sitemap += `    <loc>${fullUrl}</loc>\n`;
+        sitemap += `    <lastmod>${today}</lastmod>\n`;
+        sitemap += '    <changefreq>monthly</changefreq>\n';
+        sitemap += '  </url>\n';
+    }
+
     sitemap += '</urlset>\n';
 
     fs.writeFileSync('sitemap.xml', sitemap, 'utf8');
-    console.log(`Successfully generated sitemap.xml with ${htmlFiles.length} pages.`);
+    console.log(`Successfully generated sitemap.xml with ${htmlFiles.length + dynamicUrls.length} pages (${htmlFiles.length} static, ${dynamicUrls.length} dynamic).`);
 }
 
 generateSitemap();

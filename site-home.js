@@ -9,6 +9,27 @@ routes.forEach((route) => {
 const year = document.querySelector("[data-year]");
 if (year) year.textContent = new Date().getFullYear();
 
+document.querySelectorAll(".nav-dropdown").forEach((dropdown) => {
+  dropdown.addEventListener("toggle", () => {
+    if (!dropdown.open) return;
+    document.querySelectorAll(".nav-dropdown[open]").forEach((other) => {
+      if (other !== dropdown) other.removeAttribute("open");
+    });
+  });
+});
+
+document.addEventListener("click", (event) => {
+  document.querySelectorAll(".nav-dropdown[open]").forEach((dropdown) => {
+    if (!dropdown.contains(event.target)) dropdown.removeAttribute("open");
+  });
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    document.querySelectorAll(".nav-dropdown[open]").forEach((dropdown) => dropdown.removeAttribute("open"));
+  }
+});
+
 // Use Google's configured consent message instead of the site's old
 // localStorage-only banner on pages that load this shared shell.
 if (!document.querySelector('script[src*="fundingchoicesmessages.google.com/i/pub-"]')) {
