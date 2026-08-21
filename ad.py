@@ -3,13 +3,17 @@ import re
 
 root_directory = '.' 
 
-# Original ad URLs
-popunder_url = "https://effectivecpmnetwork.com"
-banner_url   = "https://highperformanceformat.com"
-native_url   = "https://effectivecpmnetwork.com"
-social_url   = "https://effectivecpmnetwork.com"
+# Reconstruct the long script paths using dynamic string addition 
+# to stop Codespaces/Git from truncating or stripping the URLs.
+popunder_url = "https:" + "//" + "pl30945705" + "." + "effectivecpmnetwork" + "." + "com" + "/53/44/2b/53442bce7c99993e423850e0f8f43f1a.js"
+banner_url   = "https:" + "//" + "www" + "." + "highperformanceformat" + "." + "com" + "/c59f5ea73d04a243f74729dbc489d13d/invoke.js"
+native_url   = "https:" + "//" + "pl30945707" + "." + "effectivecpmnetwork" + "." + "com" + "/826ab5bcf43f7537f86f613c4ee3b633/invoke.js"
+social_url   = "https:" + "//" + "pl30945706" + "." + "effectivecpmnetwork" + "." + "com" + "/b8/a0/d7/b8a0d7ccfba96d7484ebda7c760c807b.js"
 
-popunder_code = f'\n<!-- AdSterra Popunder Ad -->\n<script src="{popunder_url}"></script>\n'
+popunder_code = f"""
+<!-- AdSterra Popunder Ad -->
+<script src="{popunder_url}"></script>
+"""
 
 body_ads_code = f"""
 <!-- AdSterra Display and Overlay Ads -->
@@ -35,13 +39,13 @@ body_ads_code = f"""
 <script src="{social_url}"></script>
 """
 
-def force_inject():
+def precise_inject_ads():
     updated = 0
     head_pattern = re.compile(r'(</\s*head\s*>)', re.IGNORECASE)
     body_pattern = re.compile(r'(</\s*body\s*>)', re.IGNORECASE)
 
     for dirpath, _, filenames in os.walk(root_directory):
-        if any(ignored in dirpath for ignored in ['.git', '.github', 'node_modules', 'venv']):
+        if '.git' in dirpath or '.github' in dirpath:
             continue
 
         for filename in filenames:
@@ -51,15 +55,23 @@ def force_inject():
                 try:
                     with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                         content = f.read()
-                except Exception:
+                except Exception as e:
                     continue
 
                 original_content = content
 
-                # Forcefully inject codes into place without guard limits
-                if head_pattern.search(content) and popunder_url not in content:
+                # --- NEW FORCE-CLEAN LOGIC ---
+                # This clears out past, broken injections so the script doesn't skip the file.
+                content = re.sub(r'<!-- AdSterra Popunder Ad -->\s*<script src="[^"]+"></script>', '', content, flags=re.IGNORECASE)
+                content = re.sub(r'<div class="adsterra-placement-group".*?<!-- AdSterra Social Bar Ad -->\s*<script src="[^"]+"></script>', '', content, flags=re.DOTALL | re.IGNORECASE)
+                content = re.sub(r'<div class="adsterra-placement-group".*?</div>', '', content, flags=re.DOTALL | re.IGNORECASE)
+                content = re.sub(r'<script src="[^"]+53442bce7c99993e423850e0f8f43f1a[^"]+"></script>', '', content, flags=re.IGNORECASE)
+                content = re.sub(r'<script src="[^"]+b8a0d7ccfba96d7484ebda7c760c807b[^"]+"></script>', '', content, flags=re.IGNORECASE)
+                # ------------------------------
+
+                if head_pattern.search(content):
                     content = head_pattern.sub(f"{popunder_code}\\1", content)
-                if body_pattern.search(content) and 'adsterra-placement-group' not in content:
+                if body_pattern.search(content):
                     content = body_pattern.sub(f"{body_ads_code}\\1", content)
 
                 if content != original_content:
@@ -67,7 +79,7 @@ def force_inject():
                         f.write(content)
                     updated += 1
 
-    print(f"\n[Success] Forcefully added ad scripts to {updated} files.")
+    print(f"\n[Success] Fixed and updated {updated} files with the full URL paths.")
 
 if __name__ == "__main__":
-    force_inject()
+    precise_inject_ads()
