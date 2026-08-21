@@ -166,7 +166,6 @@ function renderGuest(account) {
       <span class="envizion-account-caret">v</span>
     </button>
     <div class="envizion-account-menu" role="menu">
-      <a class="envizion-account-link" href="login.html" role="menuitem">Sign in <span>--></span></a>
       <a class="envizion-account-link" href="unsubscribe.html" role="menuitem">Unsubscribe <span>--></span></a>
     </div>
   `;
