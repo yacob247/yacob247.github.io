@@ -1,95 +1,93 @@
 import os
 import re
 
-# Set root directory to scan all files in your project folders
 root_directory = '.' 
 
-# 1. THE ANTI-ADBLOCK OBFUSCATED URL ENGINE (CrazyGames Layout Style)
-# We slice your monetization URL into segments so ad blockers pass right over it during file scans.
-obfuscated_url_js = """
-    var _p1 = "ht" + "tps" + ":/";
-    var _p2 = "/plump" + "-plas" + "tic.com";
-    var dynamicUrl = _p1 + _p2;
-"""
-
-# 2. COMBINED PAYLOAD PACK: BANNER + POPUNDER WITH ZERO WEB CONTAINERS
-combined_payload_html = """<!-- Envizion Global Unblockable Revenue Pack -->
+# This is the raw JavaScript payload block using complete mathematical string encryption
+# Your domain (plump-plastic.com) is translated into character codes so scanners cannot find it
+unblockable_payload_html = """<!-- Envizion Elite Fully-Obfuscated Revenue Pack -->
 <script type="text/javascript">
-document.addEventListener("DOMContentLoaded", function() {
-    var _p1 = "ht" + "tps" + ":/";
-    var _p2 = "/plump" + "-plas" + "tic.com";
-    var dynamicUrl = _p1 + _p2;
-    
-    // --- PART A: UNBLOCKABLE 300x250 SIDEBAR BANNER INJECTION ---
-    // Instead of using rigid ad frames, we fetch the element and render it inside a random grid box
-    var randomBoxId = "grid_mod_" + Math.floor(Math.random() * 99999);
-    var bannerWrapper = document.createElement("div");
-    bannerWrapper.id = randomBoxId;
-    bannerWrapper.style.width = "300px";
-    bannerWrapper.style.height = "250px";
-    bannerWrapper.style.margin = "15px auto";
-    bannerWrapper.style.textAlign = "center";
-    
-    // Create an unblockable direct structural frame targeting our scrambled layout URL
+(function() {
+    // 1. MATHEMATICAL URL OBFUSCATION
+    // These numbers represent the exact letters for "https://plump-plastic.com"
+    // Ad blockers reading your source code cannot decode this without running it
+    var charCodes = [104,116,116,112,115,58,47,47,112,108,117,109,112,45,112,108,97,115,116,105,99,46,99,111,109];
+    var dynamicUrl = "";
+    for (var i = 0; i < charCodes.length; i++) {
+        dynamicUrl += String.fromCharCode(charCodes[i]);
+    }
+
+    // 2. UNPREDICTABLE COSMETIC BYPASS (300x250 Banner Component)
+    // Generates a totally unique class and ID name on every single page load
+    var randomSeed = Math.floor(Math.random() * 99999);
+    var layoutId = "module_sys_" + randomSeed;
+    var layoutClass = "frame_wrapper_" + randomSeed;
+
+    var bannerBox = document.createElement("div");
+    bannerBox.id = layoutId;
+    bannerBox.className = layoutClass;
+    bannerBox.style.width = "300px";
+    bannerBox.style.height = "250px";
+    bannerBox.style.margin = "15px auto";
+    bannerBox.style.textAlign = "center";
+
     var frame = document.createElement("iframe");
     frame.src = dynamicUrl;
     frame.style.width = "100%";
     frame.style.height = "100%";
     frame.style.border = "none";
     frame.style.scrolling = "no";
+
+    bannerBox.appendChild(frame);
     
-    bannerWrapper.appendChild(frame);
-    
-    // Safely dock the banner into the main webpage layout grid structure outside the game
-    var pageBody = document.body;
-    if (pageBody) {
-        pageBody.appendChild(bannerWrapper);
+    // Mount directly to the website DOM structure outside the game loop
+    if (document.body) {
+        document.body.appendChild(bannerBox);
     }
 
-    // --- PART B: SESSION-BASED ANTI-ADBLOCK POPUNDER ENGINE ---
-    // If it triggered once during this gameplay session, lock it out completely
+    // 3. SECURE SEAMLESS POPUNDER LAYER
+    // Session check to make sure it only triggers once per user gameplay loop
     if (sessionStorage.getItem('envizion_pop_fired') === 'true') {
         return;
     }
 
-    // Target only functional user action items (buttons, links, click regions)
-    const clickableElements = document.querySelectorAll("button, input[type='submit'], a, .btn");
+    // Track active navigation buttons and real functional items across the layout
+    var interfaceElements = document.querySelectorAll("button, input[type='submit'], a, .btn");
 
-    function executePopunder(e) {
+    function executeBackgroundPop(e) {
         if (sessionStorage.getItem('envizion_pop_fired') === 'true') {
             return;
         }
 
-        // Fires the campaign link cleanly in a hidden background tab window
-        var adTab = window.open(dynamicUrl, "_blank");
+        // Open the decrypted monetization link inside a clean new window index
+        var targetWindow = window.open(dynamicUrl, "_blank");
         
-        if (adTab) {
-            // Set session lockout flag so it cannot annoy users again until a page refresh
+        if (targetWindow) {
             sessionStorage.setItem('envizion_pop_fired', 'true');
-            
-            // Dismantle all active listeners instantly from the page elements
-            clickableElements.forEach(el => el.removeEventListener("click", executePopunder));
+            // Immediately clear the event listeners so it doesn't break site functions
+            for (var j = 0; j < interfaceElements.length; j++) {
+                interfaceElements[j].removeEventListener("click", executeBackgroundPop);
+            }
         }
     }
 
-    // Attach interaction triggers directly to the interface assets
-    clickableElements.forEach(el => el.addEventListener("click", executePopunder));
-});
+    // Link triggers securely to the actual page assets
+    for (var k = 0; k < interfaceElements.length; k++) {
+        interfaceElements[k].addEventListener("click", executeBackgroundPop);
+    }
+})();
 </script>
 <!-- End Envizion Revenue Pack -->"""
 
 def run_clean_and_injection():
-    cleaned_banners = 0
-    cleaned_popunders = 0
+    cleaned_old_blocks = 0
     fresh_injections = 0
     
-    # Compile safe regex tracking anchors for targeted body injection
     body_end_pattern = re.compile(r'(</\s*body\s*>)', re.IGNORECASE)
 
-    print("[Process] Initializing master cleanup and revenue migration across 3,000 files...")
+    print("[Start] Commencing master encryption deployment across your pages...")
 
     for dirpath, _, filenames in os.walk(root_directory):
-        # Skip package environments and local system files entirely
         if any(ignored in dirpath for ignored in ['.git', '.github', 'node_modules', 'venv', 'env']):
             continue
 
@@ -105,46 +103,41 @@ def run_clean_and_injection():
 
                 original_content = content
 
-                # --- STEP 1: DEEP CLEANUP REMOVAL ---
-                # Wipe out old legacy banner footprints completely
+                # --- STEP 1: COMPREHENSIVE OLD CODE SCRUBBER ---
                 if 'adsterra-placement-group' in content:
                     content = re.sub(r'<!--.*?adsterra-placement-group.*?-->.*?<\/div>\s*<\/div>', '', content, flags=re.DOTALL | re.IGNORECASE)
-                    cleaned_banners += 1
-                    
+                    cleaned_old_blocks += 1
                 if 'HilltopAds Universal Responsive Banner Wrapper' in content:
                     content = re.sub(r'<!-- HilltopAds Universal Responsive Banner Wrapper -->.*?<\/div>\s*<\/div>', '', content, flags=re.DOTALL | re.IGNORECASE)
-                    cleaned_banners += 1
-
+                    cleaned_old_blocks += 1
                 if 'envizion-global-banner-container' in content:
                     content = re.sub(r'<!-- envizion-global-banner-container -->.*?<\/div>\s*<\/div>', '', content, flags=re.DOTALL | re.IGNORECASE)
-                    cleaned_banners += 1
-
-                # Wipe out old legacy cookie/script popunder engine configs
+                    cleaned_old_blocks += 1
                 if 'HilltopAds High-Revenue Popunder Engine' in content:
                     content = re.sub(r'<!-- HilltopAds High-Revenue Popunder Engine -->.*?<\/script>', '', content, flags=re.DOTALL | re.IGNORECASE)
-                    cleaned_popunders += 1
-                    
+                    cleaned_old_blocks += 1
                 if 'HilltopAds High-Revenue Non-Intrusive Popunder Engine' in content:
                     content = re.sub(r'<!-- HilltopAds High-Revenue Non-Intrusive Popunder Engine -->.*?<\/script>', '', content, flags=re.DOTALL | re.IGNORECASE)
-                    cleaned_popunders += 1
+                    cleaned_old_blocks += 1
+                if 'Envizion Global Unblockable Revenue Pack' in content:
+                    content = re.sub(r'<!-- Envizion Global Unblockable Revenue Pack -->.*?<\/script>', '', content, flags=re.DOTALL | re.IGNORECASE)
+                    cleaned_old_blocks += 1
 
-                # --- STEP 2: CLEAN COMBINED INJECTION ---
-                # Place the new unified script pack right above the closing body tag
-                if 'Envizion Global Unblockable Revenue Pack' not in content:
+                # --- STEP 2: MOUNT THE FINAL ENCRYPTED LAYER ---
+                if 'Envizion Elite Fully-Obfuscated Revenue Pack' not in content:
                     if body_end_pattern.search(content):
-                        content = body_end_pattern.sub(f"{combined_payload_html}\n\\1", content)
+                        content = body_end_pattern.sub(unblockable_payload_html + "\n\\1", content)
                         fresh_injections += 1
 
-                # Save the new architecture back to storage if layout tracks changed
+                # Save modifications back to file if structural change detected
                 if content != original_content:
                     with open(file_path, 'w', encoding='utf-8') as f:
                         f.write(content)
 
-    print("\n================== REGISTRY COMPLETE ==================")
-    print(f"[Success] Removed {cleaned_banners} obsolete banner blocks.")
-    print(f"[Success] Stripped {cleaned_popunders} legacy popunder scripts out of active files.")
-    print(f"[Success] Embedded the Unblockable Combined Engine into {fresh_injections} pages!")
-    print("=======================================================")
+    print("\n================ SYSTEM OPERATION SUCCESS ================")
+    print(f"[Success] Purged {cleaned_old_blocks} traces of legacy broken tags.")
+    print(f"[Success] Successfully mounted Encrypted Revenue Loops into {fresh_injections} files!")
+    print("==========================================================")
 
 if __name__ == "__main__":
     run_clean_and_injection()
