@@ -1,12 +1,13 @@
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
-  apiKey: "AIzaSyDLeM4MrsA1Q8zq7_QcQfTJKk049vOVOO4",
-  authDomain: "envizionwork.firebaseapp.com",
-  projectId: "envizionwork",
-  storageBucket: "envizionwork.firebasestorage.app",
-  messagingSenderId: "706251024837",
-  appId: "1:706251024837:web:4c931733d3a9f430a703ac",
-  measurementId: "G-9CL929H67Z"
+  apiKey: "AIzaSyB-3kAk-lMT3jTny2YIs2R1_0mG-tJlmJI",
+  authDomain: "puzzlesapp.firebaseapp.com",
+  databaseURL: "https://puzzlesapp-default-rtdb.firebaseio.com",
+  projectId: "puzzlesapp",
+  storageBucket: "puzzlesapp.firebasestorage.app",
+  messagingSenderId: "303461259730",
+  appId: "1:303461259730:web:a1790a976b6d58d71dd00b",
+  measurementId: "G-8YEJEBX0NE"
 };
 
 window.ENVIZION_FIREBASE_CONFIG = firebaseConfig;

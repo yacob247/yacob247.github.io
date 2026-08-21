@@ -2040,7 +2040,7 @@ const POSTS = [
   
 ];
 
-/* Disabled for AdSense quality review: auto-expanded draft posts are kept out of published inventory.
+// Published expansion: these additional review guides are part of the live inventory.
 (function addExpandedBlogPosts() {
   if (typeof POSTS === "undefined") return;
 
@@ -2178,8 +2178,7 @@ const POSTS = [
 
       existing.add(slug);
       added++;
-      if (added >= 200) return;
+      if (added >= 100) return;
     }
   }
 })();
-*/

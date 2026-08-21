@@ -1329,7 +1329,7 @@ function addExpandedGameReviews() {
 }
 
 // Disabled for AdSense quality review: publish hand-written reviews first.
-// addExpandedGameReviews();
+addExpandedGameReviews();
 
 // --- DO NOT EDIT BELOW THIS LINE ---
 function loadAdminEntries() {
@@ -1426,7 +1426,7 @@ function renderCards(){
     }
 
     const cardTag = isTool ? 'div' : 'a';
-    const cardNav = isTool ? `onclick="openModal('${e.id}')"` : `href="games/${e.id}.html"`;
+    const cardNav = isTool ? `onclick="openModal('${e.id}')"` : `href="game.html?id=${encodeURIComponent(e.id)}"`;
     return `<${cardTag} class="card ${isTool?'tool-card':''}" ${cardNav}>
       <div class="card-header">
         <div class="card-title">${e.title}</div>
