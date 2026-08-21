@@ -40,6 +40,7 @@ HILLTOP_BUNDLE = f'''<!-- {MARKER} -->
 <!-- END {MARKER} -->'''
 
 POPUNDER_PATTERNS = [
+    re.compile(r"\s*<!--\s*Envizion Shadow Protocol Pack\s*-->.*?<!--\s*End Envizion Shadow Protocol Pack\s*-->\s*", re.I | re.S),
     re.compile(r"\s*<!--\s*HilltopAds[^>]*Popunder[^>]*-->.*?</script>\s*", re.I | re.S),
     re.compile(r"\s*<!--\s*AdSterra[^>]*Popunder[^>]*-->.*?</script>\s*", re.I | re.S),
     re.compile(r"\s*<script\b[^>]*src\s*=\s*['\"][^'\"]*effectivecpmnetwork\.com[^'\"]*['\"][^>]*>\s*</script>\s*", re.I | re.S),
