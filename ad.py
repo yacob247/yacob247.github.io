@@ -3,61 +3,45 @@ import re
 
 root_directory = '.' 
 
-banner_url   = "https:" + "//" + "www" + "." + "highperformanceformat" + "." + "com" + "/c59f5ea73d04a243f74729dbc489d13d/invoke.js"
-native_url   = "https:" + "//" + "pl30945707" + "." + "effectivecpmnetwork" + "." + "com" + "/826ab5bcf43f7537f86f613c4ee3b633/invoke.js"
+# Original ad URLs
+popunder_url = "https://effectivecpmnetwork.com"
+banner_url   = "https://highperformanceformat.com"
+native_url   = "https://effectivecpmnetwork.com"
+social_url   = "https://effectivecpmnetwork.com"
 
-responsive_css_code = """
-<!-- Adsterra Mainstream Responsive Configuration -->
-<style>
-    .envizion-mobile-ad { display: none !important; }
-    .envizion-desktop-ad { display: block; text-align: center; margin: 20px auto; clear: both; }
-    @media screen and (max-width: 768px) {
-        .envizion-desktop-ad { display: none !important; }
-        .envizion-mobile-ad { display: block !important; text-align: center; margin: 15px auto; clear: both; }
-    }
-</style>
-"""
+popunder_code = f'\n<!-- AdSterra Popunder Ad -->\n<script src="{popunder_url}"></script>\n'
 
 body_ads_code = f"""
-<!-- AdSterra Mainstream Placements -->
-<div class="adsterra-placement-group" style="text-align: center; margin: 25px auto; clear: both; width: 100%;">
-    
-    <!-- 💻 Desktop Layout (728x90 Banner) -->
-    <div class="envizion-desktop-ad">
-        <script type="text/javascript">
-            atOptions = {{
-                'key' : 'c59f5ea73d04a243f74729dbc489d13d',
-                'format' : 'iframe',
-                'height' : 90,
-                'width' : 728,
-                'params' : {{}}
-            }};
-        </script>
-        <script type="text/javascript" src="{banner_url}"></script>
-    </div>
+<!-- AdSterra Display and Overlay Ads -->
+<div class="adsterra-placement-group" style="text-align: center; margin: 20px auto; clear: both;">
+    <!-- 160x600 Banner -->
+    <script type="text/javascript">
+        atOptions = {{
+            'key' : 'c59f5ea73d04a243f74729dbc489d13d',
+            'format' : 'iframe',
+            'height' : 600,
+            'width' : 160,
+            'params' : {{}}
+        }};
+    </script>
+    <script type="text/javascript" src="{banner_url}"></script>
 
-    <!-- 📱 Mobile Layout (Native Banner Box) -->
-    <div class="envizion-mobile-ad">
-        <script async="async" data-cfasync="false" src="{native_url}"></script>
-        <div id="container-826ab5bcf43f7537f86f613c4ee3b633"></div>
-    </div>
-
+    <!-- Native Banner -->
+    <script async="async" data-cfasync="false" src="{native_url}"></script>
+    <div id="container-826ab5bcf43f7537f86f613c4ee3b633"></div>
 </div>
+
+<!-- AdSterra Social Bar Ad -->
+<script src="{social_url}"></script>
 """
 
-def precise_inject_ads():
+def force_inject():
     updated = 0
     head_pattern = re.compile(r'(</\s*head\s*>)', re.IGNORECASE)
-    
-    # Strictly target elements above the footer to stop bottom/under page bleeding
-    content_patterns = [
-        re.compile(r'(<\s*/\s*main\s*>)', re.IGNORECASE),                         
-        re.compile(r'(<\s*footer[^>]*>)', re.IGNORECASE),                         
-        re.compile(r'(<\s*div[^>]*class="[^"]*container[^"]*"[^>]*>)', re.IGNORECASE) 
-    ]
+    body_pattern = re.compile(r'(</\s*body\s*>)', re.IGNORECASE)
 
     for dirpath, _, filenames in os.walk(root_directory):
-        if '.git' in dirpath or '.github' in dirpath:
+        if any(ignored in dirpath for ignored in ['.git', '.github', 'node_modules', 'venv']):
             continue
 
         for filename in filenames:
@@ -70,33 +54,20 @@ def precise_inject_ads():
                 except Exception:
                     continue
 
-                # Guard check to ensure it doesn't double-inject
-                if 'adsterra-placement-group' in content:
-                    continue
-
                 original_content = content
 
-                if head_pattern.search(content):
-                    content = head_pattern.sub(f"{responsive_css_code}\\1", content)
-                
-                injected = False
-                for pattern in content_patterns:
-                    if pattern.search(content):
-                        content = pattern.sub(f"\n{body_ads_code}\n\\1", content)
-                        injected = True
-                        break
-
-                if not injected:
-                    body_pattern = re.compile(r'(</\s*body\s*>)', re.IGNORECASE)
-                    if body_pattern.search(content):
-                        content = body_pattern.sub(f"{body_ads_code}\\1", content)
+                # Forcefully inject codes into place without guard limits
+                if head_pattern.search(content) and popunder_url not in content:
+                    content = head_pattern.sub(f"{popunder_code}\\1", content)
+                if body_pattern.search(content) and 'adsterra-placement-group' not in content:
+                    content = body_pattern.sub(f"{body_ads_code}\\1", content)
 
                 if content != original_content:
                     with open(file_path, 'w', encoding='utf-8') as f:
                         f.write(content)
                     updated += 1
 
-    print(f"\n[Success] Cleaned, repositioned away from page bounds, and updated {updated} files.")
+    print(f"\n[Success] Forcefully added ad scripts to {updated} files.")
 
 if __name__ == "__main__":
-    precise_inject_ads()
+    force_inject()
