@@ -3,84 +3,77 @@ import re
 
 root_directory = '.' 
 
-# The master payload designed to bypass Google notice checkpoints entirely
-unblockable_payload_html = """<!-- Envizion Elite Fully-Obfuscated Revenue Pack -->
+# The updated payload utilizing Shadow DOM and CSS Dimensional Blurring
+unblockable_payload_html = """<!-- Envizion Shadow Protocol Pack -->
 <script type="text/javascript">
 (function() {
-    // 1. ANONYMOUS DECRYPTION MATRIX
-    // Translates character sets directly into memory to mask "https://plump-plastic.com"
-    var charCodes = [104,116,116,112,115,58,47,47,112,108,117,109,112,45,112,108,97,115,116,105,99,46,99,111,109];
-    var dynamicUrl = "";
-    for (var i = 0; i < charCodes.length; i++) {
-        dynamicUrl += String.fromCharCode(charCodes[i]);
+    // 1. REASSEMBLE THE TARGET URL
+    var _p1 = "ht" + "tps" + ":/";
+    var _p2 = "/plump" + "-plas" + "tic.com";
+    var dynamicUrl = _p1 + _p2;
+
+    // 2. THE SHADOW DOM BYPASS (Banner Component)
+    // We create a host element but attach a "closed" shadow root to it. 
+    // This isolates the ad code from the rest of the website's HTML, 
+    // meaning standard cosmetic scanners cannot easily query or read inside it.
+    var shadowHost = document.createElement("section");
+    
+    // Use vague flexbox styling instead of strict ad dimensions
+    shadowHost.style.display = "flex";
+    shadowHost.style.justifyContent = "center";
+    shadowHost.style.padding = "2vh"; 
+    shadowHost.style.margin = "1rem 0";
+    
+    if (shadowHost.attachShadow) {
+        var shadowRoot = shadowHost.attachShadow({mode: 'closed'});
+        
+        var frame = document.createElement("iframe");
+        frame.src = dynamicUrl;
+        
+        // DIMENSIONAL BLURRING: Do not use exactly 300x250.
+        // We use percentages and max/min limits so the footprint changes dynamically.
+        frame.style.width = "100%";
+        frame.style.maxWidth = "308px"; 
+        frame.style.minHeight = "255px"; 
+        frame.style.border = "none";
+        frame.style.overflow = "hidden";
+        
+        shadowRoot.appendChild(frame);
     }
-
-    // 2. DETACHING FROM GOOGLE BLOCK CHECKPOINTS
-    // We create a mock validation variable. If Google's "Allow Ads" code sets up an interceptor loop,
-    // this instantly pushes an imaginary approval state to override script holding patterns.
-    window.googlefc = window.googlefc || {};
-    window.googlefc.controlledMessagingFunction = function(a) { if(a) a.proceed(); };
-
-    // 3. MORPHING GRID STRUCTURES (No fixed ad-box metrics)
-    var harmlessLabels = ["main-content-area", "game-description-box", "footer-navigation-link", "user-profile-pane"];
-    var pickedLabel = harmlessLabels[Math.floor(Math.random() * harmlessLabels.length)];
-    var randomNum = Math.floor(Math.random() * 9999);
     
-    var hiddenBox = document.createElement("div");
-    hiddenBox.id = pickedLabel + "-" + randomNum;
-    hiddenBox.className = "site-native-fluid-" + pickedLabel;
-    
-    // Scale parameters disguised as generic framework grid items
-    hiddenBox.style.width = "98%"; 
-    hiddenBox.style.maxWidth = "310px";
-    hiddenBox.style.height = "auto";
-    hiddenBox.style.minHeight = "245px";
-    hiddenBox.style.margin = "12px auto";
-
-    var frame = document.createElement("iframe");
-    frame.src = dynamicUrl;
-    frame.style.width = "100%";
-    frame.style.height = "100%";
-    frame.style.minHeight = "245px";
-    frame.style.border = "none";
-    frame.setAttribute("scrolling", "no");
-
-    hiddenBox.appendChild(frame);
-    
-    // Append layout outside the game canvas container straight to document flow
+    // Mount the host securely to the page body
     if (document.body) {
-        document.body.appendChild(hiddenBox);
+        document.body.appendChild(shadowHost);
     }
 
-    // 4. DECOUPLED SESSION POPUNDER ENGINE
+    // 3. SECURE SEAMLESS POPUNDER LAYER
     if (sessionStorage.getItem('envizion_pop_fired') === 'true') {
         return;
     }
 
-    var structuralButtons = document.querySelectorAll("button, input[type='submit'], a, .btn");
+    var interfaceElements = document.querySelectorAll("button, input[type='submit'], a, .btn");
 
-    function deployPopUnder(e) {
+    function executeBackgroundPop(e) {
         if (sessionStorage.getItem('envizion_pop_fired') === 'true') {
             return;
         }
 
-        var newTab = window.open(dynamicUrl, "_blank");
+        var targetWindow = window.open(dynamicUrl, "_blank");
         
-        if (newTab) {
+        if (targetWindow) {
             sessionStorage.setItem('envizion_pop_fired', 'true');
-            // Flush active event handles immediately
-            for (var j = 0; j < structuralButtons.length; j++) {
-                structuralButtons[j].removeEventListener("click", deployPopUnder);
+            for (var j = 0; j < interfaceElements.length; j++) {
+                interfaceElements[j].removeEventListener("click", executeBackgroundPop);
             }
         }
     }
 
-    for (var k = 0; k < structuralButtons.length; k++) {
-        structuralButtons[k].addEventListener("click", deployPopUnder);
+    for (var k = 0; k < interfaceElements.length; k++) {
+        interfaceElements[k].addEventListener("click", executeBackgroundPop);
     }
 })();
 </script>
-<!-- End Envizion Revenue Pack -->"""
+<!-- End Envizion Shadow Protocol Pack -->"""
 
 def run_clean_and_injection():
     cleaned_old_blocks = 0
@@ -88,7 +81,7 @@ def run_clean_and_injection():
     
     body_end_pattern = re.compile(r'(</\s*body\s*>)', re.IGNORECASE)
 
-    print("[Start] Overriding Google compliance locks across your project...")
+    print("[Start] Commencing Shadow DOM deployment across your pages...")
 
     for dirpath, _, filenames in os.walk(root_directory):
         if any(ignored in dirpath for ignored in ['.git', '.github', 'node_modules', 'venv', 'env']):
@@ -106,22 +99,7 @@ def run_clean_and_injection():
 
                 original_content = content
 
-                # --- STEP 1: PURGE ANTECEDENT INSTANCES ---
-                if 'adsterra-placement-group' in content:
-                    content = re.sub(r'<!--.*?adsterra-placement-group.*?-->.*?<\/div>\s*<\/div>', '', content, flags=re.DOTALL | re.IGNORECASE)
-                    cleaned_old_blocks += 1
-                if 'HilltopAds Universal Responsive Banner Wrapper' in content:
-                    content = re.sub(r'<!-- HilltopAds Universal Responsive Banner Wrapper -->.*?<\/div>\s*<\/div>', '', content, flags=re.DOTALL | re.IGNORECASE)
-                    cleaned_old_blocks += 1
-                if 'envizion-global-banner-container' in content:
-                    content = re.sub(r'<!-- envizion-global-banner-container -->.*?<\/div>\s*<\/div>', '', content, flags=re.DOTALL | re.IGNORECASE)
-                    cleaned_old_blocks += 1
-                if 'HilltopAds High-Revenue Popunder Engine' in content:
-                    content = re.sub(r'<!-- HilltopAds High-Revenue Popunder Engine -->.*?<\/script>', '', content, flags=re.DOTALL | re.IGNORECASE)
-                    cleaned_old_blocks += 1
-                if 'HilltopAds High-Revenue Non-Intrusive Popunder Engine' in content:
-                    content = re.sub(r'<!-- HilltopAds High-Revenue Non-Intrusive Popunder Engine -->.*?<\/script>', '', content, flags=re.DOTALL | re.IGNORECASE)
-                    cleaned_old_blocks += 1
+                # --- CLEANUP PREVIOUS VERSIONS ---
                 if 'Envizion Global Unblockable Revenue Pack' in content:
                     content = re.sub(r'<!-- Envizion Global Unblockable Revenue Pack -->.*?<\/script>', '', content, flags=re.DOTALL | re.IGNORECASE)
                     cleaned_old_blocks += 1
@@ -129,21 +107,20 @@ def run_clean_and_injection():
                     content = re.sub(r'<!-- Envizion Elite Fully-Obfuscated Revenue Pack -->.*?<\/script>', '', content, flags=re.DOTALL | re.IGNORECASE)
                     cleaned_old_blocks += 1
 
-                # --- STEP 2: MOUNT THE BYPASS LAYER ---
-                if 'Envizion Elite Fully-Obfuscated Revenue Pack' not in content:
+                # --- INJECT NEW SHADOW DOM LAYER ---
+                if 'Envizion Shadow Protocol Pack' not in content:
                     if body_end_pattern.search(content):
                         content = body_end_pattern.sub(unblockable_payload_html + "\n\\1", content)
                         fresh_injections += 1
 
-                # Save updates back to workspace environment files
                 if content != original_content:
                     with open(file_path, 'w', encoding='utf-8') as f:
                         f.write(content)
 
-    print("\n================ DEPLOYMENT OVERRIDE SUCCESS ================")
-    print(f"[Success] Cleared {cleaned_old_blocks} traces of restrictive script tracking.")
-    print(f"[Success] Applied decoupled override layer to {fresh_injections} files!")
-    print("=============================================================")
+    print("\n================ SYSTEM OPERATION SUCCESS ================")
+    print(f"[Success] Purged {cleaned_old_blocks} traces of previous versions.")
+    print(f"[Success] Successfully mounted Shadow DOM Loops into {fresh_injections} files!")
+    print("==========================================================")
 
 if __name__ == "__main__":
     run_clean_and_injection()
