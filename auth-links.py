@@ -12,10 +12,21 @@ BLOCK = f'''<!-- {MARKER} -->
   <a href="/reviews-blog/login.html" style="margin:0 8px;">Sign in</a>
 </nav>
 <!-- END {MARKER} -->'''
+BLOCK_PATTERN = re.compile(
+    rf"\s*<!--\s*{re.escape(MARKER)}\s*-->.*?<!--\s*END\s*{re.escape(MARKER)}\s*-->\s*",
+    re.I | re.S,
+)
 
 
 def process(path: Path) -> bool:
     original = path.read_text(encoding="utf-8", errors="ignore")
+    relative = path.relative_to(ROOT)
+    if not relative.parts or relative.parts[0].lower() != "reviews-blog":
+        updated = BLOCK_PATTERN.sub("\n", original)
+        if updated == original:
+            return False
+        path.write_text(updated, encoding="utf-8", newline="")
+        return True
     if MARKER in original:
         return False
     updated, count = re.subn(r"</\s*body\s*>", BLOCK + "\n</body>", original, count=1, flags=re.I)

@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OmniMedia Converter - Universal Media Toolkit</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- JSZip for bundling extracted image frames -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    
+    <!-- FFmpeg.wasm v0.12 (Single-threaded core to bypass COOP/COEP header requirements) -->
+    <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.7/dist/umd/ffmpeg.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/dist/umd/index.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        dark: '#0f172a',
+                        darker: '#0b1120',
+                        primary: '#6366f1',
+                        secondary: '#8b5cf6'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #0b1120; color: #f8fafc; }
+        .glass-panel { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); }
+        .drop-zone { border: 2px dashed rgba(99, 102, 241, 0.5); transition: all 0.3s ease; }
+        .drop-zone.dragover { border-color: #8b5cf6; background: rgba(139, 92, 246, 0.1); }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 10px; }
+        
+        /* Toast Animation */
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        @keyframes slideOut { from { transform: translateX(0); opacity: 1; } to { transform: translateX(100%); opacity: 0; } }
+        .toast-enter { animation: slideIn 0.3s forwards; }
+        .toast-exit { animation: slideOut 0.3s forwards; }
+    </style>
+</head>
+<body class="h-screen flex flex-col md:flex-row overflow-hidden">
+
+    <aside class="w-full md:w-72 glass-panel flex flex-col h-auto md:h-full shrink-0 z-20">
+        <div class="p-6 border-b border-white/10">
+            <h1 class="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-secondary flex items-center gap-2">
+                <i class="fa-solid fa-photo-film text-primary"></i> OmniMedia
+            </h1>
+            <p class="text-xs text-slate-400 mt-1">Client-side processing engine</p>
+        </div>
+        
+        <div class="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6">
+            <div>
+                <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 px-2">Convert</h3>
+                <ul class="space-y-1" id="nav-convert"></ul>
+            </div>
+            <div>
+                <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 px-2">Extract</h3>
+                <ul class="space-y-1" id="nav-extract"></ul>
+            </div>
+            <div>
+                <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 px-2">Merge</h3>
+                <ul class="space-y-1" id="nav-merge"></ul>
+            </div>
+            <div>
+                <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 px-2">Split & Trim</h3>
+                <ul class="space-y-1" id="nav-split"></ul>
+            </div>
+        </div>
+    </aside>
+
+    <main class="flex-1 flex flex-col relative h-full overflow-hidden bg-dark">
+        <!-- Header / Dynamic SEO Title area -->
+        <header class="p-6 lg:p-10 border-b border-white/5">
+            <h2 id="tool-title" class="text-3xl font-bold text-white mb-2">Select a Tool</h2>
+            <p id="tool-description" class="text-slate-400 max-w-2xl">Choose a tool from the sidebar to begin processing your media.</p>
+        </header>
+
+        <!-- Workspace -->
+        <div class="flex-1 overflow-y-auto custom-scrollbar p-6 lg:p-10 flex flex-col items-center">
+            
+            <div id="workspace-container" class="w-full max-w-4xl hidden flex-col gap-6">
+                
+                <!-- Input Area -->
+                <div id="inputs-container" class="grid gap-4 w-full">
+                    <!-- Dropzones injected here via JS -->
+                </div>
+
+                <!-- Processing Controls -->
+                <div class="glass-panel p-6 rounded-2xl flex flex-col items-center justify-center gap-4 w-full">
+                    <button id="btn-process" class="px-8 py-3 bg-gradient-to-r from-primary to-secondary hover:from-secondary hover:to-primary text-white rounded-xl font-semibold shadow-lg shadow-primary/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 w-full sm:w-auto justify-center">
+                        <i class="fa-solid fa-microchip"></i> Start Processing
+                    </button>
+                    
+                    <!-- Progress UI -->
+                    <div id="progress-container" class="w-full hidden flex-col gap-2">
+                        <div class="flex justify-between text-sm text-slate-300 font-medium">
+                            <span id="progress-text">Initializing Engine...</span>
+                            <span id="progress-percent">0%</span>
+                        </div>
+                        <div class="w-full bg-slate-800 rounded-full h-3 overflow-hidden border border-white/5">
+                            <div id="progress-bar" class="bg-gradient-to-r from-primary to-secondary h-3 rounded-full w-0 transition-all duration-300"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Output Area -->
+                <div id="output-container" class="glass-panel p-6 rounded-2xl hidden flex-col items-center gap-6 w-full animate-[fadeIn_0.5s_ease-out]">
+                    <h3 class="text-lg font-semibold w-full border-b border-white/10 pb-2">Output Result</h3>
+                    
+                    <div id="media-preview" class="w-full max-w-2xl bg-black/50 rounded-xl overflow-hidden flex items-center justify-center min-h-[200px] border border-white/5 relative">
+                        <!-- Output injected here -->
+                    </div>
+
+                    <a id="btn-download" href="#" class="px-6 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium transition-colors flex items-center gap-2">
+                        <i class="fa-solid fa-download"></i> Download Result
+                    </a>
+                </div>
+
+            </div>
+
+            <!-- Empty State -->
+            <div id="empty-state" class="flex-1 flex flex-col items-center justify-center text-center opacity-50 mt-20">
+                <i class="fa-solid fa-wand-magic-sparkles text-6xl mb-4"></i>
+                <h3 class="text-xl font-medium">No Tool Selected</h3>
+                <p class="text-sm mt-2">Pick a media tool from the menu to get started.</p>
+            </div>
+        </div>
+    </main>
+
+    <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-3"></div>
+
+    <script>
+        // ---------------------------------------------------------
+        // Application State & Tool Configuration
+        // ---------------------------------------------------------
+        
+        const tools = {
+            'mp4-to-gif': {
+                id: 'mp4-to-gif',
+                category: 'convert',
+                title: 'MP4 to GIF',
+                seoTitle: 'Convert MP4 Video to GIF Online',
+                description: 'Convert your MP4 videos into high-quality, looping animated GIFs directly in your browser.',
+                icon: 'fa-film',
+                inputs: [
+                    { id: 'input1', label: 'Upload MP4 Video', accept: 'video/mp4,video/x-m4v,video/*' }
+                ],
+                action: async (ffmpeg, files) => {
+                    const inputName = 'input.mp4';
+                    const outputName = 'output.gif';
+                    await ffmpeg.writeFile(inputName, await window.FFmpegUtil.fetchFile(files.input1));
+                    await ffmpeg.exec(['-i', inputName, '-vf', 'fps=10,scale=480:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse', outputName]);
+                    return { name: outputName, type: 'image/gif' };
+                }
+            },
+            'video-to-mp3': {
+                id: 'video-to-mp3',
+                category: 'extract',
+                title: 'Video to MP3',
+                seoTitle: 'Extract MP3 Audio from Video',
+                description: 'Extract the audio track from any video file and save it as an MP3.',
+                icon: 'fa-music',
+                inputs: [
+                    { id: 'input1', label: 'Upload Video File', accept: 'video/*' }
+                ],
+                action: async (ffmpeg, files) => {
+                    const inputName = 'input.mp4';
+                    const outputName = 'output.mp3';
+                    await ffmpeg.writeFile(inputName, await window.FFmpegUtil.fetchFile(files.input1));
+                    await ffmpeg.exec(['-i', inputName, '-q:a', '0', '-map', 'a', outputName]);
+                    return { name: outputName, type: 'audio/mpeg' };
+                }
+            },
+            'merge-video-audio': {
+                id: 'merge-video-audio',
+                category: 'merge',
+                title: 'Add Audio to Video',
+                seoTitle: 'Merge Audio and Video Files',
+                description: 'Combine a video file (without sound or replacing it) with an audio file.',
+                icon: 'fa-object-group',
+                inputs: [
+                    { id: 'video', label: 'Upload Video File', accept: 'video/*' },
+                    { id: 'audio', label: 'Upload Audio File', accept: 'audio/*' }
+                ],
+                action: async (ffmpeg, files) => {
+                    const vidName = 'video.mp4';
+                    const audName = 'audio.mp3';
+                    const outputName = 'output.mp4';
+                    await ffmpeg.writeFile(vidName, await window.FFmpegUtil.fetchFile(files.video));
+                    await ffmpeg.writeFile(audName, await window.FFmpegUtil.fetchFile(files.audio));
+                    await ffmpeg.exec(['-i', vidName, '-i', audName, '-c:v', 'copy', '-c:a', 'aac', '-map', '0:v:0', '-map', '1:a:0', '-shortest', outputName]);
+                    return { name: outputName, type: 'video/mp4' };
+                }
+            },
+            'merge-side-by-side': {
+                id: 'merge-side-by-side',
+                category: 'merge',
+                title: 'Merge Videos (Side-by-Side)',
+                seoTitle: 'Combine Videos Side by Side',
+                description: 'Merge two videos together into a single side-by-side split-screen layout.',
+                icon: 'fa-columns',
+                inputs: [
+                    { id: 'video1', label: 'Left Video', accept: 'video/*' },
+                    { id: 'video2', label: 'Right Video', accept: 'video/*' }
+                ],
+                action: async (ffmpeg, files) => {
+                    const v1 = 'vid1.mp4';
+                    const v2 = 'vid2.mp4';
+                    const outputName = 'output.mp4';
+                    await ffmpeg.writeFile(v1, await window.FFmpegUtil.fetchFile(files.video1));
+                    await ffmpeg.writeFile(v2, await window.FFmpegUtil.fetchFile(files.video2));
+                    // Scale both to same height (480px), then hstack them
+                    await ffmpeg.exec([
+                        '-i', v1, '-i', v2, 
+                        '-filter_complex', '[0:v]scale=-1:480[v0];[1:v]scale=-1:480[v1];[v0][v1]hstack=inputs=2[v]',
+                        '-map', '[v]',
+                        outputName
+                    ]);
+                    return { name: outputName, type: 'video/mp4' };
+                }
+            },
+            'trim-video': {
+                id: 'trim-video',
+                category: 'split',
+                title: 'Trim Video Length',
+                seoTitle: 'Split and Trim Video Files Online',
+                description: 'Cut a section out of your video by specifying the start time and duration.',
+                icon: 'fa-scissors',
+                inputs: [
+                    { id: 'video', label: 'Upload Video', accept: 'video/*' },
+                    { id: 'start', label: 'Start Time (seconds)', type: 'number', defaultValue: '0' },
+                    { id: 'duration', label: 'Duration (seconds)', type: 'number', defaultValue: '10' }
+                ],
+                action: async (ffmpeg, files) => {
+                    const inputName = 'input.mp4';
+                    const outputName = 'output.mp4';
+                    await ffmpeg.writeFile(inputName, await window.FFmpegUtil.fetchFile(files.video));
+                    await ffmpeg.exec(['-ss', files.start.toString(), '-i', inputName, '-t', files.duration.toString(), '-c', 'copy', outputName]);
+                    return { name: outputName, type: 'video/mp4' };
+                }
+            },
+            'mute-video': {
+                id: 'mute-video',
+                category: 'split',
+                title: 'Remove Audio from Video',
+                seoTitle: 'Mute Video Online',
+                description: 'Extract and remove the audio track from any video, leaving only the visuals.',
+                icon: 'fa-volume-xmark',
+                inputs: [
+                    { id: 'video', label: 'Upload Video', accept: 'video/*' }
+                ],
+                action: async (ffmpeg, files) => {
+                    const inputName = 'input.mp4';
+                    const outputName = 'output.mp4';
+                    await ffmpeg.writeFile(inputName, await window.FFmpegUtil.fetchFile(files.video));
+                    await ffmpeg.exec(['-i', inputName, '-c', 'copy', '-an', outputName]);
+                    return { name: outputName, type: 'video/mp4' };
+                }
+            },
+            'extract-frames': {
+                id: 'extract-frames',
+                category: 'extract',
+                title: 'Video to Images (ZIP)',
+                seoTitle: 'Extract Image Frames from Video',
+                description: 'Extract frames from your video (1 frame per second) and download them as a ZIP archive.',
+                icon: 'fa-images',
+                inputs: [
+                    { id: 'input1', label: 'Upload Video File', accept: 'video/*' }
+                ],
+                action: async (ffmpeg, files) => {
+                    const inputName = 'input.mp4';
+                    await ffmpeg.writeFile(inputName, await window.FFmpegUtil.fetchFile(files.input1));
+                    await ffmpeg.exec(['-i', inputName, '-r', '1', 'frame_%03d.jpg']);
+                    
+                    const list = await ffmpeg.listDir('/');
+                    const zip = new JSZip();
+                    let imgCount = 0;
+                    
+                    for (const item of list) {
+                        if (item.name.startsWith('frame_') && item.name.endsWith('.jpg')) {
+                            const data = await ffmpeg.readFile(item.name);
+                            zip.file(item.name, data);
+                            imgCount++;
+                        }
+                    }
+                    
+                    if (imgCount === 0) throw new Error("No frames extracted.");
+                    const zipBlob = await zip.generateAsync({ type: 'blob' });
+                    return { isBlob: true, blob: zipBlob, name: 'frames.zip', type: 'application/zip' };
+                }
+            },
+            'images-to-gif': {
+                id: 'images-to-gif',
+                category: 'merge',
+                title: 'Images to GIF',
+                seoTitle: 'Create Animated GIF from Images',
+                description: 'Upload multiple images to merge them into a single animated GIF.',
+                icon: 'fa-layer-group',
+                inputs: [
+                    { id: 'images', label: 'Upload Multiple Images', accept: 'image/*', multiple: true }
+                ],
+                action: async (ffmpeg, files) => {
+                    const fileList = files.images; 
+                    if(fileList.length < 2) throw new Error("Please select at least 2 images.");
+                    const sortedFiles = Array.from(fileList).sort((a,b) => a.name.localeCompare(b.name));
+                    
+                    for(let i=0; i<sortedFiles.length; i++){
+                        const num = (i+1).toString().padStart(3, '0');
+                        await ffmpeg.writeFile(`img${num}.png`, await window.FFmpegUtil.fetchFile(sortedFiles[i]));
+                    }
+                    
+                    const outputName = 'output.gif';
+                    await ffmpeg.exec(['-framerate', '2', '-i', 'img%03d.png', '-vf', 'scale=480:-1:flags=lanczos', outputName]);
+                    return { name: outputName, type: 'image/gif' };
+                }
+            }
+        };
+
+        let currentToolId = null;
+        let uploadedFiles = {}; // e.g. { 'input1': File, 'audio': File }
+        let ffmpegInstance = null;
+        let isProcessing = false;
+        let objectUrlCache = null;
+
+        // ---------------------------------------------------------
+        // ---------------------------------------------------------
+
+        function init() {
+            renderSidebar();
+            handleRouting();
+            setupEventListeners();
+        }
+
+        function renderSidebar() {
+            Object.values(tools).forEach(tool => {
+                const li = document.createElement('li');
+                li.innerHTML = `
+                    <a href="?tool=${tool.id}" class="sidebar-link block px-3 py-2 rounded-lg text-sm text-slate-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-3" data-tool="${tool.id}">
+                        <div class="w-6 text-center"><i class="fa-solid ${tool.icon}"></i></div>
+                        ${tool.title}
+                    </a>
+                `;
+                document.getElementById(`nav-${tool.category}`).appendChild(li);
+            });
+        }
+
+        function handleRouting() {
+            const params = new URLSearchParams(window.location.search);
+            const tool = params.get('tool');
+            
+            if (tool && tools[tool]) {
+                selectTool(tool);
+            } else {
+                // Default to empty state or first tool
+                showEmptyState();
+            }
+        }
+
+        // ---------------------------------------------------------
+        // ---------------------------------------------------------
+
+        function selectTool(toolId) {
+            if (isProcessing) {
+                showToast("Please wait for current processing to finish.", "error");
+                return;
+            }
+
+            currentToolId = toolId;
+            const tool = tools[toolId];
+            uploadedFiles = {}; // Reset files
+
+            // Update URL without reloading
+            window.history.pushState({}, '', `?tool=${toolId}`);
+
+            // Update SEO Headings
+            document.title = `${tool.seoTitle} - OmniMedia`;
+            document.getElementById('tool-title').textContent = tool.title;
+            document.getElementById('tool-description').textContent = tool.description;
+
+            // Highlight active in sidebar
+            document.querySelectorAll('.sidebar-link').forEach(link => {
+                if (link.dataset.tool === toolId) {
+                    link.classList.add('bg-primary/20', 'text-primary', 'font-medium');
+                    link.classList.remove('text-slate-300', 'hover:bg-white/10');
+                } else {
+                    link.classList.remove('bg-primary/20', 'text-primary', 'font-medium');
+                    link.classList.add('text-slate-300', 'hover:bg-white/10');
+                }
+            });
+
+            buildWorkspace(tool);
+        }
+
+        function showEmptyState() {
+            document.getElementById('empty-state').classList.remove('hidden');
+            document.getElementById('workspace-container').classList.add('hidden');
+            document.getElementById('tool-title').textContent = 'Select a Tool';
+            document.getElementById('tool-description').textContent = 'Choose a tool from the sidebar to begin processing your media.';
+            document.title = 'OmniMedia Converter - Universal Media Toolkit';
+        }
+
+        function buildWorkspace(tool) {
+            document.getElementById('empty-state').classList.add('hidden');
+            const workspace = document.getElementById('workspace-container');
+            workspace.classList.remove('hidden');
+            workspace.classList.add('flex');
+
+            // Reset Outputs
+            resetOutput();
+
+            // Build Inputs
+            const inputsContainer = document.getElementById('inputs-container');
+            inputsContainer.innerHTML = '';
+            
+            // Adjust grid layout based on number of inputs
+            inputsContainer.className = tool.inputs.length > 1 ? 'grid gap-4 w-full grid-cols-1 md:grid-cols-2' : 'grid gap-4 w-full grid-cols-1';
+
+            tool.inputs.forEach(input => {
+                if (input.type === 'number' || input.type === 'text') {
+                    const html = `
+                        <div class="glass-panel p-6 rounded-2xl flex flex-col justify-center gap-4 relative min-h-[200px]">
+                            <div class="flex flex-col items-center gap-3 mb-2">
+                                <div class="w-16 h-16 rounded-full bg-slate-800 flex items-center justify-center text-2xl text-primary shadow-inner">
+                                    <i class="fa-solid fa-keyboard"></i>
+                                </div>
+                                <h4 class="font-semibold text-lg text-white">${input.label}</h4>
+                            </div>
+                            <input type="${input.type}" id="input-${input.id}" class="w-full bg-slate-900 text-white rounded-xl p-4 border border-white/10 focus:border-primary focus:outline-none text-center font-mono text-xl transition-colors" placeholder="${input.placeholder || ''}" value="${input.defaultValue || ''}">
+                        </div>
+                    `;
+                    inputsContainer.insertAdjacentHTML('beforeend', html);
+                    
+                    const el = document.getElementById(`input-${input.id}`);
+                    uploadedFiles[input.id] = el.value; // Store initial value
+                    el.addEventListener('input', (e) => {
+                        uploadedFiles[input.id] = e.target.value;
+                        validateProcessButton();
+                    });
+                } else {
+                    const isMultiple = input.multiple ? 'multiple' : '';
+                    const dropzoneHtml = `
+                        <div class="drop-zone glass-panel p-8 rounded-2xl flex flex-col items-center justify-center text-center cursor-pointer relative min-h-[200px]" data-input-id="${input.id}">
+                            <input type="file" id="file-${input.id}" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" accept="${input.accept}" ${isMultiple}>
+                            <div class="pointer-events-none z-0 flex flex-col items-center gap-3">
+                                <div class="w-16 h-16 rounded-full bg-slate-800 flex items-center justify-center text-2xl text-primary mb-2 shadow-inner">
+                                    <i class="fa-solid fa-cloud-arrow-up"></i>
+                                </div>
+                                <h4 class="font-semibold text-lg text-white">${input.label}</h4>
+                                <p class="text-sm text-slate-400" id="filename-${input.id}">Drag & drop or click to browse</p>
+                            </div>
+                        </div>
+                    `;
+                    inputsContainer.insertAdjacentHTML('beforeend', dropzoneHtml);
+                }
+            });
+
+            // Re-attach event listeners for dynamic file inputs
+            tool.inputs.forEach(input => {
+                if (input.type === 'number' || input.type === 'text') return; // Skip non-file inputs
+
+                const fileInput = document.getElementById(`file-${input.id}`);
+                const dropZone = document.querySelector(`.drop-zone[data-input-id="${input.id}"]`);
+                
+                // Drag and drop styling
+                ['dragenter', 'dragover'].forEach(eventName => {
+                    fileInput.addEventListener(eventName, () => dropZone.classList.add('dragover'), false);
+                });
+                ['dragleave', 'drop'].forEach(eventName => {
+                    fileInput.addEventListener(eventName, () => dropZone.classList.remove('dragover'), false);
+                });
+
+                // File selection handling
+                fileInput.addEventListener('change', (e) => {
+                    if (e.target.files.length > 0) {
+                        if (input.multiple) {
+                            uploadedFiles[input.id] = e.target.files;
+                            document.getElementById(`filename-${input.id}`).innerHTML = `<span class="text-emerald-400">${e.target.files.length} files selected</span>`;
+                        } else {
+                            uploadedFiles[input.id] = e.target.files[0];
+                            document.getElementById(`filename-${input.id}`).innerHTML = `<span class="text-emerald-400 font-medium">${e.target.files[0].name}</span>`;
+                        }
+                    } else {
+                        delete uploadedFiles[input.id];
+                        document.getElementById(`filename-${input.id}`).innerText = 'Drag & drop or click to browse';
+                    }
+                    validateProcessButton();
+                });
+            });
+
+            validateProcessButton();
+        }
+
+        // ---------------------------------------------------------
+        // ---------------------------------------------------------
+
+        async function initFFmpeg() {
+            if (ffmpegInstance) return ffmpegInstance;
+            
+            showToast("Initializing Media Engine... This may take a moment on first run.", "info");
+            
+            const { FFmpeg } = window.FFmpeg;
+            const ffmpeg = new FFmpeg();
+
+            // Set up progress logging
+            ffmpeg.on('progress', ({ progress, time }) => {
+                const percent = Math.min(Math.round(progress * 100), 100);
+                document.getElementById('progress-bar').style.width = `${percent}%`;
+                document.getElementById('progress-percent').innerText = `${percent}%`;
+                
+                // When progress is 0 but it's running, or progress is wonky, show generic loading
+                if(percent > 0) {
+                    document.getElementById('progress-text').innerText = `Processing Media...`;
+                }
+            });
+
+            ffmpeg.on('log', ({ message }) => {
+                console.log(message);
+                if(message.includes("Aborted")) {
+                    showToast("Engine aborted. File might be too large or format unsupported.", "error");
+                }
+            });
+
+            // Use the single-threaded core for universal browser compatibility without COOP/COEP
+            await ffmpeg.load({
+                coreURL: 'https://unpkg.com/@ffmpeg/core@0.12.4/dist/umd/ffmpeg-core.js',
+                wasmURL: 'https://unpkg.com/@ffmpeg/core@0.12.4/dist/umd/ffmpeg-core.wasm'
+            });
+
+            ffmpegInstance = ffmpeg;
+            return ffmpegInstance;
+        }
+
+        function validateProcessButton() {
+            const tool = tools[currentToolId];
+            let isValid = true;
+            tool.inputs.forEach(input => {
+                if (input.type === 'number' || input.type === 'text') {
+                    if (uploadedFiles[input.id] === '' || uploadedFiles[input.id] === undefined) isValid = false;
+                } else {
+                    if (!uploadedFiles[input.id]) isValid = false;
+                    if (input.multiple && uploadedFiles[input.id] && uploadedFiles[input.id].length < 1) isValid = false;
+                }
+            });
+
+            const btn = document.getElementById('btn-process');
+            btn.disabled = !isValid;
+        }
+
+        function setupEventListeners() {
+            // Sidebar link clicks (intercept to prevent reload)
+            document.addEventListener('click', (e) => {
+                const link = e.target.closest('.sidebar-link');
+                if (link) {
+                    e.preventDefault();
+                    selectTool(link.dataset.tool);
+                }
+            });
+
+            // Process Button
+            document.getElementById('btn-process').addEventListener('click', processMedia);
+        }
+
+        async function processMedia() {
+            if (isProcessing || !currentToolId) return;
+
+            const tool = tools[currentToolId];
+            const btn = document.getElementById('btn-process');
+            const progressContainer = document.getElementById('progress-container');
+            
+            isProcessing = true;
+            btn.disabled = true;
+            btn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i> Processing...`;
+            progressContainer.classList.remove('hidden');
+            progressContainer.classList.add('flex');
+            
+            // Reset Progress
+            document.getElementById('progress-bar').style.width = `0%`;
+            document.getElementById('progress-percent').innerText = `0%`;
+            document.getElementById('progress-text').innerText = `Preparing...`;
+            resetOutput();
+
+            try {
+                const ffmpeg = await initFFmpeg();
+                
+                // Clear previous files in virtual FS to prevent memory issues
+                try {
+                    const list = await ffmpeg.listDir('/');
+                    for(const item of list) {
+                        if(!item.isDir) {
+                            await ffmpeg.deleteFile(item.name);
+                        }
+                    }
+                } catch(e) { console.log("FS cleanup warning", e); }
+
+                document.getElementById('progress-text').innerText = `Running Task...`;
+
+                // Execute tool specific logic
+                const result = await tool.action(ffmpeg, uploadedFiles);
+
+                // Handle Output
+                await handleSuccessOutput(ffmpeg, result);
+                
+                showToast("Processing completed successfully!", "success");
+
+            } catch (error) {
+                console.error(error);
+                showToast(error.message || "An error occurred during processing.", "error");
+            } finally {
+                isProcessing = false;
+                validateProcessButton();
+                btn.innerHTML = `<i class="fa-solid fa-microchip"></i> Start Processing`;
+                progressContainer.classList.add('hidden');
+                progressContainer.classList.remove('flex');
+            }
+        }
+
+        // ---------------------------------------------------------
+        // ---------------------------------------------------------
+
+        async function handleSuccessOutput(ffmpeg, result) {
+            let blob;
+            
+            if(result.isBlob) {
+                blob = result.blob;
+            } else {
+                // Read from virtual FS
+                const data = await ffmpeg.readFile(result.name);
+                blob = new Blob([data.buffer], { type: result.type });
+            }
+            
+            // Clean up old object url
+            if(objectUrlCache) {
+                URL.revokeObjectURL(objectUrlCache);
+            }
+            
+            objectUrlCache = URL.createObjectURL(blob);
+
+            const outputContainer = document.getElementById('output-container');
+            const previewArea = document.getElementById('media-preview');
+            const downloadBtn = document.getElementById('btn-download');
+
+            previewArea.innerHTML = ''; // Clear
+
+            // Generate Preview based on mime type
+            if (result.type.startsWith('image/')) {
+                previewArea.innerHTML = `<img src="${objectUrlCache}" alt="Output" class="max-w-full max-h-[400px] object-contain rounded-lg">`;
+            } else if (result.type.startsWith('video/')) {
+                previewArea.innerHTML = `<video src="${objectUrlCache}" controls class="w-full rounded-lg max-h-[400px]"></video>`;
+            } else if (result.type.startsWith('audio/')) {
+                previewArea.innerHTML = `<div class="p-8 w-full"><audio src="${objectUrlCache}" controls class="w-full"></audio></div>`;
+            } else if (result.type === 'application/zip') {
+                previewArea.innerHTML = `
+                    <div class="text-center p-8">
+                        <i class="fa-solid fa-file-zipper text-6xl text-primary mb-4"></i>
+                        <p class="text-white font-medium">ZIP Archive Ready</p>
+                        <p class="text-slate-400 text-sm mt-1">Contains extracted frames</p>
+                    </div>`;
+            } else {
+                previewArea.innerHTML = `<p class="text-slate-400">Preview not available for this format.</p>`;
+            }
+
+            // Setup Download
+            downloadBtn.href = objectUrlCache;
+            downloadBtn.download = result.name;
+
+            outputContainer.classList.remove('hidden');
+            outputContainer.classList.add('flex');
+            
+            // Scroll to output
+            outputContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        function resetOutput() {
+            document.getElementById('output-container').classList.add('hidden');
+            document.getElementById('output-container').classList.remove('flex');
+            document.getElementById('media-preview').innerHTML = '';
+        }
+
+        // ---------------------------------------------------------
+        // ---------------------------------------------------------
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            
+            const colors = {
+                success: 'border-emerald-500 bg-emerald-500/10 text-emerald-400',
+                error: 'border-red-500 bg-red-500/10 text-red-400',
+                info: 'border-primary bg-primary/10 text-primary-400'
+            };
+            const icons = {
+                success: 'fa-check-circle',
+                error: 'fa-circle-exclamation',
+                info: 'fa-info-circle'
+            };
+
+            toast.className = `toast-enter flex items-center gap-3 px-5 py-3 rounded-xl border backdrop-blur-md shadow-xl ${colors[type]} max-w-sm`;
+            toast.innerHTML = `
+                <i class="fa-solid ${icons[type]} text-lg"></i>
+                <p class="text-sm font-medium text-white">${message}</p>
+            `;
+
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.classList.replace('toast-enter', 'toast-exit');
+                setTimeout(() => toast.remove(), 300);
+            }, 4000);
+        }
+
+        // Boot
+        window.addEventListener('DOMContentLoaded', init);
+
+    </script>
+</body>
+</html>
