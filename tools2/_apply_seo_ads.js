@@ -295,7 +295,6 @@ function removeExisting(html) {
   return html
     .replace(/<!-- ENVIZION_STATIC_SEO_STYLE_START -->[\s\S]*?<!-- ENVIZION_STATIC_SEO_STYLE_END -->\s*/g, '')
     .replace(/<!-- ENVIZION_STATIC_SEO_START -->[\s\S]*?<!-- ENVIZION_STATIC_SEO_END -->\s*/g, '')
-    .replace(/<!-- ENVIZION_AD_SLOT_START -->[\s\S]*?<!-- ENVIZION_AD_SLOT_END -->\s*/g, '')
     .replace(/<!-- ENVIZION_TRUST_FOOTER_START -->[\s\S]*?<!-- ENVIZION_TRUST_FOOTER_END -->\s*/g, '')
     .replace(/\s*<div class="ads-banner">[\s\S]*?<\/div>\s*/gi, '\n')
     .replace(/\s*<!-- IN-FEED AD -->\s*<div class="hub-ad-slot"[\s\S]*?<\/div>\s*/gi, '\n')

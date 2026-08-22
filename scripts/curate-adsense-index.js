@@ -54,8 +54,6 @@ function removeAds(html, stripUnits = true) {
   html = html.replace(/<script\b[^>]*src=["'][^"']*pagead2\.googlesyndication\.com\/pagead\/js\/adsbygoogle\.js[^"']*["'][^>]*>\s*<\/script>\s*/gi, '');
   html = html.replace(/<meta\b[^>]*(?:name=["']google-adsense-account["'][^>]*|content=["']ca-pub-[^"']+["'][^>]*name=["']google-adsense-account["'])[^>]*>\s*/gi, '');
   if (!stripUnits) return html;
-  html = html.replace(/<!--\s*ENVIZION_AD_SLOT_START\s*-->[\s\S]*?<!--\s*ENVIZION_AD_SLOT_END\s*-->\s*/gi, '');
-  html = html.replace(/<section\b[^>]*class=["'][^"']*envizion-ad-slot[^"']*["'][^>]*>[\s\S]*?<\/section>\s*/gi, '');
   html = html.replace(/<ins\b[^>]*class=["'][^"']*adsbygoogle[^"']*["'][^>]*>[\s\S]*?<\/ins>\s*/gi, '');
   html = html.replace(/<script\b[^>]*>\s*\(\s*adsbygoogle\s*=\s*window\.adsbygoogle[\s\S]*?<\/script>\s*/gi, '');
   return html;
