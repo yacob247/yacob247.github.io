@@ -195,6 +195,17 @@
         .table-card-inner .add-row-btn, .table-card-inner .add-col-btn {
             font-size: 10px; color: #6366f1; cursor: pointer; padding: 2px 6px;
             background: none; border: none; }
+
+        /* Local workspace library */
+        .workspace-overlay { position: fixed; inset: 0; z-index: 100000; display: flex; justify-content: flex-end; background: rgba(0,0,0,.65); backdrop-filter: blur(5px); }
+        .workspace-overlay.hidden { display: none; }
+        .workspace-panel { width: min(560px, 96vw); height: 100%; overflow-y: auto; background: #101014; border-left: 1px solid #2f2f3b; padding: 22px; user-select: text; box-shadow: -20px 0 60px rgba(0,0,0,.45); }
+        .workspace-panel input, .workspace-panel textarea { user-select: text; }
+        .workspace-page-row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 0; border-bottom:1px solid #292934; }
+        .workspace-page-row a { min-width:0; color:#b7d4ff; text-decoration:none; }
+        .workspace-page-row a:hover { text-decoration:underline; }
+        .workspace-page-row small { display:block; color:#71717a; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:330px; }
+        .workspace-tab-active { color:#fff !important; background:#2563eb !important; }
     </style>
   <link href="https://envizion.work/tools2/envizion_playground.html" rel="canonical"/>
   <meta content="Envizion — Playground" property="og:title"/>
@@ -267,6 +278,9 @@
             <a href="envizion_editor.html" class="bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-700 text-zinc-200 hover:text-white px-4 py-2 rounded-xl text-xs font-medium transition flex items-center gap-2">
                 <i class="fa-solid fa-clapperboard text-xs"></i> Editor
             </a>
+            <button class="bg-sky-500/20 hover:bg-sky-500/30 border border-sky-400/30 text-sky-200 px-4 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-2" onclick="toggleWorkspacePanel()" title="Open your local workspace library">
+                <i class="fa-solid fa-folder-open text-xs"></i> My Workspace
+            </button>
             <button class="bg-white hover:bg-zinc-100 text-black px-4 py-2 rounded-full font-semibold text-xs tracking-wide shadow-md transition flex items-center gap-1.5" onclick="triggerUpgrade()">
                 <i class="fa-solid fa-plus text-[10px]"></i> Upgrade
             </button>
@@ -475,6 +489,51 @@
         </div>
     </div>
 
+    <!-- User-owned local workspace library. URLs and names stay in this browser's local storage. -->
+    <div id="workspace-panel" class="workspace-overlay hidden" onclick="if(event.target === this) toggleWorkspacePanel()">
+        <section class="workspace-panel" aria-labelledby="workspace-panel-title">
+            <div class="flex items-start justify-between gap-4 mb-5">
+                <div>
+                    <h2 id="workspace-panel-title" class="text-lg font-bold text-white">My Local Workspace</h2>
+                    <p class="text-xs text-zinc-400 mt-1 leading-relaxed">Saved page names, URLs, and your Envizion directory stay on this device. Opening a saved web page still requires internet access unless the page is available offline.</p>
+                </div>
+                <button class="text-zinc-400 hover:text-white text-xl" onclick="toggleWorkspacePanel()" aria-label="Close workspace">&times;</button>
+            </div>
+
+            <form id="workspace-page-form" class="space-y-2 mb-3" onsubmit="saveWorkspacePage(event)">
+                <input id="workspace-page-name" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-sky-500" placeholder="Page name (for example: My research notes)" autocomplete="off">
+                <div class="flex gap-2">
+                    <input id="workspace-page-url" class="min-w-0 flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-sky-500" placeholder="https://example.com/page" type="text" required>
+                    <button class="bg-sky-500 hover:bg-sky-400 text-white rounded-lg px-3 py-2 text-xs font-bold" type="submit">Save page</button>
+                </div>
+            </form>
+            <div class="flex flex-wrap gap-2 mb-5">
+                <button class="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg px-3 py-2 text-xs" onclick="captureCurrentWorkspacePage()" type="button">Capture this page</button>
+                <button class="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg px-3 py-2 text-xs" onclick="exportWorkspacePages()" type="button">Export list</button>
+                <button class="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg px-3 py-2 text-xs" onclick="document.getElementById('workspace-import-input').click()" type="button">Import list</button>
+                <input id="workspace-import-input" type="file" accept="application/json" class="hidden" onchange="importWorkspacePages(this)">
+            </div>
+
+            <label for="workspace-bulk-urls" class="block text-xs font-semibold text-zinc-300 mb-1">Add several URLs at once</label>
+            <textarea id="workspace-bulk-urls" rows="3" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-sky-500 mb-2" placeholder="Paste one URL per line. Names default to the page host until you rename them."></textarea>
+            <button class="bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg px-3 py-2 text-xs font-bold mb-5" onclick="addWorkspaceBulkUrls()" type="button">Add URLs</button>
+
+            <div class="flex gap-2 border-b border-zinc-800 pb-3 mb-3" role="tablist" aria-label="Workspace sections">
+                <button id="workspace-tab-saved" class="workspace-tab-active rounded-lg px-3 py-2 text-xs font-bold" onclick="setWorkspaceTab('saved')" type="button">Saved pages</button>
+                <button id="workspace-tab-directory" class="bg-zinc-900 text-zinc-400 rounded-lg px-3 py-2 text-xs font-bold" onclick="setWorkspaceTab('directory')" type="button">Envizion directory</button>
+            </div>
+            <div id="workspace-saved-view">
+                <div class="flex items-center justify-between mb-2"><h3 class="text-sm font-semibold text-zinc-200">Your pages</h3><span id="workspace-page-count" class="text-[11px] text-zinc-500">0 saved</span></div>
+                <div id="workspace-saved-pages" class="text-xs text-zinc-400">No pages saved yet.</div>
+            </div>
+            <div id="workspace-directory-view" class="hidden">
+                <input id="workspace-directory-search" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-sky-500 mb-3" placeholder="Search all Envizion pages" oninput="filterWorkspaceDirectory(this.value)">
+                <div id="workspace-directory-status" class="text-xs text-zinc-500 mb-2">Open this tab to load the directory.</div>
+                <div id="workspace-directory-pages" class="text-xs text-zinc-400"></div>
+            </div>
+        </section>
+    </div>
+
     <!-- Fullscreen Preview Modal -->
     <div id="preview-modal" class="hidden">
         <div id="preview-modal-inner"></div>
@@ -531,6 +590,257 @@
 
         // blob cache: cardId -> { blob, objectUrl, fileName, mimeType }
         const blobCache = {};
+
+        /* ── User-owned local workspace library ──────────────────────────────
+           This library intentionally uses localStorage only for page metadata.
+           Nothing is uploaded to Envizion, and the saved links remain on the
+           visitor's device. Web pages themselves still need network access. */
+        const WORKSPACE_PAGES_KEY = 'envizion_local_workspace_pages_v1';
+        const WORKSPACE_PROJECT_NAME_KEY = 'envizion_local_workspace_project_name_v1';
+        let workspacePages = readWorkspacePages();
+        let workspaceDirectory = [];
+        let workspaceDirectoryLoaded = false;
+
+        function readWorkspacePages() {
+            try {
+                const saved = JSON.parse(localStorage.getItem(WORKSPACE_PAGES_KEY) || '[]');
+                return Array.isArray(saved) ? saved.filter(p => p && p.url && p.name) : [];
+            } catch (e) {
+                return [];
+            }
+        }
+
+        function persistWorkspacePages() {
+            try {
+                localStorage.setItem(WORKSPACE_PAGES_KEY, JSON.stringify(workspacePages));
+                return true;
+            } catch (e) {
+                showNotification('This browser blocked local storage. Your list was not saved.');
+                return false;
+            }
+        }
+
+        function escapeWorkspaceText(value) {
+            return String(value || '').replace(/[&<>'"]/g, function(ch) {
+                return ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'})[ch];
+            });
+        }
+
+        function normalizeWorkspaceUrl(raw) {
+            let value = String(raw || '').trim();
+            if (/^[\w.-]+\.[A-Za-z]{2,}(\/|$)/.test(value)) value = 'https://' + value;
+            const url = new URL(value, window.location.href);
+            if (!['http:', 'https:', 'file:'].includes(url.protocol)) throw new Error('Only web or local file URLs can be saved.');
+            return url.href;
+        }
+
+        function addWorkspacePage(name, rawUrl) {
+            const url = normalizeWorkspaceUrl(rawUrl);
+            const cleanName = String(name || '').trim() || new URL(url).hostname || new URL(url).pathname;
+            const existing = workspacePages.find(p => p.url === url);
+            if (existing) {
+                existing.name = cleanName;
+                existing.updatedAt = new Date().toISOString();
+            } else {
+                workspacePages.unshift({ id: 'page-' + Date.now() + '-' + Math.floor(Math.random() * 10000), name: cleanName, url, createdAt: new Date().toISOString(), lastOpened: null });
+            }
+            persistWorkspacePages();
+            renderWorkspacePages();
+        }
+
+        window.saveWorkspacePage = function(event) {
+            event.preventDefault();
+            const name = document.getElementById('workspace-page-name').value;
+            const url = document.getElementById('workspace-page-url').value;
+            try {
+                addWorkspacePage(name, url);
+                document.getElementById('workspace-page-name').value = '';
+                document.getElementById('workspace-page-url').value = '';
+                showNotification('Page saved to your local workspace.');
+            } catch (e) {
+                showNotification(e.message || 'Could not save that URL.');
+            }
+        };
+
+        window.captureCurrentWorkspacePage = function() {
+            try {
+                addWorkspacePage(document.title || 'Current Envizion page', window.location.href);
+                showNotification('Current page captured with its title.');
+            } catch (e) {
+                showNotification('Could not capture this page.');
+            }
+        };
+
+        window.addWorkspaceBulkUrls = function() {
+            const input = document.getElementById('workspace-bulk-urls');
+            const urls = input.value.split(/\r?\n/).map(v => v.trim()).filter(Boolean);
+            if (!urls.length) { showNotification('Paste one or more URLs first.'); return; }
+            let added = 0;
+            urls.forEach(url => {
+                try { addWorkspacePage('', url); added++; } catch (e) { /* skip invalid lines */ }
+            });
+            input.value = '';
+            showNotification(`Added ${added} URL${added === 1 ? '' : 's'} to your workspace.`);
+        };
+
+        window.toggleWorkspacePanel = function() {
+            const panel = document.getElementById('workspace-panel');
+            panel.classList.toggle('hidden');
+            if (!panel.classList.contains('hidden')) renderWorkspacePages();
+        };
+
+        window.deleteWorkspacePage = function(id) {
+            workspacePages = workspacePages.filter(p => p.id !== id);
+            persistWorkspacePages();
+            renderWorkspacePages();
+        };
+
+        window.renameWorkspacePage = function(id) {
+            const page = workspacePages.find(p => p.id === id);
+            if (!page) return;
+            const nextName = prompt('Rename saved page:', page.name);
+            if (nextName && nextName.trim()) {
+                page.name = nextName.trim();
+                persistWorkspacePages();
+                renderWorkspacePages();
+            }
+        };
+
+        window.openWorkspacePage = function(id) {
+            const page = workspacePages.find(p => p.id === id);
+            if (!page) return;
+            page.lastOpened = new Date().toISOString();
+            persistWorkspacePages();
+            window.open(page.url, '_blank', 'noopener');
+        };
+
+        function renderWorkspacePages() {
+            const list = document.getElementById('workspace-saved-pages');
+            const count = document.getElementById('workspace-page-count');
+            if (!list || !count) return;
+            count.textContent = `${workspacePages.length} saved`;
+            list.innerHTML = '';
+            if (!workspacePages.length) {
+                list.textContent = 'No pages saved yet. Add a URL or capture the current page.';
+                return;
+            }
+            workspacePages.forEach(page => {
+                const row = document.createElement('div');
+                row.className = 'workspace-page-row';
+                const info = document.createElement('a');
+                info.href = page.url;
+                info.target = '_blank';
+                info.rel = 'noopener';
+                info.innerHTML = `<strong>${escapeWorkspaceText(page.name)}</strong><small>${escapeWorkspaceText(page.url)}</small>`;
+                const actions = document.createElement('div');
+                actions.className = 'flex gap-1 shrink-0';
+                const rename = document.createElement('button');
+                rename.className = 'bg-zinc-800 hover:bg-zinc-700 rounded px-2 py-1 text-[10px] text-zinc-300';
+                rename.textContent = 'Rename';
+                rename.onclick = () => renameWorkspacePage(page.id);
+                const remove = document.createElement('button');
+                remove.className = 'bg-rose-950/60 hover:bg-rose-900 rounded px-2 py-1 text-[10px] text-rose-200';
+                remove.textContent = 'Remove';
+                remove.onclick = () => deleteWorkspacePage(page.id);
+                actions.append(rename, remove);
+                row.append(info, actions);
+                list.appendChild(row);
+            });
+        }
+
+        window.setWorkspaceTab = function(tab) {
+            const saved = tab === 'saved';
+            document.getElementById('workspace-saved-view').classList.toggle('hidden', !saved);
+            document.getElementById('workspace-directory-view').classList.toggle('hidden', saved);
+            document.getElementById('workspace-tab-saved').classList.toggle('workspace-tab-active', saved);
+            document.getElementById('workspace-tab-directory').classList.toggle('workspace-tab-active', !saved);
+            if (!saved && !workspaceDirectoryLoaded) loadWorkspaceDirectory();
+        };
+
+        function loadWorkspaceDirectory() {
+            const status = document.getElementById('workspace-directory-status');
+            status.textContent = 'Loading Envizion pages...';
+            fetch('/workspace-pages.json').then(r => r.json()).then(items => {
+                workspaceDirectory = Array.isArray(items) ? items : [];
+                workspaceDirectoryLoaded = true;
+                renderWorkspaceDirectory('');
+            }).catch(() => {
+                fetch('/search-index.json').then(r => r.json()).then(items => {
+                    workspaceDirectory = Array.isArray(items) ? items : [];
+                    workspaceDirectoryLoaded = true;
+                    status.textContent = 'Showing the searchable directory. The complete page manifest is unavailable offline.';
+                    renderWorkspaceDirectory('');
+                }).catch(() => {
+                    workspaceDirectory = [
+                        { title: 'Envizion Home', url: '/' },
+                        { title: 'Reviews & Blog', url: '/reviews-blog/' },
+                        { title: 'All Tools', url: '/tools/' },
+                        { title: 'Tools2', url: '/tools2/' },
+                        { title: 'Guides', url: '/guides/' },
+                        { title: 'Envizion Playground', url: '/tools2/envizion_playground.html' },
+                        { title: 'Envizion Editor', url: '/tools2/envizion_editor.html' }
+                    ];
+                    workspaceDirectoryLoaded = true;
+                    status.textContent = 'Showing the core directory. Saved pages remain available offline.';
+                    renderWorkspaceDirectory('');
+                });
+            });
+        }
+
+        window.filterWorkspaceDirectory = function(query) { renderWorkspaceDirectory(query); };
+
+        function renderWorkspaceDirectory(query) {
+            const list = document.getElementById('workspace-directory-pages');
+            const status = document.getElementById('workspace-directory-status');
+            if (!list || !status) return;
+            const q = String(query || '').toLowerCase().trim();
+            const hits = workspaceDirectory.filter(item => !q || `${item.title || ''} ${item.url || ''} ${item.desc || ''}`.toLowerCase().includes(q)).slice(0, 120);
+            status.textContent = `${hits.length} page${hits.length === 1 ? '' : 's'} shown${workspaceDirectory.length > hits.length ? ' (type to filter)' : ''}.`;
+            list.innerHTML = '';
+            hits.forEach(item => {
+                const row = document.createElement('div');
+                row.className = 'workspace-page-row';
+                const link = document.createElement('a');
+                link.href = item.url || '#';
+                link.target = '_blank';
+                link.rel = 'noopener';
+                link.innerHTML = `<strong>${escapeWorkspaceText(item.title || 'Envizion page')}</strong><small>${escapeWorkspaceText(item.url || '')}</small>`;
+                const save = document.createElement('button');
+                save.className = 'bg-indigo-600 hover:bg-indigo-500 rounded px-2 py-1 text-[10px] text-white shrink-0';
+                save.textContent = 'Save';
+                save.onclick = () => { try { addWorkspacePage(item.title || '', item.url); showNotification('Directory page saved.'); } catch (e) { showNotification('Could not save that page.'); } };
+                row.append(link, save);
+                list.appendChild(row);
+            });
+        }
+
+        window.exportWorkspacePages = function() {
+            const blob = new Blob([JSON.stringify(workspacePages, null, 2)], { type: 'application/json' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'envizion-workspace-pages.json';
+            link.click();
+            URL.revokeObjectURL(link.href);
+        };
+
+        window.importWorkspacePages = function(input) {
+            const file = input.files && input.files[0];
+            if (!file) return;
+            file.text().then(text => {
+                const imported = JSON.parse(text);
+                if (!Array.isArray(imported)) throw new Error('Invalid workspace list');
+                imported.forEach(item => { if (item && item.url) { try { addWorkspacePage(item.name, item.url); } catch (e) {} } });
+                renderWorkspacePages();
+                showNotification('Workspace list imported on this device.');
+            }).catch(() => showNotification('Could not import that workspace list.'));
+            input.value = '';
+        };
+
+        renderWorkspacePages();
+        try {
+            const savedProjectName = localStorage.getItem(WORKSPACE_PROJECT_NAME_KEY);
+            if (savedProjectName) document.getElementById('project-title-display').textContent = savedProjectName;
+        } catch (e) {}
 
         // Body-level drag & drop for ANY file type
         document.body.addEventListener('dragover', e => { e.preventDefault(); document.body.classList.add('drag-over'); });
@@ -1702,6 +2012,7 @@
             const newName = prompt("Rename active workspace project name:", currentName);
             if(newName && newName.trim() !== '') {
                 document.getElementById('project-title-display').textContent = newName.trim();
+                try { localStorage.setItem(WORKSPACE_PROJECT_NAME_KEY, newName.trim()); } catch (e) {}
                 showNotification("Project renamed successfully.");
             }
         }
@@ -1890,7 +2201,7 @@
 <h3 style="margin:1.5rem 0 0.8rem;font-size:1.3rem;font-weight:700;">Why Use a Browser Sandbox</h3>
 <p style="line-height:1.8;color:#334155;margin-bottom:1rem;">Browser-based sandboxes eliminate the friction of traditional development setup. There is no need to install editors, configure servers, or manage project files. This makes them ideal for learning, teaching, and rapid exploration of new technologies. The Envizion Playground is particularly useful for front-end developers who want to test browser API features, CSS techniques, or JavaScript patterns in isolation.</p>
 <h3 style="margin:1.5rem 0 0.8rem;font-size:1.3rem;font-weight:700;">Getting Started</h3>
-<p style="line-height:1.8;color:#334155;margin-bottom:1rem;">Simply open the tool and begin typing your code. The interface is designed to be intuitive, with clear sections for HTML, CSS, and JavaScript input. Results appear instantly in the preview pane. There is no sign-up required, and your work is not saved on any server, ensuring complete privacy for your experiments.</p>
+<p style="line-height:1.8;color:#334155;margin-bottom:1rem;">Simply open the tool and begin typing your code. The interface is designed to be intuitive, with clear sections for HTML, CSS, and JavaScript input. Results appear instantly in the preview pane. There is no sign-up required. Your saved page names and URLs can remain in this browser's local storage, while your code and files are not uploaded by the workspace library.</p>
 </section>
 <main>
 
@@ -1898,7 +2209,7 @@
 <p style="line-height:1.8;color:#334155;margin-bottom:1rem;">This sandbox environment lets you experiment with code and UI designs in real-time. You can test HTML structures, CSS layouts, and JavaScript functions without setting up any development tools. The instant preview updates as you type, making it perfect for learning, prototyping, and debugging.</p>
 <h3 style="font-size:1.3rem;font-weight:700;color:#0f172a;margin:1.5rem 0 0.8rem;">Who Benefits Most</h3>
 <p style="line-height:1.8;color:#334155;margin-bottom:1rem;">Web developers can quickly test code snippets. Designers can experiment with layouts. Students can practice coding concepts. Educators can demonstrate web technologies live. The zero-setup nature makes it ideal for workshops, tutorials, and quick experimentation.</p>
-<p style="line-height:1.8;color:#334155;margin-bottom:1rem;">All processing is local and private. No code is sent to any server. Your experiments remain confidential. Close the tab and everything disappears. This tool is for unrestricted creative exploration of web technologies.</p>
+<p style="line-height:1.8;color:#334155;margin-bottom:1rem;">All board interaction is local and private. No code is sent to a server by the workspace library. Saved URLs remain on the device until you remove them or clear this browser's site data. The pages you open may still require an internet connection.</p>
 <p>The playground supports multiple input panels that can be arranged to suit your workflow. You can focus on a single technology or work across HTML, CSS, and JavaScript simultaneously. The environment is designed to mimic a full development workspace while eliminating setup friction. Use it to validate concepts before committing to a full implementation.</p>
 </section>
 </main>
