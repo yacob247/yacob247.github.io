@@ -72,7 +72,7 @@
   }
 
   function applyChatGptGreyTheme() {
-    document.querySelectorAll('.envizion-static-seo, .envizion-ad-slot, .envizion-guide-popup').forEach((el) => {
+    document.querySelectorAll('.envizion-static-seo, .envizion-guide-popup').forEach((el) => {
       Object.entries(CHATGPT_GREY_THEME).forEach(([key, value]) => {
         el.style.setProperty(key, value);
       });

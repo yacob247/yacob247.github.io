@@ -115,10 +115,6 @@ function paletteStyle(file) {
   ].join(';');
 }
 
-function adEligible(file) {
-  return !trustFiles.has(file);
-}
-
 function workflowNoun(category) {
   const lower = category.toLowerCase();
   if (lower.includes('pdf')) return 'document preparation';
@@ -195,24 +191,6 @@ function siteFooter() {
 <!-- ENVIZION_TRUST_FOOTER_END -->`;
 }
 
-function adBlock(file) {
-  if (!adEligible(file)) return '';
-  return `
-<!-- ENVIZION_AD_SLOT_START -->
-<section class="envizion-ad-slot" aria-label="Advertisement" style="${paletteStyle(file)}">
-  <div class="envizion-ad-box">
-    <span class="envizion-ad-label">Advertisement</span>
-    <ins class="adsbygoogle"
-         style="display:block"
-         data-ad-client="${adClient}"
-         data-ad-slot="${adSlot}"
-         data-ad-format="auto"
-         data-full-width-responsive="true"></ins>
-  </div>
-</section>
-<!-- ENVIZION_AD_SLOT_END -->`;
-}
-
 function seoSection(file, item) {
   const [name, category, description, features, steps] = item;
   const cases = useCases(name, category);
@@ -272,7 +250,7 @@ function seoSection(file, item) {
         <div><dt>How do I use this tool?</dt><dd>${escapeHtml(steps.join(' '))}</dd></div>
         <div><dt>What is this page best for?</dt><dd>${escapeHtml(description)}</dd></div>
         <div><dt>Are my files uploaded?</dt><dd>These tools are designed around local browser workflows where supported. If a page uses a third-party library or browser API, review your browser permissions and keep sensitive originals until you have verified the output.</dd></div>
-        <div><dt>Does this page include ads?</dt><dd>${adEligible(file) ? 'Yes. The page includes a restrained AdSense slot using the configured Envizion publisher client and shared ad styling.' : 'No ad unit is placed on this publisher information page.'}</dd></div>
+        <div><dt>Does this page include ads?</dt><dd>No. Envizion tools do not place in-page advertisement slots.</dd></div>
         <div><dt>Where is the published page?</dt><dd>${baseUrl}${escapeHtml(file)}</dd></div>
       </dl>
       <h3>Publisher and privacy links</h3>
@@ -340,9 +318,6 @@ function removeExisting(html) {
 
 function headInsert(file, item) {
   const [name, , description] = item;
-  const adsScript = adEligible(file)
-    ? `  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${adClient}" crossorigin="anonymous"></script>\n`
-    : '';
   return `  <meta name="description" content="${escapeHtml(description)}">
   <meta name="robots" content="index, follow, max-image-preview:large">
   <link rel="canonical" href="${baseUrl}${escapeHtml(file)}">
@@ -351,7 +326,7 @@ function headInsert(file, item) {
   <meta property="og:type" content="website">
   <meta name="twitter:card" content="summary_large_image">
   <link rel="stylesheet" href="toolkit-common.css">
-${adsScript}  <script type="application/ld+json" id="envizion-tool-schema">${JSON.stringify(schema(file, item))}</script>
+  <script type="application/ld+json" id="envizion-tool-schema">${JSON.stringify(schema(file, item))}</script>
 `;
 }
 
@@ -369,7 +344,7 @@ for (const file of fs.readdirSync(dir).filter((name) => name.endsWith('.html')))
     html = html.replace(/<body\b/i, `${headMarkup}</head>\n<body`);
   }
 
-  const endMarkup = `${adBlock(file)}\n${seoSection(file, item)}\n${siteFooter()}\n  <script src="toolkit-enhance.js"></script>`;
+  const endMarkup = `${seoSection(file, item)}\n${siteFooter()}\n  <script src="toolkit-enhance.js"></script>`;
   if (/<\/body>/i.test(html)) {
     html = html.replace(/<\/body>/i, `${endMarkup}\n</body>`);
   } else if (/<\/html>/i.test(html)) {
