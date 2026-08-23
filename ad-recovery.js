@@ -5,7 +5,7 @@
   function markStatus() {
     document.documentElement.dataset.envizionAdRecovery = "content-available";
     document.querySelectorAll("[data-format='push'], [data-format='video-slider'], [data-format='vast-3.0']").forEach(function (slot) {
-      if (!slot.querySelector("iframe, video, embed")) {
+      if (!slot.querySelector("iframe, video, embed, img, object, canvas")) {
         slot.setAttribute("data-ad-status", "unavailable");
       }
     });

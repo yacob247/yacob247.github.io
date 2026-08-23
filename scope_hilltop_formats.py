@@ -22,13 +22,35 @@ EXCLUDED_NAMES = {
     "404.html",
 }
 
+EXCLUDED_NAME_PARTS = (
+    "index",
+    "about",
+    "contact",
+    "privacy",
+    "terms",
+    "disclaimer",
+    "editorial",
+    "login",
+    "signup",
+    "unsubscribe",
+    "admin",
+    "404",
+)
+
+SKIP_DIR_PARTS = {
+    ".git",
+    ".agents",
+    ".codex",
+    "node_modules",
+}
+
 VAST_TAG = "https://subtle-injury.com/d.mOFCzWdrG/NcvdZDGOUT/kesmM9gudZGUDlfk/PITOcNzuNlDnAnwjMBD/kFttNmzeMr0UMsDVA-x/Mmwm"
 VAST_TAG_2 = "https://subtle-injury.com/dGm-Fez/d.G_NvvnZAGjUP/Begm/9PuGZIUGlRkeP/T/cHzYNfDRAvwRMrDZkktDN/zxMK0UMxDpAex/MYy/ZCsQatWx1/pkdoDE0KxW"
 VAST_TAG_3 = "https://subtle-injury.com/drmYFKz.d/GNNdvDZgGkUn/ceKmg9_uUZQUxlKkMPVT/ckzLN/D_Aww/MZD-k/t/N/zOM/0NMADvAAx/MJwF"
 SMARTLINK = "https://plump-plastic.com/bk3OV_0XP.3BpJvCbnm/VjJ/ZcDq0R3OMvzUM/5tN/T/Ew3/LpTlcoz/M/zgk/1AMPjuE-"
 
 COMPARISON_BLOCK = '''<!-- ENVIZION_AD_NETWORK_COMPARISON_PROMO_V1 -->
-<aside aria-label="Envizion comparison tool" style="max-width:960px;margin:24px auto 0;padding:16px 18px;border:1px solid #bfdbfe;border-radius:12px;background:#eff6ff;color:#1e3a8a;clear:both;">
+<aside class="envizion-ad-network-comparison-promo" aria-label="Envizion comparison tool" style="max-width:960px;margin:24px auto 0;padding:16px 18px;border:1px solid #bfdbfe;border-radius:12px;background:#eff6ff;color:#1e3a8a;clear:both;">
   <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;">
     <div><strong>Compare ad networks for your site</strong><br><span style="font-size:.9rem;">Use Envizion's free calculator—no Envizion account is required.</span></div>
     <a href="/guides/ad-network-comparison.html" style="display:inline-block;padding:9px 13px;border-radius:8px;background:#2563eb;color:#fff;font-weight:700;text-decoration:none;">Open comparison tool</a>
@@ -44,13 +66,37 @@ STATIC_BANNER = '''<!-- HILLTOPADS_STATIC_BANNER_V1 -->
 </aside>'''
 
 NON_POP_BUNDLE = f'''{NON_POP_MARKER}
-<section class="envizion-hilltop-formats" aria-label="Sponsored content" style="max-width:1100px;margin:20px auto;padding:10px;text-align:center;clear:both;position:relative;z-index:2;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;align-items:start;">
+<section class="envizion-hilltop-formats" aria-label="Sponsored content" style="max-width:1100px;margin:20px auto;padding:10px;text-align:center;clear:both;position:relative;z-index:2;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start;">
   <style>
-    .envizion-hilltop-formats > div {{ min-width:0; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; overflow:hidden; }}
-    .envizion-hilltop-formats img, .envizion-hilltop-formats iframe, .envizion-hilltop-formats video {{ max-width:100%; height:auto; }}
-    .envizion-hilltop-formats .envizion-hilltop-smartlink {{ grid-column:1/-1; justify-self:center; }}
-    @media (max-width:760px) {{ .envizion-hilltop-formats {{ grid-template-columns:1fr; }} .envizion-hilltop-formats .envizion-hilltop-smartlink {{ grid-column:auto; }} }}
+    .envizion-hilltop-formats > .envizion-hilltop-left-rail, .envizion-hilltop-formats > .envizion-hilltop-right-rail {{ min-width:0; display:grid; gap:16px; align-content:start; align-items:start; width:100%; max-width:300px; padding:12px; border:1px solid #dbe3ef; border-radius:14px; background:#fff; box-shadow:0 8px 24px rgba(15,23,42,.08); transition:transform .22s ease, opacity .22s ease; }}
+    .envizion-hilltop-formats > .envizion-hilltop-left-rail {{ justify-self:end; }}
+    .envizion-hilltop-formats > .envizion-hilltop-right-rail {{ justify-self:start; }}
+    .envizion-hilltop-formats .envizion-hilltop-left-rail > div, .envizion-hilltop-formats .envizion-hilltop-right-rail > div {{ min-width:0; min-height:0; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; overflow:hidden; }}
+    .envizion-hilltop-formats [data-ad-status="unavailable"] {{ display:none !important; }}
+    .envizion-hilltop-formats img, .envizion-hilltop-formats iframe, .envizion-hilltop-formats video {{ width:100%; max-width:100%; height:auto; }}
+    .envizion-hilltop-formats iframe {{ height:250px; }}
+    .envizion-hilltop-formats .envizion-hilltop-smartlink {{ justify-self:stretch; text-align:center; white-space:nowrap; }}
+    .envizion-hilltop-rail-toggle {{ justify-self:end; border:0; border-radius:999px; padding:7px 12px; background:#0f172a; color:#fff; font:700 12px/1 system-ui,sans-serif; cursor:pointer; box-shadow:0 6px 16px rgba(15,23,42,.18); }}
+    .envizion-hilltop-right-rail > .envizion-hilltop-rail-toggle {{ justify-self:start; }}
+    .envizion-hilltop-left-rail.envizion-hilltop-collapsed {{ transform:translateX(calc(-100% + 56px)); opacity:.72; }}
+    .envizion-hilltop-right-rail.envizion-hilltop-collapsed {{ transform:translateX(calc(100% - 56px)); opacity:.72; }}
+    .envizion-hilltop-collapsed > :not(.envizion-hilltop-rail-toggle) {{ pointer-events:none; }}
+    @media (max-width:760px) {{ .envizion-hilltop-formats {{ grid-template-columns:1fr; }} .envizion-hilltop-formats > .envizion-hilltop-left-rail, .envizion-hilltop-formats > .envizion-hilltop-right-rail {{ justify-self:stretch; max-width:none; }} }}
+    @media (min-width:900px) {{
+      body:has(.envizion-hilltop-layout):has(.page) {{ margin:0; display:grid !important; grid-template-columns:minmax(260px,1fr) minmax(0,860px) minmax(260px,1fr); column-gap:0; align-items:start; }}
+      body:has(.envizion-hilltop-layout):has(.page) > nav.site-nav {{ grid-column:1/-1; grid-row:1; }}
+      body:has(.envizion-hilltop-layout):has(.page) > main.page {{ grid-column:2; grid-row:2; width:100%; max-width:none; min-width:0; margin:0; }}
+      body:has(.envizion-hilltop-layout):has(.page) > footer {{ grid-column:1/-1; grid-row:8; }}
+      body:has(.envizion-hilltop-layout):has(.page) > .envizion-hilltop-layout {{ display:contents; }}
+      body:has(.envizion-hilltop-layout):has(.page) .envizion-hilltop-layout > .envizion-ad-network-comparison-promo {{ grid-column:2; grid-row:3; width:100%; margin:20px 0 0; }}
+      body:has(.envizion-hilltop-layout):has(.page) .envizion-hilltop-formats {{ display:contents !important; }}
+      body:has(.envizion-hilltop-layout):has(.page) .envizion-hilltop-formats > .envizion-hilltop-left-rail {{ grid-column:1; grid-row:2/4; position:sticky; top:20px; justify-self:start; width:min(360px,100%); max-width:360px; border-radius:0 14px 14px 0; }}
+      body:has(.envizion-hilltop-layout):has(.page) .envizion-hilltop-formats > .envizion-hilltop-right-rail {{ grid-column:3; grid-row:2/4; position:sticky; top:20px; justify-self:end; width:min(360px,100%); max-width:360px; border-radius:14px 0 0 14px; }}
+    }}
   </style>
+  <div class="envizion-hilltop-left-rail">
+    <button type="button" class="envizion-hilltop-rail-toggle" aria-expanded="true" onclick="var rail=this.closest('.envizion-hilltop-left-rail, .envizion-hilltop-right-rail'); var c=rail.classList.toggle('envizion-hilltop-collapsed'); this.textContent=c?'Show ads':'Hide ads'; this.setAttribute('aria-expanded',(!c).toString());">Hide ads</button>
+    {STATIC_BANNER}
   <div class="envizion-hilltop-push" data-format="push">
     <script>
     (function(vyq){{
@@ -99,6 +145,9 @@ NON_POP_BUNDLE = f'''{NON_POP_MARKER}
     }})({{}});
     </script>
   </div>
+  </div>
+  <div class="envizion-hilltop-right-rail">
+    <button type="button" class="envizion-hilltop-rail-toggle" aria-expanded="true" onclick="var rail=this.closest('.envizion-hilltop-left-rail, .envizion-hilltop-right-rail'); var c=rail.classList.toggle('envizion-hilltop-collapsed'); this.textContent=c?'Show ads':'Hide ads'; this.setAttribute('aria-expanded',(!c).toString());">Hide ads</button>
   <div class="envizion-hilltop-additional-5" data-format="additional">
     <script>
     (function(hfzm){{
@@ -139,29 +188,23 @@ NON_POP_BUNDLE = f'''{NON_POP_MARKER}
   <div class="envizion-hilltop-vast" data-format="vast-3.0" data-vast-tag="{VAST_TAG_2}"></div>
   <div class="envizion-hilltop-vast" data-format="vast-3.0" data-vast-tag="{VAST_TAG_3}"></div>
   <a class="envizion-hilltop-smartlink" href="{SMARTLINK}" target="_blank" rel="sponsored noopener" referrerpolicy="no-referrer-when-downgrade" style="display:inline-block;margin:12px auto 0;padding:9px 14px;border-radius:8px;background:#2563eb;color:#fff;font-weight:700;text-decoration:none;">View sponsored offer</a>
+  </div>
 </section>
 <script src="/ad-recovery.js" defer></script>
 <!-- END ENVIZION_HILLTOP_NON_POP_FORMATS_V1 -->'''
 
 
 def is_excluded_name(path: Path) -> bool:
-    return path.name.lower() in EXCLUDED_NAMES or path.name.lower().startswith("index")
+    name = path.name.lower()
+    stem = path.stem.lower()
+    return name in EXCLUDED_NAMES or any(part in stem for part in EXCLUDED_NAME_PARTS)
 
 
 def is_target(path: Path) -> bool:
-    rel = path.relative_to(ROOT).as_posix().split("/")
-    if not rel:
+    rel = path.relative_to(ROOT).parts
+    if any(part.lower() in SKIP_DIR_PARTS for part in rel):
         return False
-    top = rel[0].lower()
-    if top == "game":
-        return True
-    if top in {"tools", "tools2", "guides"}:
-        return not is_excluded_name(path)
-    if top != "reviews-blog" or is_excluded_name(path):
-        return False
-    if len(rel) > 1 and rel[1].lower() in {"posts", "games"}:
-        return True
-    return path.name.lower() in {"blog.html", "blog-post.html", "game.html", "gamevaultoriginal.html"}
+    return path.suffix.lower() == ".html" and not is_excluded_name(path)
 
 
 def remove_old_block(html: str) -> str:
@@ -194,7 +237,7 @@ def allow_sources(html: str) -> str:
 def insert_formats(html: str) -> str:
     html = remove_old_block(html)
     static_banner = "" if "static.hilltopads.com" in html else STATIC_BANNER
-    full_bundle = f"{MONETIZATION_START}\n{COMPARISON_BLOCK}\n{static_banner}\n{NON_POP_BUNDLE}\n{MONETIZATION_END}"
+    full_bundle = f"{MONETIZATION_START}\n<div class=\"envizion-hilltop-layout\">\n{COMPARISON_BLOCK}\n{NON_POP_BUNDLE}\n</div>\n{MONETIZATION_END}"
     main = re.search(r"</\s*main\s*>", html, flags=re.IGNORECASE)
     footer = re.search(r"<\s*footer\b[^>]*>", html, flags=re.IGNORECASE)
 
@@ -223,22 +266,23 @@ def trim_blank_line_whitespace(html: str) -> str:
 
 
 def main() -> None:
-    roots = [ROOT / "tools", ROOT / "tools2", ROOT / "reviews-blog", ROOT / "guides", ROOT / "Game"]
     target_count = 0
     excluded_cleaned = 0
-    for base in roots:
-        for path in base.rglob("*.html"):
-            original = path.read_text(encoding="utf-8", errors="ignore")
-            if is_target(path):
-                updated = insert_formats(allow_sources(remove_old_block(original)))
-                target_count += 1
-            else:
-                updated = clean_excluded(original)
-            updated = trim_blank_line_whitespace(updated)
-            if updated != original:
-                path.write_text(updated, encoding="utf-8", newline="")
-                if not is_target(path):
-                    excluded_cleaned += 1
+    for path in ROOT.rglob("*.html"):
+        if any(part.lower() in SKIP_DIR_PARTS for part in path.relative_to(ROOT).parts):
+            continue
+        original = path.read_text(encoding="utf-8", errors="ignore")
+        target = is_target(path)
+        if target:
+            updated = insert_formats(allow_sources(remove_old_block(original)))
+            target_count += 1
+        else:
+            updated = clean_excluded(original)
+        updated = trim_blank_line_whitespace(updated)
+        if updated != original:
+            path.write_text(updated, encoding="utf-8", newline="")
+            if not target:
+                excluded_cleaned += 1
     print(f"Hilltop target pages: {target_count}; excluded pages cleaned: {excluded_cleaned}")
 
 
