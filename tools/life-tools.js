@@ -414,7 +414,7 @@ function updateSelectionVisuals() {
   cells.forEach(c => document.getElementById(`cell-${c}`)?.classList.add('grid-cell-selected'));
   selectedCell = selectionStart;
   document.getElementById("formula-cell-id").textContent = selectedCell;
-  document.getElementById("status-selected-cell").textContent = selectedCell;
+  const statusEl = document.getElementById("status-selected-cell"); if(statusEl) statusEl.textContent = selectedCell;
   const cellObj = (sheets[activeSheet]||{})[selectedCell] || {value:"",formula:""};
   document.getElementById("formula-bar-input").value = cellObj.formula || cellObj.value;
   const bounds = getRangeBounds(selectionStart, selectionEnd);
@@ -913,7 +913,7 @@ function shareCurrentWorkbookByEmail() {
 // SHEET TABS
 // =====================================================================
 function renderSheetTabs() {
-  const container=document.getElementById("sheet-tabs-container");
+  const container=document.getElementById("sheet-tabs");
   container.innerHTML=Object.keys(sheets).map(name=>{
     const isActive=name===activeSheet;
     const cls=isActive?"bg-white dark:bg-slate-900 text-brand-600 shadow-sm font-bold":"text-slate-500";
