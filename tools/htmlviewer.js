@@ -424,7 +424,8 @@ require(['vs/editor/editor.main'], function() {
 
     // Cursor position -> status bar
     editor.onDidChangeCursorPosition(e => {
-        document.getElementById('sb-cursor').textContent = `Ln ${e.position.lineNumber}, Col ${e.position.column}`;
+        const cursorStatus = document.getElementById('sb-cursor');
+        if (cursorStatus) cursorStatus.textContent = `Ln ${e.position.lineNumber}, Col ${e.position.column}`;
     });
 
     // Selection -> status bar
@@ -433,9 +434,11 @@ require(['vs/editor/editor.main'], function() {
         if (!sel.isEmpty()) {
             const chars = editor.getModel()?.getValueInRange(sel).length || 0;
             const lines = sel.endLineNumber - sel.startLineNumber + 1;
-            document.getElementById('sb-selection').textContent = chars > 0 ? `(${chars} selected)` : '';
+            const selectionStatus = document.getElementById('sb-selection');
+            if (selectionStatus) selectionStatus.textContent = chars > 0 ? `(${chars} selected)` : '';
         } else {
-            document.getElementById('sb-selection').textContent = '';
+            const selectionStatus = document.getElementById('sb-selection');
+            if (selectionStatus) selectionStatus.textContent = '';
         }
     });
 
@@ -448,8 +451,10 @@ require(['vs/editor/editor.main'], function() {
             if (m.severity === monaco.MarkerSeverity.Error) errors++;
             else if (m.severity === monaco.MarkerSeverity.Warning) warnings++;
         });
-        document.getElementById('sb-errors').textContent = errors;
-        document.getElementById('sb-warnings').textContent = warnings;
+        const errorStatus = document.getElementById('sb-errors');
+        const warningStatus = document.getElementById('sb-warnings');
+        if (errorStatus) errorStatus.textContent = errors;
+        if (warningStatus) warningStatus.textContent = warnings;
         if (errors > 0 || warnings > 0) {
             markers.forEach(m => logOutput(`${m.severity === monaco.MarkerSeverity.Error ? '✖' : '⚠'} ${m.message} (L${m.startLineNumber})`, m.severity === monaco.MarkerSeverity.Error ? 'error' : 'warn'));
         }
@@ -547,7 +552,8 @@ function changeLanguage() {
     const map = { js: 'javascript', html: 'html', css: 'css', json: 'json', md: 'markdown', markdown: 'markdown' };
     const resolved = map[lang] || lang;
     monaco.editor.setModelLanguage(editor.getModel(), resolved);
-    document.getElementById('sb-language').textContent = resolved.toUpperCase();
+    const languageStatus = document.getElementById('sb-language');
+    if (languageStatus) languageStatus.textContent = resolved.toUpperCase();
 }
 
 function changeIndent() {
@@ -556,7 +562,8 @@ function changeIndent() {
     const n = parseInt(size);
     if (!isNaN(n)) {
         editor.updateOptions({ tabSize: n, insertSpaces: true });
-        document.getElementById('sb-indent').textContent = `Spaces: ${n}`;
+        const indentStatus = document.getElementById('sb-indent');
+        if (indentStatus) indentStatus.textContent = `Spaces: ${n}`;
     }
 }
 
@@ -1250,7 +1257,8 @@ function renameFile(path, e) {
     renderTabs();
     if (activeFile === newPath && isMonacoReady) {
         monaco.editor.setModelLanguage(editor.getModel(), getLang(newPath));
-        document.getElementById('sb-language').textContent = getLang(newPath).toUpperCase();
+        const languageStatus = document.getElementById('sb-language');
+        if (languageStatus) languageStatus.textContent = getLang(newPath).toUpperCase();
     }
     liveServers.forEach(s => { if (s.path === path) s.path = newPath; });
     refreshPreview();
@@ -1314,25 +1322,32 @@ function saveActiveFileAs() {
 // ============================================================
 // FILE UPLOAD / FOLDER OPEN (WITH ROBUST DIRECTORY ITERATION)
 // ============================================================
-function triggerFolderUpload() { document.getElementById('folder-input').click(); }
-function triggerFileUpload() { document.getElementById('file-input').click(); }
+function triggerFolderUpload() {
+    const input = document.getElementById('folder-input');
+    if (input) input.click();
+}
+function triggerFileUpload() {
+    const input = document.getElementById('file-input');
+    if (input) input.click();
+}
 
-document.getElementById('folder-input').addEventListener('change', async e => {
+document.getElementById('folder-input')?.addEventListener('change', async e => {
     const files = Array.from(e.target.files);
     if (!files.length) return;
     vfs = {}; openFiles = []; activeFile = null;
     document.getElementById('editor-tabs').innerHTML = '';
     for (const file of files) {
-        const parts = file.webkitRelativePath.split('/');
-        parts.shift();
-        const path = parts.join('/');
+        const relativePath = file.webkitRelativePath || file.name;
+        const parts = relativePath.split('/');
+        if (parts.length > 1) parts.shift();
+        const path = parts.join('/') || file.name;
         if (path) await processFile(file, path, file.name);
     }
     e.target.value = '';
     finalizeMount();
 });
 
-document.getElementById('file-input').addEventListener('change', async e => {
+document.getElementById('file-input')?.addEventListener('change', async e => {
     const filesArray = Array.from(e.target.files);
     for (const file of filesArray) {
         await processFile(file, file.name, file.name);
@@ -1348,7 +1363,7 @@ document.body.addEventListener('dragleave', e => { if (e.target.id === 'drag-ove
 document.body.addEventListener('drop', async e => {
     e.preventDefault();
     document.body.classList.remove('drag-active');
-    if (e.dataTransfer.items) {
+    if (e.dataTransfer.items && e.dataTransfer.items.length) {
         vfs = {}; openFiles = []; activeFile = null;
         document.getElementById('editor-tabs').innerHTML = '';
         const items = Array.from(e.dataTransfer.items).filter(i => i.kind === 'file');
@@ -1360,6 +1375,13 @@ document.body.addEventListener('drop', async e => {
                 const file = item.getAsFile();
                 await processFile(file, file.name, file.name);
             }
+        }
+        finalizeMount();
+    } else if (e.dataTransfer.files && e.dataTransfer.files.length) {
+        vfs = {}; openFiles = []; activeFile = null;
+        document.getElementById('editor-tabs').innerHTML = '';
+        for (const file of Array.from(e.dataTransfer.files)) {
+            await processFile(file, file.name, file.name);
         }
         finalizeMount();
     }
@@ -1510,7 +1532,8 @@ function openFile(path) {
             monaco.editor.setModelLanguage(editor.getModel(), lang);
             editor.setValue(vfs[path].content || '');
             editor.setScrollPosition({ scrollTop: 0 });
-            document.getElementById('sb-language').textContent = lang.toUpperCase();
+            const languageStatus = document.getElementById('sb-language');
+            if (languageStatus) languageStatus.textContent = lang.toUpperCase();
             applyBookmarkDecorations();
         } else {
             setTimeout(() => openFile(path), 100);
@@ -1780,12 +1803,22 @@ function gitAction(action) {
         sync: 'Sync: no remote configured.',
         branch: () => {
             const name = prompt('New branch name:', 'feature/new-branch');
-            if (name) { gitBranch = name; document.getElementById('sb-branch').textContent = name; return `Switched to new branch: ${name}`; }
+            if (name) {
+                gitBranch = name;
+                const branchStatus = document.getElementById('sb-branch');
+                if (branchStatus) branchStatus.textContent = name;
+                return `Switched to new branch: ${name}`;
+            }
             return null;
         },
         checkout: () => {
             const name = prompt('Branch name:', gitBranch);
-            if (name) { gitBranch = name; document.getElementById('sb-branch').textContent = name; return `Checked out: ${name}`; }
+            if (name) {
+                gitBranch = name;
+                const branchStatus = document.getElementById('sb-branch');
+                if (branchStatus) branchStatus.textContent = name;
+                return `Checked out: ${name}`;
+            }
             return null;
         },
         merge: 'Merge: specify branch in real git CLI.',
