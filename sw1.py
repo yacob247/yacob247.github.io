@@ -1,55 +1,59 @@
 import os
 
-# Define the root path of your website directory
 ROOT_PATH = os.path.dirname(os.path.abspath(__file__))
+EXCLUDED_PAGES = ["about.html", "contact.html", "privacy.html", "terms.html", "codewebabout.html"]
 
-# Strings to search for and remove
-TARGET_STRINGS = [
-    "://nap5k.com",
-    "://5gvci.com",
-    "<!-- Ad Network Script -->",
-    "<!-- Additional Ad Network Script -->"
-]
+# Isolated individual layout blocks to prevent page crashes
+SAFE_CONTAINERS = """    <!-- Isolated Ad Tracking Blocks -->
+    <div id="ad-zone-vignette" style="display:none !important; visibility:hidden !important;">
+        <script>(function(s){s.dataset.zone='11637854',s.src='https://n6wxm.com'})([document.documentElement, document.body].filter(Boolean).pop().appendChild(document.createElement('script')))</script>
+    </div>
+    <div id="ad-zone-tag" style="display:none !important; visibility:hidden !important;">
+        <script>(function(s){s.dataset.zone='11637756',s.src='https://nap5k.com'})([document.documentElement, document.body].filter(Boolean).pop().appendChild(document.createElement('script')))</script>
+    </div>"""
 
-def undo_ad_injection():
-    print(f"Starting complete ad removal sweep in: {ROOT_PATH}")
-    cleaned_count = 0
+def inject_safe_bottom_ads():
+    print(f"Injecting isolated ad containers above </body> in: {ROOT_PATH}")
+    updated_count = 0
     
     for root, dirs, files in os.walk(ROOT_PATH):
-        # Only process inside sub-folders
         if root == ROOT_PATH:
             continue
             
         for file in files:
             if file.lower().endswith('.html'):
-                file_path = os.path.join(root, file)
+                if file.lower() in EXCLUDED_PAGES:
+                    continue
                 
+                file_path = os.path.join(root, file)
                 try:
                     with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                        lines = f.readlines()
+                        content = f.read()
                     
-                    modified = False
-                    cleaned_lines = []
+                    # Duplication Guard Check
+                    if "ad-zone-vignette" in content:
+                        continue
                     
-                    # Scan every line and drop lines that contain our injected script markers
-                    for line in lines:
-                        should_remove = any(target in line for target in TARGET_STRINGS)
-                        if should_remove:
-                            modified = True
-                            continue  # Skip this line to remove it
-                        cleaned_lines.append(line)
-                    
-                    # If we found and stripped the tags, write the clean layout back to disk
-                    if modified:
-                        with open(file_path, 'w', encoding='utf-8') as f:
-                            f.writelines(cleaned_lines)
-                        print(f"Successfully cleaned: {os.path.relpath(file_path, ROOT_PATH)}")
-                        cleaned_count += 1
+                    # Find closing body tag to cleanly insert containers above it
+                    body_index = content.find("</body>")
+                    if body_index == -1:
+                        body_index = content.find("</BODY>")
                         
+                    if body_index != -1:
+                        # Insert safely right before the closing body layout tag
+                        updated_content = content[:body_index] + SAFE_CONTAINERS + "\n" + content[body_index:]
+                        
+                        with open(file_path, 'w', encoding='utf-8') as f:
+                            f.write(updated_content)
+                            
+                        print(f"Safely containerized: {os.path.relpath(file_path, ROOT_PATH)}")
+                        updated_count += 1
+                    else:
+                        print(f"!! Warning: Could not locate </body> tag in {os.path.relpath(file_path, ROOT_PATH)}")
                 except Exception as e:
                     print(f"Error processing {file}: {e}")
 
-    print(f"\nTask Finished. Removed tags from {cleaned_count} files.")
+    print(f"\nTask Finished. Containerized ads injected across {updated_count} pages.")
 
 if __name__ == "__main__":
-    undo_ad_injection()
+    inject_safe_bottom_ads()
