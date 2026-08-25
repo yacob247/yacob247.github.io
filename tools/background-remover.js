@@ -1,4 +1,4 @@
-     lucide.createIcons();
+lucide.createIcons();
 
         // --- Application State ---
         const state = {
@@ -141,10 +141,10 @@
         });
 
         ['dragenter', 'dragover'].forEach(eName => {
-            DOM.uploadContainer.firstElementChild.classList.add('border-indigo-500', 'bg-indigo-50/50');
+            DOM.uploadContainer.addEventListener(eName, () => DOM.uploadContainer.firstElementChild.classList.add('border-indigo-500', 'bg-indigo-50/50'));
         });
         ['dragleave', 'drop'].forEach(eName => {
-            DOM.uploadContainer.firstElementChild.classList.remove('border-indigo-500', 'bg-indigo-50/50');
+            DOM.uploadContainer.addEventListener(eName, () => DOM.uploadContainer.firstElementChild.classList.remove('border-indigo-500', 'bg-indigo-50/50'));
         });
 
         DOM.uploadContainer.addEventListener('drop', e => handleFiles(e.dataTransfer.files));
