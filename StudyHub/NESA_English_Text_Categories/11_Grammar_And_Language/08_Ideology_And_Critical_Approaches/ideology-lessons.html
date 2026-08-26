@@ -374,7 +374,228 @@
 
     </div>
 
-    <footer>
+    
+<!-- MONETAG & HILLTOPADS INTEGRATED AD SYSTEM START -->
+
+<!-- VideoJS + IMA SDK for VAST -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/video.js/8.10.0/video-js.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/video.js/8.10.0/video.min.js"></script>
+<script src="https://imasdk.googleapis.com/js/sdkloader/ima3.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/videojs-contrib-ads/6.9.0/videojs.ads.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/videojs-ima/1.10.1/videojs.ima.min.js"></script>
+
+<!-- ═══════════════════════════════════════════
+     STRATEGY 1: OUTSTREAM VIDEO POPUP
+     Opens as centered popup on load.
+     Skip after 10s → popup collapses/hides,
+     video keeps playing silently in background.
+═══════════════════════════════════════════ -->
+<style>
+#evz-outstream-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.70);z-index:99998;display:flex;align-items:center;justify-content:center;}
+#evz-outstream-wrap{width:560px;max-width:94vw;background:#000;border-radius:12px;overflow:hidden;position:relative;box-shadow:0 8px 40px rgba(0,0,0,0.5);}
+#evz-outstream-vid{width:100%;height:315px;display:block;}
+#evz-outstream-label{position:absolute;top:10px;left:10px;z-index:20;background:rgba(0,0,0,0.6);color:#fff;font:10px system-ui;padding:3px 8px;border-radius:3px;}
+#evz-outstream-skip{position:absolute;bottom:12px;right:12px;z-index:20;background:rgba(0,0,0,0.75);color:#fff;border:none;padding:6px 14px;border-radius:4px;font:12px system-ui;cursor:pointer;display:none;}
+/* Hidden ghost — keeps video alive off-screen after popup closes */
+#evz-outstream-ghost{position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;overflow:hidden;pointer-events:none;}
+</style>
+<div id="evz-outstream-overlay">
+  <div id="evz-outstream-wrap">
+    <span id="evz-outstream-label">Ad</span>
+    <button id="evz-outstream-close" style="position:absolute;top:8px;right:8px;z-index:30;background:rgba(0,0,0,0.7);color:#fff;border:none;border-radius:50%;width:28px;height:28px;font:bold 14px system-ui;cursor:pointer;line-height:28px;text-align:center;">✕</button>
+    <video id="evz-outstream-vid" class="video-js" muted playsinline preload="none"></video>
+    <button id="evz-outstream-skip">Skip Ad ›</button>
+  </div>
+</div>
+<!-- Ghost container video migrates into after skip -->
+<div id="evz-outstream-ghost"></div>
+
+<!-- ═══════════════════════════════════════════
+     STRATEGY 2: REWARDED VIDEO GATE
+     Intercepts download clicks → "Watch to unlock"
+     30s countdown, then releases the download.
+═══════════════════════════════════════════ -->
+<style>
+#evz-rewarded-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.82);z-index:999999;align-items:center;justify-content:center;flex-direction:column;}
+#evz-rewarded-overlay.active{display:flex;}
+#evz-rewarded-box{position:relative;width:520px;max-width:93vw;background:#000;border-radius:14px;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,0.5);}
+#evz-rewarded-vid{width:100%;height:292px;display:block;}
+#evz-rewarded-meta{background:#111;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;}
+#evz-rewarded-meta p{margin:0;color:#e2e8f0;font:13px/1.4 system-ui;flex:1;}
+#evz-rewarded-countdown{font:700 13px system-ui;color:#facc15;white-space:nowrap;}
+#evz-rewarded-skip-btn{background:#2563eb;color:#fff;border:none;padding:8px 18px;border-radius:6px;font:600 13px system-ui;cursor:pointer;white-space:nowrap;display:none;}
+#evz-rewarded-skip-btn:hover{background:#1d4ed8;}
+</style>
+<div id="evz-rewarded-overlay">
+  <div id="evz-rewarded-box">
+    <video id="evz-rewarded-vid" class="video-js" muted playsinline preload="none"></video>
+    <div id="evz-rewarded-meta">
+      <p>🔓 Watch this short ad to unlock your download</p>
+      <span id="evz-rewarded-countdown">30s</span>
+      <button id="evz-rewarded-skip-btn">Download Now ↓</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var VAST = "https://subtle-injury.com/dPmmFPz.dnG_N-v/ZTGjUO/MeXmd9/ugZXUcljkCPsTHchzMNID-Aqw/MBDtk/tWNIzEMd0xMeDmA/xbMQwM";
+
+  /* ── Outstream player ── */
+  var outstreamReady = false, outstreamPlayer;
+  var outSkip  = document.getElementById('evz-outstream-skip');
+  var outTimer, outElapsed = 0;
+
+  function initOutstream(){
+    if(typeof videojs==='undefined'||typeof google==='undefined'){setTimeout(initOutstream,400);return;}
+    if(outstreamReady) return;
+    outstreamPlayer = videojs('evz-outstream-vid',{controls:false,muted:true,autoplay:true,fluid:false,width:640,height:360});
+    outstreamPlayer.ima({adTagUrl:VAST});
+    outstreamPlayer.on('adstart',function(){
+      outElapsed=0; outSkip.style.display='none';
+      outTimer=setInterval(function(){
+        outElapsed++;
+        if(outElapsed>=10){outSkip.style.display='block';clearInterval(outTimer);}
+      },1000);
+    });
+    outstreamPlayer.on('adend',function(){clearInterval(outTimer);outSkip.style.display='none';});
+    outstreamPlayer.on('aderror',function(){clearInterval(outTimer);});
+    outstreamPlayer.ready(function(){outstreamPlayer.play().catch(function(){});});
+    outstreamReady=true;
+  }
+
+  function collapseOutstream(){
+    var overlay=document.getElementById('evz-outstream-overlay');
+    var ghost=document.getElementById('evz-outstream-ghost');
+    var vidEl=document.getElementById('evz-outstream-vid');
+    if(overlay) overlay.style.display='none';
+    if(ghost && vidEl) ghost.appendChild(vidEl); /* video keeps playing silently */
+  }
+  outSkip.addEventListener('click',collapseOutstream);
+  document.getElementById('evz-outstream-close').addEventListener('click',collapseOutstream);
+
+  /* ── Rewarded gate player ── */
+  var rewardedReady=false, rewardedPlayer;
+  var rewardedOverlay = document.getElementById('evz-rewarded-overlay');
+  var rewardedCountdown = document.getElementById('evz-rewarded-countdown');
+  var rewardedSkipBtn = document.getElementById('evz-rewarded-skip-btn');
+  var pendingDownloadHref = null;
+  var rewardTimer, rewardElapsed;
+
+  function initRewarded(){
+    if(typeof videojs==='undefined'||typeof google==='undefined'){setTimeout(initRewarded,400);return;}
+    if(rewardedReady) return;
+    rewardedPlayer = videojs('evz-rewarded-vid',{controls:false,muted:true,autoplay:false,fluid:false,width:520,height:292});
+    rewardedPlayer.ima({adTagUrl:VAST});
+    rewardedPlayer.on('adstart',function(){
+      rewardElapsed=0; rewardedSkipBtn.style.display='none';
+      rewardTimer=setInterval(function(){
+        rewardElapsed++;
+        var left=30-rewardElapsed;
+        rewardedCountdown.textContent=left>0?left+'s':'';
+        if(rewardElapsed>=30){
+          clearInterval(rewardTimer);
+          rewardedSkipBtn.style.display='block';
+          rewardedCountdown.textContent='';
+          rewardedSkipBtn.textContent='Download Now ↓';
+        }
+      },1000);
+    });
+    rewardedPlayer.on('adend',function(){
+      clearInterval(rewardTimer);
+      closeRewarded();
+    });
+    rewardedPlayer.on('aderror',function(){clearInterval(rewardTimer);closeRewarded();});
+    rewardedReady=true;
+  }
+
+  function openRewarded(href){
+    pendingDownloadHref=href;
+    rewardedOverlay.classList.add('active');
+    rewardedCountdown.textContent='30s';
+    rewardedSkipBtn.style.display='none';
+    if(rewardedReady){
+      try{rewardedPlayer.ima.requestAds();rewardedPlayer.play();}catch(e){closeRewarded();}
+    }
+  }
+
+  function closeRewarded(){
+    rewardedOverlay.classList.remove('active');
+    try{rewardedPlayer.pause();}catch(e){}
+    if(pendingDownloadHref){window.location.href=pendingDownloadHref;pendingDownloadHref=null;}
+  }
+
+  rewardedSkipBtn.addEventListener('click',closeRewarded);
+
+  /* ── Hook download triggers ── */
+  window.addEventListener('load',function(){
+    initOutstream();
+    initRewarded();
+
+    var dlSelectors=[
+      'a[download]','a[href*="download"]','a[href*=".zip"]',
+      'a[href*=".exe"]','a[href*=".pdf"]',
+      'button[id*="download"]','button[class*="download"]',
+      '.download-btn','#download-btn','[data-action="download"]'
+    ];
+    document.querySelectorAll(dlSelectors.join(',')).forEach(function(el){
+      el.addEventListener('click',function(e){
+        e.preventDefault();
+        var href=(el.tagName==='A'&&el.href)?el.href:null;
+        openRewarded(href);
+      });
+    });
+  });
+})();
+</script>
+
+<!-- ═══════════════════════════════════════════
+     INLINE PAGE SIDE AD COLUMNS
+     Two boxes, part of page flow, sit left & right.
+     Each box auto-sizes to its ad content.
+     STRATEGY 3 refresh every 45s.
+═══════════════════════════════════════════ -->
+<style>
+.evz-cols{display:flex;gap:16px;max-width:1100px;margin:24px auto;padding:0 16px;box-sizing:border-box;align-items:flex-start;}
+.evz-col-box{flex:1;min-width:0;background:#fff;border:1px solid #e2e8f0;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,0.07);padding:8px;display:flex;flex-direction:column;align-items:center;gap:10px;}
+.evz-col-box iframe{width:100%;border:none;border-radius:6px;display:block;min-height:250px;}
+.evz-col-lbl{font-size:9px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;align-self:flex-start;}
+.evz-col-hide{font-size:9px;background:#0f172a;color:#fff;border:none;border-radius:20px;padding:3px 10px;cursor:pointer;align-self:flex-end;}
+@media(max-width:640px){.evz-cols{flex-direction:column;}}
+</style>
+<div class="evz-cols">
+  <div class="evz-col-box">
+    <span class="evz-col-lbl">Sponsored</span>
+    <iframe src="https://omg10.com/4/11638044" loading="lazy" scrolling="no"></iframe>
+    <iframe src="https://omg10.com/4/11638043" loading="lazy" scrolling="no"></iframe>
+    <button class="evz-col-hide" onclick="this.closest('.evz-col-box').remove()">Hide</button>
+  </div>
+  <div class="evz-col-box">
+    <span class="evz-col-lbl">Sponsored</span>
+    <iframe src="https://omg10.com/4/11638041" loading="lazy" scrolling="no"></iframe>
+    <iframe src="https://omg10.com/4/11638040" loading="lazy" scrolling="no"></iframe>
+    <button class="evz-col-hide" onclick="this.closest('.evz-col-box').remove()">Hide</button>
+  </div>
+</div>
+
+<!-- STRATEGY 3: Auto-refresh inline ad iframes every 45s -->
+<script>
+(function(){
+  setInterval(function(){
+    if(document.hidden)return;
+    document.querySelectorAll('.evz-col-box iframe').forEach(function(f){
+      f.src=f.src.split('?')[0]+'?_t='+Date.now();
+    });
+  },45000);
+})();
+</script>
+
+<!-- Vignette -->
+<script>(function(s){s.dataset.zone='11637854',s.src='https://n6wxm.com/vignette.min.js'})([document.documentElement,document.body].filter(Boolean).pop().appendChild(document.createElement('script')))</script>
+
+<!-- MONETAG & HILLTOPADS INTEGRATED AD SYSTEM END -->
+
+<footer>
         <p>Ideology &amp; Criticism Lessons &middot; <a href="../../index.html">Study Hub Home</a> &middot; <a
                 href="../index.html">Grammar &amp; Language Home</a></p>
         <p><a href="../../about.html">About</a> &middot; <a href="../../terms.html">Terms</a> &middot; <a
