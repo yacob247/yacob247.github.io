@@ -236,30 +236,28 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/videojs-ima/1.10.1/videojs.ima.min.js"></script>
 
 <!-- ═══════════════════════════════════════════
-     STRATEGY 1: OUTSTREAM VIDEO POPUP
-     Opens as centered popup on load.
-     Skip after 10s → popup collapses/hides,
-     video keeps playing silently in background.
+     STRATEGY 1: INLINE OUTSTREAM VIDEO PLAYER
+     Sits in page flow — no overlay.
+     Skip button appears after 10s.
+     Collapses to 0 height on skip/close.
 ═══════════════════════════════════════════ -->
 <style>
-#evz-outstream-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.70);z-index:99998;display:flex;align-items:center;justify-content:center;}
-#evz-outstream-wrap{width:560px;max-width:94vw;background:#000;border-radius:12px;overflow:hidden;position:relative;box-shadow:0 8px 40px rgba(0,0,0,0.5);}
+#evz-outstream-inline{max-width:680px;margin:20px auto;padding:0 16px;box-sizing:border-box;transition:max-height 0.4s ease,opacity 0.4s ease;overflow:hidden;}
+#evz-outstream-inline.collapsed{max-height:0 !important;opacity:0;margin:0;padding:0;}
+#evz-outstream-wrap{background:#000;border-radius:12px;overflow:hidden;position:relative;box-shadow:0 4px 20px rgba(0,0,0,0.18);}
 #evz-outstream-vid{width:100%;height:315px;display:block;}
 #evz-outstream-label{position:absolute;top:10px;left:10px;z-index:20;background:rgba(0,0,0,0.6);color:#fff;font:10px system-ui;padding:3px 8px;border-radius:3px;}
 #evz-outstream-skip{position:absolute;bottom:12px;right:12px;z-index:20;background:rgba(0,0,0,0.75);color:#fff;border:none;padding:6px 14px;border-radius:4px;font:12px system-ui;cursor:pointer;display:none;}
-/* Hidden ghost — keeps video alive off-screen after popup closes */
-#evz-outstream-ghost{position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;overflow:hidden;pointer-events:none;}
+#evz-outstream-close{position:absolute;top:8px;right:8px;z-index:30;background:rgba(0,0,0,0.7);color:#fff;border:none;border-radius:50%;width:28px;height:28px;font:bold 14px system-ui;cursor:pointer;line-height:28px;text-align:center;}
 </style>
-<div id="evz-outstream-overlay">
+<div id="evz-outstream-inline">
   <div id="evz-outstream-wrap">
     <span id="evz-outstream-label">Ad</span>
-    <button id="evz-outstream-close" style="position:absolute;top:8px;right:8px;z-index:30;background:rgba(0,0,0,0.7);color:#fff;border:none;border-radius:50%;width:28px;height:28px;font:bold 14px system-ui;cursor:pointer;line-height:28px;text-align:center;">✕</button>
+    <button id="evz-outstream-close">✕</button>
     <video id="evz-outstream-vid" class="video-js" muted playsinline preload="none"></video>
     <button id="evz-outstream-skip">Skip Ad ›</button>
   </div>
 </div>
-<!-- Ghost container video migrates into after skip -->
-<div id="evz-outstream-ghost"></div>
 
 <!-- ═══════════════════════════════════════════
      STRATEGY 2: REWARDED VIDEO GATE
@@ -290,9 +288,13 @@
 
 <script>
 (function(){
-  var VAST = "https://subtle-injury.com/dPmmFPz.dnG_N-v/ZTGjUO/MeXmd9/ugZXUcljkCPsTHchzMNID-Aqw/MBDtk/tWNIzEMd0xMeDmA/xbMQwM";
+  // ── VAST TAG URLs ─────────────────────────────────────────────
+  var VAST_MONETAG = "https://subtle-injury.com/dSmuFnz.dgGMNbvuZHGRUK/Perm/9kubZVUelxkEPhTOc/zoNBD/A/wAMfDHkLtTN_zgMO0YMiDwADxqMDwE";
+  var VAST_HILLTOP = "//relieved-understanding.com/b.XuVVsydZGnl/0IYZWtcM/telmk9/udZhUml/kSPeTIcGzzMnzIkB5/OJTRMkt-N_zkMoz/O/Tmkr5MNEwH";
+  var VAST = VAST_HILLTOP || VAST_MONETAG;
+  // ─────────────────────────────────────────────────────────────
 
-  /* ── Outstream player ── */
+  /* ── Inline outstream player ── */
   var outstreamReady = false, outstreamPlayer;
   var outSkip  = document.getElementById('evz-outstream-skip');
   var outTimer, outElapsed = 0;
@@ -309,18 +311,16 @@
         if(outElapsed>=10){outSkip.style.display='block';clearInterval(outTimer);}
       },1000);
     });
-    outstreamPlayer.on('adend',function(){clearInterval(outTimer);outSkip.style.display='none';});
-    outstreamPlayer.on('aderror',function(){clearInterval(outTimer);});
+    outstreamPlayer.on('adend',function(){clearInterval(outTimer);collapseOutstream();});
+    outstreamPlayer.on('aderror',function(){clearInterval(outTimer);collapseOutstream();});
     outstreamPlayer.ready(function(){outstreamPlayer.play().catch(function(){});});
     outstreamReady=true;
   }
 
   function collapseOutstream(){
-    var overlay=document.getElementById('evz-outstream-overlay');
-    var ghost=document.getElementById('evz-outstream-ghost');
-    var vidEl=document.getElementById('evz-outstream-vid');
-    if(overlay) overlay.style.display='none';
-    if(ghost && vidEl) ghost.appendChild(vidEl); /* video keeps playing silently */
+    var wrap=document.getElementById('evz-outstream-inline');
+    if(wrap) wrap.classList.add('collapsed');
+    try{ outstreamPlayer.pause(); }catch(e){}
   }
   outSkip.addEventListener('click',collapseOutstream);
   document.getElementById('evz-outstream-close').addEventListener('click',collapseOutstream);
