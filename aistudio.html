@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NexusAI Studio - Janus-Pro WebGPU</title>
+    <title>NexusAI Studio - Magic Eraser</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -17,6 +17,15 @@
                             border: '#27272a',
                             muted: '#a1a1aa'
                         }
+                    },
+                    backgroundImage: {
+                        'checkerboard': 'conic-gradient(#27272a 90deg, transparent 90deg, transparent 270deg, #27272a 270deg, #27272a)',
+                    },
+                    backgroundSize: {
+                        'checkerboard-size': '20px 20px',
+                    },
+                    backgroundPosition: {
+                        'checkerboard-pos': '0 0, 10px 10px',
                     }
                 }
             }
@@ -25,119 +34,107 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', sans-serif; }
-        @keyframes pulse-slow {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
+        .transparent-bg {
+            background-color: #121216;
+            background-image: conic-gradient(#1f1f22 90deg, transparent 90deg, transparent 270deg, #1f1f22 270deg, #1f1f22);
+            background-size: 20px 20px;
+            background-position: 0 0, 10px 10px;
         }
-        .animate-pulse-slow { animation: pulse-slow 3s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        #upload-area.dragover {
+            border-color: #3b82f6;
+            background-color: rgba(59, 130, 246, 0.1);
+        }
     </style>
 </head>
 <body class="bg-dark-base text-gray-100 min-h-screen flex flex-col justify-between selection:bg-blue-500 selection:text-white">
 
     <header class="border-b border-dark-border bg-dark-card/50 backdrop-blur-md sticky top-0 z-50 px-6 py-4 flex items-center justify-between">
         <div class="flex items-center space-x-3">
-            <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/20">
-                <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round5" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-purple-600 to-blue-500 flex items-center justify-center shadow-lg shadow-purple-500/20">
+                <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.182 15.182a4.5 4.5 0 0 1-6.364 0M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0ZM9.75 9.75c0 .414-.168.75-.375.75S9 10.164 9 9.75 9.168 9 9.375 9s.375.336.375.75Zm-.375 0h.008v.015h-.008V9.75Zm5.625 0c0 .414-.168.75-.375.75s-.375-.336-.375-.75.168-.75.375-.75.375.336.375.75Zm-.375 0h.008v.015h-.008V9.75Z"/></svg>
             </div>
             <div>
-                <h1 class="font-bold text-lg tracking-tight bg-gradient-to-r from-blue-400 to-indigo-300 bg-clip-text text-transparent">NexusAI Studio</h1>
-                <p class="text-xs text-dark-muted">Janus-Pro-1B WebGPU • 0$ Server Cost</p>
+                <h1 class="font-bold text-lg tracking-tight bg-gradient-to-r from-purple-400 to-blue-300 bg-clip-text text-transparent">NexusAI Studio</h1>
+                <p class="text-xs text-dark-muted">Lightweight Background Eraser (~40MB)</p>
             </div>
         </div>
         <div class="hidden sm:flex items-center space-x-2 text-xs bg-dark-base border border-dark-border px-3 py-1.5 rounded-full">
             <span id="global-status-dot" class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
-            <span id="global-status-text" class="text-dark-muted font-medium">Initializing Engine...</span>
+            <span id="global-status-text" class="text-dark-muted font-medium">Ready</span>
         </div>
     </header>
 
-    <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+    <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
         
-        <section class="lg:col-span-5 flex flex-col gap-6 bg-dark-card border border-dark-border p-6 rounded-2xl shadow-xl">
+        <!-- Left Column: Controls & Input -->
+        <section class="flex flex-col gap-6 bg-dark-card border border-dark-border p-6 rounded-2xl shadow-xl">
             
             <div id="status-panel" class="bg-dark-base border border-dark-border rounded-xl p-4 flex flex-col gap-3">
                 <div class="flex items-center justify-between">
                     <div class="flex items-center space-x-2">
-                        <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+                        <svg class="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5"/></svg>
                         <span class="text-sm font-semibold">Model Status</span>
                     </div>
-                    <span id="progress-percent" class="text-xs font-mono text-blue-400">0%</span>
+                    <span id="progress-percent" class="text-xs font-mono text-purple-400">0%</span>
                 </div>
                 <div class="w-full bg-dark-border h-1.5 rounded-full overflow-hidden">
-                    <div id="progress-bar" class="bg-blue-500 h-full w-0 transition-all duration-200"></div>
+                    <div id="progress-bar" class="bg-purple-500 h-full w-0 transition-all duration-200"></div>
                 </div>
-                <p id="log-message" class="text-xs text-dark-muted font-mono break-words">Select source and click generate to load weights...</p>
+                <p id="log-message" class="text-xs text-dark-muted font-mono break-words">Awaiting image upload...</p>
             </div>
 
-            <div class="flex flex-col gap-3">
-                <label for="prompt-input" class="text-sm font-semibold flex justify-between">
-                    <span>Prompt</span>
-                    <span class="text-xs text-dark-muted font-normal">Be descriptive</span>
-                </label>
-                <textarea id="prompt-input" rows="4" class="w-full bg-dark-base border border-dark-border rounded-xl p-4 text-sm focus:outline-none focus:border-blue-500 transition-colors resize-none placeholder:text-gray-600" placeholder="A majestic cyberpunk tiger walking through Neo-Tokyo in the rain, neon reflections, highly detailed..."></textarea>
+            <!-- Image Upload Area -->
+            <div id="upload-area" class="border-2 border-dashed border-dark-border rounded-2xl p-8 flex flex-col items-center justify-center text-center cursor-pointer hover:border-purple-500/50 hover:bg-purple-500/5 transition-all group relative overflow-hidden min-h-[300px]">
+                <input type="file" id="file-input" accept="image/jpeg, image/png, image/webp" class="hidden">
+                
+                <div id="upload-placeholder" class="flex flex-col items-center">
+                    <div class="w-16 h-16 rounded-full bg-dark-base border border-dark-border flex items-center justify-center mb-4 text-dark-muted group-hover:text-purple-400 transition-colors">
+                        <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+                    </div>
+                    <p class="font-medium text-sm text-gray-300">Click or Drag & Drop</p>
+                    <p class="text-xs text-dark-muted mt-1">Supports JPG, PNG, WEBP</p>
+                </div>
+
+                <img id="input-preview" class="absolute inset-0 w-full h-full object-contain hidden pointer-events-none p-2" alt="Input Preview">
             </div>
 
-            <div class="flex flex-col gap-2">
-                <span class="text-xs font-medium text-dark-muted">Quick Inspiration</span>
-                <div class="flex flex-wrap gap-2">
-                    <button class="preset-btn text-xs bg-dark-base border border-dark-border hover:border-blue-500/50 px-3 py-1.5 rounded-lg transition-colors text-left" data-prompt="Cyberpunk samurai in neon alleyway, cinematic lighting, 4k">Cyberpunk Samurai</button>
-                    <button class="preset-btn text-xs bg-dark-base border border-dark-border hover:border-blue-500/50 px-3 py-1.5 rounded-lg transition-colors text-left" data-prompt="Ethereal floating islands with waterfalls in a fantasy sky, studio ghibli style">Floating Islands</button>
-                    <button class="preset-btn text-xs bg-dark-base border border-dark-border hover:border-blue-500/50 px-3 py-1.5 rounded-lg transition-colors text-left" data-prompt="Astronaut floating in deep space looking at colorful nebula, highly detailed">Cosmic Explorer</button>
-                </div>
-            </div>
-
-            <div class="grid grid-cols-2 gap-4">
-                <div class="flex flex-col gap-1.5">
-                    <label for="seed-input" class="text-xs font-medium text-dark-muted">Seed (Optional)</label>
-                    <input type="number" id="seed-input" class="bg-dark-base border border-dark-border rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500 font-mono" placeholder="Random">
-                </div>
-                <div class="flex flex-col gap-1.5">
-                    <label for="source-select" class="text-xs font-medium text-dark-muted">Model Source</label>
-                    <select id="source-select" class="bg-dark-base border border-dark-border rounded-xl px-3 py-2 text-xs text-gray-200 focus:outline-none focus:border-blue-500">
-                        <option value="r2">Custom R2 Bucket</option>
-                        <option value="hf">Hugging Face Hub</option>
-                    </select>
-                </div>
-            </div>
-
-            <button id="generate-btn" class="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-dark-border disabled:text-dark-muted text-white font-semibold py-3.5 px-6 rounded-xl shadow-lg shadow-blue-600/20 transition-all flex items-center justify-center space-x-2 cursor-pointer disabled:cursor-not-allowed">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-                <span id="generate-btn-text">Load Engine & Generate</span>
+            <button id="process-btn" disabled class="w-full bg-purple-600 hover:bg-purple-500 disabled:bg-dark-border disabled:text-dark-muted disabled:shadow-none text-white font-semibold py-3.5 px-6 rounded-xl shadow-lg shadow-purple-600/20 transition-all flex items-center justify-center space-x-2 cursor-pointer disabled:cursor-not-allowed">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456ZM16.894 20.567 16.5 21.75l-.394-1.183a2.25 2.25 0 0 0-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 0 0 1.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 0 0 1.423 1.423l1.183.394-1.183.394a2.25 2.25 0 0 0-1.423 1.423Z"/></svg>
+                <span id="process-btn-text">Erase Background</span>
             </button>
 
         </section>
 
-        <section class="lg:col-span-7 flex flex-col gap-6">
+        <!-- Right Column: Result Output -->
+        <section class="flex flex-col gap-6">
             
-            <div class="bg-dark-card border border-dark-border p-6 rounded-2xl shadow-xl flex flex-col items-center justify-center min-h-[480px] relative overflow-hidden group">
+            <div class="bg-dark-card border border-dark-border p-6 rounded-2xl shadow-xl flex flex-col items-center justify-center min-h-[500px] relative overflow-hidden group">
                 
-                <div id="placeholder-container" class="flex flex-col items-center justify-center text-center p-8">
+                <div id="output-placeholder" class="flex flex-col items-center justify-center text-center p-8 z-10">
                     <div class="w-16 h-16 rounded-2xl bg-dark-base border border-dark-border flex items-center justify-center mb-4 text-dark-muted">
                         <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z"/></svg>
                     </div>
-                    <h3 class="font-semibold text-gray-300 mb-1">Canvas Ready</h3>
-                    <p class="text-xs text-dark-muted max-w-sm">Enter a prompt and click generate. Your browser will download and execute the AI locally.</p>
+                    <h3 class="font-semibold text-gray-300 mb-1">Result Canvas</h3>
+                    <p class="text-xs text-dark-muted max-w-sm">Upload an image and click erase. The transparent subject will appear here.</p>
                 </div>
 
-                <div id="result-container" class="w-full h-full flex flex-col items-center justify-center hidden relative">
-                    <img id="output-image" alt="Generated AI Masterpiece" class="rounded-xl max-h-[500px] w-auto object-contain shadow-2xl border border-dark-border">
+                <!-- Hidden Canvas used for image processing -->
+                <canvas id="processing-canvas" class="hidden"></canvas>
+
+                <!-- Output Image Container -->
+                <div id="result-container" class="absolute inset-0 w-full h-full flex flex-col items-center justify-center hidden transparent-bg p-2 rounded-xl">
+                    <img id="output-image" alt="Isolated Subject" class="w-full h-full object-contain drop-shadow-2xl">
                     
-                    <div class="absolute bottom-4 bg-dark-base/80 backdrop-blur-md border border-dark-border px-4 py-2 rounded-xl flex items-center space-x-3 shadow-xl">
-                        <span id="metric-badge" class="text-xs font-mono text-blue-400">0.00s</span>
+                    <div class="absolute bottom-6 bg-dark-base/90 backdrop-blur-md border border-dark-border px-4 py-2 rounded-xl flex items-center space-x-3 shadow-2xl">
+                        <span id="metric-badge" class="text-xs font-mono text-purple-400">0.00s</span>
                         <div class="w-px h-4 bg-dark-border"></div>
-                        <a id="download-btn" download="nexusai-generation.png" class="text-xs font-medium bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg transition-colors flex items-center space-x-1.5 cursor-pointer">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
-                            <span>Download</span>
+                        <a id="download-btn" download="nexusai-transparent.png" class="text-xs font-medium bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg transition-colors flex items-center space-x-2 cursor-pointer">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
+                            <span>Download Transparent PNG</span>
                         </a>
                     </div>
                 </div>
 
-            </div>
-
-            <div class="bg-dark-card border border-dark-border p-5 rounded-2xl shadow-xl flex flex-col gap-3">
-                <h4 class="text-xs font-semibold text-dark-muted uppercase tracking-wider">Session Gallery</h4>
-                <div id="history-grid" class="grid grid-cols-4 sm:grid-cols-6 gap-3 min-h-[72px] items-center">
-                    <span id="empty-history" class="col-span-full text-xs text-dark-muted text-center py-2">Generated images will appear here</span>
-                </div>
             </div>
 
         </section>
@@ -145,45 +142,131 @@
     </main>
 
     <script type="module">
-        import { env, AutoProcessor, MultiModalityCausalLM } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.2';
+        import { env, AutoProcessor, AutoModel, RawImage } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.2';
 
-        // --- NETWORK INTERCEPTOR FOR CUSTOM R2 BUCKET ---
-        // Transformers.js requests '_q4.onnx', but your HF files are named '_quantized.onnx'.
-        // This transparently reroutes those requests so you don't have to manually rename files in Cloudflare.
+        // Strict Fetch Interceptor mapping exactly to your custom domain URLs
         const originalFetch = window.fetch;
-        window.fetch = async function(...args) {
-            let [resource, config] = args;
-            if (typeof resource === 'string' && resource.includes('envizion.work') && resource.includes('_q4.onnx')) {
-                resource = resource.replace('_q4.onnx', '_quantized.onnx');
+        window.fetch = async function(resource, config) {
+            let url = typeof resource === 'string' ? resource : (resource && resource.url ? resource.url : '');
+            
+            // Intercept model requests and route them to your exact R2 bucket URLs
+            if (typeof url === 'string' && (url.includes('bria-rmbg-1.4') || url.includes('Xenova') || url.includes('hf.co') || url.includes('huggingface.co') || url.includes('envizion.work'))) {
+                
+                if (url.endsWith('preprocessor_config.json')) {
+                    console.log("[NexusAI] Fetching: https://envizion.work/rmbg/preprocessor_config.json");
+                    return originalFetch('https://envizion.work/rmbg/preprocessor_config.json', config);
+                }
+                
+                if (url.endsWith('config.json')) {
+                    console.log("[NexusAI] Fetching: https://envizion.work/rmbg/config.json");
+                    return originalFetch('https://envizion.work/rmbg/config.json', config);
+                }
+                
+                if (url.endsWith('.onnx') || url.includes('model_quantized.onnx')) {
+                    console.log("[NexusAI] Fetching: https://envizion.work/rmbg/onnx/model_quantized.onnx");
+                    return originalFetch('https://envizion.work/rmbg/onnx/model_quantized.onnx', config);
+                }
             }
+            
+            // For all other requests, proceed normally
             return originalFetch(resource, config);
         };
-        // ------------------------------------------------
 
+        // UI Elements
         const statusDot = document.getElementById('global-status-dot');
         const statusText = document.getElementById('global-status-text');
         const progressPercent = document.getElementById('progress-percent');
         const progressBar = document.getElementById('progress-bar');
         const logMessage = document.getElementById('log-message');
-        const generateBtn = document.getElementById('generate-btn');
-        const generateBtnText = document.getElementById('generate-btn-text');
-        const promptInput = document.getElementById('prompt-input');
-        const seedInput = document.getElementById('seed-input');
-        const sourceSelect = document.getElementById('source-select');
-        const placeholderContainer = document.getElementById('placeholder-container');
+        
+        const uploadArea = document.getElementById('upload-area');
+        const fileInput = document.getElementById('file-input');
+        const uploadPlaceholder = document.getElementById('upload-placeholder');
+        const inputPreview = document.getElementById('input-preview');
+        
+        const processBtn = document.getElementById('process-btn');
+        const processBtnText = document.getElementById('process-btn-text');
+        
+        const outputPlaceholder = document.getElementById('output-placeholder');
         const resultContainer = document.getElementById('result-container');
         const outputImage = document.getElementById('output-image');
+        const processingCanvas = document.getElementById('processing-canvas');
         const downloadBtn = document.getElementById('download-btn');
         const metricBadge = document.getElementById('metric-badge');
-        const historyGrid = document.getElementById('history-grid');
-        const emptyHistory = document.getElementById('empty-history');
 
         let processor = null;
         let model = null;
         let isModelLoaded = false;
-        const sessionHistory = [];
+        let currentImageURL = null;
 
-        // Global tracker for smooth multi-file download calculations
+        // Model Constants
+        const MODEL_ID = 'Xenova/bria-rmbg-1.4';
+        
+        function setLog(msg, isError = false) {
+            if (isError) {
+                logMessage.innerHTML = `<span class="text-rose-400 font-medium">${msg}</span>`;
+            } else {
+                logMessage.innerHTML = msg;
+            }
+            console.log(`[NexusAI] ${msg}`);
+        }
+
+        function setStatusState(state, text) {
+            statusText.textContent = text;
+            if (state === 'ready') {
+                statusDot.className = "w-2 h-2 rounded-full bg-emerald-500 shadow-lg shadow-emerald-500/50";
+            } else if (state === 'loading') {
+                statusDot.className = "w-2 h-2 rounded-full bg-amber-500 animate-pulse";
+            } else {
+                statusDot.className = "w-2 h-2 rounded-full bg-rose-500";
+            }
+        }
+
+        // --- File Upload Handling ---
+        uploadArea.addEventListener('click', () => fileInput.click());
+        
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+        
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+        
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                handleFile(e.dataTransfer.files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files && e.target.files[0]) {
+                handleFile(e.target.files[0]);
+            }
+        });
+
+        function handleFile(file) {
+            if (!file.type.startsWith('image/')) {
+                setLog("Please upload a valid image file.", true);
+                return;
+            }
+            
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                currentImageURL = e.target.result;
+                inputPreview.src = currentImageURL;
+                inputPreview.classList.remove('hidden');
+                uploadPlaceholder.classList.add('hidden');
+                processBtn.disabled = false;
+                setLog("Image loaded. Click 'Erase Background' to process.");
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // --- Model Loading and Processing ---
         const fileProgressTracker = new Map();
         let maxOverallPct = 0;
 
@@ -214,276 +297,142 @@
 
             if (totalBytes > 0) {
                 const rawPct = Math.round((loadedBytes / totalBytes) * 100);
-                
-                // Enforce monotonic progress so the percentage never drops backward
-                if (rawPct > maxOverallPct) {
-                    maxOverallPct = rawPct;
-                }
+                if (rawPct > maxOverallPct) maxOverallPct = rawPct;
                 
                 const displayPct = Math.min(99, maxOverallPct);
                 progressBar.style.width = `${displayPct}%`;
                 progressPercent.textContent = `${displayPct}%`;
 
-                const loadedMB = (loadedBytes / (1024 * 1024)).toFixed(0);
-                const totalMB = (totalBytes / (1024 * 1024)).toFixed(0);
-                setLog(`Downloading model weights: ${displayPct}% (${loadedMB} MB / ${totalMB} MB)`);
+                const loadedMB = (loadedBytes / (1024 * 1024)).toFixed(1);
+                const totalMB = (totalBytes / (1024 * 1024)).toFixed(1);
+                setLog(`Downloading lightweight engine: ${displayPct}% (${loadedMB} MB / ${totalMB} MB)`);
             }
         }
 
-        function setLog(msg, isError = false) {
-            if (isError) {
-                logMessage.innerHTML = `<span class="text-rose-400 font-medium">${msg}</span>`;
-            } else {
-                logMessage.innerHTML = msg;
-            }
-            console.log(`[NexusAI] ${msg}`);
-        }
-
-        function setStatusState(state, text) {
-            statusText.textContent = text;
-            if (state === 'ready') {
-                statusDot.className = "w-2 h-2 rounded-full bg-emerald-500 shadow-lg shadow-emerald-500/50";
-            } else if (state === 'loading') {
-                statusDot.className = "w-2 h-2 rounded-full bg-amber-500 animate-pulse";
-            } else {
-                statusDot.className = "w-2 h-2 rounded-full bg-rose-500";
-            }
-        }
-
-        document.querySelectorAll('.preset-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                promptInput.value = btn.getAttribute('data-prompt');
-            });
-        });
-
-        // If source changes after loading, we need to reset the engine
-        sourceSelect.addEventListener('change', () => {
-            if (isModelLoaded) {
-                isModelLoaded = false;
-                processor = null;
-                model = null;
-                fileProgressTracker.clear();
-                maxOverallPct = 0;
-                generateBtnText.textContent = "Re-load Engine & Generate";
-                setStatusState('ready', 'Engine Reset');
-                setLog("Source changed. Click generate to load from new source.");
-            }
-        });
-
-        let engineInitPromise = null;
-
-        async function initEngine() {
+        async function loadEngine() {
+            if (isModelLoaded) return true;
+            
             try {
-                if (!navigator.gpu) {
-                    throw new Error("WebGPU is not supported in this browser. Please use Chrome/Edge 113+.");
-                }
-
+                setStatusState('loading', 'Loading AI Engine...');
                 env.allowLocalModels = false;
-                let modelId = 'janus';
-                const selectedSource = sourceSelect.value;
+                // Note: env.remoteHost config was removed so the fetch interceptor has 100% control
 
-                if (selectedSource === 'r2') {
-                    setLog("Connecting to Custom CDN (envizion.work)...");
-                    setLog("Auto-detecting model folder structure on envizion.work...");
-
-                    const candidatePaths = [
-                        { template: '', modelId: 'r2-model', path: 'https://envizion.work/config.json', label: 'Bucket Root (envizion.work/config.json)' },
-                        { template: '{model}/', modelId: 'janus', path: 'https://envizion.work/janus/config.json', label: 'envizion.work/janus/config.json' },
-                        { template: '{model}/', modelId: 'Janus-Pro-1B', path: 'https://envizion.work/Janus-Pro-1B/config.json', label: 'envizion.work/Janus-Pro-1B/config.json' },
-                        { template: '{model}/', modelId: 'onnx-community/Janus-Pro-1B-ONNX', path: 'https://envizion.work/onnx-community/Janus-Pro-1B-ONNX/config.json', label: 'envizion.work/onnx-community/Janus-Pro-1B-ONNX/config.json' }
-                    ];
-
-                    let foundCandidate = null;
-                    for (const candidate of candidatePaths) {
-                        try {
-                            setLog(`Checking ${candidate.label}...`);
-                            const res = await fetch(candidate.path, { method: 'GET' });
-                            if (res.ok) {
-                                foundCandidate = candidate;
-                                setLog(`Found config.json at ${candidate.label}!`);
-                                break;
-                            }
-                        } catch (e) {
-                            // ignore & try next
-                        }
-                    }
-
-                    if (foundCandidate) {
-                        env.remoteHost = 'https://envizion.work/';
-                        env.remotePathTemplate = foundCandidate.template;
-                        modelId = foundCandidate.modelId;
-                    } else {
-                        setLog(`Notice: Could not locate config.json on envizion.work. Falling back to Hugging Face Hub...`, true);
-                        env.remoteHost = 'https://huggingface.co/';
-                        env.remotePathTemplate = '{model}/resolve/{revision}/';
-                        modelId = 'onnx-community/Janus-Pro-1B-ONNX';
-                    }
-
-                } else {
-                    env.remoteHost = 'https://huggingface.co/';
-                    env.remotePathTemplate = '{model}/resolve/{revision}/';
-                    modelId = 'onnx-community/Janus-Pro-1B-ONNX';
-                    setLog("Connecting to Hugging Face Hub (onnx-community/Janus-Pro-1B-ONNX)...");
-                }
-
-                setStatusState('loading', 'Loading Model Weights...');
-
-                setLog(`Fetching processor config for '${modelId}'...`);
-                processor = await AutoProcessor.from_pretrained(modelId, {
+                setLog("Fetching processor config...");
+                processor = await AutoProcessor.from_pretrained(MODEL_ID, {
                     progress_callback: updateProgress
                 });
 
-                setLog(`Fetching WebGPU model weights for '${modelId}'...`);
+                setLog("Fetching lightweight vision model (~40MB)...");
+                
+                // Fallback architecture: Try WebGPU first, if unsupported/crashes, fallback to generic WASM
                 try {
-                    model = await MultiModalityCausalLM.from_pretrained(modelId, {
+                    model = await AutoModel.from_pretrained(MODEL_ID, {
                         device: 'webgpu',
-                        dtype: 'q4',
                         progress_callback: updateProgress
                     });
-                } catch (modelError) {
-                    if (selectedSource === 'r2' && modelError.message.includes('Could not locate file')) {
-                        setLog(`Missing file in R2 bucket. Falling back to Hugging Face...`);
-                        
-                        env.remoteHost = 'https://huggingface.co/';
-                        env.remotePathTemplate = '{model}/resolve/{revision}/';
-                        modelId = 'onnx-community/Janus-Pro-1B-ONNX';
-                        
-                        setLog(`Fetching processor config from HF...`);
-                        processor = await AutoProcessor.from_pretrained(modelId, {
-                            progress_callback: updateProgress
-                        });
-                        
-                        setLog(`Fetching WebGPU model weights from HF...`);
-                        model = await MultiModalityCausalLM.from_pretrained(modelId, {
-                            device: 'webgpu',
-                            dtype: 'q4',
-                            progress_callback: updateProgress
-                        });
-                    } else {
-                        throw modelError;
-                    }
+                    setLog("Model loaded via WebGPU (Hardware Acceleration Active).");
+                } catch (gpuError) {
+                    console.warn("WebGPU not supported or failed, falling back to WASM/CPU.", gpuError);
+                    setLog("WebGPU not available, falling back to Universal Engine (WASM)...");
+                    model = await AutoModel.from_pretrained(MODEL_ID, {
+                        device: 'wasm',
+                        progress_callback: updateProgress
+                    });
+                    setLog("Model loaded via WASM (Universal Compatibility).");
                 }
 
                 isModelLoaded = true;
-                setStatusState('ready', 'Engine Hot & Ready');
                 progressBar.style.width = '100%';
                 progressPercent.textContent = '100%';
-                setLog("Janus-Pro loaded successfully into VRAM. Ready to generate!");
-                generateBtnText.textContent = "Generate Image";
+                setStatusState('ready', 'Engine Ready');
                 return true;
 
             } catch (err) {
                 console.error(err);
                 setStatusState('error', 'Initialization Failed');
-                setLog(`Error initializing model: ${err.message}. (Check the browser console network tab for 404s)`, true);
+                setLog(`Error loading model: ${err.message}`, true);
                 return false;
             }
         }
 
-        window.addEventListener('DOMContentLoaded', () => {
-            setLog("Auto-preloading model in the background...");
-            engineInitPromise = initEngine();
-        });
+        processBtn.addEventListener('click', async () => {
+            if (!currentImageURL) return;
 
-        generateBtn.addEventListener('click', async () => {
-            const prompt = promptInput.value.trim();
-            if (!prompt) return;
-
-            generateBtn.disabled = true;
-
-            if (!isModelLoaded) {
-                generateBtnText.textContent = "Waiting for model to load...";
-                const success = await (engineInitPromise || initEngine());
-                if (!success) {
-                    generateBtn.disabled = false;
-                    generateBtnText.textContent = "Load Engine & Generate";
-                    return; 
-                }
-            }
-
+            processBtn.disabled = true;
+            const originalText = processBtnText.textContent;
+            
             try {
-                generateBtnText.textContent = "Synthesizing Tensors...";
-                setStatusState('loading', 'Running Inference...');
-                
-                const startTime = performance.now();
-                const seedVal = seedInput.value ? parseInt(seedInput.value, 10) : undefined;
-
-                setLog(`Formatting prompt for Janus-Pro...`);
-
-                const conversation = [
-                    { role: '<|User|>', content: prompt }
-                ];
-                
-                const inputs = await processor(conversation, { chat_template: 'text_to_image' });
-
-                setLog(`Generating visual tokens (this may take a minute on first run)...`);
-
-                const outputs = await model.generate_images({
-                    ...inputs,
-                    ...(seedVal !== undefined && { seed: seedVal })
-                });
-
-                const img = Array.isArray(outputs) ? outputs[0] : outputs;
-                
-                setLog("Decoding image data...");
-                const canvas = document.createElement('canvas');
-                canvas.width = img.width;
-                canvas.height = img.height;
-                const ctx = canvas.getContext('2d');
-                
-                const imgData = ctx.createImageData(img.width, img.height);
-                for (let i = 0; i < img.data.length / 3; i++) {
-                    imgData.data[i * 4] = img.data[i * 3];       
-                    imgData.data[i * 4 + 1] = img.data[i * 3 + 1]; 
-                    imgData.data[i * 4 + 2] = img.data[i * 3 + 2]; 
-                    imgData.data[i * 4 + 3] = 255;                 
+                if (!isModelLoaded) {
+                    processBtnText.textContent = "Loading Engine...";
+                    const loaded = await loadEngine();
+                    if (!loaded) throw new Error("Failed to load engine.");
                 }
-                ctx.putImageData(imgData, 0, 0);
 
-                const url = canvas.toDataURL('image/png');
-                const duration = ((performance.now() - startTime) / 1000).toFixed(2);
+                processBtnText.textContent = "Isolating Subject...";
+                setStatusState('loading', 'Processing Image...');
+                const startTime = performance.now();
+
+                // 1. Read the image into Transformers.js format
+                setLog("Analyzing image pixels...");
+                const rawImage = await RawImage.fromURL(currentImageURL);
                 
-                outputImage.src = url;
-                downloadBtn.href = url;
-                metricBadge.textContent = `${duration}s | ${img.width}px`;
+                // 2. Pre-process the image
+                const { pixel_values } = await processor(rawImage);
                 
-                placeholderContainer.classList.add('hidden');
+                // 3. Run Inference
+                setLog("Generating alpha mask...");
+                const { output } = await model({ input: pixel_values });
+
+                // 4. Post-process the output tensor into a mask and resize it back to original dimensions
+                const maskTensor = output[0].mul(255).to('uint8');
+                const mask = await RawImage.fromTensor(maskTensor).resize(rawImage.width, rawImage.height);
+
+                // 5. Apply the mask to the original image using HTML5 Canvas
+                setLog("Applying transparency...");
+                const ctx = processingCanvas.getContext('2d');
+                processingCanvas.width = rawImage.width;
+                processingCanvas.height = rawImage.height;
+                
+                // Draw original image to get its raw pixels
+                const imgElement = new Image();
+                imgElement.src = currentImageURL;
+                await new Promise(r => imgElement.onload = r);
+                ctx.drawImage(imgElement, 0, 0);
+                
+                // Extract pixels and apply the mask's values to the Alpha channel
+                const imageData = ctx.getImageData(0, 0, processingCanvas.width, processingCanvas.height);
+                for (let i = 0; i < mask.data.length; ++i) {
+                    // mask.data[i] is the greyscale alpha value (0-255)
+                    // imageData array is [R, G, B, A, R, G, B, A, ...]
+                    imageData.data[i * 4 + 3] = mask.data[i]; 
+                }
+                
+                // Put the modified transparent pixels back
+                ctx.putImageData(imageData, 0, 0);
+
+                // 6. Display the result
+                const resultDataUrl = processingCanvas.toDataURL('image/png');
+                outputImage.src = resultDataUrl;
+                downloadBtn.href = resultDataUrl;
+                
+                outputPlaceholder.classList.add('hidden');
                 resultContainer.classList.remove('hidden');
 
-                if (emptyHistory) {
-                    emptyHistory.remove();
-                }
-                sessionHistory.unshift(url);
-                renderHistory();
-
-                setStatusState('ready', 'Generation Complete');
-                setLog(`Success! Rendered in ${duration}s`);
+                const duration = ((performance.now() - startTime) / 1000).toFixed(2);
+                metricBadge.textContent = `${duration}s | ${rawImage.width}x${rawImage.height}`;
+                
+                setStatusState('ready', 'Processing Complete');
+                setLog(`Success! Extracted in ${duration} seconds.`);
 
             } catch (err) {
                 console.error(err);
-                setStatusState('error', 'Generation Error');
-                setLog(`Generation failed: ${err.message}`, true);
+                setStatusState('error', 'Processing Error');
+                setLog(`Failed to process image: ${err.message}`, true);
             } finally {
-                generateBtn.disabled = false;
-                generateBtnText.textContent = "Generate Image";
+                processBtn.disabled = false;
+                processBtnText.textContent = originalText;
             }
         });
-
-        function renderHistory() {
-            historyGrid.innerHTML = '';
-            sessionHistory.forEach((imgUrl) => {
-                const thumb = document.createElement('div');
-                thumb.className = "aspect-square rounded-lg overflow-hidden border border-dark-border cursor-pointer hover:border-blue-500 transition-all";
-                thumb.innerHTML = `<img src="${imgUrl}" class="w-full h-full object-cover">`;
-                thumb.addEventListener('click', () => {
-                    outputImage.src = imgUrl;
-                    downloadBtn.href = imgUrl;
-                    placeholderContainer.classList.add('hidden');
-                    resultContainer.classList.remove('hidden');
-                });
-                historyGrid.appendChild(thumb);
-            });
-        }
     </script>
 </body>
 </html>
