@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NexusAI Studio - Public WebGPU Engine</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        dark: {
+                            base: '#09090b',
+                            card: '#121216',
+                            border: '#27272a',
+                            muted: '#a1a1aa'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        @keyframes pulse-slow {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .animate-pulse-slow { animation: pulse-slow 3s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+    </style>
+
+    <!-- Import map for robust module resolution -->
+    <script type="importmap">
+    {
+        "imports": {
+            "web-txt2img": "https://cdn.jsdelivr.net/npm/web-txt2img@0.3.1/dist/index.mjs"
+        }
+    }
+    </script>
+</head>
+<body class="bg-dark-base text-gray-100 min-h-screen flex flex-col justify-between selection:bg-blue-500 selection:text-white">
+
+    <header class="border-b border-dark-border bg-dark-card/50 backdrop-blur-md sticky top-0 z-50 px-6 py-4 flex items-center justify-between">
+        <div class="flex items-center space-x-3">
+            <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/20">
+                <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round5" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            </div>
+            <div>
+                <h1 class="font-bold text-lg tracking-tight bg-gradient-to-r from-blue-400 to-indigo-300 bg-clip-text text-transparent">NexusAI Studio</h1>
+                <p class="text-xs text-dark-muted">Decentralized WebGPU Inference • 0$ Server Cost</p>
+            </div>
+        </div>
+        <div class="hidden sm:flex items-center space-x-2 text-xs bg-dark-base border border-dark-border px-3 py-1.5 rounded-full">
+            <span id="global-status-dot" class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+            <span id="global-status-text" class="text-dark-muted font-medium">Initializing Engine...</span>
+        </div>
+    </header>
+
+    <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        
+        <!-- Left Panel: Controls & Prompts -->
+        <section class="lg:col-span-5 flex flex-col gap-6 bg-dark-card border border-dark-border p-6 rounded-2xl shadow-xl">
+            
+            <!-- System Status Banner -->
+            <div id="status-panel" class="bg-dark-base border border-dark-border rounded-xl p-4 flex flex-col gap-3">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-2">
+                        <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+                        <span class="text-sm font-semibold">Model Status</span>
+                    </div>
+                    <span id="progress-percent" class="text-xs font-mono text-blue-400">0%</span>
+                </div>
+                <div class="w-full bg-dark-border h-1.5 rounded-full overflow-hidden">
+                    <div id="progress-bar" class="bg-blue-500 h-full w-0 transition-all duration-200"></div>
+                </div>
+                <p id="log-message" class="text-xs text-dark-muted font-mono truncate">Checking browser WebGPU support...</p>
+            </div>
+
+            <!-- Prompt Input Group -->
+            <div class="flex flex-col gap-3">
+                <label for="prompt-input" class="text-sm font-semibold flex justify-between">
+                    <span>Prompt</span>
+                    <span class="text-xs text-dark-muted font-normal">Be descriptive</span>
+                </label>
+                <textarea id="prompt-input" rows="4" class="w-full bg-dark-base border border-dark-border rounded-xl p-4 text-sm focus:outline-none focus:border-blue-500 transition-colors resize-none placeholder:text-gray-600" placeholder="A majestic cyberpunk tiger walking through Neo-Tokyo in the rain, neon reflections, highly detailed..."></textarea>
+            </div>
+
+            <!-- Quick Preset Tags -->
+            <div class="flex flex-col gap-2">
+                <span class="text-xs font-medium text-dark-muted">Quick Inspiration</span>
+                <div class="flex flex-wrap gap-2">
+                    <button class="preset-btn text-xs bg-dark-base border border-dark-border hover:border-blue-500/50 px-3 py-1.5 rounded-lg transition-colors text-left" data-prompt="Cyberpunk samurai in neon alleyway, cinematic lighting, 4k">Cyberpunk Samurai</button>
+                    <button class="preset-btn text-xs bg-dark-base border border-dark-border hover:border-blue-500/50 px-3 py-1.5 rounded-lg transition-colors text-left" data-prompt="Ethereal floating islands with waterfalls in a fantasy sky, studio ghibli style">Floating Islands</button>
+                    <button class="preset-btn text-xs bg-dark-base border border-dark-border hover:border-blue-500/50 px-3 py-1.5 rounded-lg transition-colors text-left" data-prompt="Astronaut floating in deep space looking at colorful nebula, highly detailed">Cosmic Explorer</button>
+                </div>
+            </div>
+
+            <!-- Optional Parameters -->
+            <div class="grid grid-cols-2 gap-4">
+                <div class="flex flex-col gap-1.5">
+                    <label for="seed-input" class="text-xs font-medium text-dark-muted">Seed (Optional)</label>
+                    <input type="number" id="seed-input" class="bg-dark-base border border-dark-border rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500 font-mono" placeholder="Random">
+                </div>
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-xs font-medium text-dark-muted">Resolution</label>
+                    <div class="bg-dark-base border border-dark-border rounded-xl px-3 py-2 text-sm text-gray-400 font-mono flex items-center justify-between">
+                        <span>512 x 512</span>
+                        <span class="text-[10px] bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded">Turbo</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Generate Button -->
+            <button id="generate-btn" disabled class="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-dark-border disabled:text-dark-muted text-white font-semibold py-3.5 px-6 rounded-xl shadow-lg shadow-blue-600/20 transition-all flex items-center justify-center space-x-2 cursor-pointer disabled:cursor-not-allowed">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                <span id="generate-btn-text">Loading Model...</span>
+            </button>
+
+        </section>
+
+        <!-- Right Panel: Output & Gallery Preview -->
+        <section class="lg:col-span-7 flex flex-col gap-6">
+            
+            <div class="bg-dark-card border border-dark-border p-6 rounded-2xl shadow-xl flex flex-col items-center justify-center min-h-[480px] relative overflow-hidden group">
+                
+                <!-- Placeholder State -->
+                <div id="placeholder-container" class="flex flex-col items-center justify-center text-center p-8">
+                    <div class="w-16 h-16 rounded-2xl bg-dark-base border border-dark-border flex items-center justify-center mb-4 text-dark-muted">
+                        <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z"/></svg>
+                    </div>
+                    <h3 class="font-semibold text-gray-300 mb-1">Canvas Ready</h3>
+                    <p class="text-xs text-dark-muted max-w-sm">Enter a prompt and click generate. Your browser will execute the AI tensor pipeline locally in real-time.</p>
+                </div>
+
+                <!-- Generated Image Result -->
+                <div id="result-container" class="w-full h-full flex flex-col items-center justify-center hidden relative">
+                    <img id="output-image" alt="Generated AI Masterpiece" class="rounded-xl max-h-[500px] w-auto object-contain shadow-2xl border border-dark-border">
+                    
+                    <!-- Floating Actions Bar -->
+                    <div class="absolute bottom-4 bg-dark-base/80 backdrop-blur-md border border-dark-border px-4 py-2 rounded-xl flex items-center space-x-3 shadow-xl">
+                        <span id="metric-badge" class="text-xs font-mono text-blue-400">0.00s</span>
+                        <div class="w-px h-4 bg-dark-border"></div>
+                        <a id="download-btn" download="nexusai-generation.png" class="text-xs font-medium bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg transition-colors flex items-center space-x-1.5 cursor-pointer">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
+                            <span>Download</span>
+                        </a>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Session Gallery / History -->
+            <div class="bg-dark-card border border-dark-border p-5 rounded-2xl shadow-xl flex flex-col gap-3">
+                <h4 class="text-xs font-semibold text-dark-muted uppercase tracking-wider">Session Gallery</h4>
+                <div id="history-grid" class="grid grid-cols-4 sm:grid-cols-6 gap-3 min-h-[72px] items-center">
+                    <span id="empty-history" class="col-span-full text-xs text-dark-muted text-center py-2">Generated images will appear here</span>
+                </div>
+            </div>
+
+        </section>
+
+    </main>
+
+    <footer class="border-t border-dark-border bg-dark-card/50 py-4 text-center text-xs text-dark-muted">
+        Powered by WebGPU & SD-Turbo • Running entirely in visitor browsers with zero server dependencies.
+    </footer>
+
+    <script type="module">
+        import { Txt2ImgWorkerClient } from 'web-txt2img';
+
+        const statusDot = document.getElementById('global-status-dot');
+        const statusText = document.getElementById('global-status-text');
+        const progressPercent = document.getElementById('progress-percent');
+        const progressBar = document.getElementById('progress-bar');
+        const logMessage = document.getElementById('log-message');
+        const generateBtn = document.getElementById('generate-btn');
+        const generateBtnText = document.getElementById('generate-btn-text');
+        const promptInput = document.getElementById('prompt-input');
+        const seedInput = document.getElementById('seed-input');
+        const placeholderContainer = document.getElementById('placeholder-container');
+        const resultContainer = document.getElementById('result-container');
+        const outputImage = document.getElementById('output-image');
+        const downloadBtn = document.getElementById('download-btn');
+        const metricBadge = document.getElementById('metric-badge');
+        const historyGrid = document.getElementById('history-grid');
+        const emptyHistory = document.getElementById('empty-history');
+
+        let client = null;
+        let isModelLoaded = false;
+        const sessionHistory = [];
+
+        function setLog(msg) {
+            logMessage.textContent = msg;
+            console.log(`[NexusAI] ${msg}`);
+        }
+
+        function setStatusState(state, text) {
+            statusText.textContent = text;
+            if (state === 'ready') {
+                statusDot.className = "w-2 h-2 rounded-full bg-emerald-500 shadow-lg shadow-emerald-500/50";
+            } else if (state === 'loading') {
+                statusDot.className = "w-2 h-2 rounded-full bg-amber-500 animate-pulse";
+            } else {
+                statusDot.className = "w-2 h-2 rounded-full bg-rose-500";
+            }
+        }
+
+        // Preset click handlers
+        document.querySelectorAll('.preset-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                promptInput.value = btn.getAttribute('data-prompt');
+            });
+        });
+
+        async function initEngine() {
+            try {
+                setLog("Detecting WebGPU hardware capability...");
+                client = Txt2ImgWorkerClient.createDefault();
+                
+                const caps = await client.detect();
+                if (!caps.webgpu) {
+                    throw new Error("WebGPU is not enabled or supported in this browser. Please use Chrome, Edge, or Opera 113+.");
+                }
+
+                setLog("WebGPU detected! Loading SD-Turbo model weights...");
+                setStatusState('loading', 'Loading Model Weights...');
+
+                await client.load('sd-turbo', {
+                    backendPreference: ['webgpu']
+                }, (progress) => {
+                    if (progress.phase) {
+                        setLog(`Phase: ${progress.phase}`);
+                    }
+                    if (progress.pct !== undefined) {
+                        const pctVal = Math.round(progress.pct * 100);
+                        progressBar.style.width = `${pctVal}%`;
+                        progressPercent.textContent = `${pctVal}%`;
+                    }
+                });
+
+                isModelLoaded = true;
+                setStatusState('ready', 'Engine Hot & Ready');
+                progressBar.style.width = '100%';
+                progressPercent.textContent = '100%';
+                setLog("Model loaded successfully into VRAM.");
+                
+                generateBtn.disabled = false;
+                generateBtnText.textContent = "Generate Image";
+
+            } catch (err) {
+                console.error(err);
+                setStatusState('error', 'Initialization Failed');
+                setLog(`Error: ${err.message}`);
+            }
+        }
+
+        generateBtn.addEventListener('click', async () => {
+            const prompt = promptInput.value.trim();
+            if (!prompt || !isModelLoaded || !client) return;
+
+            try {
+                generateBtn.disabled = true;
+                generateBtnText.textContent = "Synthesizing Tensors...";
+                setStatusState('loading', 'Running Inference...');
+                
+                const startTime = performance.now();
+                const seedVal = seedInput.value ? parseInt(seedInput.value, 10) : undefined;
+
+                setLog(`Generating image for: "${prompt}"`);
+
+                const { promise } = client.generate({
+                    prompt: prompt,
+                    seed: seedVal
+                }, (prog) => {
+                    if (prog.phase) setLog(`Phase: ${prog.phase}`);
+                });
+
+                const result = await promise;
+                const duration = ((performance.now() - startTime) / 1000).toFixed(2);
+
+                if (result.ok && result.blob) {
+                    const url = URL.createObjectURL(result.blob);
+                    
+                    outputImage.src = url;
+                    downloadBtn.href = url;
+                    metricBadge.textContent = `${duration}s | 512px`;
+                    
+                    placeholderContainer.classList.add('hidden');
+                    resultContainer.classList.remove('hidden');
+
+                    // Add to session history
+                    if (emptyHistory) {
+                        emptyHistory.remove();
+                    }
+                    sessionHistory.unshift(url);
+                    renderHistory();
+
+                    setStatusState('ready', 'Generation Complete');
+                    setLog(`Success! Rendered in ${duration}s`);
+                } else {
+                    throw new Error(result.error || "Generation task failed.");
+                }
+
+            } catch (err) {
+                console.error(err);
+                setStatusState('error', 'Generation Error');
+                setLog(`Error: ${err.message}`);
+            } finally {
+                generateBtn.disabled = false;
+                generateBtnText.textContent = "Generate Image";
+            }
+        });
+
+        function renderHistory() {
+            historyGrid.innerHTML = '';
+            sessionHistory.forEach((imgUrl, index) => {
+                const thumb = document.createElement('div');
+                thumb.className = "aspect-square rounded-lg overflow-hidden border border-dark-border cursor-pointer hover:border-blue-500 transition-all";
+                thumb.innerHTML = `<img src="${imgUrl}" class="w-full h-full object-cover">`;
+                thumb.addEventListener('click', () => {
+                    outputImage.src = imgUrl;
+                    downloadBtn.href = imgUrl;
+                    placeholderContainer.classList.add('hidden');
+                    resultContainer.classList.remove('hidden');
+                });
+                historyGrid.appendChild(thumb);
+            });
+        }
+
+        window.addEventListener('DOMContentLoaded', initEngine);
+    </script>
+</body>
+</html>
