@@ -36,7 +36,7 @@
     <script type="importmap">
     {
         "imports": {
-            "web-txt2img": "https://cdn.jsdelivr.net/npm/web-txt2img@0.3.1/dist/index.mjs"
+            "@huggingface/transformers": "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.3/dist/transformers.min.js"
         }
     }
     </script>
@@ -169,26 +169,31 @@
     </footer>
 
     <script type="module">
-        import { Txt2ImgWorkerClient } from 'web-txt2img';
+        import { pipeline, env } from '@huggingface/transformers';
 
-        const statusDot = document.getElementById('global-status-dot');
-        const statusText = document.getElementById('global-status-text');
+        // Point to your Cloudflare R2 bucket — no Hugging Face token needed
+        env.allowLocalModels = false;
+        env.useBrowserCache  = true;
+        env.remoteHost       = 'https://pub-c376e8d6e93546ff94a4df2814e7a53b.r2.dev/sd15-onnx/';
+
+        const statusDot       = document.getElementById('global-status-dot');
+        const statusText      = document.getElementById('global-status-text');
         const progressPercent = document.getElementById('progress-percent');
-        const progressBar = document.getElementById('progress-bar');
-        const logMessage = document.getElementById('log-message');
-        const generateBtn = document.getElementById('generate-btn');
+        const progressBar     = document.getElementById('progress-bar');
+        const logMessage      = document.getElementById('log-message');
+        const generateBtn     = document.getElementById('generate-btn');
         const generateBtnText = document.getElementById('generate-btn-text');
-        const promptInput = document.getElementById('prompt-input');
-        const seedInput = document.getElementById('seed-input');
+        const promptInput     = document.getElementById('prompt-input');
+        const seedInput       = document.getElementById('seed-input');
         const placeholderContainer = document.getElementById('placeholder-container');
         const resultContainer = document.getElementById('result-container');
-        const outputImage = document.getElementById('output-image');
-        const downloadBtn = document.getElementById('download-btn');
-        const metricBadge = document.getElementById('metric-badge');
-        const historyGrid = document.getElementById('history-grid');
-        const emptyHistory = document.getElementById('empty-history');
+        const outputImage     = document.getElementById('output-image');
+        const downloadBtn     = document.getElementById('download-btn');
+        const metricBadge     = document.getElementById('metric-badge');
+        const historyGrid     = document.getElementById('history-grid');
+        const emptyHistory    = document.getElementById('empty-history');
 
-        let client = null;
+        let generator = null;
         let isModelLoaded = false;
         const sessionHistory = [];
 
@@ -215,40 +220,45 @@
             });
         });
 
+        const progressCb = (info) => {
+            if (info.status === 'downloading' || info.status === 'loading') {
+                const pct = info.progress ? Math.round(info.progress) : 0;
+                progressBar.style.width = `${pct}%`;
+                progressPercent.textContent = `${pct}%`;
+                setLog(`Loading ${info.file || 'model'} — ${pct}%`);
+            }
+            if (info.status === 'ready') {
+                progressBar.style.width = '100%';
+                progressPercent.textContent = '100%';
+                setLog('Model ready!');
+            }
+        };
+
         async function initEngine() {
             try {
-                setLog("Detecting WebGPU hardware capability...");
-                client = Txt2ImgWorkerClient.createDefault();
-                
-                const caps = await client.detect();
-                if (!caps.webgpu) {
-                    throw new Error("WebGPU is not enabled or supported in this browser. Please use Chrome, Edge, or Opera 113+.");
-                }
-
-                setLog("WebGPU detected! Loading SD-Turbo model weights...");
+                setLog('Loading model from your Cloudflare R2 storage...');
                 setStatusState('loading', 'Loading Model Weights...');
 
-                await client.load('sd-turbo', {
-                    backendPreference: ['webgpu']
-                }, (progress) => {
-                    if (progress.phase) {
-                        setLog(`Phase: ${progress.phase}`);
-                    }
-                    if (progress.pct !== undefined) {
-                        const pctVal = Math.round(progress.pct * 100);
-                        progressBar.style.width = `${pctVal}%`;
-                        progressPercent.textContent = `${pctVal}%`;
-                    }
-                });
+                try {
+                    generator = await pipeline('text-to-image', 'onnx-community/stable-diffusion-v1-5-ONNX', {
+                        device: 'webgpu',
+                        dtype: 'fp16',
+                        progress_callback: progressCb
+                    });
+                } catch (e) {
+                    console.warn('WebGPU failed, falling back to CPU:', e);
+                    setLog('WebGPU unavailable — falling back to CPU (slower)...');
+                    generator = await pipeline('text-to-image', 'onnx-community/stable-diffusion-v1-5-ONNX', {
+                        dtype: 'fp32',
+                        progress_callback: progressCb
+                    });
+                }
 
                 isModelLoaded = true;
                 setStatusState('ready', 'Engine Hot & Ready');
-                progressBar.style.width = '100%';
-                progressPercent.textContent = '100%';
-                setLog("Model loaded successfully into VRAM.");
-                
+                setLog('Model loaded successfully. Ready to generate!');
                 generateBtn.disabled = false;
-                generateBtnText.textContent = "Generate Image";
+                generateBtnText.textContent = 'Generate Image';
 
             } catch (err) {
                 console.error(err);
@@ -259,50 +269,53 @@
 
         generateBtn.addEventListener('click', async () => {
             const prompt = promptInput.value.trim();
-            if (!prompt || !isModelLoaded || !client) return;
+            if (!prompt || !isModelLoaded || !generator) return;
 
             try {
                 generateBtn.disabled = true;
-                generateBtnText.textContent = "Synthesizing Tensors...";
+                generateBtnText.textContent = 'Synthesizing...';
                 setStatusState('loading', 'Running Inference...');
-                
+                setLog(`Generating: "${prompt}"`);
+
                 const startTime = performance.now();
-                const seedVal = seedInput.value ? parseInt(seedInput.value, 10) : undefined;
 
-                setLog(`Generating image for: "${prompt}"`);
-
-                const { promise } = client.generate({
-                    prompt: prompt,
-                    seed: seedVal
-                }, (prog) => {
-                    if (prog.phase) setLog(`Phase: ${prog.phase}`);
+                const result = await generator(prompt, {
+                    num_inference_steps: 20,
+                    guidance_scale: 7.5
                 });
 
-                const result = await promise;
                 const duration = ((performance.now() - startTime) / 1000).toFixed(2);
 
-                if (result.ok && result.blob) {
-                    const url = URL.createObjectURL(result.blob);
-                    
-                    outputImage.src = url;
-                    downloadBtn.href = url;
-                    metricBadge.textContent = `${duration}s | 512px`;
-                    
-                    placeholderContainer.classList.add('hidden');
-                    resultContainer.classList.remove('hidden');
-
-                    // Add to session history
-                    if (emptyHistory) {
-                        emptyHistory.remove();
-                    }
-                    sessionHistory.unshift(url);
-                    renderHistory();
-
-                    setStatusState('ready', 'Generation Complete');
-                    setLog(`Success! Rendered in ${duration}s`);
+                // Get image blob from result
+                const imgData = result.images ? result.images[0] : result[0];
+                let url;
+                if (imgData instanceof Blob) {
+                    url = URL.createObjectURL(imgData);
+                } else if (typeof imgData === 'string') {
+                    url = imgData;
                 } else {
-                    throw new Error(result.error || "Generation task failed.");
+                    // Convert canvas/tensor to blob
+                    const canvas = document.createElement('canvas');
+                    canvas.width = imgData.width || 512;
+                    canvas.height = imgData.height || 512;
+                    const ctx = canvas.getContext('2d');
+                    ctx.putImageData(imgData, 0, 0);
+                    url = canvas.toDataURL('image/png');
                 }
+
+                outputImage.src = url;
+                downloadBtn.href = url;
+                metricBadge.textContent = `${duration}s | 512px`;
+
+                placeholderContainer.classList.add('hidden');
+                resultContainer.classList.remove('hidden');
+
+                if (emptyHistory) emptyHistory.remove();
+                sessionHistory.unshift(url);
+                renderHistory();
+
+                setStatusState('ready', 'Generation Complete');
+                setLog(`Success! Rendered in ${duration}s`);
 
             } catch (err) {
                 console.error(err);
@@ -310,13 +323,13 @@
                 setLog(`Error: ${err.message}`);
             } finally {
                 generateBtn.disabled = false;
-                generateBtnText.textContent = "Generate Image";
+                generateBtnText.textContent = 'Generate Image';
             }
         });
 
         function renderHistory() {
             historyGrid.innerHTML = '';
-            sessionHistory.forEach((imgUrl, index) => {
+            sessionHistory.forEach((imgUrl) => {
                 const thumb = document.createElement('div');
                 thumb.className = "aspect-square rounded-lg overflow-hidden border border-dark-border cursor-pointer hover:border-blue-500 transition-all";
                 thumb.innerHTML = `<img src="${imgUrl}" class="w-full h-full object-cover">`;
