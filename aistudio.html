@@ -96,11 +96,11 @@
                     <input type="number" id="seed-input" class="bg-dark-base border border-dark-border rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500 font-mono" placeholder="Random">
                 </div>
                 <div class="flex flex-col gap-1.5">
-                    <label class="text-xs font-medium text-dark-muted">Resolution</label>
-                    <div class="bg-dark-base border border-dark-border rounded-xl px-3 py-2 text-sm text-gray-400 font-mono flex items-center justify-between">
-                        <span>384 x 384</span>
-                        <span class="text-[10px] bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded">Janus-Pro</span>
-                    </div>
+                    <label for="source-select" class="text-xs font-medium text-dark-muted">Model Source</label>
+                    <select id="source-select" class="bg-dark-base border border-dark-border rounded-xl px-3 py-2 text-xs text-gray-200 focus:outline-none focus:border-blue-500">
+                        <option value="r2">Custom R2 Bucket</option>
+                        <option value="hf">Hugging Face Hub</option>
+                    </select>
                 </div>
             </div>
 
@@ -162,14 +162,6 @@
     <script type="module">
         import { env, AutoProcessor, MultiModalityCausalLM } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.2';
 
-        // ---------------------------------------------------------
-        // Configure to fetch from your custom Cloudflare R2 bucket
-        // ---------------------------------------------------------
-        env.allowLocalModels = false;
-        
-        // This targets the exact rclone folder path you uploaded to:
-        const R2_MODEL_PATH = 'https://pub-c376e8d6e93546ff94a4df2814e7a53b.r2.dev/images-ai/janus';
-
         const statusDot = document.getElementById('global-status-dot');
         const statusText = document.getElementById('global-status-text');
         const progressPercent = document.getElementById('progress-percent');
@@ -179,6 +171,7 @@
         const generateBtnText = document.getElementById('generate-btn-text');
         const promptInput = document.getElementById('prompt-input');
         const seedInput = document.getElementById('seed-input');
+        const sourceSelect = document.getElementById('source-select');
         const placeholderContainer = document.getElementById('placeholder-container');
         const resultContainer = document.getElementById('result-container');
         const outputImage = document.getElementById('output-image');
@@ -215,22 +208,48 @@
             });
         });
 
+        sourceSelect.addEventListener('change', () => {
+            if (!generateBtn.disabled && isModelLoaded) {
+                initEngine();
+            }
+        });
+
         async function initEngine() {
             try {
                 if (!navigator.gpu) {
                     throw new Error("WebGPU is not supported in this browser. Please use Chrome/Edge 113+.");
                 }
 
-                setLog("WebGPU detected! Loading Janus-Pro weights from R2...");
+                env.allowLocalModels = false;
+                
+                let modelId = 'janus';
+                const selectedSource = sourceSelect ? sourceSelect.value : 'r2';
+
+                if (selectedSource === 'r2') {
+                    // Properly configure custom host & path template for Cloudflare R2
+                    env.remoteHost = 'https://pub-c376e8d6e93546ff94a4df2814e7a53b.r2.dev/';
+                    env.remotePathTemplate = 'images-ai/{model}/';
+                    modelId = 'janus';
+                    setLog("Connecting to custom R2 bucket (https://pub-c376e8d6e93546ff94a4df2814e7a53b.r2.dev/images-ai/janus/)...");
+                } else {
+                    // Fallback to official Hugging Face Hub repo
+                    env.remoteHost = 'https://huggingface.co/';
+                    env.remotePathTemplate = '{model}/raw/{revision}/';
+                    modelId = 'onnx-community/Janus-Pro-1B-ONNX';
+                    setLog("Connecting to Hugging Face Hub (onnx-community/Janus-Pro-1B-ONNX)...");
+                }
+
                 setStatusState('loading', 'Loading Model Weights...');
 
-                // Initialize the Processor
-                processor = await AutoProcessor.from_pretrained(R2_MODEL_PATH);
+                // Initialize Processor
+                setLog(`Fetching processor config for '${modelId}'...`);
+                processor = await AutoProcessor.from_pretrained(modelId);
 
-                // Initialize the MultiModality Model
-                model = await MultiModalityCausalLM.from_pretrained(R2_MODEL_PATH, {
+                // Initialize Model
+                setLog(`Fetching WebGPU model weights for '${modelId}'...`);
+                model = await MultiModalityCausalLM.from_pretrained(modelId, {
                     device: 'webgpu',
-                    dtype: 'q4', // Targeting the 4-bit web optimized version you downloaded
+                    dtype: 'q4',
                     progress_callback: (progressInfo) => {
                         if (progressInfo.status === 'progress' && progressInfo.progress !== undefined) {
                             const pctVal = Math.round(progressInfo.progress);
@@ -253,7 +272,11 @@
             } catch (err) {
                 console.error(err);
                 setStatusState('error', 'Initialization Failed');
-                setLog(`Error: ${err.message}`);
+                let errHelp = `Error: ${err.message}`;
+                if (err.message.includes('Failed to fetch')) {
+                    errHelp += ` (Check R2 CORS settings or toggle Model Source to Hugging Face Hub).`;
+                }
+                setLog(errHelp);
             }
         }
 
