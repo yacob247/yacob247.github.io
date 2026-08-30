@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NexusAI Studio - Public WebGPU Engine</title>
+    <title>NexusAI Studio - Janus-Pro WebGPU</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -31,9 +31,6 @@
         }
         .animate-pulse-slow { animation: pulse-slow 3s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
     </style>
-
-    <!-- ONNX Runtime Web for direct model inference -->
-    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.min.js"></script>
 </head>
 <body class="bg-dark-base text-gray-100 min-h-screen flex flex-col justify-between selection:bg-blue-500 selection:text-white">
 
@@ -44,7 +41,7 @@
             </div>
             <div>
                 <h1 class="font-bold text-lg tracking-tight bg-gradient-to-r from-blue-400 to-indigo-300 bg-clip-text text-transparent">NexusAI Studio</h1>
-                <p class="text-xs text-dark-muted">Decentralized WebGPU Inference • 0$ Server Cost</p>
+                <p class="text-xs text-dark-muted">Janus-Pro-1B WebGPU • 0$ Server Cost</p>
             </div>
         </div>
         <div class="hidden sm:flex items-center space-x-2 text-xs bg-dark-base border border-dark-border px-3 py-1.5 rounded-full">
@@ -101,8 +98,8 @@
                 <div class="flex flex-col gap-1.5">
                     <label class="text-xs font-medium text-dark-muted">Resolution</label>
                     <div class="bg-dark-base border border-dark-border rounded-xl px-3 py-2 text-sm text-gray-400 font-mono flex items-center justify-between">
-                        <span>512 x 512</span>
-                        <span class="text-[10px] bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded">Turbo</span>
+                        <span>384 x 384</span>
+                        <span class="text-[10px] bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded">Janus-Pro</span>
                     </div>
                 </div>
             </div>
@@ -126,7 +123,7 @@
                         <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z"/></svg>
                     </div>
                     <h3 class="font-semibold text-gray-300 mb-1">Canvas Ready</h3>
-                    <p class="text-xs text-dark-muted max-w-sm">Enter a prompt and click generate. Your browser will execute the AI tensor pipeline locally in real-time.</p>
+                    <p class="text-xs text-dark-muted max-w-sm">Enter a prompt and click generate. Your browser will execute the AI tensor pipeline locally via WebGPU.</p>
                 </div>
 
                 <!-- Generated Image Result -->
@@ -159,46 +156,45 @@
     </main>
 
     <footer class="border-t border-dark-border bg-dark-card/50 py-4 text-center text-xs text-dark-muted">
-        Powered by WebGPU & SD-Turbo • Running entirely in visitor browsers with zero server dependencies.
+        Powered by Transformers.js & Janus-Pro-1B • Running entirely in visitor browsers with zero server dependencies.
     </footer>
 
     <script type="module">
-        // Your Cloudflare R2 bucket base URL
-        const R2 = 'https://pub-c376e8d6e93546ff94a4df2814e7a53b.r2.dev/sd15-onnx';
+        import { env, AutoProcessor, MultiModalityCausalLM } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.2';
 
-        const statusDot       = document.getElementById('global-status-dot');
-        const statusText      = document.getElementById('global-status-text');
+        // ---------------------------------------------------------
+        // Configure to fetch from your custom Cloudflare R2 bucket
+        // ---------------------------------------------------------
+        env.allowLocalModels = false;
+        
+        // This targets the exact rclone folder path you uploaded to:
+        const R2_MODEL_PATH = 'https://pub-c376e8d6e93546ff94a4df2814e7a53b.r2.dev/images-ai/janus';
+
+        const statusDot = document.getElementById('global-status-dot');
+        const statusText = document.getElementById('global-status-text');
         const progressPercent = document.getElementById('progress-percent');
-        const progressBar     = document.getElementById('progress-bar');
-        const logMessage      = document.getElementById('log-message');
-        const generateBtn     = document.getElementById('generate-btn');
+        const progressBar = document.getElementById('progress-bar');
+        const logMessage = document.getElementById('log-message');
+        const generateBtn = document.getElementById('generate-btn');
         const generateBtnText = document.getElementById('generate-btn-text');
-        const promptInput     = document.getElementById('prompt-input');
-        const seedInput       = document.getElementById('seed-input');
+        const promptInput = document.getElementById('prompt-input');
+        const seedInput = document.getElementById('seed-input');
         const placeholderContainer = document.getElementById('placeholder-container');
         const resultContainer = document.getElementById('result-container');
-        const outputImage     = document.getElementById('output-image');
-        const downloadBtn     = document.getElementById('download-btn');
-        const metricBadge     = document.getElementById('metric-badge');
-        const historyGrid     = document.getElementById('history-grid');
-        const emptyHistory    = document.getElementById('empty-history');
+        const outputImage = document.getElementById('output-image');
+        const downloadBtn = document.getElementById('download-btn');
+        const metricBadge = document.getElementById('metric-badge');
+        const historyGrid = document.getElementById('history-grid');
+        const emptyHistory = document.getElementById('empty-history');
 
+        let processor = null;
+        let model = null;
         let isModelLoaded = false;
         const sessionHistory = [];
-
-        // ONNX sessions
-        let textEncoderSession = null;
-        let unetSession = null;
-        let vaeDecoderSession = null;
 
         function setLog(msg) {
             logMessage.textContent = msg;
             console.log(`[NexusAI] ${msg}`);
-        }
-
-        function setProgress(pct) {
-            progressBar.style.width = `${pct}%`;
-            progressPercent.textContent = `${pct}%`;
         }
 
         function setStatusState(state, text) {
@@ -219,78 +215,40 @@
             });
         });
 
-        async function loadModel(url, name, startPct, endPct) {
-            setLog(`Loading ${name}...`);
-            const resp = await fetch(url);
-            if (!resp.ok) throw new Error(`Failed to fetch ${name}: ${resp.status}`);
-            const total = parseInt(resp.headers.get('content-length') || '0');
-            const reader = resp.body.getReader();
-            const chunks = [];
-            let received = 0;
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                chunks.push(value);
-                received += value.length;
-                if (total > 0) {
-                    const pct = startPct + Math.round((received / total) * (endPct - startPct));
-                    setProgress(pct);
-                }
-            }
-            const buffer = new Uint8Array(received);
-            let offset = 0;
-            for (const chunk of chunks) { buffer.set(chunk, offset); offset += chunk.length; }
-            return buffer.buffer;
-        }
-
         async function initEngine() {
             try {
-                setLog('Setting up ONNX Runtime...');
+                if (!navigator.gpu) {
+                    throw new Error("WebGPU is not supported in this browser. Please use Chrome/Edge 113+.");
+                }
+
+                setLog("WebGPU detected! Loading Janus-Pro weights from R2...");
                 setStatusState('loading', 'Loading Model Weights...');
 
-                // Configure ONNX Runtime to use WebGPU if available, else WASM
-                ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/';
+                // Initialize the Processor
+                processor = await AutoProcessor.from_pretrained(R2_MODEL_PATH);
 
-                const execProviders = [];
-                try {
-                    // Test WebGPU availability
-                    if (navigator.gpu) {
-                        const adapter = await navigator.gpu.requestAdapter();
-                        if (adapter) execProviders.push('webgpu');
+                // Initialize the MultiModality Model
+                model = await MultiModalityCausalLM.from_pretrained(R2_MODEL_PATH, {
+                    device: 'webgpu',
+                    dtype: 'q4', // Targeting the 4-bit web optimized version you downloaded
+                    progress_callback: (progressInfo) => {
+                        if (progressInfo.status === 'progress' && progressInfo.progress !== undefined) {
+                            const pctVal = Math.round(progressInfo.progress);
+                            progressBar.style.width = `${pctVal}%`;
+                            progressPercent.textContent = `${pctVal}%`;
+                            setLog(`Downloading ${progressInfo.file}: ${pctVal}%`);
+                        }
                     }
-                } catch(e) {}
-                execProviders.push('wasm');
-
-                setLog(`Using: ${execProviders[0].toUpperCase()}`);
-
-                // Load text encoder (~500MB)
-                const textEncBuf = await loadModel(`${R2}/text_encoder/model.onnx`, 'Text Encoder', 0, 15);
-                setLog('Creating Text Encoder session...');
-                textEncoderSession = await ort.InferenceSession.create(textEncBuf, { executionProviders: execProviders });
-                setProgress(18);
-
-                // Load VAE decoder (~200MB)
-                const vaeDecBuf = await loadModel(`${R2}/vae_decoder/model.onnx`, 'VAE Decoder', 18, 25);
-                setLog('Creating VAE Decoder session...');
-                vaeDecoderSession = await ort.InferenceSession.create(vaeDecBuf, { executionProviders: execProviders });
-                setProgress(28);
-
-                // Load UNet — weights.pb is the main file (~3.4GB), model.onnx is the graph (~1MB)
-                const unetBuf = await loadModel(`${R2}/unet/model.onnx`, 'UNet Graph', 28, 30);
-                setLog('Loading UNet weights (3.4GB — this takes a while)...');
-                const unetWeightsBuf = await loadModel(`${R2}/unet/weights.pb`, 'UNet Weights', 30, 95);
-                setLog('Creating UNet session...');
-                unetSession = await ort.InferenceSession.create(unetBuf, {
-                    executionProviders: execProviders,
-                    externalData: [{ data: unetWeightsBuf, path: 'weights.pb' }]
                 });
-                setProgress(100);
 
                 isModelLoaded = true;
                 setStatusState('ready', 'Engine Hot & Ready');
-                setLog('All models loaded. Ready to generate!');
+                progressBar.style.width = '100%';
+                progressPercent.textContent = '100%';
+                setLog("Janus-Pro loaded successfully into VRAM.");
+                
                 generateBtn.disabled = false;
-                generateBtnText.textContent = 'Generate Image';
+                generateBtnText.textContent = "Generate Image";
 
             } catch (err) {
                 console.error(err);
@@ -299,156 +257,73 @@
             }
         }
 
-        // Simple tokenizer (CLIP vocabulary lookup via API)
-        async function tokenize(text) {
-            // Use a lightweight tokenizer endpoint
-            const maxLen = 77;
-            const encoded = new Int32Array(maxLen).fill(49407); // pad token
-            encoded[0] = 49406; // start token
-            // Encode text characters as basic tokens (simplified)
-            const words = text.toLowerCase().split(/\s+/).slice(0, maxLen - 2);
-            for (let i = 0; i < words.length; i++) {
-                encoded[i + 1] = Math.abs(words[i].split('').reduce((a,c) => a * 31 + c.charCodeAt(0), 0)) % 49405 + 1;
-            }
-            encoded[Math.min(words.length + 1, maxLen - 1)] = 49407;
-            return encoded;
-        }
-
-        async function encodeText(tokens) {
-            const inputIds = new ort.Tensor('int32', tokens, [1, 77]);
-            const results = await textEncoderSession.run({ input_ids: inputIds });
-            return results[Object.keys(results)[0]];
-        }
-
-        function gaussianNoise(size, seed) {
-            const data = new Float32Array(size);
-            let s = seed || Math.floor(Math.random() * 999999);
-            for (let i = 0; i < size; i += 2) {
-                s = (s * 1664525 + 1013904223) & 0xffffffff;
-                const u1 = ((s >>> 0) / 0xffffffff) + 1e-10;
-                s = (s * 1664525 + 1013904223) & 0xffffffff;
-                const u2 = ((s >>> 0) / 0xffffffff);
-                const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
-                data[i] = z;
-                if (i + 1 < size) data[i + 1] = z;
-            }
-            return data;
-        }
-
         generateBtn.addEventListener('click', async () => {
             const prompt = promptInput.value.trim();
-            if (!prompt || !isModelLoaded) return;
+            if (!prompt || !isModelLoaded || !model || !processor) return;
 
             try {
                 generateBtn.disabled = true;
-                generateBtnText.textContent = 'Synthesizing...';
+                generateBtnText.textContent = "Synthesizing Tensors...";
                 setStatusState('loading', 'Running Inference...');
-                setLog(`Generating: "${prompt}"`);
-
+                
                 const startTime = performance.now();
-                const seed = seedInput.value ? parseInt(seedInput.value) : undefined;
-                const numSteps = 20;
-                const guidanceScale = 7.5;
-                const latentH = 64, latentW = 64, latentC = 4;
+                const seedVal = seedInput.value ? parseInt(seedInput.value, 10) : undefined;
 
-                // Encode text prompt
-                setLog('Encoding text prompt...');
-                const tokens = await tokenize(prompt);
-                const textEmbeds = await encodeText(tokens);
+                setLog(`Formatting prompt for Janus-Pro...`);
 
-                // Encode empty prompt for CFG
-                const emptyTokens = await tokenize('');
-                const emptyEmbeds = await encodeText(emptyTokens);
+                // Janus-Pro formatting requirement for text-to-image
+                const conversation = [
+                    { role: '<|User|>', content: prompt }
+                ];
+                
+                const inputs = await processor(conversation, { chat_template: 'text_to_image' });
 
-                // Concat for classifier-free guidance
-                const embedData = new Float32Array(2 * textEmbeds.data.length);
-                embedData.set(emptyEmbeds.data, 0);
-                embedData.set(textEmbeds.data, textEmbeds.data.length);
-                const encoderHiddenStates = new ort.Tensor('float32', embedData, [2, 77, textEmbeds.dims[2]]);
+                setLog(`Generating visual tokens...`);
 
-                // Init latents
-                setLog('Starting diffusion loop...');
-                let latents = gaussianNoise(latentC * latentH * latentW, seed);
+                // Use generate_images instead of standard generate for the Any-to-Any model
+                const outputs = await model.generate_images({
+                    ...inputs,
+                    ...(seedVal !== undefined && { seed: seedVal })
+                });
 
-                // Simple PNDM-like scheduler timesteps
-                const timesteps = Array.from({length: numSteps}, (_, i) =>
-                    Math.round(1000 - (i * (1000 / numSteps)))
-                );
-
-                for (let step = 0; step < numSteps; step++) {
-                    const t = timesteps[step];
-                    setLog(`Diffusion step ${step + 1}/${numSteps} (t=${t})...`);
-                    setProgress(Math.round((step / numSteps) * 80));
-
-                    // Double latents for CFG
-                    const latentInput = new Float32Array(2 * latents.length);
-                    latentInput.set(latents, 0);
-                    latentInput.set(latents, latents.length);
-
-                    const latentTensor   = new ort.Tensor('float32', latentInput, [2, latentC, latentH, latentW]);
-                    const timestepTensor = new ort.Tensor('int64', BigInt64Array.from([BigInt(t)]), []);
-
-                    const unetOut = await unetSession.run({
-                        sample: latentTensor,
-                        timestep: timestepTensor,
-                        encoder_hidden_states: encoderHiddenStates
-                    });
-
-                    const noisePred = unetOut[Object.keys(unetOut)[0]].data;
-                    const halfLen = noisePred.length / 2;
-                    const noiseUncond = noisePred.slice(0, halfLen);
-                    const noiseCond   = noisePred.slice(halfLen);
-
-                    // CFG
-                    const alpha = 1 - t / 1000;
-                    for (let i = 0; i < latents.length; i++) {
-                        const guided = noiseUncond[i] + guidanceScale * (noiseCond[i] - noiseUncond[i]);
-                        latents[i] = (latents[i] - Math.sqrt(1 - alpha) * guided) / Math.sqrt(alpha);
-                    }
-                }
-
-                // Decode latents
-                setLog('Decoding image...');
-                setProgress(85);
-                const scaledLatents = new Float32Array(latents.map(v => v / 0.18215));
-                const latentFinal = new ort.Tensor('float32', scaledLatents, [1, latentC, latentH, latentW]);
-                const vaeOut = await vaeDecoderSession.run({ latent_sample: latentFinal });
-                const imgData = vaeOut[Object.keys(vaeOut)[0]].data;
-
-                // Render to canvas
-                setLog('Rendering...');
+                // Extract output image
+                const img = Array.isArray(outputs) ? outputs[0] : outputs;
+                
+                // Convert RawImage RGB format to viewable browser format
+                setLog("Decoding image data...");
                 const canvas = document.createElement('canvas');
-                canvas.width = 512; canvas.height = 512;
+                canvas.width = img.width;
+                canvas.height = img.height;
                 const ctx = canvas.getContext('2d');
-                const pixels = ctx.createImageData(512, 512);
-                for (let i = 0; i < 512 * 512; i++) {
-                    const r = Math.max(0, Math.min(255, Math.round((imgData[i] * 0.5 + 0.5) * 255)));
-                    const g = Math.max(0, Math.min(255, Math.round((imgData[i + 512*512] * 0.5 + 0.5) * 255)));
-                    const b = Math.max(0, Math.min(255, Math.round((imgData[i + 2*512*512] * 0.5 + 0.5) * 255)));
-                    pixels.data[i * 4]     = r;
-                    pixels.data[i * 4 + 1] = g;
-                    pixels.data[i * 4 + 2] = b;
-                    pixels.data[i * 4 + 3] = 255;
+                
+                const imgData = ctx.createImageData(img.width, img.height);
+                for (let i = 0; i < img.data.length / 3; i++) {
+                    imgData.data[i * 4] = img.data[i * 3];       // Red
+                    imgData.data[i * 4 + 1] = img.data[i * 3 + 1]; // Green
+                    imgData.data[i * 4 + 2] = img.data[i * 3 + 2]; // Blue
+                    imgData.data[i * 4 + 3] = 255;                 // Alpha
                 }
-                ctx.putImageData(pixels, 0, 0);
+                ctx.putImageData(imgData, 0, 0);
 
                 const url = canvas.toDataURL('image/png');
                 const duration = ((performance.now() - startTime) / 1000).toFixed(2);
-
+                
                 outputImage.src = url;
                 downloadBtn.href = url;
-                metricBadge.textContent = `${duration}s | 512px`;
-                setProgress(100);
-
+                metricBadge.textContent = `${duration}s | ${img.width}px`;
+                
                 placeholderContainer.classList.add('hidden');
                 resultContainer.classList.remove('hidden');
 
-                if (emptyHistory) emptyHistory.remove();
+                // Add to session history
+                if (emptyHistory) {
+                    emptyHistory.remove();
+                }
                 sessionHistory.unshift(url);
                 renderHistory();
 
                 setStatusState('ready', 'Generation Complete');
-                setLog(`Done in ${duration}s`);
+                setLog(`Success! Rendered in ${duration}s`);
 
             } catch (err) {
                 console.error(err);
@@ -456,7 +331,7 @@
                 setLog(`Error: ${err.message}`);
             } finally {
                 generateBtn.disabled = false;
-                generateBtnText.textContent = 'Generate Image';
+                generateBtnText.textContent = "Generate Image";
             }
         });
 
