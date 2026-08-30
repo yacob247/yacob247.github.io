@@ -147,6 +147,19 @@
     <script type="module">
         import { env, AutoProcessor, MultiModalityCausalLM } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.2';
 
+        // --- NETWORK INTERCEPTOR FOR CUSTOM R2 BUCKET ---
+        // Transformers.js requests '_q4.onnx', but your HF files are named '_quantized.onnx'.
+        // This transparently reroutes those requests so you don't have to manually rename files in Cloudflare.
+        const originalFetch = window.fetch;
+        window.fetch = async function(...args) {
+            let [resource, config] = args;
+            if (typeof resource === 'string' && resource.includes('envizion.work') && resource.includes('_q4.onnx')) {
+                resource = resource.replace('_q4.onnx', '_quantized.onnx');
+            }
+            return originalFetch(resource, config);
+        };
+        // ------------------------------------------------
+
         const statusDot = document.getElementById('global-status-dot');
         const statusText = document.getElementById('global-status-text');
         const progressPercent = document.getElementById('progress-percent');
@@ -208,6 +221,8 @@
             }
         });
 
+        let engineInitPromise = null;
+
         async function initEngine() {
             try {
                 if (!navigator.gpu) {
@@ -220,21 +235,21 @@
 
                 if (selectedSource === 'r2') {
                     // Set to R2 paths
-                    env.remoteHost = 'https://pub-c376e8d6e93546ff94a4df2814e7a53b.r2.dev/';
+                    env.remoteHost = 'https://envizion.work/';
                     env.remotePathTemplate = '{model}/';
                     modelId = 'janus';
-                    setLog("Connecting to Custom R2 Bucket...");
+                    setLog("Connecting to Custom CDN (envizion.work)...");
 
                     // --- PRE-FLIGHT TEST ---
                     try {
-                        setLog("Testing bucket connection (fetching config.json)...");
-                        const testUrl = 'https://pub-c376e8d6e93546ff94a4df2814e7a53b.r2.dev/janus/config.json';
+                        setLog("Testing CDN connection (fetching config.json)...");
+                        const testUrl = 'https://envizion.work/janus/config.json';
                         const testRes = await fetch(testUrl, { method: 'HEAD' });
                         if (!testRes.ok) {
                             setLog(`Bucket Error: HTTP ${testRes.status}. The files might be in a subfolder.`, true);
                             return false; // Stop loading
                         }
-                        setLog("Bucket connection successful! Initializing WebGPU...");
+                        setLog("CDN connection successful! Initializing WebGPU...");
                     } catch (e) {
                         setLog(`Browser Blocked Request: ${e.message}. (This is definitely CORS or an adblocker).`, true);
                         return false; // Stop loading
@@ -255,24 +270,55 @@
                 processor = await AutoProcessor.from_pretrained(modelId);
 
                 setLog(`Fetching WebGPU model weights for '${modelId}'...`);
-                model = await MultiModalityCausalLM.from_pretrained(modelId, {
-                    device: 'webgpu',
-                    dtype: 'q4', // Uses lightweight 4-bit quant to fit in browser VRAM
-                    progress_callback: (progressInfo) => {
-                        if (progressInfo.status === 'progress' && progressInfo.progress !== undefined) {
-                            const pctVal = Math.round(progressInfo.progress);
-                            progressBar.style.width = `${pctVal}%`;
-                            progressPercent.textContent = `${pctVal}%`;
-                            setLog(`Downloading model files: ${pctVal}%`);
+                try {
+                    model = await MultiModalityCausalLM.from_pretrained(modelId, {
+                        device: 'webgpu',
+                        dtype: 'q4', // <--- Change this back to 'q4'!
+                        progress_callback: (progressInfo) => {
+                            if (progressInfo.status === 'progress' && progressInfo.progress !== undefined) {
+                                const pctVal = Math.round(progressInfo.progress);
+                                progressBar.style.width = `${pctVal}%`;
+                                progressPercent.textContent = `${pctVal}%`;
+                                setLog(`Downloading model files: ${pctVal}%`);
+                            }
                         }
+                    });
+                } catch (modelError) {
+                    if (selectedSource === 'r2' && modelError.message.includes('Could not locate file')) {
+                        setLog(`Missing file in R2 bucket. Falling back to Hugging Face...`);
+                        
+                        // Reconfigure environment for Hugging Face fallback
+                        env.remoteHost = 'https://huggingface.co/';
+                        env.remotePathTemplate = '{model}/resolve/{revision}/';
+                        modelId = 'onnx-community/Janus-Pro-1B-ONNX';
+                        
+                        setLog(`Fetching processor config from HF...`);
+                        processor = await AutoProcessor.from_pretrained(modelId);
+                        
+                        setLog(`Fetching WebGPU model weights from HF...`);
+                        model = await MultiModalityCausalLM.from_pretrained(modelId, {
+                            device: 'webgpu',
+                            dtype: 'q4', // <--- Change this back to 'q4' here too (if you modified it)!
+                            progress_callback: (progressInfo) => {
+                                if (progressInfo.status === 'progress' && progressInfo.progress !== undefined) {
+                                    const pctVal = Math.round(progressInfo.progress);
+                                    progressBar.style.width = `${pctVal}%`;
+                                    progressPercent.textContent = `${pctVal}%`;
+                                    setLog(`Downloading HF fallback files: ${pctVal}%`);
+                                }
+                            }
+                        });
+                    } else {
+                        throw modelError; // Rethrow if it's a different error
                     }
-                });
+                }
 
                 isModelLoaded = true;
                 setStatusState('ready', 'Engine Hot & Ready');
                 progressBar.style.width = '100%';
                 progressPercent.textContent = '100%';
-                setLog("Janus-Pro loaded successfully into VRAM.");
+                setLog("Janus-Pro loaded successfully into VRAM. Ready to generate!");
+                generateBtnText.textContent = "Generate Image";
                 return true;
 
             } catch (err) {
@@ -286,18 +332,24 @@
             }
         }
 
+        window.addEventListener('DOMContentLoaded', () => {
+            setLog("Auto-preloading model in the background...");
+            engineInitPromise = initEngine();
+        });
+
         generateBtn.addEventListener('click', async () => {
             const prompt = promptInput.value.trim();
             if (!prompt) return;
 
             generateBtn.disabled = true;
 
-            // Load model if it isn't loaded yet
             if (!isModelLoaded) {
-                const success = await initEngine();
+                generateBtnText.textContent = "Waiting for model to load...";
+                const success = await (engineInitPromise || initEngine());
                 if (!success) {
                     generateBtn.disabled = false;
-                    return; // Stop if init failed (e.g. CORS)
+                    generateBtnText.textContent = "Load Engine & Generate";
+                    return; 
                 }
             }
 
