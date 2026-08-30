@@ -234,27 +234,42 @@
                 const selectedSource = sourceSelect.value;
 
                 if (selectedSource === 'r2') {
-                    // Set to R2 paths
-                    env.remoteHost = 'https://envizion.work/';
-                    env.remotePathTemplate = '{model}/';
-                    modelId = 'janus';
                     setLog("Connecting to Custom CDN (envizion.work)...");
+                    setLog("Auto-detecting model folder structure on envizion.work...");
 
-                    // --- PRE-FLIGHT TEST ---
-                    try {
-                        setLog("Testing CDN connection (fetching config.json)...");
-                        const testUrl = 'https://envizion.work/janus/config.json';
-                        const testRes = await fetch(testUrl, { method: 'HEAD' });
-                        if (!testRes.ok) {
-                            setLog(`Bucket Error: HTTP ${testRes.status}. The files might be in a subfolder.`, true);
-                            return false; // Stop loading
+                    // Smart path auto-discovery using GET (avoids HEAD CORS/method restrictions)
+                    const candidatePaths = [
+                        { template: '', modelId: 'r2-model', path: 'https://envizion.work/config.json', label: 'Bucket Root (envizion.work/config.json)' },
+                        { template: '{model}/', modelId: 'janus', path: 'https://envizion.work/janus/config.json', label: 'envizion.work/janus/config.json' },
+                        { template: '{model}/', modelId: 'Janus-Pro-1B', path: 'https://envizion.work/Janus-Pro-1B/config.json', label: 'envizion.work/Janus-Pro-1B/config.json' },
+                        { template: '{model}/', modelId: 'onnx-community/Janus-Pro-1B-ONNX', path: 'https://envizion.work/onnx-community/Janus-Pro-1B-ONNX/config.json', label: 'envizion.work/onnx-community/Janus-Pro-1B-ONNX/config.json' }
+                    ];
+
+                    let foundCandidate = null;
+                    for (const candidate of candidatePaths) {
+                        try {
+                            setLog(`Checking ${candidate.label}...`);
+                            const res = await fetch(candidate.path, { method: 'GET' });
+                            if (res.ok) {
+                                foundCandidate = candidate;
+                                setLog(`Found config.json at ${candidate.label}!`);
+                                break;
+                            }
+                        } catch (e) {
+                            // ignore & try next
                         }
-                        setLog("CDN connection successful! Initializing WebGPU...");
-                    } catch (e) {
-                        setLog(`Browser Blocked Request: ${e.message}. (This is definitely CORS or an adblocker).`, true);
-                        return false; // Stop loading
                     }
-                    // -----------------------
+
+                    if (foundCandidate) {
+                        env.remoteHost = 'https://envizion.work/';
+                        env.remotePathTemplate = foundCandidate.template;
+                        modelId = foundCandidate.modelId;
+                    } else {
+                        setLog(`Notice: Could not locate config.json on envizion.work (checked root & subfolders). Falling back to Hugging Face Hub...`, true);
+                        env.remoteHost = 'https://huggingface.co/';
+                        env.remotePathTemplate = '{model}/resolve/{revision}/';
+                        modelId = 'onnx-community/Janus-Pro-1B-ONNX';
+                    }
 
                 } else {
                     // Restore exact default settings for Hugging Face to avoid 404s
