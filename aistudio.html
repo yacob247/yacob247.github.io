@@ -183,6 +183,53 @@
         let isModelLoaded = false;
         const sessionHistory = [];
 
+        // Global tracker for smooth multi-file download calculations
+        const fileProgressTracker = new Map();
+        let maxOverallPct = 0;
+
+        function updateProgress(progressInfo) {
+            if (!progressInfo || !progressInfo.file) return;
+
+            const file = progressInfo.file;
+            const current = fileProgressTracker.get(file) || { loaded: 0, total: 0 };
+
+            if (progressInfo.status === 'initiate') {
+                fileProgressTracker.set(file, { loaded: 0, total: progressInfo.total || 0 });
+            } else if (progressInfo.status === 'progress' || progressInfo.status === 'download') {
+                const loaded = progressInfo.loaded ?? (progressInfo.progress ? (progressInfo.progress / 100) * (progressInfo.total || current.total) : current.loaded);
+                const total = progressInfo.total || current.total || loaded;
+                fileProgressTracker.set(file, { loaded, total });
+            } else if (progressInfo.status === 'done') {
+                const total = current.total || progressInfo.total || current.loaded;
+                fileProgressTracker.set(file, { loaded: total, total });
+            }
+
+            let totalBytes = 0;
+            let loadedBytes = 0;
+
+            for (const item of fileProgressTracker.values()) {
+                totalBytes += item.total;
+                loadedBytes += item.loaded;
+            }
+
+            if (totalBytes > 0) {
+                const rawPct = Math.round((loadedBytes / totalBytes) * 100);
+                
+                // Enforce monotonic progress so the percentage never drops backward
+                if (rawPct > maxOverallPct) {
+                    maxOverallPct = rawPct;
+                }
+                
+                const displayPct = Math.min(99, maxOverallPct);
+                progressBar.style.width = `${displayPct}%`;
+                progressPercent.textContent = `${displayPct}%`;
+
+                const loadedMB = (loadedBytes / (1024 * 1024)).toFixed(0);
+                const totalMB = (totalBytes / (1024 * 1024)).toFixed(0);
+                setLog(`Downloading model weights: ${displayPct}% (${loadedMB} MB / ${totalMB} MB)`);
+            }
+        }
+
         function setLog(msg, isError = false) {
             if (isError) {
                 logMessage.innerHTML = `<span class="text-rose-400 font-medium">${msg}</span>`;
@@ -215,6 +262,8 @@
                 isModelLoaded = false;
                 processor = null;
                 model = null;
+                fileProgressTracker.clear();
+                maxOverallPct = 0;
                 generateBtnText.textContent = "Re-load Engine & Generate";
                 setStatusState('ready', 'Engine Reset');
                 setLog("Source changed. Click generate to load from new source.");
@@ -237,7 +286,6 @@
                     setLog("Connecting to Custom CDN (envizion.work)...");
                     setLog("Auto-detecting model folder structure on envizion.work...");
 
-                    // Smart path auto-discovery using GET (avoids HEAD CORS/method restrictions)
                     const candidatePaths = [
                         { template: '', modelId: 'r2-model', path: 'https://envizion.work/config.json', label: 'Bucket Root (envizion.work/config.json)' },
                         { template: '{model}/', modelId: 'janus', path: 'https://envizion.work/janus/config.json', label: 'envizion.work/janus/config.json' },
@@ -265,14 +313,13 @@
                         env.remotePathTemplate = foundCandidate.template;
                         modelId = foundCandidate.modelId;
                     } else {
-                        setLog(`Notice: Could not locate config.json on envizion.work (checked root & subfolders). Falling back to Hugging Face Hub...`, true);
+                        setLog(`Notice: Could not locate config.json on envizion.work. Falling back to Hugging Face Hub...`, true);
                         env.remoteHost = 'https://huggingface.co/';
                         env.remotePathTemplate = '{model}/resolve/{revision}/';
                         modelId = 'onnx-community/Janus-Pro-1B-ONNX';
                     }
 
                 } else {
-                    // Restore exact default settings for Hugging Face to avoid 404s
                     env.remoteHost = 'https://huggingface.co/';
                     env.remotePathTemplate = '{model}/resolve/{revision}/';
                     modelId = 'onnx-community/Janus-Pro-1B-ONNX';
@@ -282,49 +329,38 @@
                 setStatusState('loading', 'Loading Model Weights...');
 
                 setLog(`Fetching processor config for '${modelId}'...`);
-                processor = await AutoProcessor.from_pretrained(modelId);
+                processor = await AutoProcessor.from_pretrained(modelId, {
+                    progress_callback: updateProgress
+                });
 
                 setLog(`Fetching WebGPU model weights for '${modelId}'...`);
                 try {
                     model = await MultiModalityCausalLM.from_pretrained(modelId, {
                         device: 'webgpu',
-                        dtype: 'q4', // <--- Change this back to 'q4'!
-                        progress_callback: (progressInfo) => {
-                            if (progressInfo.status === 'progress' && progressInfo.progress !== undefined) {
-                                const pctVal = Math.round(progressInfo.progress);
-                                progressBar.style.width = `${pctVal}%`;
-                                progressPercent.textContent = `${pctVal}%`;
-                                setLog(`Downloading model files: ${pctVal}%`);
-                            }
-                        }
+                        dtype: 'q4',
+                        progress_callback: updateProgress
                     });
                 } catch (modelError) {
                     if (selectedSource === 'r2' && modelError.message.includes('Could not locate file')) {
                         setLog(`Missing file in R2 bucket. Falling back to Hugging Face...`);
                         
-                        // Reconfigure environment for Hugging Face fallback
                         env.remoteHost = 'https://huggingface.co/';
                         env.remotePathTemplate = '{model}/resolve/{revision}/';
                         modelId = 'onnx-community/Janus-Pro-1B-ONNX';
                         
                         setLog(`Fetching processor config from HF...`);
-                        processor = await AutoProcessor.from_pretrained(modelId);
+                        processor = await AutoProcessor.from_pretrained(modelId, {
+                            progress_callback: updateProgress
+                        });
                         
                         setLog(`Fetching WebGPU model weights from HF...`);
                         model = await MultiModalityCausalLM.from_pretrained(modelId, {
                             device: 'webgpu',
-                            dtype: 'q4', // <--- Change this back to 'q4' here too (if you modified it)!
-                            progress_callback: (progressInfo) => {
-                                if (progressInfo.status === 'progress' && progressInfo.progress !== undefined) {
-                                    const pctVal = Math.round(progressInfo.progress);
-                                    progressBar.style.width = `${pctVal}%`;
-                                    progressPercent.textContent = `${pctVal}%`;
-                                    setLog(`Downloading HF fallback files: ${pctVal}%`);
-                                }
-                            }
+                            dtype: 'q4',
+                            progress_callback: updateProgress
                         });
                     } else {
-                        throw modelError; // Rethrow if it's a different error
+                        throw modelError;
                     }
                 }
 
@@ -339,10 +375,7 @@
             } catch (err) {
                 console.error(err);
                 setStatusState('error', 'Initialization Failed');
-                
-                // Show the exact error instead of assuming CORS, as the bucket has no restrictions
                 setLog(`Error initializing model: ${err.message}. (Check the browser console network tab for 404s)`, true);
-                
                 return false;
             }
         }
