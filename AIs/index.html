@@ -89,7 +89,7 @@
         window.nexusEnvReady = new Promise(res => { window._nexusEnvReadyResolve = res; });
     </script>
     <script type="module">
-        import * as webllm from "https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm/+esm";
+        import * as webllm from "https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.84/+esm";
         window.webllm = webllm;
     </script>
     <style>
@@ -3692,9 +3692,11 @@ IMPL.clone = async ({ prompt, setProgress }) => {
             if (activeDot) { activeDot.classList.remove('bg-slate-500'); activeDot.classList.add('bg-emerald-400'); }
             window.toggleModelDropdown();
             // Switching to a different model requires re-initialising the engine on the next send
-            if (typeof isEngineReady !== 'undefined' && isEngineReady && engine && id !== CHAT_MODEL_ID) {
-                engine = null; isEngineReady = false; window._engineInitStarted = false;
+            if (typeof isEngineReady !== 'undefined' && isEngineReady && id !== CHAT_MODEL_ID) {
+                engine = null; isEngineReady = false; window._engineInitStarted = false; window._chatUseTf = false;
                 triggerNotificationToast('Model switched', 'Re-initialising engine with ' + label + ' on the next message.', 'fa-arrow-right-arrow-left', 'bg-indigo-600');
+            } else if (window._chatUseTf) {
+                triggerNotificationToast('Model selected', label + ' is active (CPU engine).', 'fa-microchip', 'bg-emerald-600');
             } else {
                 triggerNotificationToast('Model selected', label + ' is active.', 'fa-microchip', 'bg-indigo-600');
             }
@@ -4045,6 +4047,139 @@ IMPL.clone = async ({ prompt, setProgress }) => {
              window.switchCanvasTab('preview');
         };
 
+// --- WebLLM config: the runtime and the model_lib wasm MUST be built for the same release ---
+        const WEBLLM_CDN  = "https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.84/+esm";   // runtime = 0.2.84
+        const MODEL_LIB_URL = "https://raw.githubusercontent.com/mlc-ai/binary-mlc-llm-libs/main/web-llm-models/v0_2_84/base/Qwen2-0.5B-Instruct-q4f16_1_cs1k-webgpu.wasm"; // lib = v0_2_84
+        const R2_MODEL_URL = "https://pub-406a7f3fa4d44f41b5317520aa1aaf4a.r2.dev/";            // our model files, served only from our Cloudflare R2 bucket
+
+        // ---- CPU/WASM chat fallback (works on ANY browser — even when WebGPU is software/absent) ----
+        // WebLLM's compute kernels need the 'shader-f16' WebGPU feature. If the browser's adapter
+        // lacks it (e.g. Edge's SwiftShader), instead of failing we run chat on plain CPU/WASM via
+        // transformers.js with an int8 ONNX Qwen2.5-0.5B hosted in OUR R2 bucket. No settings needed.
+        const TF_CDN = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.2';
+        const CHAT_ONNX_ID  = 'qwen2_5-0.5b-instruct-int8';   // folder in our R2 bucket (see export_qwen_onnx.py)
+        const CHAT_ONNX_URL = R2_MODEL_URL + CHAT_ONNX_ID;    // weights ONLY from our Cloudflare R2
+        let _tfq = null;          // transformers.js module
+        let _tfChatModel = null;  // AutoModelForCausalLM (int8, WASM)
+        let _tfChatTok = null;    // AutoTokenizer
+        window._chatUseTf = false;
+        let _gpuAdapterInfo = null;
+
+        // Chrome hides the real GPU failure behind "is invalid due to a previous error".
+        // Surface the underlying driver validation message in the console.
+        (function patchGpuErrorLogging() {
+            const orig = console.error.bind(console);
+            console.error = (...args) => {
+                for (const a of args) {
+                    if (a && typeof a === 'object' && a.type === 'uncapturederror' && a.error) {
+                        try { orig("[WebGPU driver]", a.error.message || a.error, (a.error.error && a.error.error.message) || ''); } catch (e) {}
+                    }
+                }
+                orig(...args);
+            };
+        })();
+
+        // Identify the WebGPU adapter so shader-compile failures can be explained (WARP/SwiftShader = 'cpu')
+        async function probeWebGPUAdapter() {
+            try {
+                if (!navigator.gpu) return { type: 'no-webgpu' };
+                const adapter = await navigator.gpu.requestAdapter();
+                if (!adapter) return { type: 'no-adapter' };
+                const info = adapter.info || (typeof adapter.requestAdapterInfo === 'function' ? await adapter.requestAdapterInfo() : {});
+                const res = {
+                    type:    (info.adapterType || 'unknown').toLowerCase(),
+                    vendor:  info.vendor || '?',
+                    device:  info.device || '?',
+                    arch:    info.architecture || '?',
+                    features: [...adapter.features].sort().join(', '),
+                };
+                const hay = (res.vendor + ' ' + res.device + ' ' + res.arch).toLowerCase();
+                if (res.type === 'cpu' || /warp|swiftshader|llvmpipe|microsoft basic render/.test(hay)) res.type = 'cpu';
+                console.info("[WebLLM] GPU adapter:", res);
+                return res;
+            } catch (e) {
+                console.warn("[WebLLM] Adapter probe failed:", e);
+                return { type: 'probe-failed' };
+            }
+        }
+        // ---- CPU/WASM chat engine (transformers.js · ONNX int8 · NO WebGPU, NO shader-f16 needed) ----
+        async function getTfChatEngine() {
+            if (_tfChatModel && _tfChatTok) return { model: _tfChatModel, tok: _tfChatTok };
+            const pc = document.getElementById('init-progress-container');
+            const ptx = () => document.getElementById('init-progress-text');
+            const pst = (txt, pct) => { try { parent.postMessage({ type: 'nexus-engine-status', engine: 'chat', text: txt, pct }, '*'); } catch (e) {} };
+            if (pc) pc.classList.remove('hidden');
+            try { ptx().innerText = "Loading CPU chat engine (ONNX)… first download ≈ 550 MB"; } catch (e) {}
+            pst('Preparing CPU chat engine…', 5);
+            if (!_tfq) { _tfq = await import(TF_CDN); _tfq.env.allowLocalModels = false; _tfq.env.useBrowserCache = true; }
+            const opts = {
+                device: 'wasm',          // plain CPU/WASM — works without WebGPU / WebLLM entirely
+                dtype: 'q8',             // int8 → loads onnx/model_quantized.onnx from our R2
+                progress_callback: (p) => {
+                    if (p.status === 'progress' || p.status === 'download') {
+                        const pct = Math.min(90, Math.round((p.progress || 0) * 100));
+                        try { ptx().innerText = 'Downloading CPU chat model… ' + pct + '%'; } catch (e) {}
+                        pst('Downloading CPU chat model… ' + pct + '%', pct);
+                    }
+                }
+            };
+            _tfChatTok = await _tfq.AutoTokenizer.from_pretrained(CHAT_ONNX_URL).catch((e0) => { throw new Error("CPU chat model missing on R2 — run export_qwen_onnx.py, then upload_qwen_onnx.ps1 (" + CHAT_ONNX_ID + "). " + (e0 && e0.message ? e0.message : e0)); });
+            _tfChatModel = await _tfq.AutoModelForCausalLM.from_pretrained(CHAT_ONNX_URL, opts).catch((e1) => { throw new Error("CPU chat model failed to load — check the R2 folder " + CHAT_ONNX_ID + " (" + (e1 && e1.message ? e1.message : e1) + ")"); });
+            if (pc) pc.classList.add('hidden');
+            return { model: _tfChatModel, tok: _tfChatTok };
+        }
+
+        // Qwen chat format (built directly so we don't depend on tokenizer chat-template support)
+        function qwenChatPrompt(messages) {
+            let out = '';
+            for (const m of messages) {
+                const role = (m.role === 'assistant') ? 'assistant' : (m.role === 'system' ? 'system' : 'user');
+                out += '<|im_start|>' + role + '\n' + m.content + '<|im_end|>\n';
+            }
+            return out + '<|im_start|>assistant\n';
+        }
+
+        // Streaming chat on CPU/WASM. onDelta(text) fires per decoded chunk; resolves with the full clean text.
+        window.nexusChatLocal = async (messages, onDelta) => {
+            const { model, tok } = await getTfChatEngine();
+            const inputIds = await tok(qwenChatPrompt(messages), { return_tensors: 'pt' });
+            let display = '';
+            const streamer = new _tfq.TextStreamer(tok, {
+                skip_prompt: true,
+                skip_special_tokens: true,
+                callback_function: (text) => { display += text; try { if (onDelta) onDelta(text); } catch (e) {} }
+            });
+            let out;
+            try {
+                out = await model.generate({
+                    ...inputIds,
+                    max_new_tokens: 1000,
+                    do_sample: false,
+                    return_dict_in_generate: true,
+                    streamer
+                });
+            } catch (e) {
+                console.warn('[WebLLM] streamer failed, regenerating without it:', e);
+                out = await model.generate({
+                    ...inputIds,
+                    max_new_tokens: 1000,
+                    do_sample: false,
+                    return_dict_in_generate: true
+                });
+            }
+            // Decode the generated portion (authoritative, fixes any mid-token streaming artifacts)
+            let finalText = '';
+            try {
+                const seq = (out && out.sequences) ? out.sequences : out;
+                const plen = Number(inputIds.input_ids.size(-1));
+                const flat = seq.data;
+                const gen = [];
+                for (let i = plen; i < flat.length; i++) gen.push(Number(flat[i]));
+                finalText = tok.decode(gen, { skip_special_tokens: true }) || '';
+            } catch (e) { console.warn('[WebLLM] final decode failed:', e); }
+            return (finalText && finalText.trim()) ? finalText.trim() : display.trim();
+        };
+
         // --- WebLLM Engine Initialization ---
         window.loadWebLLMEngine = async () => {
             if(isEngineReady) return;
@@ -4078,10 +4213,10 @@ IMPL.clone = async ({ prompt, setProgress }) => {
             };
 
             try {
-                // Dynamically import WebLLM to avoid race conditions on page load
+                // Dynamically import WebLLM — runtime pinned to the same release the model_lib wasm was built for (0.2.84 ↔ v0_2_84)
                 if(!window.webllm) {
                      progressText.innerText = "Downloading WebLLM core libraries...";
-                     window.webllm = await import("https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm/+esm");
+                     window.webllm = await import(WEBLLM_CDN);
                 }
 
                 if(!window.webllm) {
@@ -4090,6 +4225,32 @@ IMPL.clone = async ({ prompt, setProgress }) => {
 
                 const { CreateMLCEngine } = window.webllm;
 
+                // Diagnostic: report which GPU/back-end the browser picked (explains shader-compile failures)
+                _gpuAdapterInfo = await probeWebGPUAdapter();
+                if (_gpuAdapterInfo) {
+                    const hasF16 = (_gpuAdapterInfo.features || '').includes('shader-f16');
+                    _gpuAdapterInfo.hasShaderF16 = hasF16;
+                    if (_gpuAdapterInfo.type === 'cpu' || !hasF16) {
+                        // The adapter can't run WebLLM: its shaders all start with `enable f16;` and this
+                        // adapter (SwiftShader/WARP/software) rejects the WGSL f16 extension at parse time.
+                        // Instead of demanding browser settings changes, switch chat to the CPU/WASM engine.
+                        window._chatUseTf = true;
+                        engine = null;
+                        isEngineReady = true;
+                        progressContainer.classList.add('hidden');
+                        connectionDot.className = "h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]";
+                        connectionLabel.innerText = "CPU Engine";
+                        postBoot('Ready · CPU (WASM) mode', 100);
+                        console.info("[WebLLM] Adapter lacks 'shader-f16' (type=" + _gpuAdapterInfo.type + ") → chat switched to CPU/WASM engine automatically. No browser settings changes required.", _gpuAdapterInfo);
+                        triggerNotificationToast('CPU chat mode', 'WebGPU shader-f16 not available here, so chat automatically runs on the CPU engine (works in any browser, needs no GPU). The first message downloads the ONNX model (~550 MB) — afterwards it is cached forever.', 'fa-microchip', 'bg-emerald-600');
+                        // Warm up the transformers.js library so the first message is fast (the ONNX
+                        // weights themselves only download on the first message).
+                        try { if (!_tfq) { _tfq = await import(TF_CDN); _tfq.env.allowLocalModels = false; } } catch (e) { console.warn('[WebLLM] transformers.js warm-up failed:', e); }
+                        return;
+                    }
+                }
+
+                // Model source: ours only — this Cloudflare R2 bucket (never an external model host).
                 engine = await CreateMLCEngine(
                     CHAT_MODEL_ID,
                     {
@@ -4097,14 +4258,13 @@ IMPL.clone = async ({ prompt, setProgress }) => {
                         appConfig: {
                             cacheBackend: "indexeddb",
                             model_list: [{
-                                model: "https://pub-406a7f3fa4d44f41b5317520aa1aaf4a.r2.dev/",
+                                model: R2_MODEL_URL,
                                 model_id: CHAT_MODEL_ID,
-                                model_lib: "https://raw.githubusercontent.com/mlc-ai/binary-mlc-llm-libs/main/web-llm-models/v0_2_84/base/Qwen2-0.5B-Instruct-q4f16_1_cs1k-webgpu.wasm",
+                                model_lib: MODEL_LIB_URL,
                             }]
                         }
                     }
                 );
-
                 isEngineReady = true;
                 postBoot('Ready · cached in IndexedDB', 100);
                 // Warn if WebGPU is unavailable — WASM fallback is extremely slow
@@ -4118,6 +4278,8 @@ IMPL.clone = async ({ prompt, setProgress }) => {
             } catch (error) {
                 console.error("WebLLM Init Error:", error);
                 window._engineInitStarted = false; // allow retry (auto or manual click)
+                const gpuHint = (_gpuAdapterInfo && _gpuAdapterInfo.type) ? " | GPU: " + _gpuAdapterInfo.type + " (" + _gpuAdapterInfo.vendor + " " + _gpuAdapterInfo.device + ")" : " | GPU unknown — check chrome://gpu";
+                console.info("[WebLLM] Init diagnostics:" + gpuHint + " | If GPU is 'cpu'/software, MLC compute shaders may be unsupported by the driver.", _gpuAdapterInfo);
                 progressText.innerText = "Initialization Failed: " + error.message;
                 progressBar.classList.replace('bg-emerald-400', 'bg-red-500');
                 connectionDot.className = "h-2 w-2 rounded-full bg-red-500";
@@ -4735,16 +4897,23 @@ const lowerCaseUserText = userText.toLowerCase();            // --- Forced tool-
                     bodyEl.replaceChildren(el);
                     scrollToBottom();
                 };
-                // Simple single streaming request — the fast path that worked before
-                const chunks = await engine.chat.completions.create({
-                     messages: messages,
-                     temperature: 0.7,
-                     stream: true,
-                     max_tokens: 100000
-                });
-                for await (const chunk of chunks) {
-                    const c0 = chunk.choices && chunk.choices[0];
-                    if (c0 && c0.delta && c0.delta.content) { assistantMsg += c0.delta.content; render(); }
+                if (window._chatUseTf) {
+                    // CPU/WASM fallback — transformers.js ONNX (all model files from our R2), no WebGPU needed
+                    render(true);
+                    const full = await window.nexusChatLocal(messages, (tok) => { assistantMsg += tok; render(); });
+                    if (full && full.length) assistantMsg = full;
+                } else {
+                    // Simple single streaming request — the WebGPU fast path that worked before
+                    const chunks = await engine.chat.completions.create({
+                         messages: messages,
+                         temperature: 0.7,
+                         stream: true,
+                         max_tokens: 100000
+                    });
+                    for await (const chunk of chunks) {
+                        const c0 = chunk.choices && chunk.choices[0];
+                        if (c0 && c0.delta && c0.delta.content) { assistantMsg += c0.delta.content; render(); }
+                    }
                 }
                 bodyEl.innerHTML = (typeof marked !== 'undefined' ? marked.parse(assistantMsg) : assistantMsg);
                 scrollToBottom();
