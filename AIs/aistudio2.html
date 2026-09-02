@@ -2487,29 +2487,56 @@ IMPL.clone = async ({ prompt, setProgress }) => {
 
     async function sdLoadSessions(onProg) {
         if (sdSessions) return sdSessions;
-        await probeWebGPU();
         const ort = await loadOrt();
         const tok = await loadSdTokenizer();
         const files = ['text_encoder', 'unet', 'vae_decoder'];
         const ses = {};
         let idx = 0;
+
+        // Detect WebGPU availability once — if unavailable, skip straight to wasm
+        let useWebGPU = false;
+        try { await probeWebGPU(); useWebGPU = true; } catch(e) { console.warn('[SD] WebGPU probe failed, using wasm EP:', e.message); }
+
         for (const name of files) {
             onProg(2 + idx * 30, `Loading ${name}...`, 'Fetching ONNX weights from your R2 mirror (cached after this)...');
             const url = R2_SD_DIR + '/' + name + '/onnx/model.onnx';
             const buf = await (await ogFetch(url)).arrayBuffer();
-            onProg(2 + (idx + 0.5) * 30, `Building ${name} session...`, 'GPU compilation — compute, NOT a download.');
-            try {
-                ses[name] = await ort.InferenceSession.create(buf, { executionProviders: ['webgpu'], graphOptimizationLevel: 'all' });
-            } catch (gpuErr) {
-                // NhwcConv contrib ops only exist on the WebGPU EP, so a wasm fallback
-                // cannot run these graphs — surface a clear, actionable error.
-                console.error(name + ' WebGPU session failed:', gpuErr);
-                const msg = ((gpuErr && gpuErr.message) || String(gpuErr));
-                if (/CPUExecutionProvider/.test(msg)) {
-                    throw new Error(name + ': WebGPU EP silently fell back to CPU (GPU unavailable at runtime). Fix: enable hardware acceleration (Chrome: Settings → System), check chrome://gpu for WebGPU status, then reload. Original error: ' + msg.slice(0, 140));
+            onProg(2 + (idx + 0.5) * 30, `Building ${name} session...`, useWebGPU ? 'GPU compilation — compute, NOT a download.' : 'Building CPU/WASM session...');
+
+            let created = false;
+
+            // ── Try WebGPU first ──────────────────────────────────────────────
+            if (useWebGPU) {
+                try {
+                    ses[name] = await ort.InferenceSession.create(buf, {
+                        executionProviders: ['webgpu'],
+                        graphOptimizationLevel: 'all'
+                    });
+                    created = true;
+                } catch (gpuErr) {
+                    const msg = (gpuErr && gpuErr.message) || String(gpuErr);
+                    console.warn(`[SD] ${name} WebGPU failed (${msg.slice(0, 100)}), falling back to wasm EP.`);
+                    useWebGPU = false; // don't bother trying GPU for remaining files
                 }
-                throw new Error(name + ': WebGPU session failed (' + msg.slice(0, 120) + '). If it repeats, your GPU/browser is rejecting WebGPU for this model.');
             }
+
+            // ── WASM fallback (works on any device, slower but compatible) ────
+            if (!created) {
+                try {
+                    ses[name] = await ort.InferenceSession.create(buf, {
+                        executionProviders: ['wasm'],
+                        graphOptimizationLevel: 'basic',
+                        enableCpuMemArena: false,
+                        enableMemPattern: false
+                    });
+                    created = true;
+                    onProg(2 + (idx + 0.5) * 30, `Building ${name} (CPU)...`, 'Using CPU/WASM — slower but compatible with your GPU driver.');
+                } catch (wasmErr) {
+                    const msg = (wasmErr && wasmErr.message) || String(wasmErr);
+                    throw new Error(`${name}: both WebGPU and WASM sessions failed. WASM error: ${msg.slice(0, 200)}`);
+                }
+            }
+
             idx++;
         }
         sdSessions = { ort, tok, ...ses };
@@ -2649,26 +2676,25 @@ IMPL.clone = async ({ prompt, setProgress }) => {
             // get-and-upload.bat script from onnxruntime/sd-turbo, restructured for
             // transformers.js). NO Hugging Face URLs at runtime. The fetch
             // interceptor redirects any sd-turbo request to R2.
-            if (!sdModel && !!navigator.gpu) {
+            if (!sdModel) {
                 try {
-                    setImgProgress(2, 'Loading SD-Turbo...', 'GPU engine (~2.5GB, ONNX on WebGPU) — cached after this download.');
+                    setImgProgress(2, 'Loading SD-Turbo...', 'Loading ONNX engine (~2.5GB) — cached after this download.');
                     // transformers.js has NO text-to-image pipeline (unsupported in every
                     // version) — we drive the ONNX graphs directly with onnxruntime-web.
+                    // sdLoadSessions auto-falls-back: WebGPU → wasm (CPU) per-model.
                     const s = await sdLoadSessions((pct, title, detail) => setImgProgress(pct, title, detail));
                     sdModel = s; // marker: sessions are ready
-                    setImgProgress(100, 'Ready ✓', 'SD-Turbo loaded on WEBGPU — images in seconds.');
-                    setAiStatus('Image Gen: Ready (SD-Turbo GPU)', 'text-emerald-400');
-                    return; // done — Janus not needed
+                    const epLabel = navigator.gpu ? 'WebGPU/CPU' : 'CPU';
+                    setImgProgress(100, 'Ready ✓', `SD-Turbo loaded (${epLabel}) — images ready.`);
+                    setAiStatus(`Image Gen: Ready (SD-Turbo ${epLabel})`, 'text-emerald-400');
+                    return; // done
                 } catch (sdErr) {
                     console.error('SD-Turbo load failed:', sdErr);
                     sdModel = null; sdSessions = null;
                     setImgProgress(0, 'SD-Turbo failed', (sdErr && sdErr.message || String(sdErr)).split('\n')[0].slice(0, 120));
-                    throw sdErr; // do NOT fall back — surface the real error
+                    throw sdErr;
                 }
             }
-
-            // No WebGPU — cannot run SD-Turbo
-            throw new Error('WebGPU not available — SD-Turbo requires a GPU.');
         } catch(err) {
             sdModel = null;
             janusLastError = (err && err.message) || String(err);
