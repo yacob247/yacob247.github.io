@@ -528,18 +528,20 @@ function tokenize(text) {
 
 function makeScheduler(numSteps) {
     const N = 1000, bs = 0.00085, be = 0.012;
-    // Compute alphas_cumprod using squared cosine-like linear beta schedule
+    // Build full alphas_cumprod table
     const alphasCumprod = [];
     let cum = 1;
     for (let i = 0; i < N; i++) {
-        const beta = bs + (i / (N - 1)) * (be - bs);
-        cum *= (1 - beta);
+        cum *= 1 - (bs + (i / (N - 1)) * (be - bs));
         alphasCumprod.push(cum);
     }
-    // Evenly spaced timesteps from high to low
-    const step = Math.floor(N / numSteps);
+    // LCM timesteps: evenly spaced, skipping from high noise to low
+    // e.g. 4 steps -> [999, 749, 499, 249]
+    const spacing = Math.floor(N / numSteps);
     const timesteps = [];
-    for (let i = numSteps - 1; i >= 0; i--) timesteps.push(i * step);
+    for (let i = numSteps - 1; i >= 0; i--) {
+        timesteps.push(Math.min(N - 1, i * spacing + spacing - 1));
+    }
     timesteps.reverse();
     return { alphasCumprod, timesteps };
 }
@@ -630,19 +632,19 @@ async function generate(prompt, width, height, numSteps) {
         const feeds = {}; feeds[uInputs[0]]=lT; feeds[uInputs[1]]=tT; feeds[uInputs[2]]=encF32;
         const res = await sdSessions.unet.run(feeds);
         const np = await toF32(Object.values(res)[0]);
-        // DDIM step: x_prev = sqrt(a_prev) * pred_x0 + sqrt(1-a_prev) * noise_pred
+        // LCM step: model predicts x0 directly, we jump straight there
         const aT    = alphasCumprod[t];
         const aPrev = s < timesteps.length - 1 ? alphasCumprod[timesteps[s + 1]] : 1.0;
-        const sqrtAT    = Math.sqrt(aT);
-        const sqrtAPrev = Math.sqrt(aPrev);
+        const sqrtAT         = Math.sqrt(aT);
         const sqrtOneMinusAT = Math.sqrt(1 - aT);
+        const sqrtAPrev         = Math.sqrt(aPrev);
+        const sqrtOneMinusAPrev = Math.sqrt(1 - aPrev);
         for (let i = 0; i < latent.length; i++) {
-            // predicted original sample (pred_x0)
+            // LCM model output is predicted x0 directly
             const predX0 = (latent[i] - sqrtOneMinusAT * np.data[i]) / (sqrtAT + 1e-8);
-            const clampedX0 = Math.max(-1, Math.min(1, predX0));
-            // direction pointing to x_t
-            const dirXt = Math.sqrt(Math.max(0, 1 - aPrev)) * np.data[i];
-            latent[i] = sqrtAPrev * clampedX0 + dirXt;
+            const clampedX0 = Math.max(-2, Math.min(2, predX0));
+            // LCM update: jump to x_prev using predicted x0
+            latent[i] = sqrtAPrev * clampedX0 + sqrtOneMinusAPrev * np.data[i];
         }
         if (tT.dispose) tT.dispose(); if (lT.dispose) lT.dispose();
         Object.values(res).forEach(x => { if (x && x.dispose) x.dispose(); });
@@ -1272,7 +1274,7 @@ self.onmessage = async (e) => {
                 const finalPrompt = buildImagePrompt(userText, styleMod);
                 for (let i = 0; i < count; i++) {
                     updateProgress(`Generating image ${i + 1} of ${count}...`);
-                    const imgUrl = await sdGenerateImage(finalPrompt, width, height, 4, updateProgress);
+                    const imgUrl = await sdGenerateImage(finalPrompt, width, height, 1, updateProgress);
 
                     const imgObj = { url: imgUrl, prompt: finalPrompt };
                     const loader = document.getElementById(loaderId);
