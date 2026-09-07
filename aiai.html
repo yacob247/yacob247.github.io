@@ -535,14 +535,20 @@ function makeScheduler(numSteps) {
         cum *= 1 - (bs + (i / (N - 1)) * (be - bs));
         alphasCumprod.push(cum);
     }
-    // LCM timesteps: evenly spaced, skipping from high noise to low
-    // e.g. 4 steps -> [999, 749, 499, 249]
-    const spacing = Math.floor(N / numSteps);
+    
+    // For 1 step LCM, timestep should be [999]
     const timesteps = [];
-    for (let i = numSteps - 1; i >= 0; i--) {
-        timesteps.push(Math.min(N - 1, i * spacing + spacing - 1));
+    if (numSteps === 1) {
+        timesteps.push(N - 1);
+    } else {
+        // LCM timesteps: evenly spaced, skipping from high noise to low
+        const spacing = Math.floor(N / numSteps);
+        for (let i = numSteps - 1; i >= 0; i--) {
+            timesteps.push(Math.min(N - 1, i * spacing + spacing - 1));
+        }
+        timesteps.reverse();
     }
-    timesteps.reverse();
+    
     return { alphasCumprod, timesteps };
 }
 
@@ -617,7 +623,11 @@ async function generate(prompt, width, height, numSteps) {
     let textEmb = encResult.last_hidden_state || Object.values(encResult)[0];
     if (inputIds.dispose) inputIds.dispose();
 
-    const { alphasCumprod, timesteps } = makeScheduler(numSteps);
+    // Use 1 step for LCM
+    const actualSteps = 1;
+    const { alphasCumprod, timesteps } = makeScheduler(actualSteps);
+    
+    // LCM specific latent scaling
     const latent = new Float32Array(lH * lW * 4);
     for (let i = 0; i < latent.length; i++) latent[i] = (Math.random()*2-1)*1.5;
 
@@ -625,13 +635,31 @@ async function generate(prompt, width, height, numSteps) {
     const encF32 = textEmb.type === 'float16' ? await toF32(textEmb) : textEmb;
 
     for (let s = 0; s < timesteps.length; s++) {
-        postMessage({ type: 'progress', msg: 'Denoising step ' + (s+1) + ' of ' + numSteps + '...' });
+        postMessage({ type: 'progress', msg: 'Denoising pass (LCM 1-step)...' });
         const t = timesteps[s];
         const tT = new ort.Tensor('float32', new Float32Array([t]), [1]);
         const lT = new ort.Tensor('float32', latent.slice(), [1,4,lH,lW]);
         const feeds = {}; feeds[uInputs[0]]=lT; feeds[uInputs[1]]=tT; feeds[uInputs[2]]=encF32;
-        const res = await sdSessions.unet.run(feeds);
-        const np = await toF32(Object.values(res)[0]);
+        
+        // Ensure timestep is passed as int64 if required by the model, otherwise float32
+        // Trying float32 first as per previous code, if it fails, it might need int64.
+        let uRes;
+        try {
+            uRes = await sdSessions.unet.run(feeds);
+        } catch (e) {
+             // Fallback if model expects int64 timestep
+             if(e.message && e.message.includes("Tensor type mismatch")) {
+                 const tT_int = new ort.Tensor('int64', new BigInt64Array([BigInt(t)]), [1]);
+                 feeds[uInputs[1]] = tT_int;
+                 uRes = await sdSessions.unet.run(feeds);
+                 if (tT_int.dispose) tT_int.dispose();
+             } else {
+                 throw e;
+             }
+        }
+        
+        const np = await toF32(Object.values(uRes)[0]);
+        
         // LCM step: model predicts x0 directly, we jump straight there
         const aT    = alphasCumprod[t];
         const aPrev = s < timesteps.length - 1 ? alphasCumprod[timesteps[s + 1]] : 1.0;
@@ -639,16 +667,27 @@ async function generate(prompt, width, height, numSteps) {
         const sqrtOneMinusAT = Math.sqrt(1 - aT);
         const sqrtAPrev         = Math.sqrt(aPrev);
         const sqrtOneMinusAPrev = Math.sqrt(1 - aPrev);
+        
+        // For 1-step, aPrev is 1.0, so sqrtAPrev = 1, sqrtOneMinusAPrev = 0
+        // Meaning latent becomes exactly clampedX0
+        
         for (let i = 0; i < latent.length; i++) {
-            // LCM model output is predicted x0 directly
-            const predX0 = (latent[i] - sqrtOneMinusAT * np.data[i]) / (sqrtAT + 1e-8);
-            const clampedX0 = Math.max(-2, Math.min(2, predX0));
-            // LCM update: jump to x_prev using predicted x0
-            latent[i] = sqrtAPrev * clampedX0 + sqrtOneMinusAPrev * np.data[i];
+            // UNet output in LCM is the predicted noise or velocity, but for this specific LCM ONNX export
+            // it usually predicts the noise (epsilon) or directly x0 depending on the wrapper.
+            // Assuming it predicts noise (epsilon) like standard SD, then LCM formula is:
+            // predX0 = (x_t - sqrt(1-aT) * epsilon) / sqrt(aT)
+            const epsilon = np.data[i];
+            const predX0 = (latent[i] - sqrtOneMinusAT * epsilon) / (sqrtAT + 1e-8);
+            // const clampedX0 = Math.max(-2, Math.min(2, predX0)); // optional clamping
+            
+            // LCM update: jump to x_prev
+            latent[i] = sqrtAPrev * predX0 + sqrtOneMinusAPrev * epsilon;
         }
+        
         if (tT.dispose) tT.dispose(); if (lT.dispose) lT.dispose();
-        Object.values(res).forEach(x => { if (x && x.dispose) x.dispose(); });
+        Object.values(uRes).forEach(x => { if (x && x.dispose) x.dispose(); });
     }
+    
     if (encF32 && encF32 !== textEmb && encF32.dispose) encF32.dispose();
 
     postMessage({ type: 'progress', msg: 'Decoding image...' });
@@ -726,89 +765,22 @@ self.onmessage = async (e) => {
             return _worker;
         }
 
-        async function sdGenerateImage(prompt, width, height, numSteps, onProgress) {
-            return new Promise((resolve, reject) => {
-                _workerProgress = onProgress;
-                _workerResolve  = resolve;
-                _workerReject   = reject;
-                getWorker().postMessage({
-                    type: 'generate',
-                    baseUrl: getBaseUrl(),
-                    prompt, width, height, numSteps
-                });
-            });
-        }
-
-        function generateProceduralArt(prompt, width = 768, height = 512) {
-            const canvas = document.createElement('canvas');
-            canvas.width = width;
-            canvas.height = height;
-            const ctx = canvas.getContext('2d');
-
-            let hash = 0;
-            for (let i = 0; i < prompt.length; i++) {
-                hash = ((hash << 5) - hash) + prompt.charCodeAt(i);
-                hash |= 0;
-            }
-            const absHash = Math.abs(hash);
-            const pLower = prompt.toLowerCase();
-
-            let color1 = '#1a1c2e', color2 = '#0f1016', accentColor = '#D4C6A9';
-            if (pLower.includes('snow') || pLower.includes('winter') || pLower.includes('ice')) {
-                color1 = '#1e293b'; color2 = '#0f172a'; accentColor = '#93c5fd';
-            } else if (pLower.includes('sun') || pLower.includes('fire') || pLower.includes('gold') || pLower.includes('warm')) {
-                color1 = '#451a03'; color2 = '#1c1917'; accentColor = '#f59e0b';
-            } else if (pLower.includes('cyber') || pLower.includes('neon') || pLower.includes('futuristic')) {
-                color1 = '#31103f'; color2 = '#0d0714'; accentColor = '#ec4899';
-            } else if (pLower.includes('forest') || pLower.includes('nature') || pLower.includes('green')) {
-                color1 = '#064e3b'; color2 = '#022c22'; accentColor = '#34d399';
-            } else if (pLower.includes('brass') || pLower.includes('steampunk') || pLower.includes('gear')) {
-                color1 = '#2e1005'; color2 = '#180a03'; accentColor = '#d97706';
-            }
-
-            const grad = ctx.createRadialGradient(width / 2, height / 2, 50, width / 2, height / 2, Math.max(width, height) * 0.8);
-            grad.addColorStop(0, color1);
-            grad.addColorStop(1, color2);
-            ctx.fillStyle = grad;
-            ctx.fillRect(0, 0, width, height);
-
-            const numNodes = 25 + (absHash % 30);
-            for (let i = 0; i < numNodes; i++) {
-                const nx = ((absHash * (i + 1) * 9301 + 49297) % 233280) / 233280 * width;
-                const ny = ((absHash * (i + 3) * 49297 + 9301) % 233280) / 233280 * height;
-                const nr = 15 + ((absHash * (i + 5)) % 100);
-
-                const orbGrad = ctx.createRadialGradient(nx, ny, 0, nx, ny, nr);
-                orbGrad.addColorStop(0, accentColor + '55');
-                orbGrad.addColorStop(1, 'transparent');
-                ctx.fillStyle = orbGrad;
-                ctx.beginPath();
-                ctx.arc(nx, ny, nr, 0, Math.PI * 2);
-                ctx.fill();
-            }
-
-            ctx.strokeStyle = accentColor + '22';
-            ctx.lineWidth = 1;
-            for (let x = 0; x < width; x += 40) {
-                ctx.beginPath();
-                ctx.moveTo(x, 0);
-                ctx.lineTo(x, height);
-                ctx.stroke();
-            }
-
-            const vig = ctx.createRadialGradient(width/2, height/2, width*0.3, width/2, height/2, width*0.7);
-            vig.addColorStop(0, 'transparent');
-            vig.addColorStop(1, 'rgba(0,0,0,0.6)');
-            ctx.fillStyle = vig;
-            ctx.fillRect(0, 0, width, height);
-
-            ctx.fillStyle = 'rgba(255,255,255,0.7)';
-            ctx.font = '12px Inter, sans-serif';
-            ctx.textAlign = 'right';
-            ctx.fillText('Omni Studio Procedural Render', width - 20, height - 20);
-
-            return canvas.toDataURL('image/png');
-        }
+  async function sdGenerateImage(prompt, width, height, numSteps, onProgress) { 
+    return new Promise((resolve, reject) => { 
+        _workerProgress = onProgress; 
+        _workerResolve = resolve; 
+        _workerReject = reject; 
+        
+        getWorker().postMessage({ 
+            type: 'generate', 
+            baseUrl: getBaseUrl(), 
+            prompt, 
+            width, 
+            height, 
+            numSteps // Changed the dangling '1' to the actual 'numSteps' variable
+        }); 
+    }); 
+}
 
         async function initDB() {
             return new Promise((resolve, reject) => {
@@ -1274,6 +1246,7 @@ self.onmessage = async (e) => {
                 const finalPrompt = buildImagePrompt(userText, styleMod);
                 for (let i = 0; i < count; i++) {
                     updateProgress(`Generating image ${i + 1} of ${count}...`);
+                    // Call generation with 1 step specifically for LCM
                     const imgUrl = await sdGenerateImage(finalPrompt, width, height, 1, updateProgress);
 
                     const imgObj = { url: imgUrl, prompt: finalPrompt };
