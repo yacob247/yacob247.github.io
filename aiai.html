@@ -450,7 +450,35 @@ PROMPT: detailed visual description here`;
         let sdModelLoaded = false;
         let sdModelLoading = false;
 
+        // ── Model cache via OPFS (Origin Private File System) ──────────────────
+        // OPFS writes directly to a private SSD folder at native I/O speed.
+        // This completely bypasses Chrome's IndexedDB/LevelDB bottleneck that
+        // caused the 20-minute hang when caching files over ~200 MB.
+        // Falls back to IndexedDB on browsers that don't support OPFS yet.
+
+        const _opfsSupported = typeof navigator !== 'undefined' &&
+            navigator.storage && typeof navigator.storage.getDirectory === 'function';
+
+        // Sanitise filename → flat OPFS-safe name  (e.g. "unet/model.onnx" → "unet__model.onnx")
+        function _opfsKey(filename) {
+            return filename.replace(/[/\\]/g, '__');
+        }
+
         async function sdGetCachedModel(filename) {
+            if (_opfsSupported) {
+                try {
+                    const root = await navigator.storage.getDirectory();
+                    const cacheDir = await root.getDirectoryHandle('sd_model_cache', { create: true });
+                    const fileHandle = await cacheDir.getFileHandle(_opfsKey(filename));
+                    const file = await fileHandle.getFile();
+                    return new Blob([await file.arrayBuffer()], { type: 'application/octet-stream' });
+                } catch (e) {
+                    // File not found in OPFS — return null so caller fetches it
+                    if (e.name === 'NotFoundError') return null;
+                    console.warn('[OPFS] Read error, falling back to IDB:', e);
+                }
+            }
+            // ── IndexedDB fallback ──────────────────────────────────────────────
             return new Promise((resolve, reject) => {
                 const openReq = indexedDB.open('SDModelCache', 1);
                 openReq.onupgradeneeded = (e) => {
@@ -470,6 +498,21 @@ PROMPT: detailed visual description here`;
         }
 
         async function sdCacheModel(filename, data) {
+            if (_opfsSupported) {
+                try {
+                    const root = await navigator.storage.getDirectory();
+                    const cacheDir = await root.getDirectoryHandle('sd_model_cache', { create: true });
+                    const fileHandle = await cacheDir.getFileHandle(_opfsKey(filename), { create: true });
+                    const writable = await fileHandle.createWritable();
+                    // Write the Blob directly — no extra serialisation step
+                    await writable.write(data);
+                    await writable.close();
+                    return; // done — fast path succeeded
+                } catch (e) {
+                    console.warn('[OPFS] Write error, falling back to IDB:', e);
+                }
+            }
+            // ── IndexedDB fallback ──────────────────────────────────────────────
             return new Promise((resolve, reject) => {
                 const openReq = indexedDB.open('SDModelCache', 1);
                 openReq.onupgradeneeded = (e) => {
