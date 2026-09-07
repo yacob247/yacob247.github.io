@@ -1,6 +1,39 @@
 <!DOCTYPE html>
 <html lang="en" class="dark">
 <head>
+    <!-- Service Worker: injects COOP/COEP headers so WASM multi-threading works -->
+    <script>
+        (async () => {
+            if (!('serviceWorker' in navigator)) return;
+            const SW_SRC = `
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
+self.addEventListener('fetch', e => {
+    e.respondWith(
+        fetch(e.request).then(res => {
+            // Only add headers to same-origin HTML/JS responses
+            const ct = res.headers.get('content-type') || '';
+            if (!ct.includes('text/html') && !ct.includes('javascript')) return res;
+            const headers = new Headers(res.headers);
+            headers.set('Cross-Origin-Opener-Policy', 'same-origin');
+            headers.set('Cross-Origin-Embedder-Policy', 'require-corp');
+            return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+        }).catch(() => fetch(e.request))
+    );
+});
+            `;
+            const blob = new Blob([SW_SRC], { type: 'application/javascript' });
+            const swUrl = URL.createObjectURL(blob);
+            try {
+                await navigator.serviceWorker.register(swUrl, { scope: './' });
+                // If not yet isolated, reload once to get the headers applied
+                if (!crossOriginIsolated) location.reload();
+            } catch(e) {
+                console.warn('[SW] Could not register:', e);
+            }
+        })();
+    </script>
+
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Omni Studio - AI Visual Generation</title>
@@ -10,10 +43,14 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
-    <!-- WebLLM Module -->
-    <script type="module">
-        import * as webllm from "https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.84/+esm";
-        window.webllm = webllm;
+    <!-- WebLLM Module — loaded lazily on first use of AI Text mode -->
+    <script>
+        async function ensureWebLLM() {
+            if (!window.webllm) {
+                const mod = await import("https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.84/+esm");
+                window.webllm = mod;
+            }
+        }
     </script>
 
     <!-- ONNX Runtime Web -->
@@ -388,10 +425,8 @@ Reply with EXACTLY ONE word: IMAGE or CHAT.`;
 
         window.addEventListener('unhandledrejection', function(event) {
             if (event.reason && (event.reason.name === 'AbortError' || (event.reason.message && event.reason.message.includes('mapAsync')))) {
-                console.warn('[WebGPU] Caught unhandled MapAsync/AbortError. Resetting session state.');
+                console.warn('[WebGPU] Caught unhandled MapAsync/AbortError.');
                 event.preventDefault();
-                sdModelLoaded = false;
-                sdSessions = {};
             }
         });
 
@@ -431,10 +466,7 @@ Reply with EXACTLY ONE word: IMAGE or CHAT.`;
         }
 
         const SD_BASE_URL = 'https://pub-406a7f3fa4d44f41b5317520aa1aaf4a.r2.dev/tiny-sd-onnx/';
-        let sdSessions = {};
-        let sdTokenizer = null;
-        let sdModelLoaded = false;
-        let sdModelLoading = false;
+        // sdSessions/sdTokenizer/sdModelLoaded now live inside the Web Worker
 
         function getBaseUrl() {
             const customUrlInput = document.getElementById('custom-model-url');
@@ -442,295 +474,299 @@ Reply with EXACTLY ONE word: IMAGE or CHAT.`;
             return customUrl ? (customUrl.endsWith('/') ? customUrl : customUrl + '/') : SD_BASE_URL;
         }
 
-        async function sdFetchModel(filename, onProgress, label) {
-            try {
-                const resp = await fetch(getBaseUrl() + filename);
-                if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
-                const total = parseInt(resp.headers.get('Content-Length') || '0', 10);
-                const reader = resp.body.getReader();
-                const chunks = [];
-                let received = 0;
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    chunks.push(value);
-                    received += value.length;
-                    if (onProgress && label) {
-                        const pct = total > 0 ? Math.round((received / total) * 100) : '...';
-                        const mb = (received / 1048576).toFixed(1);
-                        onProgress(label + ' ' + mb + 'MB' + (total > 0 ? ' (' + pct + '%)' : ''));
-                    }
+        // ─── Web Worker — all ONNX work runs off the main thread ───────────────
+        const WORKER_SRC = `
+const MODEL_CACHE = 'omni-studio-models-v1';
+let sdSessions = {};
+let sdTokenizer = null;
+let sdModelLoaded = false;
+let baseUrl = 'https://pub-406a7f3fa4d44f41b5317520aa1aaf4a.r2.dev/tiny-sd-onnx/';
+
+importScripts('https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.wasm.min.js');
+
+ort.env.logLevel = 'error';
+ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/';
+ort.env.wasm.numThreads = Math.min(navigator.hardwareConcurrency || 1, 4);
+ort.env.wasm.simd = true;
+
+async function fetchModel(filename, label) {
+    const url = baseUrl + filename;
+    try {
+        const cache = await caches.open(MODEL_CACHE);
+        const cached = await cache.match(url);
+        if (cached) {
+            postMessage({ type: 'progress', msg: label + ' (cached)' });
+            return await (await cached.blob()).arrayBuffer();
+        }
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const total = parseInt(resp.headers.get('Content-Length') || '0', 10);
+        const reader = resp.body.getReader();
+        const chunks = [];
+        let received = 0;
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value);
+            received += value.length;
+            const pct = total > 0 ? Math.round((received / total) * 100) : '...';
+            const mb  = (received / 1048576).toFixed(1);
+            postMessage({ type: 'dl', label, mb, pct });
+        }
+        const blob = new Blob(chunks);
+        cache.put(url, new Response(blob.slice()));
+        return await blob.arrayBuffer();
+    } catch(e) {
+        throw new Error('Fetch failed for ' + filename + ': ' + e.message);
+    }
+}
+
+async function createSession(buf) {
+    for (const cfg of [
+        { executionProviders: ['wasm'], graphOptimizationLevel: 'disabled' },
+        { executionProviders: ['wasm'], graphOptimizationLevel: 'basic' }
+    ]) {
+        try { return await ort.InferenceSession.create(new Uint8Array(buf), cfg); }
+        catch(e) { /* try next */ }
+    }
+    throw new Error('Could not create ONNX session');
+}
+
+async function loadTokenizer() {
+    if (sdTokenizer) return;
+    const [vr, mr] = await Promise.all([
+        fetch(baseUrl + 'tokenizer/vocab.json'),
+        fetch(baseUrl + 'tokenizer/merges.txt')
+    ]);
+    const vocab = await vr.json();
+    const merges = await mr.text();
+    const mergeMap = {};
+    merges.split('\\n').slice(1).forEach(line => {
+        const p = line.split(' ');
+        if (p.length === 2) mergeMap[p[0] + '|' + p[1]] = true;
+    });
+    sdTokenizer = { vocab, mergeMap };
+}
+
+function tokenize(text) {
+    const tokens = [0];
+    const words = text.toLowerCase().match(/\\b\\w+\\b|[^\\s\\w]/g) || [];
+    for (const word of words)
+        for (const char of word)
+            if (sdTokenizer.vocab[char] !== undefined) tokens.push(sdTokenizer.vocab[char]);
+    while (tokens.length < 77) tokens.push(1);
+    return tokens.slice(0, 77);
+}
+
+function makeScheduler(numSteps) {
+    const N = 1000, bs = 0.00085, be = 0.012;
+    // Compute alphas_cumprod using squared cosine-like linear beta schedule
+    const alphasCumprod = [];
+    let cum = 1;
+    for (let i = 0; i < N; i++) {
+        const beta = bs + (i / (N - 1)) * (be - bs);
+        cum *= (1 - beta);
+        alphasCumprod.push(cum);
+    }
+    // Evenly spaced timesteps from high to low
+    const step = Math.floor(N / numSteps);
+    const timesteps = [];
+    for (let i = numSteps - 1; i >= 0; i--) timesteps.push(i * step);
+    timesteps.reverse();
+    return { alphasCumprod, timesteps };
+}
+
+async function toF32(tensor) {
+    if (!tensor) return null;
+    const data = await tensor.getData();
+    if (tensor.type === 'float16') {
+        const raw = new Uint16Array(data.buffer !== undefined ? data.buffer : data);
+        const out = new Float32Array(raw.length);
+        for (let i = 0; i < raw.length; i++) {
+            const h = raw[i], s = (h & 0x8000) ? -1 : 1, e = (h >> 10) & 0x1f, m = h & 0x3ff;
+            if (e === 0) out[i] = s * m * Math.pow(2, -24);
+            else if (e === 31) out[i] = m ? NaN : s * Infinity;
+            else out[i] = s * Math.pow(2, e - 15) * (1 + m / 1024);
+        }
+        return new ort.Tensor('float32', out, tensor.dims);
+    }
+    return new ort.Tensor('float32', data instanceof Float32Array ? data : new Float32Array(data), tensor.dims);
+}
+
+async function loadModels() {
+    if (sdModelLoaded) return;
+    postMessage({ type: 'progress', msg: 'Loading tokenizer...' });
+    await loadTokenizer();
+
+    const dlState = { UNet: '0MB', 'Text Encoder': '0MB', 'VAE Decoder': '0MB' };
+    function reportDl() {
+        postMessage({ type: 'progress', msg: 'Downloading — ' + Object.entries(dlState).map(([k,v]) => k+': '+v).join(' · ') });
+    }
+    reportDl();
+
+    const [unetBuf, teBuf, vdBuf] = await Promise.all([
+        fetchModel('unet/model_f32.onnx/model_f32.onnx', 'UNet'),
+        fetchModel('text_encoder/model_f32.onnx/model_f32.onnx', 'Text Encoder'),
+        fetchModel('vae_decoder/model_f32.onnx/model_f32.onnx', 'VAE Decoder'),
+    ]);
+
+    const sizes = { UNet: unetBuf.byteLength, 'Text Encoder': teBuf.byteLength, 'VAE Decoder': vdBuf.byteLength };
+    const totalMB = (Object.values(sizes).reduce((a,b)=>a+b,0)/1048576).toFixed(0);
+    let doneMB = 0;
+
+    postMessage({ type: 'progress', msg: 'Compiling UNet (' + (sizes.UNet/1048576).toFixed(0) + ' MB) — 0% of ' + totalMB + ' MB total' });
+    sdSessions.unet = await createSession(unetBuf);
+    doneMB += sizes.UNet/1048576;
+
+    postMessage({ type: 'progress', msg: 'Compiling Text Encoder (' + (sizes['Text Encoder']/1048576).toFixed(0) + ' MB) — ' + Math.round(doneMB/totalMB*100) + '% of ' + totalMB + ' MB total' });
+    sdSessions.textEncoder = await createSession(teBuf);
+    doneMB += sizes['Text Encoder']/1048576;
+
+    postMessage({ type: 'progress', msg: 'Compiling VAE Decoder (' + (sizes['VAE Decoder']/1048576).toFixed(0) + ' MB) — ' + Math.round(doneMB/totalMB*100) + '% of ' + totalMB + ' MB total' });
+    sdSessions.vaeDecoder = await createSession(vdBuf);
+
+    sdModelLoaded = true;
+    postMessage({ type: 'progress', msg: 'Pipeline ready!' });
+}
+
+async function generate(prompt, width, height, numSteps) {
+    await loadModels();
+
+    let W = Math.floor(Math.min(width||512,640)/64)*64;
+    let H = Math.floor(Math.min(height||512,640)/64)*64;
+    const lH = H/8, lW = W/8;
+
+    postMessage({ type: 'progress', msg: 'Tokenizing...' });
+    const tokens = tokenize(prompt);
+    const inputIds = new ort.Tensor('int32', Int32Array.from(tokens), [1,77]);
+    const teName = (sdSessions.textEncoder.inputNames && sdSessions.textEncoder.inputNames[0]) || 'input_ids';
+    const teFeeds = {}; teFeeds[teName] = inputIds;
+
+    postMessage({ type: 'progress', msg: 'Encoding prompt...' });
+    const encResult = await sdSessions.textEncoder.run(teFeeds);
+    let textEmb = encResult.last_hidden_state || Object.values(encResult)[0];
+    if (inputIds.dispose) inputIds.dispose();
+
+    const { alphasCumprod, timesteps } = makeScheduler(numSteps);
+    const latent = new Float32Array(lH * lW * 4);
+    for (let i = 0; i < latent.length; i++) latent[i] = (Math.random()*2-1)*1.5;
+
+    const uInputs = sdSessions.unet.inputNames || ['sample','timestep','encoder_hidden_states'];
+    const encF32 = textEmb.type === 'float16' ? await toF32(textEmb) : textEmb;
+
+    for (let s = 0; s < timesteps.length; s++) {
+        postMessage({ type: 'progress', msg: 'Denoising step ' + (s+1) + ' of ' + numSteps + '...' });
+        const t = timesteps[s];
+        const tT = new ort.Tensor('float32', new Float32Array([t]), [1]);
+        const lT = new ort.Tensor('float32', latent.slice(), [1,4,lH,lW]);
+        const feeds = {}; feeds[uInputs[0]]=lT; feeds[uInputs[1]]=tT; feeds[uInputs[2]]=encF32;
+        const res = await sdSessions.unet.run(feeds);
+        const np = await toF32(Object.values(res)[0]);
+        // DDIM step: x_prev = sqrt(a_prev) * pred_x0 + sqrt(1-a_prev) * noise_pred
+        const aT    = alphasCumprod[t];
+        const aPrev = s < timesteps.length - 1 ? alphasCumprod[timesteps[s + 1]] : 1.0;
+        const sqrtAT    = Math.sqrt(aT);
+        const sqrtAPrev = Math.sqrt(aPrev);
+        const sqrtOneMinusAT = Math.sqrt(1 - aT);
+        for (let i = 0; i < latent.length; i++) {
+            // predicted original sample (pred_x0)
+            const predX0 = (latent[i] - sqrtOneMinusAT * np.data[i]) / (sqrtAT + 1e-8);
+            const clampedX0 = Math.max(-1, Math.min(1, predX0));
+            // direction pointing to x_t
+            const dirXt = Math.sqrt(Math.max(0, 1 - aPrev)) * np.data[i];
+            latent[i] = sqrtAPrev * clampedX0 + dirXt;
+        }
+        if (tT.dispose) tT.dispose(); if (lT.dispose) lT.dispose();
+        Object.values(res).forEach(x => { if (x && x.dispose) x.dispose(); });
+    }
+    if (encF32 && encF32 !== textEmb && encF32.dispose) encF32.dispose();
+
+    postMessage({ type: 'progress', msg: 'Decoding image...' });
+    const scale = 1/0.18215;
+    const scaled = new Float32Array(latent.length);
+    for (let i = 0; i < scaled.length; i++) scaled[i] = latent[i] * scale;
+    const scaledT = new ort.Tensor('float32', scaled, [1,4,lH,lW]);
+    const vaeName = (sdSessions.vaeDecoder.inputNames && sdSessions.vaeDecoder.inputNames[0]) || 'latent_sample';
+    const vaeFeeds = {}; vaeFeeds[vaeName] = scaledT;
+    const vaeRes = await sdSessions.vaeDecoder.run(vaeFeeds);
+    const imgT = await toF32(Object.values(vaeRes)[0]);
+    if (scaledT.dispose) scaledT.dispose();
+    Object.values(vaeRes).forEach(x => { if (x && x.dispose) x.dispose(); });
+    if (textEmb.dispose) textEmb.dispose();
+
+    // Convert tensor to RGBA pixels and send back
+    const imgData = imgT.data;
+    const plane = H * W;
+    const pixels = new Uint8ClampedArray(H * W * 4);
+    for (let i = 0; i < plane; i++) {
+        const r = imgData[i], g = imgData[plane+i], b = imgData[plane*2+i];
+        pixels[i*4]   = isNaN(r)?0:Math.min(255,Math.max(0,Math.round((r+1)*127.5)));
+        pixels[i*4+1] = isNaN(g)?0:Math.min(255,Math.max(0,Math.round((g+1)*127.5)));
+        pixels[i*4+2] = isNaN(b)?0:Math.min(255,Math.max(0,Math.round((b+1)*127.5)));
+        pixels[i*4+3] = 255;
+    }
+    postMessage({ type: 'done', pixels: pixels.buffer, width: W, height: H }, [pixels.buffer]);
+}
+
+self.onmessage = async (e) => {
+    const { type, baseUrl: bu, prompt, width, height, numSteps } = e.data;
+    if (bu) baseUrl = bu;
+    if (type === 'generate') {
+        try { await generate(prompt, width, height, numSteps); }
+        catch(err) { postMessage({ type: 'error', msg: err.message }); }
+    }
+};
+        `;
+
+        // ─── Spawn the worker once from an inline Blob ────────────────────────────
+        let _worker = null;
+        let _workerResolve = null;
+        let _workerReject = null;
+        let _workerProgress = null;
+
+        function getWorker() {
+            if (_worker) return _worker;
+            const blob = new Blob([WORKER_SRC], { type: 'application/javascript' });
+            _worker = new Worker(URL.createObjectURL(blob));
+            _worker.onmessage = (e) => {
+                const { type, msg, pixels, width, height, label, mb, pct } = e.data;
+                if (type === 'progress' && _workerProgress) {
+                    _workerProgress(msg);
+                } else if (type === 'dl' && _workerProgress) {
+                    // update combined download display
+                    _workerProgress('Downloading ' + label + ' ' + mb + 'MB' + (pct !== '...' ? ' (' + pct + '%)' : ''));
+                } else if (type === 'done' && _workerResolve) {
+                    // render pixels → canvas → dataURL on main thread
+                    const canvas = document.createElement('canvas');
+                    canvas.width = width; canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    const imageData = new ImageData(new Uint8ClampedArray(pixels), width, height);
+                    ctx.putImageData(imageData, 0, 0);
+                    _workerResolve(canvas.toDataURL('image/png'));
+                    _workerResolve = null; _workerReject = null; _workerProgress = null;
+                } else if (type === 'error' && _workerReject) {
+                    _workerReject(new Error(e.data.msg));
+                    _workerResolve = null; _workerReject = null; _workerProgress = null;
                 }
-                return new Blob(chunks);
-            } catch (err) {
-                console.error(`[SD Fetch Error] Failed to download ${filename}:`, err);
-                throw new Error(`Model host unreachable for ${filename}. ${err.message}`);
-            }
-        }
-
-        async function sdLoadTokenizer() {
-            if (sdTokenizer) return;
-            const baseUrl = getBaseUrl();
-            const [vocabResp, mergesResp] = await Promise.all([
-                fetch(baseUrl + 'tokenizer/vocab.json'),
-                fetch(baseUrl + 'tokenizer/merges.txt')
-            ]);
-            const vocab = await vocabResp.json();
-            const merges = await mergesResp.text();
-            const mergeMap = {};
-            merges.split('\n').slice(1).forEach(line => {
-                const parts = line.split(' ');
-                if (parts.length === 2) mergeMap[parts[0] + '|' + parts[1]] = true;
-            });
-            sdTokenizer = { vocab, mergeMap };
-        }
-
-        function sdTokenize(text) {
-            const tokens = [0];
-            const words = text.toLowerCase().match(/\b\w+\b|[^\s\w]/g) || [];
-            for (const word of words) {
-                for (const char of word) {
-                    if (sdTokenizer.vocab[char] !== undefined) tokens.push(sdTokenizer.vocab[char]);
-                }
-            }
-            while (tokens.length < 77) tokens.push(1);
-            return tokens.slice(0, 77);
-        }
-
-        function sdCreateScheduler(numSteps) {
-            const config = { num_train_timesteps: 1000, beta_start: 0.00085, beta_end: 0.012 };
-            const betas = [];
-            for (let i = 0; i < config.num_train_timesteps; i++) {
-                const t = i / (config.num_train_timesteps - 1);
-                betas.push(config.beta_start + t * (config.beta_end - config.beta_start));
-            }
-            const alphas = betas.map(b => 1 - b);
-            const alphasCumprod = [];
-            let cum = 1;
-            for (const a of alphas) { cum *= a; alphasCumprod.push(cum); }
-            const stepSize = Math.floor(config.num_train_timesteps / numSteps);
-            const timesteps = [];
-            for (let i = 0; i < numSteps; i++) timesteps.push(config.num_train_timesteps - 1 - i * stepSize);
-            return { config, betas, alphas, alphasCumprod, timesteps };
-        }
-
-        if (window.ort && ort.env) {
-            ort.env.logLevel = 'error';
-            if (ort.env.wasm) {
-                ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/';
-                ort.env.wasm.numThreads = 1;
-                ort.env.wasm.simd = true;
-            }
-        }
-
-        async function sdCreateSession(arrayBuffer) {
-            const bufferView = new Uint8Array(arrayBuffer);
-            const epConfigs = [
-                { executionProviders: ['wasm'], graphOptimizationLevel: 'basic' },
-                { executionProviders: ['wasm'], graphOptimizationLevel: 'disabled' }
-            ];
-
-            for (const config of epConfigs) {
-                try {
-                    return await ort.InferenceSession.create(bufferView, config);
-                } catch (e) {
-                    console.warn('[ORT] Session creation config failed:', config, e);
-                }
-            }
-            throw new Error('Failed to create ONNX InferenceSession with any available execution provider.');
-        }
-
-        async function sdLoadModel(onProgress) {
-            if (sdModelLoaded) return;
-            if (sdModelLoading) { while (sdModelLoading) await new Promise(r => setTimeout(r, 300)); return; }
-            sdModelLoading = true;
-            try {
-                onProgress('Loading tokenizer...');
-                await sdLoadTokenizer();
-
-                onProgress('Loading UNet model...');
-                const unetBlob = await sdFetchModel('unet/model_f32.onnx/model_f32.onnx', onProgress, 'UNet');
-                onProgress('Compiling UNet...');
-                await new Promise(r => setTimeout(r, 50));
-                sdSessions.unet = await sdCreateSession(await unetBlob.arrayBuffer());
-
-                onProgress('Loading Text Encoder...');
-                const teBlob = await sdFetchModel('text_encoder/model_f32.onnx/model_f32.onnx', onProgress, 'Text Encoder');
-                onProgress('Compiling Text Encoder...');
-                await new Promise(r => setTimeout(r, 50));
-                sdSessions.textEncoder = await sdCreateSession(await teBlob.arrayBuffer());
-
-                onProgress('Loading VAE Decoder...');
-                const vdBlob = await sdFetchModel('vae_decoder/model_f32.onnx/model_f32.onnx', onProgress, 'VAE Decoder');
-                onProgress('Compiling VAE Decoder...');
-                await new Promise(r => setTimeout(r, 50));
-                sdSessions.vaeDecoder = await sdCreateSession(await vdBlob.arrayBuffer());
-
-                sdModelLoaded = true;
-                onProgress('Local pipeline ready!');
-            } catch(e) { 
-                sdModelLoading = false; 
-                throw e; 
-            }
-            sdModelLoading = false;
-        }
-
-        async function sdToF32(tensor) {
-            if (!tensor) return null;
-            const data = await tensor.getData();
-            if (tensor.type === 'float16') {
-                const raw = new Uint16Array(data.buffer !== undefined ? data.buffer : data);
-                const out = new Float32Array(raw.length);
-                for (let i = 0; i < raw.length; i++) {
-                    const h = raw[i];
-                    const s = (h & 0x8000) ? -1 : 1;
-                    const e = (h >> 10) & 0x1f;
-                    const m = h & 0x3ff;
-                    if (e === 0) out[i] = s * m * Math.pow(2, -24);
-                    else if (e === 31) out[i] = m ? NaN : s * Infinity;
-                    else out[i] = s * Math.pow(2, e - 15) * (1 + m / 1024);
-                }
-                return new ort.Tensor('float32', out, tensor.dims);
-            }
-            return new ort.Tensor('float32', data instanceof Float32Array ? data : new Float32Array(data), tensor.dims);
-        }
-
-        async function sdRun(session, feeds, timeoutMs = 480000) {
-            return new Promise((resolve, reject) => {
-                const timer = setTimeout(() => reject(new Error('ORT session run timeout')), timeoutMs);
-                session.run(feeds).then(result => {
-                    clearTimeout(timer);
-                    resolve(result);
-                }).catch(e => {
-                    clearTimeout(timer);
-                    console.warn('[SD] Engine session warning:', e);
-                    reject(e);
-                });
-            });
+            };
+            _worker.onerror = (e) => {
+                if (_workerReject) _workerReject(new Error(e.message));
+                _workerResolve = null; _workerReject = null; _workerProgress = null;
+            };
+            return _worker;
         }
 
         async function sdGenerateImage(prompt, width, height, numSteps, onProgress) {
-            await sdLoadModel(onProgress);
-
-            let sdWidth = Math.min(width || 512, 640);
-            let sdHeight = Math.min(height || 512, 640);
-            sdWidth = Math.floor(sdWidth / 64) * 64;
-            sdHeight = Math.floor(sdHeight / 64) * 64;
-
-            const batchSize = 1, channels = 4;
-            const latentHeight = sdHeight / 8, latentWidth = sdWidth / 8;
-
-            onProgress('Tokenizing text prompt...');
-            const tokens = sdTokenize(prompt);
-            const inputIds = new ort.Tensor('int32', Int32Array.from(tokens), [1, 77]);
-
-            const teInputName = (sdSessions.textEncoder.inputNames && sdSessions.textEncoder.inputNames[0]) || 'input_ids';
-            const teFeeds = {};
-            teFeeds[teInputName] = inputIds;
-
-            onProgress('Encoding prompt embeddings...');
-            const encResult = await sdRun(sdSessions.textEncoder, teFeeds);
-            let textEmbeddings = encResult.last_hidden_state || Object.values(encResult)[0];
-
-            if (inputIds.dispose) inputIds.dispose();
-
-            const scheduler = sdCreateScheduler(numSteps);
-
-            onProgress('Initializing latent canvas...');
-            const latentData = new Float32Array(batchSize * channels * latentHeight * latentWidth);
-            for (let i = 0; i < latentData.length; i++) latentData[i] = (Math.random() * 2 - 1) * 1.5;
-
-            const unetInputs = sdSessions.unet.inputNames || ['sample', 'timestep', 'encoder_hidden_states'];
-            const unetSampleName = unetInputs[0] || 'sample';
-            const unetTimeName = unetInputs[1] || 'timestep';
-            const unetEncoderName = unetInputs[2] || 'encoder_hidden_states';
-
-            // models are float32 — feed float32 tensors directly
-            const encoderF32 = textEmbeddings.type === 'float16' 
-                ? await sdToF32(textEmbeddings) 
-                : textEmbeddings;
-
-            for (let step = 0; step < scheduler.timesteps.length; step++) {
-                onProgress('Denoising step ' + (step + 1) + ' of ' + numSteps + '...');
-                const t = scheduler.timesteps[step];
-
-                const tTensor = new ort.Tensor('float32', new Float32Array([t]), [1]);
-                const latentTensor = new ort.Tensor('float32', latentData instanceof Float32Array ? latentData : new Float32Array(latentData), [batchSize, channels, latentHeight, latentWidth]);
-
-                const unetFeeds = {};
-                unetFeeds[unetSampleName] = latentTensor;
-                unetFeeds[unetTimeName] = tTensor;
-                unetFeeds[unetEncoderName] = encoderF32;
-
-                const unetResult = await sdRun(sdSessions.unet, unetFeeds);
-
-                const rawNoisePred = Object.values(unetResult)[0];
-                const noisePred = await sdToF32(rawNoisePred);
-
-                const alpha_t = scheduler.alphasCumprod[t];
-                const alpha_t_prev = step < scheduler.timesteps.length - 1 ? scheduler.alphasCumprod[scheduler.timesteps[step + 1]] : 1.0;
-                const sigma = Math.sqrt(Math.max(0, (1 - alpha_t_prev) / (1 - alpha_t + 1e-6)));
-                const noiseData = noisePred.data;
-                for (let i = 0; i < latentData.length; i++) latentData[i] = latentData[i] - sigma * noiseData[i];
-
-                if (tTensor.dispose) tTensor.dispose();
-                if (latentTensor.dispose) latentTensor.dispose();
-                Object.values(unetResult).forEach(tensor => { if (tensor && tensor.dispose) tensor.dispose(); });
-            }
-
-            if (encoderF32 && encoderF32 !== textEmbeddings && encoderF32.dispose) encoderF32.dispose();
-
-            onProgress('Decoding image from latent space...');
-            const scale = 1.0 / 0.18215;
-            const scaledData = new Float32Array(latentData.length);
-            for (let i = 0; i < scaledData.length; i++) scaledData[i] = latentData[i] * scale;
-
-            let scaledLatent = new ort.Tensor('float32', scaledData, [batchSize, channels, latentHeight, latentWidth]);
-
-            const vaeInputName = (sdSessions.vaeDecoder.inputNames && sdSessions.vaeDecoder.inputNames[0]) || 'latent_sample';
-            const vaeFeeds = {};
-            vaeFeeds[vaeInputName] = scaledLatent;
-
-            const vaeResult = await sdRun(sdSessions.vaeDecoder, vaeFeeds);
-
-            const rawImageTensor = Object.values(vaeResult)[0];
-            const imageTensor = await sdToF32(rawImageTensor);
-
-            if (scaledLatent.dispose) scaledLatent.dispose();
-            Object.values(vaeResult).forEach(tensor => { if (tensor && tensor.dispose) tensor.dispose(); });
-            if (textEmbeddings.dispose) textEmbeddings.dispose();
-
-            onProgress('Finalizing render...');
-            const imgData = imageTensor.data;
-            const imgH = imageTensor.dims[2] || sdHeight;
-            const imgW = imageTensor.dims[3] || sdWidth;
-            const canvas = document.createElement('canvas');
-            canvas.width = imgW; canvas.height = imgH;
-            const ctx = canvas.getContext('2d');
-            const imageData = ctx.createImageData(imgW, imgH);
-            const planeSize = imgH * imgW;
-
-            for (let y = 0; y < imgH; y++) {
-                for (let x = 0; x < imgW; x++) {
-                    const pixelIdx = y * imgW + x;
-                    const outIdx = pixelIdx * 4;
-
-                    let r = imgData[pixelIdx];
-                    let g = imgData[planeSize + pixelIdx];
-                    let b = imgData[planeSize * 2 + pixelIdx];
-
-                    r = isNaN(r) ? 0 : Math.min(255, Math.max(0, Math.round((r + 1) * 127.5)));
-                    g = isNaN(g) ? 0 : Math.min(255, Math.max(0, Math.round((g + 1) * 127.5)));
-                    b = isNaN(b) ? 0 : Math.min(255, Math.max(0, Math.round((b + 1) * 127.5)));
-
-                    imageData.data[outIdx] = r;
-                    imageData.data[outIdx + 1] = g;
-                    imageData.data[outIdx + 2] = b;
-                    imageData.data[outIdx + 3] = 255;
-                }
-            }
-            ctx.putImageData(imageData, 0, 0);
-            return canvas.toDataURL('image/png');
+            return new Promise((resolve, reject) => {
+                _workerProgress = onProgress;
+                _workerResolve  = resolve;
+                _workerReject   = reject;
+                getWorker().postMessage({
+                    type: 'generate',
+                    baseUrl: getBaseUrl(),
+                    prompt, width, height, numSteps
+                });
+            });
         }
 
         function generateProceduralArt(prompt, width = 768, height = 512) {
@@ -856,20 +892,30 @@ Reply with EXACTLY ONE word: IMAGE or CHAT.`;
             const chat = chats.find(c => c.id === chatId);
             if (chat) {
                 chat.title = firstMessage.length > 30 ? firstMessage.substring(0, 30) + '...' : firstMessage;
-                saveChat(chat).then(() => {
-                    renderHistory();
-                    if (currentChatId === chatId) {
-                        document.getElementById('current-chat-title').textContent = chat.title;
+                saveChat(chat); // fire-and-forget
+                // Update sidebar item text directly instead of re-rendering the whole list
+                const items = historyList.querySelectorAll('[onclick]');
+                items.forEach(el => {
+                    if (el.getAttribute('onclick') === "loadChat('" + chatId + "')") {
+                        const span = el.querySelector('span');
+                        if (span) span.textContent = chat.title;
                     }
                 });
+                if (currentChatId === chatId) {
+                    document.getElementById('current-chat-title').textContent = chat.title;
+                }
             }
         }
 
         function addMessageToChat(chatId, role, content) {
             const chat = chats.find(c => c.id === chatId);
             if (chat) {
-                chat.messages.push({ role: role, content: content, timestamp: Date.now() });
-                saveChat(chat).then(() => renderHistory());
+                // Don't store full image data URLs in IndexedDB — just a placeholder
+                const storable = (role === 'image' && content && content.url && content.url.startsWith('data:'))
+                    ? { ...content, url: '[image]' }
+                    : content;
+                chat.messages.push({ role: role, content: storable, timestamp: Date.now() });
+                saveChat(chat); // fire-and-forget, no renderHistory — sidebar already up to date
             }
         }
 
@@ -1258,7 +1304,7 @@ Reply with EXACTLY ONE word: IMAGE or CHAT.`;
                 const finalPrompt = buildImagePrompt(userText, styleMod);
                 for (let i = 0; i < count; i++) {
                     updateProgress(`Generating image ${i + 1} of ${count}...`);
-                    const imgUrl = await sdGenerateImage(finalPrompt, width, height, 15, updateProgress);
+                    const imgUrl = await sdGenerateImage(finalPrompt, width, height, 4, updateProgress);
 
                     const imgObj = { url: imgUrl, prompt: finalPrompt };
                     const loader = document.getElementById(loaderId);
