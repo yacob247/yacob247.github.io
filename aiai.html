@@ -1,38 +1,6 @@
 <!DOCTYPE html>
 <html lang="en" class="dark">
 <head>
-    <!-- Service Worker: injects COOP/COEP headers so WASM multi-threading works -->
-    <script>
-        (async () => {
-            if (!('serviceWorker' in navigator)) return;
-            const SW_SRC = `
-self.addEventListener('install', () => self.skipWaiting());
-self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
-self.addEventListener('fetch', e => {
-    e.respondWith(
-        fetch(e.request).then(res => {
-            // Only add headers to same-origin HTML/JS responses
-            const ct = res.headers.get('content-type') || '';
-            if (!ct.includes('text/html') && !ct.includes('javascript')) return res;
-            const headers = new Headers(res.headers);
-            headers.set('Cross-Origin-Opener-Policy', 'same-origin');
-            headers.set('Cross-Origin-Embedder-Policy', 'require-corp');
-            return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
-        }).catch(() => fetch(e.request))
-    );
-});
-            `;
-            const blob = new Blob([SW_SRC], { type: 'application/javascript' });
-            const swUrl = URL.createObjectURL(blob);
-            try {
-                await navigator.serviceWorker.register(swUrl, { scope: './' });
-                // If not yet isolated, reload once to get the headers applied
-                if (!crossOriginIsolated) location.reload();
-            } catch(e) {
-                console.warn('[SW] Could not register:', e);
-            }
-        })();
-    </script>
 
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -486,7 +454,7 @@ importScripts('https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.wasm
 
 ort.env.logLevel = 'error';
 ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/';
-ort.env.wasm.numThreads = Math.min(navigator.hardwareConcurrency || 1, 4);
+ort.env.wasm.numThreads = crossOriginIsolated ? Math.min(navigator.hardwareConcurrency || 1, 4) : 1;
 ort.env.wasm.simd = true;
 
 async function fetchModel(filename, label) {
