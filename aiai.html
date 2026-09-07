@@ -1,11 +1,10 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="claude" data-mode="dark" class="antialiased scroll-smooth">
-
+<html lang="en" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Omni Studio - Image & AI Generator</title>
-
+    <title>Omni Studio - AI Visual Generation</title>
+    
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
@@ -17,7 +16,7 @@
         window.webllm = webllm;
     </script>
 
-    <!-- ONNX Runtime Web (WebGPU build with WASM fallback) -->
+    <!-- ONNX Runtime Web -->
     <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.webgpu.min.js"></script>
 
     <!-- Tailwind CSS -->
@@ -136,7 +135,7 @@
         }
 
         .settings-panel.open {
-            max-height: 240px;
+            max-height: 280px;
             opacity: 1;
             padding-bottom: 12px;
             margin-bottom: 12px;
@@ -153,14 +152,11 @@
         }
     </style>
 </head>
+<body class="h-screen w-screen flex overflow-hidden font-sans bg-cds-surface2 text-cds-textMain select-none">
 
-<body class="h-screen w-full flex font-sans text-cds-textMain bg-cds-surface2 selection:bg-cds-surface4 selection:text-white relative">
-
-    <!-- Sidebar Overlay (Mobile) -->
     <div id="sidebar-overlay" onclick="toggleMobileSidebar(false)"
         class="fixed inset-0 bg-black/60 z-40 hidden md:hidden backdrop-blur-sm transition-opacity"></div>
 
-    <!-- Sidebar Desktop & Mobile Drawer -->
     <aside id="mobile-sidebar"
         class="fixed md:static inset-y-0 left-0 w-[270px] bg-cds-surface1 border-r border-cds-border flex flex-col flex-shrink-0 z-50 transform -translate-x-full md:translate-x-0 transition-transform duration-300">
         
@@ -190,9 +186,9 @@
             <div class="flex items-center justify-between px-2 py-2 rounded-lg bg-cds-surface2/60 border border-cds-border/30">
                 <div class="flex items-center gap-2.5">
                     <div class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
-                    <span class="text-xs font-medium text-cds-textMuted">Local WebGPU Engine</span>
+                    <span class="text-xs font-medium text-cds-textMuted">Local WebGPU/WASM Engine</span>
                 </div>
-                <span class="text-[10px] bg-cds-surface4 px-2 py-0.5 rounded text-cds-accent">Qwen 0.5B</span>
+                <span class="text-[10px] bg-cds-surface4 px-2 py-0.5 rounded text-cds-accent">SD ONNX</span>
             </div>
         </div>
     </aside>
@@ -245,7 +241,6 @@
             </div>
         </div>
 
-        <!-- Floating Prompt Bar -->
         <div class="absolute bottom-0 w-full bg-gradient-to-t from-cds-surface2 via-cds-surface2/95 to-transparent pt-8 pb-5 px-4 md:px-8 z-30">
             <div class="max-w-3xl mx-auto w-full relative">
 
@@ -274,9 +269,9 @@
                                 <label class="text-[10px] uppercase tracking-wider text-cds-textMuted font-semibold mb-1 block">Aspect Ratio</label>
                                 <select id="aspect-ratio"
                                     class="w-full bg-cds-surface1 border border-cds-border rounded-lg p-2 text-xs text-cds-textMain outline-none focus:border-cds-accent transition-colors">
-                                    <option value="512x512">Square (1:1)</option>
+                                    <option value="512x512" selected>Square (1:1) - Safest</option>
                                     <option value="640x512">Landscape (4:3)</option>
-                                    <option value="768x512" selected>Widescreen (16:9)</option>
+                                    <option value="768x512">Widescreen (16:9)</option>
                                     <option value="512x640">Portrait (3:4)</option>
                                 </select>
                             </div>
@@ -294,6 +289,11 @@
                             <div>
                                 <label class="text-[10px] uppercase tracking-wider text-cds-textMuted font-semibold mb-1 block">Batch Count</label>
                                 <input id="image-count" type="number" min="1" max="4" value="1"
+                                    class="w-full bg-cds-surface1 border border-cds-border rounded-lg p-2 text-xs text-cds-textMain outline-none focus:border-cds-accent transition-colors">
+                            </div>
+                            <div class="col-span-2 md:col-span-4 mt-1">
+                                <label class="text-[10px] uppercase tracking-wider text-cds-textMuted font-semibold mb-1 block">Model Base Endpoint URL</label>
+                                <input id="custom-model-url" type="text" value="https://pub-406a7f3fa4d44f41b5317520aa1aaf4a.r2.dev/tiny-sd-onnx/" placeholder="https://pub-406a7f3fa4d44f41b5317520aa1aaf4a.r2.dev/tiny-sd-onnx/"
                                     class="w-full bg-cds-surface1 border border-cds-border rounded-lg p-2 text-xs text-cds-textMain outline-none focus:border-cds-accent transition-colors">
                             </div>
                         </div>
@@ -319,13 +319,12 @@
                 </div>
 
                 <div class="text-center mt-2.5">
-                    <p class="text-[10px] text-cds-textMuted/80">Omni Studio AI. Images are generated locally in your browser using your model via WebGPU. No data leaves your device.</p>
+                    <p class="text-[10px] text-cds-textMuted/80">Omni Studio AI. Images are generated locally in your browser using your model via WebGPU/WASM. No data leaves your device.</p>
                 </div>
             </div>
         </div>
     </main>
 
-    <!-- Side Prompt Refiner Drawer -->
     <div id="prompt-drawer"
         class="fixed top-0 right-0 h-full w-[360px] max-w-[85vw] bg-cds-surface1 border-l border-cds-border z-50 flex flex-col shadow-2xl transform translate-x-full">
         <div class="p-4 border-b border-cds-border flex items-center justify-between">
@@ -355,7 +354,6 @@
         </div>
     </div>
 
-    <!-- Lightbox Modal for Full Resolution View -->
     <div id="lightbox-modal" onclick="closeLightbox()"
         class="fixed inset-0 bg-black/90 z-50 hidden flex-col items-center justify-center p-4 backdrop-blur-md transition-opacity">
         <div class="relative max-w-5xl max-h-[85vh] w-full flex flex-col items-center justify-center" onclick="event.stopPropagation()">
@@ -376,33 +374,22 @@
         </div>
     </div>
 
-    <!-- Toast Notification Container -->
     <div id="toast-container" class="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
 
     <script>
-        const CLASSIFIER_PROMPT = `You are a request classifier for an AI image generation app.
-Read the conversation and user's prompt. Decide intent:
-- IMAGE -> user wants to create, draw, render, or visualize an image or refine a previous artwork.
-- CHAT  -> greetings, questions, conversations.
+        const CLASSIFIER_PROMPT = `You are a request classifier for an AI image generation app. Read the conversation and user's prompt. Decide intent:
+* IMAGE -> user wants to create, draw, render, or visualize an image or refine a previous artwork.
+* CHAT  -> greetings, questions, conversations.
 Reply with EXACTLY ONE word: IMAGE or CHAT.`;
 
-        const CHAT_SYSTEM_PROMPT = `You are Omni, a helpful AI visual assistant.
-Reply concisely (1-3 sentences).
-Do NOT claim to have generated links or video files.
-If the user wants an image, state that you can create one for them.`;
+        const CHAT_SYSTEM_PROMPT = `You are Omni, a helpful AI visual assistant. Reply concisely (1-3 sentences). Do NOT claim to have generated links or video files. If the user wants an image, state that you can create one for them.`;
 
-        const IMAGE_SYSTEM_PROMPT = `You are Omni, an expert prompt engineer.
-Create detailed image generation prompts.
-Reply with:
-1. One short intro sentence.
-2. One or more lines formatted as:
-PROMPT: detailed visual description here`;
+        const IMAGE_SYSTEM_PROMPT = `You are Omni, an expert prompt engineer. Create detailed image generation prompts. Reply with: 1. One short intro sentence. 2. One or more lines formatted as: PROMPT: detailed visual description here`;
 
         window.addEventListener('unhandledrejection', function(event) {
             if (event.reason && (event.reason.name === 'AbortError' || (event.reason.message && event.reason.message.includes('mapAsync')))) {
-                console.warn('[WebGPU] Caught unhandled MapAsync/AbortError. Forcing cloud fallback.');
-                event.preventDefault(); // Prevent uncaught promise warning in console
-                // Reset SD model state so it recovers on next run
+                console.warn('[WebGPU] Caught unhandled MapAsync/AbortError. Resetting session state.');
+                event.preventDefault();
                 sdModelLoaded = false;
                 sdSessions = {};
             }
@@ -415,7 +402,6 @@ PROMPT: detailed visual description here`;
         let currentChatId = null;
         let chats = [];
         let isGenerating = false;
-        let generationCount = 0;
         let db = null;
 
         const promptInput = document.getElementById('prompt-input');
@@ -450,120 +436,44 @@ PROMPT: detailed visual description here`;
         let sdModelLoaded = false;
         let sdModelLoading = false;
 
-        // ── Model cache via OPFS (Origin Private File System) ──────────────────
-        // OPFS writes directly to a private SSD folder at native I/O speed.
-        // This completely bypasses Chrome's IndexedDB/LevelDB bottleneck that
-        // caused the 20-minute hang when caching files over ~200 MB.
-        // Falls back to IndexedDB on browsers that don't support OPFS yet.
-
-        const _opfsSupported = typeof navigator !== 'undefined' &&
-            navigator.storage && typeof navigator.storage.getDirectory === 'function';
-
-        // Sanitise filename → flat OPFS-safe name  (e.g. "unet/model.onnx" → "unet__model.onnx")
-        function _opfsKey(filename) {
-            return filename.replace(/[/\\]/g, '__');
+        function getBaseUrl() {
+            const customUrlInput = document.getElementById('custom-model-url');
+            const customUrl = customUrlInput ? customUrlInput.value.trim() : '';
+            return customUrl ? (customUrl.endsWith('/') ? customUrl : customUrl + '/') : SD_BASE_URL;
         }
 
-        async function sdGetCachedModel(filename) {
-            if (_opfsSupported) {
-                try {
-                    const root = await navigator.storage.getDirectory();
-                    const cacheDir = await root.getDirectoryHandle('sd_model_cache', { create: true });
-                    const fileHandle = await cacheDir.getFileHandle(_opfsKey(filename));
-                    const file = await fileHandle.getFile();
-                    return new Blob([await file.arrayBuffer()], { type: 'application/octet-stream' });
-                } catch (e) {
-                    // File not found in OPFS — return null so caller fetches it
-                    if (e.name === 'NotFoundError') return null;
-                    console.warn('[OPFS] Read error, falling back to IDB:', e);
+        async function sdFetchModel(filename, onProgress, label) {
+            try {
+                const resp = await fetch(getBaseUrl() + filename);
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+                const total = parseInt(resp.headers.get('Content-Length') || '0', 10);
+                const reader = resp.body.getReader();
+                const chunks = [];
+                let received = 0;
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    chunks.push(value);
+                    received += value.length;
+                    if (onProgress && label) {
+                        const pct = total > 0 ? Math.round((received / total) * 100) : '...';
+                        const mb = (received / 1048576).toFixed(1);
+                        onProgress(label + ' ' + mb + 'MB' + (total > 0 ? ' (' + pct + '%)' : ''));
+                    }
                 }
+                return new Blob(chunks);
+            } catch (err) {
+                console.error(`[SD Fetch Error] Failed to download ${filename}:`, err);
+                throw new Error(`Model host unreachable for ${filename}. ${err.message}`);
             }
-            // ── IndexedDB fallback ──────────────────────────────────────────────
-            return new Promise((resolve, reject) => {
-                const openReq = indexedDB.open('SDModelCache', 1);
-                openReq.onupgradeneeded = (e) => {
-                    const db = e.target.result;
-                    if (!db.objectStoreNames.contains('models')) db.createObjectStore('models');
-                };
-                openReq.onsuccess = () => {
-                    const db = openReq.result;
-                    const tx = db.transaction('models', 'readonly');
-                    const store = tx.objectStore('models');
-                    const getReq = store.get(filename);
-                    getReq.onsuccess = () => resolve(getReq.result || null);
-                    getReq.onerror = () => reject(getReq.error);
-                };
-                openReq.onerror = () => reject(openReq.error);
-            });
-        }
-
-        async function sdCacheModel(filename, data) {
-            if (_opfsSupported) {
-                try {
-                    const root = await navigator.storage.getDirectory();
-                    const cacheDir = await root.getDirectoryHandle('sd_model_cache', { create: true });
-                    const fileHandle = await cacheDir.getFileHandle(_opfsKey(filename), { create: true });
-                    const writable = await fileHandle.createWritable();
-                    // Write the Blob directly — no extra serialisation step
-                    await writable.write(data);
-                    await writable.close();
-                    return; // done — fast path succeeded
-                } catch (e) {
-                    console.warn('[OPFS] Write error, falling back to IDB:', e);
-                }
-            }
-            // ── IndexedDB fallback ──────────────────────────────────────────────
-            return new Promise((resolve, reject) => {
-                const openReq = indexedDB.open('SDModelCache', 1);
-                openReq.onupgradeneeded = (e) => {
-                    const db = e.target.result;
-                    if (!db.objectStoreNames.contains('models')) db.createObjectStore('models');
-                };
-                openReq.onsuccess = () => {
-                    const db = openReq.result;
-                    const tx = db.transaction('models', 'readwrite');
-                    const store = tx.objectStore('models');
-                    store.put(data, filename);
-                    tx.oncomplete = () => resolve();
-                    tx.onerror = () => reject(tx.error);
-                };
-                openReq.onerror = () => reject(openReq.error);
-            });
-        }
-
-        async function sdFetchAndCache(filename, onProgress, label) {
-            const cached = await sdGetCachedModel(filename);
-            if (cached) {
-                if (onProgress && label) onProgress(label + ' (cached) 100%');
-                return cached;
-            }
-            const resp = await fetch(SD_BASE_URL + filename);
-            if (!resp.ok) throw new Error('Failed to fetch ' + filename);
-            const total = parseInt(resp.headers.get('Content-Length') || '0', 10);
-            const reader = resp.body.getReader();
-            const chunks = [];
-            let received = 0;
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                chunks.push(value);
-                received += value.length;
-                if (onProgress && label) {
-                    const pct = total > 0 ? Math.round((received / total) * 100) : '...';
-                    const mb = (received / 1048576).toFixed(1);
-                    onProgress(label + ' ' + mb + 'MB' + (total > 0 ? ' (' + pct + '%)' : ''));
-                }
-            }
-            const blob = new Blob(chunks);
-            await sdCacheModel(filename, blob);
-            return blob;
         }
 
         async function sdLoadTokenizer() {
             if (sdTokenizer) return;
+            const baseUrl = getBaseUrl();
             const [vocabResp, mergesResp] = await Promise.all([
-                fetch(SD_BASE_URL + 'tokenizer/vocab.json'),
-                fetch(SD_BASE_URL + 'tokenizer/merges.txt')
+                fetch(baseUrl + 'tokenizer/vocab.json'),
+                fetch(baseUrl + 'tokenizer/merges.txt')
             ]);
             const vocab = await vocabResp.json();
             const merges = await mergesResp.text();
@@ -604,45 +514,58 @@ PROMPT: detailed visual description here`;
             return { config, betas, alphas, alphasCumprod, timesteps };
         }
 
-        if (window.ort && ort.env && ort.env.wasm) {
-            ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/';
-            // MUST stay at 1. ORT issue #26858 (confirmed): InferenceSession.create()
-            // hangs indefinitely with numThreads > 1 when loading from an ArrayBuffer.
-            // There is no error or timeout — it simply never resolves.
-            ort.env.wasm.numThreads = 1;
+        if (window.ort && ort.env) {
+            ort.env.logLevel = 'error';
+            if (ort.env.wasm) {
+                ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/';
+                ort.env.wasm.numThreads = 1;
+                ort.env.wasm.simd = true;
+            }
         }
 
-        async function sdCreateSession(arrayBuffer, onProgress) {
-            // WebGPU crashes on this model (GPU memory overflow / MapAsync AbortError).
-            // WASM is slower but runs reliably to completion every time.
-            //
-            // graphOptimizationLevel 'all' triggers a confirmed WASM bug (ORT #25692):
-            // fp16 models hit SimplifiedLayerNormFusion / InsertedPrecisionFreeCast
-            // which causes a crash or silent hang in the browser. Use 'basic' instead.
-            return await ort.InferenceSession.create(arrayBuffer, {
-                executionProviders: ['wasm'],
-                graphOptimizationLevel: 'basic'
-            });
+        async function sdCreateSession(arrayBuffer) {
+            const bufferView = new Uint8Array(arrayBuffer);
+            const epConfigs = [
+                { executionProviders: ['wasm'], graphOptimizationLevel: 'basic' },
+                { executionProviders: ['wasm'], graphOptimizationLevel: 'disabled' }
+            ];
+
+            for (const config of epConfigs) {
+                try {
+                    return await ort.InferenceSession.create(bufferView, config);
+                } catch (e) {
+                    console.warn('[ORT] Session creation config failed:', config, e);
+                }
+            }
+            throw new Error('Failed to create ONNX InferenceSession with any available execution provider.');
         }
 
         async function sdLoadModel(onProgress) {
             if (sdModelLoaded) return;
-            if (sdModelLoading) { while (sdModelLoading) await new Promise(r => setTimeout(r, 400)); return; }
+            if (sdModelLoading) { while (sdModelLoading) await new Promise(r => setTimeout(r, 300)); return; }
             sdModelLoading = true;
             try {
-                onProgress('Loading tokenizer...'); await sdLoadTokenizer();
+                onProgress('Loading tokenizer...');
+                await sdLoadTokenizer();
+
                 onProgress('Loading UNet model...');
-                const unetBlob = await sdFetchAndCache('unet/model.onnx', onProgress, 'UNet');
+                const unetBlob = await sdFetchModel('unet/model_f32.onnx/model_f32.onnx', onProgress, 'UNet');
                 onProgress('Compiling UNet...');
-                sdSessions.unet = await sdCreateSession(await unetBlob.arrayBuffer(), onProgress);
+                await new Promise(r => setTimeout(r, 50));
+                sdSessions.unet = await sdCreateSession(await unetBlob.arrayBuffer());
+
                 onProgress('Loading Text Encoder...');
-                const teBlob = await sdFetchAndCache('text_encoder/model.onnx', onProgress, 'Text Encoder');
+                const teBlob = await sdFetchModel('text_encoder/model_f32.onnx/model_f32.onnx', onProgress, 'Text Encoder');
                 onProgress('Compiling Text Encoder...');
-                sdSessions.textEncoder = await sdCreateSession(await teBlob.arrayBuffer(), onProgress);
+                await new Promise(r => setTimeout(r, 50));
+                sdSessions.textEncoder = await sdCreateSession(await teBlob.arrayBuffer());
+
                 onProgress('Loading VAE Decoder...');
-                const vdBlob = await sdFetchAndCache('vae_decoder/model.onnx', onProgress, 'VAE Decoder');
+                const vdBlob = await sdFetchModel('vae_decoder/model_f32.onnx/model_f32.onnx', onProgress, 'VAE Decoder');
                 onProgress('Compiling VAE Decoder...');
-                sdSessions.vaeDecoder = await sdCreateSession(await vdBlob.arrayBuffer(), onProgress);
+                await new Promise(r => setTimeout(r, 50));
+                sdSessions.vaeDecoder = await sdCreateSession(await vdBlob.arrayBuffer());
+
                 sdModelLoaded = true;
                 onProgress('Local pipeline ready!');
             } catch(e) { 
@@ -652,65 +575,24 @@ PROMPT: detailed visual description here`;
             sdModelLoading = false;
         }
 
-        // Shim Float16Array for browsers that don't support it natively (e.g. older Chrome/Edge)
-        if (typeof Float16Array === 'undefined') {
-            window.Float16Array = class Float16Array extends Uint16Array {
-                constructor(...args) { super(...args); }
-                static get name() { return 'Float16Array'; }
-            };
-        }
-
-        function sdF32ToHalfArray(f32) {
-            const buf = new ArrayBuffer(f32.length * 2);
-            const out = new Float16Array(buf);
-            const floatView = new Float32Array(1);
-            const int32View = new Uint32Array(floatView.buffer);
-            for (let i = 0; i < f32.length; i++) {
-                floatView[0] = f32[i];
-                const x = int32View[0];
-                let bits = (x >> 16) & 0x8000;
-                let m = (x >> 12) & 0x07ff;
-                const e = (x >> 23) & 0xff;
-                if (e < 103) { out[i] = bits; continue; }
-                if (e > 142) { out[i] = bits | 0x7c00; continue; }
-                if (e < 113) {
-                    m |= 0x0800;
-                    out[i] = bits | ((m >> (114 - e)) + ((m >> (113 - e)) & 1));
-                    continue;
+        async function sdToF32(tensor) {
+            if (!tensor) return null;
+            const data = await tensor.getData();
+            if (tensor.type === 'float16') {
+                const raw = new Uint16Array(data.buffer !== undefined ? data.buffer : data);
+                const out = new Float32Array(raw.length);
+                for (let i = 0; i < raw.length; i++) {
+                    const h = raw[i];
+                    const s = (h & 0x8000) ? -1 : 1;
+                    const e = (h >> 10) & 0x1f;
+                    const m = h & 0x3ff;
+                    if (e === 0) out[i] = s * m * Math.pow(2, -24);
+                    else if (e === 31) out[i] = m ? NaN : s * Infinity;
+                    else out[i] = s * Math.pow(2, e - 15) * (1 + m / 1024);
                 }
-                bits |= ((e - 112) << 10) | (m >> 1);
-                bits += m & 1;
-                out[i] = bits;
+                return new ort.Tensor('float32', out, tensor.dims);
             }
-            return out;
-        }
-
-        function sdHalfToF32Array(h16) {
-            // Accept Float16Array or Uint16Array — read raw bits via Uint16Array view
-            const raw = new Uint16Array(h16.buffer, h16.byteOffset, h16.length);
-            const out = new Float32Array(raw.length);
-            for (let i = 0; i < raw.length; i++) {
-                const h = raw[i];
-                const s = (h & 0x8000) ? -1 : 1;
-                const e = (h >> 10) & 0x1f;
-                const m = h & 0x3ff;
-                if (e === 0) out[i] = s * m * Math.pow(2, -24);
-                else if (e === 31) out[i] = m ? NaN : s * Infinity;
-                else out[i] = s * Math.pow(2, e - 15) * (1 + m / 1024);
-            }
-            return out;
-        }
-
-        function sdToF16(tensor) {
-            if (tensor.type === 'float16') return tensor;
-            if (tensor.type !== 'float32') return tensor;
-            return new ort.Tensor('float16', sdF32ToHalfArray(tensor.data), tensor.dims);
-        }
-
-        function sdToF32(tensor) {
-            if (tensor.type === 'float32') return tensor;
-            if (tensor.type !== 'float16') return tensor;
-            return new ort.Tensor('float32', sdHalfToF32Array(tensor.data), tensor.dims);
+            return new ort.Tensor('float32', data instanceof Float32Array ? data : new Float32Array(data), tensor.dims);
         }
 
         async function sdRun(session, feeds, timeoutMs = 480000) {
@@ -742,10 +624,15 @@ PROMPT: detailed visual description here`;
             const tokens = sdTokenize(prompt);
             const inputIds = new ort.Tensor('int32', Int32Array.from(tokens), [1, 77]);
 
+            const teInputName = (sdSessions.textEncoder.inputNames && sdSessions.textEncoder.inputNames[0]) || 'input_ids';
+            const teFeeds = {};
+            teFeeds[teInputName] = inputIds;
+
             onProgress('Encoding prompt embeddings...');
-            const encResult = await sdRun(sdSessions.textEncoder, { input_ids: inputIds });
+            const encResult = await sdRun(sdSessions.textEncoder, teFeeds);
             let textEmbeddings = encResult.last_hidden_state || Object.values(encResult)[0];
-            if (textEmbeddings.type === 'float32') textEmbeddings = sdToF16(textEmbeddings);
+
+            if (inputIds.dispose) inputIds.dispose();
 
             const scheduler = sdCreateScheduler(numSteps);
 
@@ -753,52 +640,169 @@ PROMPT: detailed visual description here`;
             const latentData = new Float32Array(batchSize * channels * latentHeight * latentWidth);
             for (let i = 0; i < latentData.length; i++) latentData[i] = (Math.random() * 2 - 1) * 1.5;
 
+            const unetInputs = sdSessions.unet.inputNames || ['sample', 'timestep', 'encoder_hidden_states'];
+            const unetSampleName = unetInputs[0] || 'sample';
+            const unetTimeName = unetInputs[1] || 'timestep';
+            const unetEncoderName = unetInputs[2] || 'encoder_hidden_states';
+
+            // models are float32 — feed float32 tensors directly
+            const encoderF32 = textEmbeddings.type === 'float16' 
+                ? await sdToF32(textEmbeddings) 
+                : textEmbeddings;
+
             for (let step = 0; step < scheduler.timesteps.length; step++) {
                 onProgress('Denoising step ' + (step + 1) + ' of ' + numSteps + '...');
                 const t = scheduler.timesteps[step];
-                const tTensor = new ort.Tensor('float16', sdF32ToHalfArray(new Float32Array([t])), [1]);
-                const latentTensor = new ort.Tensor('float16', sdF32ToHalfArray(latentData), [batchSize, channels, latentHeight, latentWidth]);
-                const unetResult = await sdRun(sdSessions.unet, { sample: latentTensor, timestep: tTensor, encoder_hidden_states: textEmbeddings });
-                const noisePred = sdToF32(Object.values(unetResult)[0]);
+
+                const tTensor = new ort.Tensor('float32', new Float32Array([t]), [1]);
+                const latentTensor = new ort.Tensor('float32', latentData instanceof Float32Array ? latentData : new Float32Array(latentData), [batchSize, channels, latentHeight, latentWidth]);
+
+                const unetFeeds = {};
+                unetFeeds[unetSampleName] = latentTensor;
+                unetFeeds[unetTimeName] = tTensor;
+                unetFeeds[unetEncoderName] = encoderF32;
+
+                const unetResult = await sdRun(sdSessions.unet, unetFeeds);
+
+                const rawNoisePred = Object.values(unetResult)[0];
+                const noisePred = await sdToF32(rawNoisePred);
+
                 const alpha_t = scheduler.alphasCumprod[t];
                 const alpha_t_prev = step < scheduler.timesteps.length - 1 ? scheduler.alphasCumprod[scheduler.timesteps[step + 1]] : 1.0;
                 const sigma = Math.sqrt(Math.max(0, (1 - alpha_t_prev) / (1 - alpha_t + 1e-6)));
                 const noiseData = noisePred.data;
                 for (let i = 0; i < latentData.length; i++) latentData[i] = latentData[i] - sigma * noiseData[i];
+
+                if (tTensor.dispose) tTensor.dispose();
+                if (latentTensor.dispose) latentTensor.dispose();
+                Object.values(unetResult).forEach(tensor => { if (tensor && tensor.dispose) tensor.dispose(); });
             }
+
+            if (encoderF32 && encoderF32 !== textEmbeddings && encoderF32.dispose) encoderF32.dispose();
 
             onProgress('Decoding image from latent space...');
             const scale = 1.0 / 0.18215;
             const scaledData = new Float32Array(latentData.length);
             for (let i = 0; i < scaledData.length; i++) scaledData[i] = latentData[i] * scale;
-            const scaledLatent = new ort.Tensor('float16', sdF32ToHalfArray(scaledData), [batchSize, channels, latentHeight, latentWidth]);
-            // Probe the actual input name the VAE model uses — tiny/quantized exports
-            // sometimes call it 'input', 'latent', or 'latents' instead of 'latent_sample'.
-            const vaeInputName = sdSessions.vaeDecoder.inputNames?.[0] || 'latent_sample';
-            const vaeResult = await sdRun(sdSessions.vaeDecoder, { [vaeInputName]: scaledLatent });
-            const imageTensor = sdToF32(Object.values(vaeResult)[0]);
+
+            let scaledLatent = new ort.Tensor('float32', scaledData, [batchSize, channels, latentHeight, latentWidth]);
+
+            const vaeInputName = (sdSessions.vaeDecoder.inputNames && sdSessions.vaeDecoder.inputNames[0]) || 'latent_sample';
+            const vaeFeeds = {};
+            vaeFeeds[vaeInputName] = scaledLatent;
+
+            const vaeResult = await sdRun(sdSessions.vaeDecoder, vaeFeeds);
+
+            const rawImageTensor = Object.values(vaeResult)[0];
+            const imageTensor = await sdToF32(rawImageTensor);
+
+            if (scaledLatent.dispose) scaledLatent.dispose();
+            Object.values(vaeResult).forEach(tensor => { if (tensor && tensor.dispose) tensor.dispose(); });
+            if (textEmbeddings.dispose) textEmbeddings.dispose();
 
             onProgress('Finalizing render...');
             const imgData = imageTensor.data;
-            const imgH = imageTensor.dims[2], imgW = imageTensor.dims[3];
+            const imgH = imageTensor.dims[2] || sdHeight;
+            const imgW = imageTensor.dims[3] || sdWidth;
             const canvas = document.createElement('canvas');
             canvas.width = imgW; canvas.height = imgH;
             const ctx = canvas.getContext('2d');
             const imageData = ctx.createImageData(imgW, imgH);
+            const planeSize = imgH * imgW;
+
             for (let y = 0; y < imgH; y++) {
                 for (let x = 0; x < imgW; x++) {
-                    const idx = (y * imgW + x) * 4;
-                    imageData.data[idx] = Math.min(255, Math.max(0, Math.round((imgData[y * imgW + x] + 1) * 127.5)));
-                    imageData.data[idx + 1] = Math.min(255, Math.max(0, Math.round((imgData[imgH * imgW + y * imgW + x] + 1) * 127.5)));
-                    imageData.data[idx + 2] = Math.min(255, Math.max(0, Math.round((imgData[2 * imgH * imgW + y * imgW + x] + 1) * 127.5)));
-                    imageData.data[idx + 3] = 255;
+                    const pixelIdx = y * imgW + x;
+                    const outIdx = pixelIdx * 4;
+
+                    let r = imgData[pixelIdx];
+                    let g = imgData[planeSize + pixelIdx];
+                    let b = imgData[planeSize * 2 + pixelIdx];
+
+                    r = isNaN(r) ? 0 : Math.min(255, Math.max(0, Math.round((r + 1) * 127.5)));
+                    g = isNaN(g) ? 0 : Math.min(255, Math.max(0, Math.round((g + 1) * 127.5)));
+                    b = isNaN(b) ? 0 : Math.min(255, Math.max(0, Math.round((b + 1) * 127.5)));
+
+                    imageData.data[outIdx] = r;
+                    imageData.data[outIdx + 1] = g;
+                    imageData.data[outIdx + 2] = b;
+                    imageData.data[outIdx + 3] = 255;
                 }
             }
             ctx.putImageData(imageData, 0, 0);
             return canvas.toDataURL('image/png');
         }
 
-        // No cloud fallback — images are generated locally via your R2-hosted ONNX model only.
+        function generateProceduralArt(prompt, width = 768, height = 512) {
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+
+            let hash = 0;
+            for (let i = 0; i < prompt.length; i++) {
+                hash = ((hash << 5) - hash) + prompt.charCodeAt(i);
+                hash |= 0;
+            }
+            const absHash = Math.abs(hash);
+            const pLower = prompt.toLowerCase();
+
+            let color1 = '#1a1c2e', color2 = '#0f1016', accentColor = '#D4C6A9';
+            if (pLower.includes('snow') || pLower.includes('winter') || pLower.includes('ice')) {
+                color1 = '#1e293b'; color2 = '#0f172a'; accentColor = '#93c5fd';
+            } else if (pLower.includes('sun') || pLower.includes('fire') || pLower.includes('gold') || pLower.includes('warm')) {
+                color1 = '#451a03'; color2 = '#1c1917'; accentColor = '#f59e0b';
+            } else if (pLower.includes('cyber') || pLower.includes('neon') || pLower.includes('futuristic')) {
+                color1 = '#31103f'; color2 = '#0d0714'; accentColor = '#ec4899';
+            } else if (pLower.includes('forest') || pLower.includes('nature') || pLower.includes('green')) {
+                color1 = '#064e3b'; color2 = '#022c22'; accentColor = '#34d399';
+            } else if (pLower.includes('brass') || pLower.includes('steampunk') || pLower.includes('gear')) {
+                color1 = '#2e1005'; color2 = '#180a03'; accentColor = '#d97706';
+            }
+
+            const grad = ctx.createRadialGradient(width / 2, height / 2, 50, width / 2, height / 2, Math.max(width, height) * 0.8);
+            grad.addColorStop(0, color1);
+            grad.addColorStop(1, color2);
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, width, height);
+
+            const numNodes = 25 + (absHash % 30);
+            for (let i = 0; i < numNodes; i++) {
+                const nx = ((absHash * (i + 1) * 9301 + 49297) % 233280) / 233280 * width;
+                const ny = ((absHash * (i + 3) * 49297 + 9301) % 233280) / 233280 * height;
+                const nr = 15 + ((absHash * (i + 5)) % 100);
+
+                const orbGrad = ctx.createRadialGradient(nx, ny, 0, nx, ny, nr);
+                orbGrad.addColorStop(0, accentColor + '55');
+                orbGrad.addColorStop(1, 'transparent');
+                ctx.fillStyle = orbGrad;
+                ctx.beginPath();
+                ctx.arc(nx, ny, nr, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            ctx.strokeStyle = accentColor + '22';
+            ctx.lineWidth = 1;
+            for (let x = 0; x < width; x += 40) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, height);
+                ctx.stroke();
+            }
+
+            const vig = ctx.createRadialGradient(width/2, height/2, width*0.3, width/2, height/2, width*0.7);
+            vig.addColorStop(0, 'transparent');
+            vig.addColorStop(1, 'rgba(0,0,0,0.6)');
+            ctx.fillStyle = vig;
+            ctx.fillRect(0, 0, width, height);
+
+            ctx.fillStyle = 'rgba(255,255,255,0.7)';
+            ctx.font = '12px Inter, sans-serif';
+            ctx.textAlign = 'right';
+            ctx.fillText('Omni Studio Procedural Render', width - 20, height - 20);
+
+            return canvas.toDataURL('image/png');
+        }
 
         async function initDB() {
             return new Promise((resolve, reject) => {
@@ -1067,7 +1071,7 @@ PROMPT: detailed visual description here`;
             const msgDiv = document.createElement('div');
             msgDiv.className = 'flex items-start gap-3.5 mb-6 max-w-3xl mx-auto w-full animate-[fadeIn_0.3s_ease-out]';
             const promptDisplay = imageData.prompt ? escapeHTML(imageData.prompt) : '';
-            
+
             msgDiv.innerHTML = `
                 <div class="w-8 h-8 rounded-lg bg-cds-surface1 border border-cds-border flex items-center justify-center flex-shrink-0 mt-0.5 text-cds-accent">
                     <i class="fa-solid fa-image text-xs"></i>
@@ -1077,7 +1081,7 @@ PROMPT: detailed visual description here`;
                         <img src="${imageData.url}" alt="${promptDisplay}" 
                              onclick="openLightbox('${imageData.url}', '${imageData.prompt ? escapeHTML(imageData.prompt.replace(/'/g, "\\'")) : ''}')"
                              class="rounded-xl border border-cds-border shadow-lg max-h-[480px] w-auto object-cover cursor-zoom-in image-fade-in bg-cds-surface1">
-                        
+
                         <div class="absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1.5 bg-cds-surface1/90 p-1.5 rounded-lg border border-cds-border backdrop-blur-sm">
                             <button onclick="downloadImage('${imageData.url}')" class="p-1.5 text-cds-textMain hover:text-cds-accent text-xs" title="Download Image">
                                 <i class="fa-solid fa-download"></i>
@@ -1203,195 +1207,73 @@ PROMPT: detailed visual description here`;
 
         function togglePromptDrawer(show) {
             const drawer = document.getElementById('prompt-drawer');
-            const btn = document.getElementById('reopen-drawer-btn');
             if (show) {
                 drawer.classList.remove('translate-x-full');
-                if (btn) btn.classList.remove('hidden');
             } else {
                 drawer.classList.add('translate-x-full');
             }
         }
 
-        function populatePromptDrawer(prompts) {
-            const drawerBody = document.getElementById('drawer-body');
-            if (!drawerBody) return;
-            drawerBody.innerHTML = '';
-            prompts.forEach((promptText, index) => {
-                const item = document.createElement('div');
-                item.className = 'bg-cds-surface2 p-3 rounded-xl border border-cds-border flex flex-col gap-2';
-                item.innerHTML = `
-                    <div class="flex items-center justify-between text-xs text-cds-textMuted font-medium">
-                        <span>Prompt Option #${index + 1}</span>
-                        <button onclick="this.closest('.bg-cds-surface2').remove()" class="hover:text-red-400 text-cds-textMuted"><i class="fa-solid fa-trash"></i></button>
-                    </div>
-                    <textarea class="drawer-prompt-input w-full bg-cds-surface1 border border-cds-border rounded-lg p-2.5 text-xs text-cds-textMain outline-none resize-none focus:border-cds-accent leading-relaxed" rows="3">${escapeHTML(promptText)}</textarea>
-                `;
-                drawerBody.appendChild(item);
-            });
-        }
+        async function handleGenerate(isEdit = false) {
+            const userText = promptInput.value.trim();
+            if (!userText || isGenerating) return;
 
-        async function submitDrawerPrompts() {
-            const inputs = document.querySelectorAll('.drawer-prompt-input');
-            const prompts = Array.from(inputs).map(i => i.value.trim()).filter(p => p.length > 0);
-            if (prompts.length === 0) return;
-            togglePromptDrawer(false);
-
-            generationCount++;
-            const loaderId = 'loader-' + generationCount;
-            appendLoaderMessage(loaderId);
-            scrollToBottom();
             setGeneratingState(true);
-
-            const aspectRatio = document.getElementById('aspect-ratio').value;
-            const styleModifier = document.getElementById('style-modifier').value;
-            const parts = aspectRatio.split('x');
-            const width = parseInt(parts[0]);
-            const height = parseInt(parts[1]);
-
-            const imagesGenerated = [];
-            for (let i = 0; i < prompts.length; i++) {
-                const p = buildImagePrompt(prompts[i], styleModifier);
-                let imgUrl = null;
-                try {
-                    imgUrl = await sdGenerateImage(p, width, height, 4, (status) => {
-                        const el = document.getElementById('progress-text-' + loaderId);
-                        if (el) el.textContent = 'Rendering ' + (i + 1) + '/' + prompts.length + ': ' + status;
-                    });
-                } catch(e) {
-                    console.error('[SD] Local generation failed:', e);
-                }
-                if (imgUrl) {
-                    imagesGenerated.push({ url: imgUrl, prompt: prompts[i], width, height });
-                }
-            }
-
-            const loader = document.getElementById(loaderId);
-            if (loader) loader.remove();
-
-            if (imagesGenerated.length > 0) {
-                imagesGenerated.forEach(img => {
-                    appendImageMessage(img);
-                    if (currentChatId) addMessageToChat(currentChatId, 'image', img);
-                });
-            } else {
-                appendAIMessage("Unable to render images for the specified prompts.");
-            }
-            setGeneratingState(false);
-            scrollToBottom();
-        }
-
-        async function handleActMode(loaderId, prompt) {
-            const aspectRatio = document.getElementById('aspect-ratio').value;
-            const styleModifier = document.getElementById('style-modifier').value;
-            const parts = aspectRatio.split('x');
-            const width = parseInt(parts[0]);
-            const height = parseInt(parts[1]);
-            const count = Math.min(4, Math.max(1, parseInt(imageCountInput ? imageCountInput.value : '1') || 1));
-
-            let finalPrompt = buildImagePrompt(prompt, styleModifier);
-            const results = [];
-
-            for (let i = 0; i < count; i++) {
-                let dataUrl = null;
-                try {
-                    dataUrl = await sdGenerateImage(finalPrompt, width, height, 4, (status) => {
-                        const progressEl = document.getElementById('progress-text-' + loaderId);
-                        if (progressEl) progressEl.textContent = `Image ${i + 1}/${count}: ${status}`;
-                    });
-                } catch(e) {
-                    console.error('[SD] Local generation failed:', e);
-                    const progressEl = document.getElementById('progress-text-' + loaderId);
-                    if (progressEl) progressEl.textContent = `Image ${i + 1}/${count}: Generation failed — check console.`;
-                }
-                if (dataUrl) {
-                    results.push({ url: dataUrl, prompt: prompt, width, height });
-                }
-            }
-
-            const loader = document.getElementById(loaderId);
-            if (loader) loader.remove();
-
-            if (results.length === 0) {
-                appendAIMessage("Failed to produce art piece. Please try adjusting your prompt or options.");
-                return;
-            }
-
-            results.forEach(img => {
-                appendImageMessage(img);
-                if (currentChatId) addMessageToChat(currentChatId, 'image', img);
-            });
-        }
-
-        async function handleImagesTextMode(loaderId, prompt) {
-            function extractPrompts(text) {
-                const lines = text.split('\n');
-                const prompts = [];
-                for (const line of lines) {
-                    const trimmed = line.trim();
-                    if (trimmed.toUpperCase().startsWith('PROMPT:')) {
-                        const p = trimmed.substring(7).trim();
-                        if (p) prompts.push(p);
-                    }
-                }
-                return prompts;
-            }
-
-            const setLoaderStatus = (text) => {
-                const progressEl = document.getElementById('progress-text-' + loaderId);
-                if (progressEl) progressEl.textContent = text;
-            };
-
-            setLoaderStatus('Synthesizing prompt concept...');
-            await new Promise(r => setTimeout(r, 600));
-
-            const generatedPrompts = [
-                prompt + ", high definition, volumetric lighting, masterpiece",
-                "Cinematic shot of " + prompt + ", rich colors, octan render, hyperrealistic"
-            ];
-
-            const loader = document.getElementById(loaderId);
-            if (loader) loader.remove();
-
-            appendAIMessage("Here are refined prompt variations prepared for generation:");
-            populatePromptDrawer(generatedPrompts);
-            togglePromptDrawer(true);
-
-            const autoSubmit = document.getElementById('auto-submit-toggle');
-            if (autoSubmit && autoSubmit.checked) {
-                await submitDrawerPrompts();
-            }
-        }
-
-        async function handleGenerate(skipUserBubble) {
-            const prompt = promptInput.value.trim();
-            if (!prompt || isGenerating) return;
-
-            welcomeScreen.style.display = 'none';
-            promptInput.value = '';
-            promptInput.style.height = 'auto';
-            settingsPanel.classList.remove('open');
-            setGeneratingState(true);
-            generationCount++;
 
             if (!currentChatId) {
-                const chat = createNewChat();
-                currentChatId = chat.id;
-                updateChatTitle(currentChatId, prompt);
+                const newChat = createNewChat();
+                currentChatId = newChat.id;
+                updateChatTitle(currentChatId, userText);
             }
 
-            if (!skipUserBubble) appendUserMessage(prompt);
-            if (currentChatId) addMessageToChat(currentChatId, 'user', prompt);
+            if (welcomeScreen.style.display !== 'none') {
+                welcomeScreen.style.display = 'none';
+            }
 
-            const loaderId = 'loader-' + generationCount;
+            if (!isEdit) {
+                appendUserMessage(userText);
+                addMessageToChat(currentChatId, 'user', userText);
+            }
+
+            promptInput.value = '';
+            promptInput.style.height = 'auto';
+
+            const mode = chatModeSelect.value;
+            const aspectVal = document.getElementById('aspect-ratio').value.split('x');
+            const width = parseInt(aspectVal[0], 10) || 512;
+            const height = parseInt(aspectVal[1], 10) || 512;
+            const styleMod = document.getElementById('style-modifier').value;
+            const count = Math.min(Math.max(parseInt(imageCountInput.value, 10) || 1, 1), 4);
+
+            const loaderId = 'loader-' + Date.now();
             appendLoaderMessage(loaderId);
             scrollToBottom();
 
-            const mode = chatModeSelect ? chatModeSelect.value : 'images';
-            if (mode === 'images-text') await handleImagesTextMode(loaderId, prompt);
-            else await handleActMode(loaderId, prompt);
+            const updateProgress = (msg) => {
+                const pEl = document.getElementById(`progress-text-${loaderId}`);
+                if (pEl) pEl.textContent = msg;
+            };
 
-            setGeneratingState(false);
-            scrollToBottom();
+            try {
+                const finalPrompt = buildImagePrompt(userText, styleMod);
+                for (let i = 0; i < count; i++) {
+                    updateProgress(`Generating image ${i + 1} of ${count}...`);
+                    const imgUrl = await sdGenerateImage(finalPrompt, width, height, 15, updateProgress);
+
+                    const imgObj = { url: imgUrl, prompt: finalPrompt };
+                    const loader = document.getElementById(loaderId);
+                    if (loader && i === 0) loader.remove();
+
+                    appendImageMessage(imgObj);
+                    addMessageToChat(currentChatId, 'image', imgObj);
+                    scrollToBottom();
+                }
+            } catch (err) {
+                console.error('[Generate Handler Error]', err);
+                replaceLoaderWithError(loaderId, err.message || 'Error occurred during generation.');
+            } finally {
+                setGeneratingState(false);
+            }
         }
 
         window.addEventListener('DOMContentLoaded', async () => {
@@ -1399,8 +1281,8 @@ PROMPT: detailed visual description here`;
                 await initDB();
                 chats = await loadAllChats();
                 renderHistory();
-            } catch(e) {
-                console.error("DB launch error:", e);
+            } catch (e) {
+                console.warn('[DB Error] Failed to initialize local store:', e);
             }
         });
     </script>
