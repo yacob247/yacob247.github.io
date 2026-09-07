@@ -606,16 +606,19 @@ PROMPT: detailed visual description here`;
 
         if (window.ort && ort.env && ort.env.wasm) {
             ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/';
-            // Use more threads when available — speeds up WASM compilation & inference
-            ort.env.wasm.numThreads = Math.min(navigator.hardwareConcurrency || 2, 4);
+            // MUST stay at 1. ORT issue #26858 (confirmed): InferenceSession.create()
+            // hangs indefinitely with numThreads > 1 when loading from an ArrayBuffer.
+            // There is no error or timeout — it simply never resolves.
+            ort.env.wasm.numThreads = 1;
         }
 
         async function sdCreateSession(arrayBuffer, onProgress) {
             // WebGPU crashes on this model (GPU memory overflow / MapAsync AbortError).
             // WASM is slower but runs reliably to completion every time.
             //
-            // 'all' optimisation silently hangs on the VAE decoder (large graph).
-            // 'basic' compiles in seconds and still runs correctly.
+            // graphOptimizationLevel 'all' triggers a confirmed WASM bug (ORT #25692):
+            // fp16 models hit SimplifiedLayerNormFusion / InsertedPrecisionFreeCast
+            // which causes a crash or silent hang in the browser. Use 'basic' instead.
             return await ort.InferenceSession.create(arrayBuffer, {
                 executionProviders: ['wasm'],
                 graphOptimizationLevel: 'basic'
