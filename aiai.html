@@ -1,0 +1,1372 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Omni Studio - AI Visual Generation</title>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- WebLLM Module — loaded lazily on first use of AI Text mode -->
+    <script>
+        async function ensureWebLLM() {
+            if (!window.webllm) {
+                const mod = await import("https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.84/+esm");
+                window.webllm = mod;
+            }
+        }
+    </script>
+
+    <!-- ONNX Runtime Web -->
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.webgpu.min.js"></script>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        cds: {
+                            surface1: '#1E1E1E',
+                            surface2: '#242322',
+                            surface3: '#2D2C2B',
+                            surface4: '#3A3937',
+                            border: '#3C3B3A',
+                            textMain: '#E8E8E8',
+                            textMuted: '#9B9B9B',
+                            accent: '#D4C6A9',
+                            accentDark: '#C2B395',
+                            accentGlow: 'rgba(212, 198, 169, 0.15)'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+                        serif: ['Lora', 'ui-serif', 'Georgia', 'serif'],
+                    },
+                    boxShadow: {
+                        'input': '0 0 0 1px rgba(255, 255, 255, 0.05), 0 2px 8px rgba(0, 0, 0, 0.2)',
+                        'input-focus': '0 0 0 1px rgba(212, 198, 169, 0.5), 0 4px 12px rgba(0, 0, 0, 0.3)',
+                        'glow': '0 0 20px rgba(212, 198, 169, 0.2)'
+                    }
+                }
+            }
+        };
+    </script>
+
+    <style>
+        body {
+            background-color: var(--cds-surface2, #242322);
+            color: var(--cds-textMain, #E8E8E8);
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #4A4948;
+            border-radius: 99px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #5A5958;
+        }
+
+        .typing-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            height: 24px;
+        }
+
+        .typing-dot {
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background-color: #D4C6A9;
+            animation: typing 1.4s infinite ease-in-out both;
+        }
+
+        .typing-dot:nth-child(1) { animation-delay: -0.32s; }
+        .typing-dot:nth-child(2) { animation-delay: -0.16s; }
+
+        @keyframes typing {
+            0%, 80%, 100% { transform: scale(0); opacity: 0.3; }
+            40% { transform: scale(1); opacity: 1; }
+        }
+
+        .image-fade-in {
+            animation: fadeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            opacity: 0;
+            transform: translateY(8px);
+        }
+
+        @keyframes fadeIn {
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        textarea {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        textarea::-webkit-scrollbar {
+            display: none;
+        }
+
+        #prompt-drawer, #mobile-sidebar {
+            transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .settings-panel {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            max-height: 0;
+            opacity: 0;
+            overflow: hidden;
+        }
+
+        .settings-panel.open {
+            max-height: 280px;
+            opacity: 1;
+            padding-bottom: 12px;
+            margin-bottom: 12px;
+            border-bottom: 1px solid #3C3B3A;
+        }
+
+        .toast-enter {
+            animation: toastIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        @keyframes toastIn {
+            from { opacity: 0; transform: translateY(20px) scale(0.95); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+    </style>
+</head>
+<body class="h-screen w-screen flex overflow-hidden font-sans bg-cds-surface2 text-cds-textMain select-none">
+
+    <div id="sidebar-overlay" onclick="toggleMobileSidebar(false)"
+        class="fixed inset-0 bg-black/60 z-40 hidden md:hidden backdrop-blur-sm transition-opacity"></div>
+
+    <aside id="mobile-sidebar"
+        class="fixed md:static inset-y-0 left-0 w-[270px] bg-cds-surface1 border-r border-cds-border flex flex-col flex-shrink-0 z-50 transform -translate-x-full md:translate-x-0 transition-transform duration-300">
+        
+        <div class="p-4 flex items-center justify-between border-b border-cds-border/40">
+            <div class="flex items-center gap-2.5">
+                <div class="w-8 h-8 rounded-lg bg-cds-surface3 border border-cds-border flex items-center justify-center text-cds-accent">
+                    <i class="fa-solid fa-wand-magic-sparkles text-sm"></i>
+                </div>
+                <span class="font-semibold text-cds-textMain tracking-wide text-sm">Omni Studio</span>
+            </div>
+            <button onclick="startNewSession()" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-cds-surface3 transition-colors text-cds-textMuted hover:text-cds-textMain" title="New Session">
+                <i class="fa-solid fa-plus text-sm"></i>
+            </button>
+        </div>
+
+        <div class="px-3 py-3 flex-1 overflow-y-auto">
+            <div class="flex items-center justify-between px-2 mb-2">
+                <span class="text-[11px] font-semibold text-cds-textMuted tracking-wider uppercase">Recent Sessions</span>
+                <button onclick="clearAllHistory()" class="text-[10px] text-cds-textMuted hover:text-red-400 transition-colors">Clear All</button>
+            </div>
+            <div id="history-list" class="space-y-1">
+                <div id="empty-history" class="text-xs text-cds-textMuted italic px-2 py-4 text-center">No recent sessions</div>
+            </div>
+        </div>
+
+        <div class="mt-auto p-3 border-t border-cds-border/50 bg-cds-surface1/50">
+            <div class="flex items-center justify-between px-2 py-2 rounded-lg bg-cds-surface2/60 border border-cds-border/30">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
+                    <span class="text-xs font-medium text-cds-textMuted">Local WASM · DDIM 4-step</span>
+                </div>
+                <span class="text-[10px] bg-cds-surface4 px-2 py-0.5 rounded text-cds-accent">tiny-sd</span>
+            </div>
+        </div>
+    </aside>
+
+    <main class="flex-1 flex flex-col min-w-0 h-full relative z-10">
+
+        <!-- Header Bar -->
+        <header class="h-14 flex items-center justify-between px-4 sticky top-0 bg-cds-surface2/90 backdrop-blur-md z-30 border-b border-cds-border/40">
+            <div class="flex items-center gap-3">
+                <button onclick="toggleMobileSidebar(true)" class="md:hidden text-cds-textMuted hover:text-cds-textMain p-1.5 rounded-lg hover:bg-cds-surface3 transition-colors">
+                    <i class="fa-solid fa-bars text-lg"></i>
+                </button>
+                <div class="flex items-center gap-2 text-cds-textMain font-medium text-sm">
+                    <i class="fa-solid fa-layer-group text-cds-accent hidden md:inline-block"></i>
+                    <span id="current-chat-title" class="truncate max-w-[200px] md:max-w-md">New Generation</span>
+                </div>
+            </div>
+            
+            <div class="flex items-center gap-2">
+                <button onclick="startNewSession()" class="text-xs flex items-center gap-1.5 bg-cds-surface3 hover:bg-cds-surface4 border border-cds-border px-3 py-1.5 rounded-lg text-cds-textMain transition-colors">
+                    <i class="fa-solid fa-plus text-xs"></i>
+                    <span class="hidden sm:inline">New Chat</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- Chat / Canvas Feed -->
+        <div id="chat-feed" class="flex-1 overflow-y-auto px-4 md:px-8 py-6 pb-48">
+            <div id="welcome-screen" class="h-full flex flex-col items-center justify-center text-center max-w-2xl mx-auto space-y-6 my-auto py-10 animate-[fadeIn_0.5s_ease-out]">
+                <div class="w-16 h-16 rounded-2xl bg-cds-surface3 border border-cds-border flex items-center justify-center shadow-glow mb-2">
+                    <i class="fa-solid fa-wand-magic-sparkles text-2xl text-cds-accent"></i>
+                </div>
+                <h1 class="text-3xl md:text-4xl font-serif font-medium text-cds-textMain tracking-tight">What shall we create today?</h1>
+                <p class="text-cds-textMuted text-sm md:text-base font-sans max-w-lg leading-relaxed">
+                    Generate high-resolution visual artwork or engage in interactive image prompt refinement directly in your browser.
+                </p>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 w-full max-w-xl mt-6">
+                    <button onclick="usePrompt('A cozy cabin in a snowy pine forest at twilight, warm glowing windows, cinematic lighting, ultra detailed')"
+                        class="text-left p-4 rounded-xl border border-cds-border bg-cds-surface1 hover:bg-cds-surface3 transition-all duration-200 text-xs md:text-sm text-cds-textMuted hover:text-cds-textMain group">
+                        <div class="font-medium text-cds-accent mb-1 group-hover:underline">Snowy Winter Sanctuary</div>
+                        <div class="truncate">"A cozy cabin in a snowy pine forest at twilight..."</div>
+                    </button>
+                    <button onclick="usePrompt('Macro photography of a mechanical praying mantis made of polished brass and intricate watch gears, shallow depth of field')"
+                        class="text-left p-4 rounded-xl border border-cds-border bg-cds-surface1 hover:bg-cds-surface3 transition-all duration-200 text-xs md:text-sm text-cds-textMuted hover:text-cds-textMain group">
+                        <div class="font-medium text-cds-accent mb-1 group-hover:underline">Steampunk Micro-World</div>
+                        <div class="truncate">"Macro photography of a mechanical praying mantis..."</div>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="absolute bottom-0 w-full bg-gradient-to-t from-cds-surface2 via-cds-surface2/95 to-transparent pt-8 pb-5 px-4 md:px-8 z-30">
+            <div class="max-w-3xl mx-auto w-full relative">
+
+                <div class="flex justify-end mb-2">
+                    <button id="reopen-drawer-btn" onclick="togglePromptDrawer(true)"
+                        class="hidden flex items-center gap-2 bg-cds-surface3 border border-cds-border text-cds-textMuted hover:text-cds-textMain px-3 py-1.5 rounded-full text-xs transition-colors hover:bg-cds-surface4 shadow-sm">
+                        <i class="fa-solid fa-pen-to-square text-cds-accent"></i>
+                        <span>Prompt Refiner</span>
+                    </button>
+                </div>
+
+                <div class="bg-cds-surface3 border border-cds-border rounded-2xl flex flex-col p-3 shadow-input focus-within:shadow-input-focus transition-all duration-300">
+
+                    <!-- Generation Settings Drawer -->
+                    <div id="settings-panel" class="settings-panel flex flex-col gap-3 px-1">
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            <div>
+                                <label class="text-[10px] uppercase tracking-wider text-cds-textMuted font-semibold mb-1 block">Mode</label>
+                                <select id="chat-mode"
+                                    class="w-full bg-cds-surface1 border border-cds-border rounded-lg p-2 text-xs text-cds-textMain outline-none focus:border-cds-accent transition-colors">
+                                    <option value="images">Direct Images</option>
+                                    <option value="images-text">Images &amp; AI Text</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="text-[10px] uppercase tracking-wider text-cds-textMuted font-semibold mb-1 block">Aspect Ratio</label>
+                                <select id="aspect-ratio"
+                                    class="w-full bg-cds-surface1 border border-cds-border rounded-lg p-2 text-xs text-cds-textMain outline-none focus:border-cds-accent transition-colors">
+                                    <option value="512x512" selected>Square (1:1) - Safest</option>
+                                    <option value="640x512">Landscape (4:3)</option>
+                                    <option value="768x512">Widescreen (16:9)</option>
+                                    <option value="512x640">Portrait (3:4)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="text-[10px] uppercase tracking-wider text-cds-textMuted font-semibold mb-1 block">Style Preset</label>
+                                <select id="style-modifier"
+                                    class="w-full bg-cds-surface1 border border-cds-border rounded-lg p-2 text-xs text-cds-textMain outline-none focus:border-cds-accent transition-colors">
+                                    <option value="">None (Raw)</option>
+                                    <option value="cinematic lighting, highly detailed, photorealistic, 8k, bokeh">Photorealistic</option>
+                                    <option value="digital art, detailed artwork, concept art, trending on artstation">Digital Art</option>
+                                    <option value="anime style, studio ghibli aesthetic, vibrant masterpiece">Anime / Manga</option>
+                                    <option value="oil painting, textured brushstrokes, classical fine art style">Oil Painting</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="text-[10px] uppercase tracking-wider text-cds-textMuted font-semibold mb-1 block">Batch Count</label>
+                                <input id="image-count" type="number" min="1" max="4" value="1"
+                                    class="w-full bg-cds-surface1 border border-cds-border rounded-lg p-2 text-xs text-cds-textMain outline-none focus:border-cds-accent transition-colors">
+                            </div>
+                            <div class="col-span-2 md:col-span-4 mt-1">
+                                <label class="text-[10px] uppercase tracking-wider text-cds-textMuted font-semibold mb-1 block">Model Base Endpoint URL</label>
+                                <input id="custom-model-url" type="text" value="https://pub-406a7f3fa4d44f41b5317520aa1aaf4a.r2.dev/tiny-sd-onnx/" placeholder="https://pub-406a7f3fa4d44f41b5317520aa1aaf4a.r2.dev/tiny-sd-onnx/"
+                                    class="w-full bg-cds-surface1 border border-cds-border rounded-lg p-2 text-xs text-cds-textMain outline-none focus:border-cds-accent transition-colors">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Main Textarea -->
+                    <textarea id="prompt-input" rows="1"
+                        class="w-full bg-transparent border-none outline-none resize-none px-2 py-1.5 text-cds-textMain text-sm md:text-[15px] placeholder-cds-textMuted/70 max-h-40 overflow-y-auto leading-relaxed"
+                        placeholder="Describe the image you want to generate..."></textarea>
+
+                    <div class="flex justify-between items-center px-1 pt-2">
+                        <button onclick="toggleSettings()"
+                            class="text-cds-textMuted hover:text-cds-textMain w-8 h-8 rounded-lg flex items-center justify-center hover:bg-cds-surface4 transition-colors"
+                            title="Generation Settings">
+                            <i class="fa-solid fa-sliders text-xs"></i>
+                        </button>
+
+                        <button id="generate-btn" onclick="handleGenerate()"
+                            class="bg-cds-accent text-cds-surface1 w-8 h-8 rounded-lg flex items-center justify-center hover:bg-cds-accentDark transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm">
+                            <i class="fa-solid fa-arrow-up text-xs font-bold"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="text-center mt-2.5">
+                    <p class="text-[10px] text-cds-textMuted/80">Omni Studio AI · segmind/tiny-sd · 4-step DDIM · CFG 7.5 · All inference runs locally in your browser. No data leaves your device.</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div id="prompt-drawer"
+        class="fixed top-0 right-0 h-full w-[360px] max-w-[85vw] bg-cds-surface1 border-l border-cds-border z-50 flex flex-col shadow-2xl transform translate-x-full">
+        <div class="p-4 border-b border-cds-border flex items-center justify-between">
+            <div class="flex items-center gap-2 text-cds-textMain font-medium">
+                <i class="fa-solid fa-pen-to-square text-cds-accent text-sm"></i>
+                <span class="text-sm">Image Prompt Refiner</span>
+            </div>
+            <button onclick="togglePromptDrawer(false)"
+                class="w-8 h-8 rounded-lg flex items-center justify-center text-cds-textMuted hover:text-cds-textMain hover:bg-cds-surface3 transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <div id="drawer-body" class="flex-1 overflow-y-auto p-4 space-y-4">
+            <div class="text-xs text-cds-textMuted italic text-center py-8">
+                No active prompt suggestions. Send a prompt in "Images &amp; AI Text" mode to refine prompts.
+            </div>
+        </div>
+        <div class="p-4 border-t border-cds-border flex items-center justify-between gap-3 bg-cds-surface1">
+            <label class="flex items-center gap-2 text-xs text-cds-textMuted cursor-pointer select-none">
+                <input id="auto-submit-toggle" type="checkbox" checked class="accent-[#D4C6A9] rounded">
+                Auto-generate
+            </label>
+            <button id="drawer-submit-btn" onclick="submitDrawerPrompts()"
+                class="bg-cds-accent text-cds-surface1 px-4 py-2 rounded-lg text-xs font-semibold hover:bg-cds-accentDark transition-colors shadow-sm">
+                <i class="fa-solid fa-wand-magic-sparkles mr-1.5"></i>Generate Images
+            </button>
+        </div>
+    </div>
+
+    <div id="lightbox-modal" onclick="closeLightbox()"
+        class="fixed inset-0 bg-black/90 z-50 hidden flex-col items-center justify-center p-4 backdrop-blur-md transition-opacity">
+        <div class="relative max-w-5xl max-h-[85vh] w-full flex flex-col items-center justify-center" onclick="event.stopPropagation()">
+            <img id="lightbox-image" src="" alt="Enlarged Art" class="max-w-full max-h-[80vh] object-contain rounded-lg shadow-2xl border border-cds-border">
+            <div class="mt-4 flex items-center gap-3 bg-cds-surface1/90 px-4 py-2 rounded-full border border-cds-border backdrop-blur-md">
+                <button id="lightbox-download" class="text-xs text-cds-textMain hover:text-cds-accent flex items-center gap-1.5 transition-colors">
+                    <i class="fa-solid fa-download"></i> Download
+                </button>
+                <div class="h-3 w-px bg-cds-border"></div>
+                <button id="lightbox-copy" class="text-xs text-cds-textMain hover:text-cds-accent flex items-center gap-1.5 transition-colors">
+                    <i class="fa-solid fa-copy"></i> Copy Prompt
+                </button>
+                <div class="h-3 w-px bg-cds-border"></div>
+                <button onclick="closeLightbox()" class="text-xs text-cds-textMuted hover:text-cds-textMain transition-colors">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast-container" class="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+    <script>
+        const CLASSIFIER_PROMPT = `You are a request classifier for an AI image generation app. Read the conversation and user's prompt. Decide intent:
+* IMAGE -> user wants to create, draw, render, or visualize an image or refine a previous artwork.
+* CHAT  -> greetings, questions, conversations.
+Reply with EXACTLY ONE word: IMAGE or CHAT.`;
+
+        const CHAT_SYSTEM_PROMPT = `You are Omni, a helpful AI visual assistant. Reply concisely (1-3 sentences). Do NOT claim to have generated links or video files. If the user wants an image, state that you can create one for them.`;
+
+        const IMAGE_SYSTEM_PROMPT = `You are Omni, an expert prompt engineer. Create detailed image generation prompts. Reply with: 1. One short intro sentence. 2. One or more lines formatted as: PROMPT: detailed visual description here`;
+
+        window.addEventListener('unhandledrejection', function(event) {
+            if (event.reason && (event.reason.name === 'AbortError' || (event.reason.message && event.reason.message.includes('mapAsync')))) {
+                console.warn('[WebGPU] Caught unhandled MapAsync/AbortError.');
+                event.preventDefault();
+            }
+        });
+
+        const DB_NAME = 'OmniStudioDB';
+        const DB_VERSION = 1;
+        const CHATS_STORE = 'chats';
+
+        let currentChatId = null;
+        let chats = [];
+        let isGenerating = false;
+        let db = null;
+
+        const promptInput = document.getElementById('prompt-input');
+        const generateBtn = document.getElementById('generate-btn');
+        const chatFeed = document.getElementById('chat-feed');
+        const welcomeScreen = document.getElementById('welcome-screen');
+        const settingsPanel = document.getElementById('settings-panel');
+        const historyList = document.getElementById('history-list');
+        const emptyHistory = document.getElementById('empty-history');
+        const chatModeSelect = document.getElementById('chat-mode');
+        const imageCountInput = document.getElementById('image-count');
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast-enter pointer-events-auto px-4 py-2.5 rounded-xl border text-xs font-medium shadow-lg flex items-center gap-2 ${
+                type === 'error' ? 'bg-red-950/90 text-red-200 border-red-800' : 'bg-cds-surface3 text-cds-textMain border-cds-border'
+            }`;
+            toast.innerHTML = `<i class="fa-solid ${type === 'error' ? 'fa-circle-exclamation' : 'fa-circle-info'} text-cds-accent"></i><span>${escapeHTML(message)}</span>`;
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateY(-10px)';
+                toast.style.transition = 'all 0.3s ease';
+                setTimeout(() => toast.remove(), 300);
+            }, 3500);
+        }
+
+        const SD_BASE_URL = 'https://pub-406a7f3fa4d44f41b5317520aa1aaf4a.r2.dev/tiny-sd-onnx/';
+        // sdSessions/sdTokenizer/sdModelLoaded now live inside the Web Worker
+
+        function getBaseUrl() {
+            const customUrlInput = document.getElementById('custom-model-url');
+            const customUrl = customUrlInput ? customUrlInput.value.trim() : '';
+            return customUrl ? (customUrl.endsWith('/') ? customUrl : customUrl + '/') : SD_BASE_URL;
+        }
+
+        // ─── Web Worker — all ONNX work runs off the main thread ───────────────
+        const WORKER_SRC = `
+const MODEL_CACHE = 'omni-studio-models-v2';
+let sdSessions = {};
+let sdTokenizer = null;
+let sdModelLoaded = false;
+let baseUrl = 'https://pub-406a7f3fa4d44f41b5317520aa1aaf4a.r2.dev/tiny-sd-onnx/';
+
+importScripts('https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.wasm.min.js');
+
+ort.env.logLevel = 'error';
+ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/';
+ort.env.wasm.numThreads = crossOriginIsolated ? Math.min(navigator.hardwareConcurrency || 1, 4) : 1;
+ort.env.wasm.simd = true;
+
+// ── Fetch with streaming progress + Cache API ──────────────────────────────
+async function fetchModel(filename, label) {
+    const url = baseUrl + filename;
+    try {
+        const cache = await caches.open(MODEL_CACHE);
+        const cached = await cache.match(url);
+        if (cached) {
+            postMessage({ type: 'progress', msg: label + ' loaded from cache' });
+            return await (await cached.blob()).arrayBuffer();
+        }
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error('HTTP ' + resp.status + ' for ' + filename);
+        const total = parseInt(resp.headers.get('Content-Length') || '0', 10);
+        const reader = resp.body.getReader();
+        const chunks = [];
+        let received = 0;
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value);
+            received += value.length;
+            const pct = total > 0 ? Math.round((received / total) * 100) : '...';
+            const mb  = (received / 1048576).toFixed(1);
+            postMessage({ type: 'dl', label, mb, pct });
+        }
+        const blob = new Blob(chunks);
+        cache.put(url, new Response(blob.slice()));
+        return await blob.arrayBuffer();
+    } catch(e) {
+        throw new Error('Fetch failed for ' + filename + ': ' + e.message);
+    }
+}
+
+// ── ONNX session with 'all' optimisation for max WASM speed ───────────────
+async function createSession(buf) {
+    const configs = [
+        { executionProviders: ['wasm'], graphOptimizationLevel: 'all' },
+        { executionProviders: ['wasm'], graphOptimizationLevel: 'basic' },
+        { executionProviders: ['wasm'], graphOptimizationLevel: 'disabled' },
+    ];
+    for (const cfg of configs) {
+        try { return await ort.InferenceSession.create(new Uint8Array(buf), cfg); }
+        catch(e) { /* try next */ }
+    }
+    throw new Error('Could not create ONNX session — all configs failed');
+}
+
+// ── BPE Tokenizer: worker-safe, no TextEncoder, correct merge key sep ──────
+async function loadTokenizer() {
+    if (sdTokenizer) return;
+    const [vr, mr] = await Promise.all([
+        fetch(baseUrl + 'tokenizer/vocab.json'),
+        fetch(baseUrl + 'tokenizer/merges.txt')
+    ]);
+    if (!vr.ok || !mr.ok) throw new Error('Tokenizer files missing from R2');
+    const encoder = await vr.json();
+    const mergesText = await mr.text();
+
+    // Build merge rank map. Key separator is a real null byte written as a
+    // JS string literal inside the blob — safe because blob source is a JS
+    // string, not parsed template. We use String.fromCharCode(0) at runtime.
+    const SEP = String.fromCharCode(0);
+    const mergeRanks = {};
+    const lines = mergesText.split('\n');
+    for (let i = 1; i < lines.length; i++) {
+        const sp = lines[i].trim().split(' ');
+        if (sp.length === 2) mergeRanks[sp[0] + SEP + sp[1]] = i - 1;
+    }
+
+    // GPT-2 / CLIP byte-to-unicode table (no TextEncoder needed)
+    const byteToUnicode = {};
+    const printable = [];
+    for (let i = 33;  i <= 126; i++) printable.push(i);
+    for (let i = 161; i <= 172; i++) printable.push(i);
+    for (let i = 174; i <= 255; i++) printable.push(i);
+    let extra = 0;
+    for (let b = 0; b < 256; b++) {
+        byteToUnicode[b] = printable.indexOf(b) !== -1
+            ? String.fromCharCode(b)
+            : String.fromCharCode(256 + extra++);
+    }
+
+    sdTokenizer = { encoder, mergeRanks, byteToUnicode, SEP };
+}
+
+// UTF-8 encode a single char to its GPT-2 byte-unicode representation
+function charToByteStr(ch) {
+    const code = ch.charCodeAt(0);
+    const B = sdTokenizer.byteToUnicode;
+    if (code < 128) return B[code];
+    if (code < 2048) return B[0xC0 | (code >> 6)] + B[0x80 | (code & 0x3F)];
+    return B[0xE0 | (code >> 12)] + B[0x80 | ((code >> 6) & 0x3F)] + B[0x80 | (code & 0x3F)];
+}
+
+// Iterative BPE merge (no recursion, no pairs array allocation each loop)
+function bpeMerge(syms) {
+    const SEP = sdTokenizer.SEP;
+    const ranks = sdTokenizer.mergeRanks;
+    while (syms.length > 1) {
+        let best = Infinity, bestIdx = -1;
+        for (let i = 0; i < syms.length - 1; i++) {
+            const r = ranks[syms[i] + SEP + syms[i + 1]];
+            if (r !== undefined && r < best) { best = r; bestIdx = i; }
+        }
+        if (bestIdx === -1) break;
+        syms.splice(bestIdx, 1, syms[bestIdx] + syms[bestIdx + 1]);
+        syms.splice(bestIdx + 1, 1);
+    }
+    return syms;
+}
+
+function tokenize(text) {
+    const SOT = 49406, EOT = 49407;
+    const ids = [SOT];
+    const words = ((text || '').toLowerCase()).match(/\S+/g) || [];
+
+    for (const word of words) {
+        const syms = [];
+        for (let i = 0; i < word.length; i++) syms.push(charToByteStr(word[i]));
+        if (!syms.length) continue;
+        syms[syms.length - 1] += '</w>';
+        const merged = bpeMerge(syms);
+        for (const tok of merged) {
+            const id = sdTokenizer.encoder[tok];
+            if (id !== undefined) ids.push(id);
+        }
+    }
+
+    ids.push(EOT);
+    while (ids.length < 77) ids.push(EOT);
+    return ids.slice(0, 77);
+}
+
+// ── DDIM scheduler (correct for segmind/tiny-sd distilled SD1.5) ──────────
+// This model is NOT an LCM — it is a distilled SD1.5 that works best with
+// 4-8 DDIM steps at guidance scale 7.5. 1 step = noise/blur.
+function makeScheduler(numSteps) {
+    const N = 1000;
+    // Linear beta schedule (same as SD1.5)
+    const bStart = 0.00085, bEnd = 0.012;
+    const alphasCumprod = new Float64Array(N);
+    let cumProd = 1.0;
+    for (let i = 0; i < N; i++) {
+        const beta = bStart + (i / (N - 1)) * (bEnd - bStart);
+        cumProd *= (1.0 - beta);
+        alphasCumprod[i] = cumProd;
+    }
+
+    // DDIM timesteps: evenly spaced, descending (high noise → low noise)
+    // For 4 steps: [749, 499, 249, 0]  (approx)
+    const step = Math.floor(N / numSteps);
+    const timesteps = [];
+    for (let i = numSteps - 1; i >= 0; i--) {
+        timesteps.push(i * step);
+    }
+    // timesteps goes from large → small (999→0 direction for DDIM)
+    // We want descending: start from high noise timestep
+    timesteps.sort((a, b) => b - a);
+
+    return { alphasCumprod, timesteps };
+}
+
+// ── float16 → float32 conversion ──────────────────────────────────────────
+async function toF32(tensor) {
+    if (!tensor) return null;
+    const data = await tensor.getData();
+    if (tensor.type === 'float16') {
+        const raw = new Uint16Array(data.buffer !== undefined ? data.buffer : data);
+        const out = new Float32Array(raw.length);
+        for (let i = 0; i < raw.length; i++) {
+            const h = raw[i];
+            const s = (h & 0x8000) ? -1 : 1;
+            const e = (h >> 10) & 0x1f;
+            const m = h & 0x3ff;
+            if (e === 0) out[i] = s * m * 5.960464477539063e-8;
+            else if (e === 31) out[i] = m ? NaN : s * Infinity;
+            else out[i] = s * Math.pow(2, e - 15) * (1 + m / 1024);
+        }
+        return new ort.Tensor('float32', out, tensor.dims);
+    }
+    const f32 = data instanceof Float32Array ? data : new Float32Array(data);
+    return new ort.Tensor('float32', f32, tensor.dims);
+}
+
+// ── Model loading (R2 only, IndexedDB-backed via Cache API) ───────────────
+async function loadModels() {
+    if (sdModelLoaded) return;
+    postMessage({ type: 'progress', msg: 'Loading tokenizer from R2...' });
+    await loadTokenizer();
+
+    postMessage({ type: 'progress', msg: 'Fetching models from R2 (cached after first load)...' });
+
+    // Download all 3 in parallel for speed
+    const [unetBuf, teBuf, vdBuf] = await Promise.all([
+        fetchModel('unet/model_f32.onnx/model_f32.onnx', 'UNet'),
+        fetchModel('text_encoder/model_f32.onnx/model_f32.onnx', 'Text Encoder'),
+        fetchModel('vae_decoder/model_f32.onnx/model_f32.onnx', 'VAE Decoder'),
+    ]);
+
+    const sizes = { UNet: unetBuf.byteLength, 'Text Encoder': teBuf.byteLength, 'VAE Decoder': vdBuf.byteLength };
+    const totalMB = (Object.values(sizes).reduce((a, b) => a + b, 0) / 1048576).toFixed(0);
+
+    postMessage({ type: 'progress', msg: 'Compiling UNet (' + (sizes.UNet/1048576).toFixed(0) + ' MB)...' });
+    sdSessions.unet = await createSession(unetBuf);
+
+    postMessage({ type: 'progress', msg: 'Compiling Text Encoder...' });
+    sdSessions.textEncoder = await createSession(teBuf);
+
+    postMessage({ type: 'progress', msg: 'Compiling VAE Decoder...' });
+    sdSessions.vaeDecoder = await createSession(vdBuf);
+
+    sdModelLoaded = true;
+    postMessage({ type: 'progress', msg: 'Pipeline ready! (' + totalMB + ' MB total)' });
+}
+
+// ── UNet inference with int64 timestep (correct ONNX type for SD) ─────────
+async function runUNet(latentSlice, timestepInt, embeds, lH, lW) {
+    const uInputs = sdSessions.unet.inputNames || ['sample', 'timestep', 'encoder_hidden_states'];
+    const lT  = new ort.Tensor('float32', latentSlice, [1, 4, lH, lW]);
+    // SD ONNX models always want int64 for the timestep input
+    const tT  = new ort.Tensor('int64', new BigInt64Array([BigInt(timestepInt)]), [1]);
+    const feeds = {};
+    feeds[uInputs[0]] = lT;
+    feeds[uInputs[1]] = tT;
+    feeds[uInputs[2]] = embeds;
+
+    let uRes;
+    try {
+        uRes = await sdSessions.unet.run(feeds);
+    } catch (e) {
+        // Fallback: some exports want float32 timestep
+        if (e.message && (e.message.includes('type') || e.message.includes('dtype'))) {
+            const tTf = new ort.Tensor('float32', new Float32Array([timestepInt]), [1]);
+            feeds[uInputs[1]] = tTf;
+            uRes = await sdSessions.unet.run(feeds);
+        } else {
+            throw e;
+        }
+    }
+    const result = await toF32(Object.values(uRes)[0]);
+    if (lT.dispose) lT.dispose();
+    if (tT.dispose) tT.dispose();
+    Object.values(uRes).forEach(x => { if (x && x.dispose) x.dispose(); });
+    return result;
+}
+
+// ── Main generation: DDIM + CFG ───────────────────────────────────────────
+async function generate(prompt, width, height, numSteps) {
+    await loadModels();
+
+    const W = Math.floor(Math.min(width  || 512, 640) / 64) * 64;
+    const H = Math.floor(Math.min(height || 512, 640) / 64) * 64;
+    const lH = H / 8, lW = W / 8;
+    const CFG_SCALE = 7.5;  // standard guidance scale for SD1.5 distilled
+
+    // ── 1. Encode prompt + unconditional (empty) for CFG ─────────────────
+    postMessage({ type: 'progress', msg: 'Encoding prompt...' });
+
+    const condTokens   = tokenize(prompt);
+    const uncondTokens = tokenize('');  // empty prompt → unconditional
+
+    const teName = (sdSessions.textEncoder.inputNames && sdSessions.textEncoder.inputNames[0]) || 'input_ids';
+
+    const condIds   = new ort.Tensor('int32', Int32Array.from(condTokens),   [1, 77]);
+    const uncondIds = new ort.Tensor('int32', Int32Array.from(uncondTokens), [1, 77]);
+
+    const [condResult, uncondResult] = await Promise.all([
+        sdSessions.textEncoder.run({ [teName]: condIds }),
+        sdSessions.textEncoder.run({ [teName]: uncondIds }),
+    ]);
+    if (condIds.dispose)   condIds.dispose();
+    if (uncondIds.dispose) uncondIds.dispose();
+
+    const condEmb   = await toF32(condResult.last_hidden_state   || Object.values(condResult)[0]);
+    const uncondEmb = await toF32(uncondResult.last_hidden_state || Object.values(uncondResult)[0]);
+
+    // ── 2. Initial latent noise ───────────────────────────────────────────
+    const latent = new Float32Array(4 * lH * lW);
+    // Scale initial noise by sqrt of first alphasCumprod-derived factor
+    // Standard SD1.5: init_noise_sigma = 1.0 (DDIM doesn't scale)
+    for (let i = 0; i < latent.length; i++) {
+        // Box-Muller for Gaussian noise
+        const u1 = Math.random() || 1e-10, u2 = Math.random();
+        latent[i] = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+    }
+
+    // ── 3. DDIM denoising loop ────────────────────────────────────────────
+    const { alphasCumprod, timesteps } = makeScheduler(numSteps);
+
+    for (let s = 0; s < timesteps.length; s++) {
+        const t     = timesteps[s];
+        const tPrev = s < timesteps.length - 1 ? timesteps[s + 1] : 0;
+
+        postMessage({ type: 'progress', msg: 'Denoising step ' + (s + 1) + '/' + timesteps.length + ' (t=' + t + ')...' });
+
+        const aT    = alphasCumprod[t];
+        const aPrev = alphasCumprod[tPrev];
+        const sqrtAT    = Math.sqrt(aT);
+        const sqrtATPrev = Math.sqrt(aPrev);
+        const sqrtOneMinusAT    = Math.sqrt(1 - aT);
+        const sqrtOneMinusATPrev = Math.sqrt(1 - aPrev);
+
+        // Run UNet for conditional embedding
+        const condNoise   = await runUNet(latent.slice(), t, condEmb,   lH, lW);
+        // Run UNet for unconditional embedding
+        const uncondNoise = await runUNet(latent.slice(), t, uncondEmb, lH, lW);
+
+        // CFG: guided_noise = uncond + scale * (cond - uncond)
+        // DDIM step: predict x0, then step to x_{t-1}
+        for (let i = 0; i < latent.length; i++) {
+            const eps = uncondNoise.data[i] + CFG_SCALE * (condNoise.data[i] - uncondNoise.data[i]);
+            // Predict x0: x0 = (x_t - sqrt(1-aT)*eps) / sqrt(aT)
+            const predX0 = (latent[i] - sqrtOneMinusAT * eps) / (sqrtAT + 1e-8);
+            // DDIM step to x_{t-1}
+            latent[i] = sqrtATPrev * predX0 + sqrtOneMinusATPrev * eps;
+        }
+    }
+
+    if (condEmb.dispose)   condEmb.dispose();
+    if (uncondEmb.dispose) uncondEmb.dispose();
+
+    // ── 4. VAE decode ─────────────────────────────────────────────────────
+    postMessage({ type: 'progress', msg: 'Decoding image...' });
+
+    const VAE_SCALE = 1.0 / 0.18215;
+    const scaledLatent = new Float32Array(latent.length);
+    for (let i = 0; i < latent.length; i++) scaledLatent[i] = latent[i] * VAE_SCALE;
+
+    const scaledT = new ort.Tensor('float32', scaledLatent, [1, 4, lH, lW]);
+    const vaeName = (sdSessions.vaeDecoder.inputNames && sdSessions.vaeDecoder.inputNames[0]) || 'latent_sample';
+    const vaeRes  = await sdSessions.vaeDecoder.run({ [vaeName]: scaledT });
+    const imgT    = await toF32(Object.values(vaeRes)[0]);
+    if (scaledT.dispose) scaledT.dispose();
+    Object.values(vaeRes).forEach(x => { if (x && x.dispose) x.dispose(); });
+
+    // ── 5. Tensor → RGBA pixels ───────────────────────────────────────────
+    // Output shape: [1, 3, H, W] — channel-first
+    const imgData = imgT.data;
+    const plane   = H * W;
+    const pixels  = new Uint8ClampedArray(H * W * 4);
+    for (let i = 0; i < plane; i++) {
+        const r = imgData[i],             // channel 0
+              g = imgData[plane + i],     // channel 1
+              b = imgData[plane * 2 + i]; // channel 2
+        // Clamp from [-1, 1] → [0, 255]
+        pixels[i * 4]     = isNaN(r) ? 0 : Math.min(255, Math.max(0, Math.round((r + 1) * 127.5)));
+        pixels[i * 4 + 1] = isNaN(g) ? 0 : Math.min(255, Math.max(0, Math.round((g + 1) * 127.5)));
+        pixels[i * 4 + 2] = isNaN(b) ? 0 : Math.min(255, Math.max(0, Math.round((b + 1) * 127.5)));
+        pixels[i * 4 + 3] = 255;
+    }
+    postMessage({ type: 'done', pixels: pixels.buffer, width: W, height: H }, [pixels.buffer]);
+}
+
+self.onmessage = async (e) => {
+    const { type, baseUrl: bu, prompt, width, height, numSteps } = e.data;
+    if (bu) baseUrl = bu;
+    if (type === 'generate') {
+        try { await generate(prompt, width, height, numSteps); }
+        catch(err) { postMessage({ type: 'error', msg: err.message || String(err) }); }
+    }
+};
+        `;
+
+        // ─── Spawn the worker once from an inline Blob ────────────────────────────
+        let _worker = null;
+        let _workerResolve = null;
+        let _workerReject = null;
+        let _workerProgress = null;
+
+        function getWorker() {
+            if (_worker) return _worker;
+            const blob = new Blob([WORKER_SRC], { type: 'application/javascript' });
+            _worker = new Worker(URL.createObjectURL(blob));
+            _worker.onmessage = (e) => {
+                const { type, msg, pixels, width, height, label, mb, pct } = e.data;
+                if (type === 'progress' && _workerProgress) {
+                    _workerProgress(msg);
+                } else if (type === 'dl' && _workerProgress) {
+                    // update combined download display
+                    _workerProgress('Downloading ' + label + ' ' + mb + 'MB' + (pct !== '...' ? ' (' + pct + '%)' : ''));
+                } else if (type === 'done' && _workerResolve) {
+                    // render pixels → canvas → dataURL on main thread
+                    const canvas = document.createElement('canvas');
+                    canvas.width = width; canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    const imageData = new ImageData(new Uint8ClampedArray(pixels), width, height);
+                    ctx.putImageData(imageData, 0, 0);
+                    _workerResolve(canvas.toDataURL('image/png'));
+                    _workerResolve = null; _workerReject = null; _workerProgress = null;
+                } else if (type === 'error' && _workerReject) {
+                    _workerReject(new Error(e.data.msg));
+                    _workerResolve = null; _workerReject = null; _workerProgress = null;
+                }
+            };
+            _worker.onerror = (e) => {
+                if (_workerReject) _workerReject(new Error(e.message));
+                _workerResolve = null; _workerReject = null; _workerProgress = null;
+            };
+            return _worker;
+        }
+
+  async function sdGenerateImage(prompt, width, height, numSteps, onProgress) { 
+    return new Promise((resolve, reject) => { 
+        _workerProgress = onProgress; 
+        _workerResolve = resolve; 
+        _workerReject = reject; 
+        
+        getWorker().postMessage({ 
+            type: 'generate', 
+            baseUrl: getBaseUrl(), 
+            prompt, 
+            width, 
+            height, 
+            numSteps // Changed the dangling '1' to the actual 'numSteps' variable
+        }); 
+    }); 
+}
+
+        async function initDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(DB_NAME, DB_VERSION);
+                request.onerror = () => reject(request.error);
+                request.onsuccess = () => { db = request.result; resolve(db); };
+                request.onupgradeneeded = (event) => {
+                    db = event.target.result;
+                    if (!db.objectStoreNames.contains(CHATS_STORE)) {
+                        const store = db.createObjectStore(CHATS_STORE, { keyPath: 'id' });
+                        store.createIndex('createdAt', 'createdAt', { unique: false });
+                    }
+                };
+            });
+        }
+
+        function saveChat(chat) {
+            return new Promise((resolve, reject) => {
+                if (!db) return resolve();
+                const tx = db.transaction([CHATS_STORE], 'readwrite');
+                tx.objectStore(CHATS_STORE).put(chat);
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+            });
+        }
+
+        function loadAllChats() {
+            return new Promise((resolve, reject) => {
+                if (!db) return resolve([]);
+                const tx = db.transaction([CHATS_STORE], 'readonly');
+                const store = tx.objectStore(CHATS_STORE);
+                const index = store.index('createdAt');
+                const req = index.getAll();
+                req.onsuccess = () => resolve(req.result || []);
+                req.onerror = () => reject(req.error);
+            });
+        }
+
+        function generateChatId() {
+            return 'chat_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+        }
+
+        function createNewChat() {
+            const chat = { id: generateChatId(), title: 'New Generation', createdAt: Date.now(), messages: [] };
+            chats.unshift(chat);
+            saveChat(chat).then(() => renderHistory());
+            return chat;
+        }
+
+        function updateChatTitle(chatId, firstMessage) {
+            const chat = chats.find(c => c.id === chatId);
+            if (chat) {
+                chat.title = firstMessage.length > 30 ? firstMessage.substring(0, 30) + '...' : firstMessage;
+                saveChat(chat); // fire-and-forget
+                // Update sidebar item text directly instead of re-rendering the whole list
+                const items = historyList.querySelectorAll('[onclick]');
+                items.forEach(el => {
+                    if (el.getAttribute('onclick') === "loadChat('" + chatId + "')") {
+                        const span = el.querySelector('span');
+                        if (span) span.textContent = chat.title;
+                    }
+                });
+                if (currentChatId === chatId) {
+                    document.getElementById('current-chat-title').textContent = chat.title;
+                }
+            }
+        }
+
+        function addMessageToChat(chatId, role, content) {
+            const chat = chats.find(c => c.id === chatId);
+            if (chat) {
+                // Don't store full image data URLs in IndexedDB — just a placeholder
+                const storable = (role === 'image' && content && content.url && content.url.startsWith('data:'))
+                    ? { ...content, url: '[image]' }
+                    : content;
+                chat.messages.push({ role: role, content: storable, timestamp: Date.now() });
+                saveChat(chat); // fire-and-forget, no renderHistory — sidebar already up to date
+            }
+        }
+
+        function renderHistory() {
+            if (!historyList || !emptyHistory) return;
+            historyList.innerHTML = '';
+            if (chats.length === 0) { emptyHistory.style.display = 'block'; return; }
+            emptyHistory.style.display = 'none';
+            chats.forEach(chat => {
+                const item = document.createElement('div');
+                item.className = `px-2.5 py-2 text-xs rounded-lg cursor-pointer transition-colors flex items-center justify-between group ${
+                    chat.id === currentChatId ? 'bg-cds-surface3 text-cds-textMain font-medium' : 'text-cds-textMuted hover:bg-cds-surface2 hover:text-cds-textMain'
+                }`;
+                item.innerHTML = `
+                    <div class="flex items-center gap-2 truncate flex-1" onclick="loadChat('${chat.id}')">
+                        <i class="fa-solid fa-message text-[10px]"></i>
+                        <span class="truncate">${escapeHTML(chat.title)}</span>
+                    </div>
+                    <button onclick="deleteChat(event, '${chat.id}')" class="opacity-0 group-hover:opacity-100 hover:text-red-400 p-1 transition-opacity">
+                        <i class="fa-solid fa-xmark text-[11px]"></i>
+                    </button>
+                `;
+                historyList.appendChild(item);
+            });
+        }
+
+        function deleteChat(e, chatId) {
+            e.stopPropagation();
+            if (!db) return;
+            const tx = db.transaction([CHATS_STORE], 'readwrite');
+            tx.objectStore(CHATS_STORE).delete(chatId);
+            tx.oncomplete = () => {
+                chats = chats.filter(c => c.id !== chatId);
+                if (currentChatId === chatId) startNewSession();
+                else renderHistory();
+                showToast("Chat deleted");
+            };
+        }
+
+        function clearAllHistory() {
+            if (!db) return;
+            const tx = db.transaction([CHATS_STORE], 'readwrite');
+            tx.objectStore(CHATS_STORE).clear();
+            tx.oncomplete = () => {
+                chats = [];
+                startNewSession();
+                showToast("All sessions cleared");
+            };
+        }
+
+        function loadChat(chatId) {
+            if (isGenerating) return;
+            const chat = chats.find(c => c.id === chatId);
+            if (!chat) return;
+            currentChatId = chatId;
+            document.getElementById('current-chat-title').textContent = chat.title;
+            promptInput.value = '';
+            promptInput.style.height = 'auto';
+            settingsPanel.classList.remove('open');
+            welcomeScreen.style.display = 'none';
+            chatFeed.innerHTML = '';
+            chat.messages.forEach(msg => {
+                if (msg.role === 'user') appendUserMessage(msg.content);
+                else if (msg.role === 'ai') appendAIMessage(msg.content);
+                else if (msg.role === 'image') appendImageMessage(msg.content);
+            });
+            renderHistory();
+            scrollToBottom();
+            toggleMobileSidebar(false);
+        }
+
+        promptInput.addEventListener('input', function () {
+            this.style.height = 'auto';
+            this.style.height = (this.scrollHeight) + 'px';
+            if (this.value.trim() === '') this.style.height = 'auto';
+        });
+
+        promptInput.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleGenerate(); }
+        });
+
+        function toggleSettings() { settingsPanel.classList.toggle('open'); }
+
+        function usePrompt(text) {
+            promptInput.value = text;
+            promptInput.focus();
+            promptInput.dispatchEvent(new Event('input'));
+        }
+
+        function startNewSession() {
+            if (isGenerating) return;
+            currentChatId = null;
+            document.getElementById('current-chat-title').textContent = 'New Generation';
+            chatFeed.innerHTML = '';
+            chatFeed.appendChild(welcomeScreen);
+            welcomeScreen.style.display = 'flex';
+            promptInput.value = '';
+            promptInput.style.height = 'auto';
+            settingsPanel.classList.remove('open');
+            renderHistory();
+            toggleMobileSidebar(false);
+        }
+
+        function buildImagePrompt(userPrompt, styleModifier) {
+            let imgPrompt = userPrompt;
+            if (styleModifier) imgPrompt += ', ' + styleModifier;
+            if (!imgPrompt.toLowerCase().includes('masterpiece') && !imgPrompt.toLowerCase().includes('detailed')) {
+                imgPrompt += ', extremely detailed, high quality masterpiece';
+            }
+            return imgPrompt;
+        }
+
+        function appendUserMessage(text) {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'flex items-center justify-end mb-6 animate-[fadeIn_0.3s_ease-out] group/msg';
+            const inner = document.createElement('div');
+            inner.className = 'flex items-end gap-2 max-w-[85%]';
+            inner.innerHTML = `
+                <button class="edit-btn opacity-0 group-hover/msg:opacity-100 transition-opacity w-7 h-7 rounded-lg flex items-center justify-center text-cds-textMuted hover:text-cds-textMain hover:bg-cds-surface3 flex-shrink-0 mb-1" title="Edit message" onclick="startEditMessage(this)">
+                    <i class="fa-solid fa-pen text-xs"></i>
+                </button>
+                <div class="bg-cds-surface4 px-4 py-3 rounded-2xl text-cds-textMain text-sm md:text-[15px] leading-relaxed shadow-sm user-msg-text">${escapeHTML(text)}</div>
+            `;
+            msgDiv.appendChild(inner);
+            chatFeed.appendChild(msgDiv);
+        }
+
+        function startEditMessage(btn) {
+            if (isGenerating) return;
+            const wrapper = btn.closest('.flex.items-end');
+            const bubble = wrapper.querySelector('.user-msg-text');
+            const originalText = bubble.textContent;
+            bubble.style.display = 'none';
+            btn.style.display = 'none';
+            const editWrap = document.createElement('div');
+            editWrap.className = 'edit-wrap flex flex-col gap-2 w-full';
+            const ta = document.createElement('textarea');
+            ta.className = 'w-full bg-cds-surface3 border border-cds-border rounded-2xl px-4 py-3 text-cds-textMain text-sm leading-relaxed outline-none resize-none focus:border-cds-accent transition-colors';
+            ta.rows = 1;
+            ta.value = originalText;
+            const btns = document.createElement('div');
+            btns.className = 'flex gap-2 justify-end';
+            btns.innerHTML = `
+                <button onclick="cancelEditMessage(this)" class="px-3 py-1 rounded-lg text-xs text-cds-textMuted hover:text-cds-textMain border border-cds-border">Cancel</button>
+                <button onclick="confirmEditMessage(this)" class="px-3 py-1 rounded-lg text-xs bg-cds-accent text-cds-surface1 hover:bg-cds-accentDark font-medium">Send</button>
+            `;
+            editWrap.appendChild(ta);
+            editWrap.appendChild(btns);
+            wrapper.appendChild(editWrap);
+            ta.style.height = 'auto';
+            ta.style.height = ta.scrollHeight + 'px';
+            ta.focus();
+        }
+
+        function cancelEditMessage(btn) {
+            const wrapper = btn.closest('.flex.items-end');
+            const bubble = wrapper.querySelector('.user-msg-text');
+            const editBtn = wrapper.querySelector('.edit-btn');
+            const editWrap = wrapper.querySelector('.edit-wrap');
+            bubble.style.display = '';
+            if (editBtn) editBtn.style.display = '';
+            if (editWrap) editWrap.remove();
+        }
+
+        async function confirmEditMessage(btn) {
+            if (isGenerating) return;
+            const wrapper = btn.closest('.flex.items-end');
+            const msgRow = wrapper.closest('.group\\/msg');
+            const ta = wrapper.querySelector('textarea');
+            const newText = ta ? ta.value.trim() : '';
+            if (!newText) return;
+            let next = msgRow ? msgRow.nextSibling : null;
+            while (next) { const r = next; next = next.nextSibling; r.remove(); }
+            const bubble = wrapper.querySelector('.user-msg-text');
+            const editBtn = wrapper.querySelector('.edit-btn');
+            const editWrap = wrapper.querySelector('.edit-wrap');
+            if (bubble) { bubble.textContent = newText; bubble.style.display = ''; }
+            if (editBtn) editBtn.style.display = '';
+            if (editWrap) editWrap.remove();
+            promptInput.value = newText;
+            await handleGenerate(true);
+        }
+
+        function appendAIMessage(text) {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'flex items-start gap-3.5 mb-8 max-w-3xl mx-auto w-full animate-[fadeIn_0.3s_ease-out]';
+            msgDiv.innerHTML = `
+                <div class="w-8 h-8 rounded-lg bg-cds-surface1 border border-cds-border flex items-center justify-center flex-shrink-0 mt-0.5 text-cds-accent">
+                    <i class="fa-solid fa-wand-magic-sparkles text-xs"></i>
+                </div>
+                <div class="flex-1 font-serif text-cds-textMain text-sm md:text-base leading-relaxed pt-1">
+                    <div class="prose prose-invert max-w-none" style="white-space:pre-wrap;">${escapeHTML(text)}</div>
+                </div>
+            `;
+            chatFeed.appendChild(msgDiv);
+        }
+
+        function appendImageMessage(imageData) {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'flex items-start gap-3.5 mb-6 max-w-3xl mx-auto w-full animate-[fadeIn_0.3s_ease-out]';
+            const promptDisplay = imageData.prompt ? escapeHTML(imageData.prompt) : '';
+
+            msgDiv.innerHTML = `
+                <div class="w-8 h-8 rounded-lg bg-cds-surface1 border border-cds-border flex items-center justify-center flex-shrink-0 mt-0.5 text-cds-accent">
+                    <i class="fa-solid fa-image text-xs"></i>
+                </div>
+                <div class="flex-1 font-sans text-cds-textMain text-sm pt-0.5">
+                    <div class="relative group inline-block max-w-full mb-2">
+                        <img src="${imageData.url}" alt="${promptDisplay}" 
+                             onclick="openLightbox('${imageData.url}', '${imageData.prompt ? escapeHTML(imageData.prompt.replace(/'/g, "\\'")) : ''}')"
+                             class="rounded-xl border border-cds-border shadow-lg max-h-[480px] w-auto object-cover cursor-zoom-in image-fade-in bg-cds-surface1">
+
+                        <div class="absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1.5 bg-cds-surface1/90 p-1.5 rounded-lg border border-cds-border backdrop-blur-sm">
+                            <button onclick="downloadImage('${imageData.url}')" class="p-1.5 text-cds-textMain hover:text-cds-accent text-xs" title="Download Image">
+                                <i class="fa-solid fa-download"></i>
+                            </button>
+                            <button onclick="copyToClipboard('${imageData.prompt ? escapeHTML(imageData.prompt.replace(/'/g, "\\'")) : ''}')" class="p-1.5 text-cds-textMain hover:text-cds-accent text-xs" title="Copy Prompt">
+                                <i class="fa-solid fa-copy"></i>
+                            </button>
+                        </div>
+                    </div>
+                    ${promptDisplay ? `<p class="text-xs text-cds-textMuted/70 mt-1 flex items-center gap-1.5"><i class="fa-solid fa-quote-left text-[10px]"></i> ${promptDisplay}</p>` : ''}
+                </div>
+            `;
+            chatFeed.appendChild(msgDiv);
+        }
+
+        function appendLoaderMessage(id) {
+            const msgDiv = document.createElement('div');
+            msgDiv.id = id;
+            msgDiv.className = 'flex items-start gap-3.5 mb-8 max-w-3xl mx-auto w-full';
+            msgDiv.innerHTML = `
+                <div class="w-8 h-8 rounded-lg bg-cds-surface1 border border-cds-border flex items-center justify-center flex-shrink-0 mt-0.5 text-cds-accent">
+                    <i class="fa-solid fa-wand-magic-sparkles text-xs"></i>
+                </div>
+                <div class="flex-1 font-sans text-cds-textMain text-sm py-1 flex items-center gap-2">
+                    <div class="typing-indicator">
+                        <div class="typing-dot"></div>
+                        <div class="typing-dot"></div>
+                        <div class="typing-dot"></div>
+                    </div>
+                    <span class="text-cds-textMuted text-xs ml-1 font-medium" id="progress-text-${id}">Initializing pipeline...</span>
+                </div>
+            `;
+            chatFeed.appendChild(msgDiv);
+        }
+
+        function replaceLoaderWithError(id, errorMsg) {
+            const loader = document.getElementById(id);
+            if (!loader) return;
+            loader.innerHTML = `
+                <div class="w-8 h-8 rounded-lg bg-cds-surface1 border border-red-500/30 flex items-center justify-center flex-shrink-0 mt-0.5 text-red-400">
+                    <i class="fa-solid fa-triangle-exclamation text-xs"></i>
+                </div>
+                <div class="flex-1 font-sans text-red-300 text-sm pt-1">
+                    <p class="font-medium">Creation task failed</p>
+                    <p class="text-xs text-red-400/80 mt-1">${escapeHTML(errorMsg)}</p>
+                </div>
+            `;
+        }
+
+        function setGeneratingState(isGen) {
+            isGenerating = isGen;
+            if (isGen) {
+                generateBtn.disabled = true;
+                generateBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin text-xs"></i>';
+            } else {
+                generateBtn.disabled = false;
+                generateBtn.innerHTML = '<i class="fa-solid fa-arrow-up text-xs font-bold"></i>';
+            }
+        }
+
+        function scrollToBottom() {
+            chatFeed.scrollTo({ top: chatFeed.scrollHeight, behavior: 'smooth' });
+        }
+
+        function escapeHTML(str) {
+            if (!str) return '';
+            return str.replace(/[&<>'"]/g,
+                tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
+            );
+        }
+
+        function copyToClipboard(text) {
+            if (!text) return;
+            const el = document.createElement('textarea');
+            el.value = text;
+            document.body.appendChild(el);
+            el.select();
+            document.execCommand('copy');
+            document.body.removeChild(el);
+            showToast("Copied prompt to clipboard!");
+        }
+
+        function downloadImage(url) {
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `omni-studio-${Date.now()}.png`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            showToast("Downloading art...");
+        }
+
+        function openLightbox(url, prompt) {
+            const modal = document.getElementById('lightbox-modal');
+            const img = document.getElementById('lightbox-image');
+            const dlBtn = document.getElementById('lightbox-download');
+            const cpBtn = document.getElementById('lightbox-copy');
+
+            img.src = url;
+            dlBtn.onclick = () => downloadImage(url);
+            cpBtn.onclick = () => copyToClipboard(prompt);
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+
+        function closeLightbox() {
+            const modal = document.getElementById('lightbox-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        function toggleMobileSidebar(show) {
+            const sidebar = document.getElementById('mobile-sidebar');
+            const overlay = document.getElementById('sidebar-overlay');
+            if (show) {
+                sidebar.classList.remove('-translate-x-full');
+                overlay.classList.remove('hidden');
+            } else {
+                sidebar.classList.add('-translate-x-full');
+                overlay.classList.add('hidden');
+            }
+        }
+
+        function togglePromptDrawer(show) {
+            const drawer = document.getElementById('prompt-drawer');
+            if (show) {
+                drawer.classList.remove('translate-x-full');
+            } else {
+                drawer.classList.add('translate-x-full');
+            }
+        }
+
+        async function handleGenerate(isEdit = false) {
+            const userText = promptInput.value.trim();
+            if (!userText || isGenerating) return;
+
+            setGeneratingState(true);
+
+            if (!currentChatId) {
+                const newChat = createNewChat();
+                currentChatId = newChat.id;
+                updateChatTitle(currentChatId, userText);
+            }
+
+            if (welcomeScreen.style.display !== 'none') {
+                welcomeScreen.style.display = 'none';
+            }
+
+            if (!isEdit) {
+                appendUserMessage(userText);
+                addMessageToChat(currentChatId, 'user', userText);
+            }
+
+            promptInput.value = '';
+            promptInput.style.height = 'auto';
+
+            const mode = chatModeSelect.value;
+            const aspectVal = document.getElementById('aspect-ratio').value.split('x');
+            const width = parseInt(aspectVal[0], 10) || 512;
+            const height = parseInt(aspectVal[1], 10) || 512;
+            const styleMod = document.getElementById('style-modifier').value;
+            const count = Math.min(Math.max(parseInt(imageCountInput.value, 10) || 1, 1), 4);
+
+            const loaderId = 'loader-' + Date.now();
+            appendLoaderMessage(loaderId);
+            scrollToBottom();
+
+            const updateProgress = (msg) => {
+                const pEl = document.getElementById(`progress-text-${loaderId}`);
+                if (pEl) pEl.textContent = msg;
+            };
+
+            try {
+                const finalPrompt = buildImagePrompt(userText, styleMod);
+                for (let i = 0; i < count; i++) {
+                    updateProgress(`Generating image ${i + 1} of ${count}...`);
+                    // 4 DDIM steps with CFG=7.5 — correct for segmind/tiny-sd (distilled SD1.5)
+                    const imgUrl = await sdGenerateImage(finalPrompt, width, height, 4, updateProgress);
+
+                    const imgObj = { url: imgUrl, prompt: finalPrompt };
+                    const loader = document.getElementById(loaderId);
+                    if (loader && i === 0) loader.remove();
+
+                    appendImageMessage(imgObj);
+                    addMessageToChat(currentChatId, 'image', imgObj);
+                    scrollToBottom();
+                }
+            } catch (err) {
+                console.error('[Generate Handler Error]', err);
+                replaceLoaderWithError(loaderId, err.message || 'Error occurred during generation.');
+            } finally {
+                setGeneratingState(false);
+            }
+        }
+
+        window.addEventListener('DOMContentLoaded', async () => {
+            try {
+                await initDB();
+                chats = await loadAllChats();
+                renderHistory();
+            } catch (e) {
+                console.warn('[DB Error] Failed to initialize local store:', e);
+            }
+        });
+    </script>
+</body>
+</html>
