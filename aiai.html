@@ -606,15 +606,19 @@ PROMPT: detailed visual description here`;
 
         if (window.ort && ort.env && ort.env.wasm) {
             ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/';
-            ort.env.wasm.numThreads = 1;
+            // Use more threads when available — speeds up WASM compilation & inference
+            ort.env.wasm.numThreads = Math.min(navigator.hardwareConcurrency || 2, 4);
         }
 
         async function sdCreateSession(arrayBuffer, onProgress) {
             // WebGPU crashes on this model (GPU memory overflow / MapAsync AbortError).
             // WASM is slower but runs reliably to completion every time.
+            //
+            // 'all' optimisation silently hangs on the VAE decoder (large graph).
+            // 'basic' compiles in seconds and still runs correctly.
             return await ort.InferenceSession.create(arrayBuffer, {
                 executionProviders: ['wasm'],
-                graphOptimizationLevel: 'all'
+                graphOptimizationLevel: 'basic'
             });
         }
 
@@ -706,7 +710,7 @@ PROMPT: detailed visual description here`;
             return new ort.Tensor('float32', sdHalfToF32Array(tensor.data), tensor.dims);
         }
 
-        async function sdRun(session, feeds, timeoutMs = 180000) {
+        async function sdRun(session, feeds, timeoutMs = 480000) {
             return new Promise((resolve, reject) => {
                 const timer = setTimeout(() => reject(new Error('ORT session run timeout')), timeoutMs);
                 session.run(feeds).then(result => {
@@ -765,7 +769,10 @@ PROMPT: detailed visual description here`;
             const scaledData = new Float32Array(latentData.length);
             for (let i = 0; i < scaledData.length; i++) scaledData[i] = latentData[i] * scale;
             const scaledLatent = new ort.Tensor('float16', sdF32ToHalfArray(scaledData), [batchSize, channels, latentHeight, latentWidth]);
-            const vaeResult = await sdRun(sdSessions.vaeDecoder, { latent_sample: scaledLatent });
+            // Probe the actual input name the VAE model uses — tiny/quantized exports
+            // sometimes call it 'input', 'latent', or 'latents' instead of 'latent_sample'.
+            const vaeInputName = sdSessions.vaeDecoder.inputNames?.[0] || 'latent_sample';
+            const vaeResult = await sdRun(sdSessions.vaeDecoder, { [vaeInputName]: scaledLatent });
             const imageTensor = sdToF32(Object.values(vaeResult)[0]);
 
             onProgress('Finalizing render...');
