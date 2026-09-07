@@ -191,9 +191,9 @@
             <div class="flex items-center justify-between px-2 py-2 rounded-lg bg-cds-surface2/60 border border-cds-border/30">
                 <div class="flex items-center gap-2.5">
                     <div class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
-                    <span class="text-xs font-medium text-cds-textMuted">Local WebGPU/WASM Engine</span>
+                    <span class="text-xs font-medium text-cds-textMuted">Local WASM · DDIM 4-step</span>
                 </div>
-                <span class="text-[10px] bg-cds-surface4 px-2 py-0.5 rounded text-cds-accent">SD ONNX</span>
+                <span class="text-[10px] bg-cds-surface4 px-2 py-0.5 rounded text-cds-accent">tiny-sd</span>
             </div>
         </div>
     </aside>
@@ -324,7 +324,7 @@
                 </div>
 
                 <div class="text-center mt-2.5">
-                    <p class="text-[10px] text-cds-textMuted/80">Omni Studio AI. Images are generated locally in your browser using your model via WebGPU/WASM. No data leaves your device.</p>
+                    <p class="text-[10px] text-cds-textMuted/80">Omni Studio AI · segmind/tiny-sd · 4-step DDIM · CFG 7.5 · All inference runs locally in your browser. No data leaves your device.</p>
                 </div>
             </div>
         </div>
@@ -444,7 +444,7 @@ Reply with EXACTLY ONE word: IMAGE or CHAT.`;
 
         // ─── Web Worker — all ONNX work runs off the main thread ───────────────
         const WORKER_SRC = `
-const MODEL_CACHE = 'omni-studio-models-v1';
+const MODEL_CACHE = 'omni-studio-models-v2';
 let sdSessions = {};
 let sdTokenizer = null;
 let sdModelLoaded = false;
@@ -457,17 +457,18 @@ ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/di
 ort.env.wasm.numThreads = crossOriginIsolated ? Math.min(navigator.hardwareConcurrency || 1, 4) : 1;
 ort.env.wasm.simd = true;
 
+// ── Fetch with streaming progress + Cache API ──────────────────────────────
 async function fetchModel(filename, label) {
     const url = baseUrl + filename;
     try {
         const cache = await caches.open(MODEL_CACHE);
         const cached = await cache.match(url);
         if (cached) {
-            postMessage({ type: 'progress', msg: label + ' (cached)' });
+            postMessage({ type: 'progress', msg: label + ' loaded from cache' });
             return await (await cached.blob()).arrayBuffer();
         }
         const resp = await fetch(url);
-        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        if (!resp.ok) throw new Error('HTTP ' + resp.status + ' for ' + filename);
         const total = parseInt(resp.headers.get('Content-Length') || '0', 10);
         const reader = resp.body.getReader();
         const chunks = [];
@@ -489,69 +490,168 @@ async function fetchModel(filename, label) {
     }
 }
 
+// ── ONNX session with 'all' optimisation for max WASM speed ───────────────
 async function createSession(buf) {
-    for (const cfg of [
+    const configs = [
+        { executionProviders: ['wasm'], graphOptimizationLevel: 'all' },
+        { executionProviders: ['wasm'], graphOptimizationLevel: 'basic' },
         { executionProviders: ['wasm'], graphOptimizationLevel: 'disabled' },
-        { executionProviders: ['wasm'], graphOptimizationLevel: 'basic' }
-    ]) {
+    ];
+    for (const cfg of configs) {
         try { return await ort.InferenceSession.create(new Uint8Array(buf), cfg); }
         catch(e) { /* try next */ }
     }
-    throw new Error('Could not create ONNX session');
+    throw new Error('Could not create ONNX session — all configs failed');
 }
 
+// ── BPE Tokenizer (real CLIP tokenizer, not char-level) ───────────────────
 async function loadTokenizer() {
     if (sdTokenizer) return;
     const [vr, mr] = await Promise.all([
         fetch(baseUrl + 'tokenizer/vocab.json'),
         fetch(baseUrl + 'tokenizer/merges.txt')
     ]);
+    if (!vr.ok || !mr.ok) throw new Error('Tokenizer files missing from R2');
     const vocab = await vr.json();
-    const merges = await mr.text();
-    const mergeMap = {};
-    merges.split('\\n').slice(1).forEach(line => {
-        const p = line.split(' ');
-        if (p.length === 2) mergeMap[p[0] + '|' + p[1]] = true;
+    const mergesText = await mr.text();
+
+    // Build encoder: token-string → id
+    // Build decoder: id → token-string
+    const encoder = vocab; // { "token</w>": id, ... }
+    const decoder = {};
+    for (const [k,v] of Object.entries(encoder)) decoder[v] = k;
+
+    // Build merge rank map: "a|b" → rank (lower = higher priority)
+    const mergeRanks = {};
+    mergesText.split('\\n').slice(1).filter(Boolean).forEach((line, idx) => {
+        const [a, b] = line.split(' ');
+        if (a && b) mergeRanks[a + '\\u0000' + b] = idx;
     });
-    sdTokenizer = { vocab, mergeMap };
+
+    // Byte-to-unicode map (standard CLIP/GPT-2)
+    const byteEncoder = buildByteEncoder();
+
+    sdTokenizer = { encoder, decoder, mergeRanks, byteEncoder };
+}
+
+function buildByteEncoder() {
+    const bs = [];
+    for (let i = '!'.charCodeAt(0); i <= '~'.charCodeAt(0); i++) bs.push(i);
+    for (let i = '¡'.charCodeAt(0); i <= '¬'.charCodeAt(0); i++) bs.push(i);
+    for (let i = '®'.charCodeAt(0); i <= 'ÿ'.charCodeAt(0); i++) bs.push(i);
+    const cs = bs.slice();
+    let n = 0;
+    for (let b = 0; b < 256; b++) {
+        if (!bs.includes(b)) { bs.push(b); cs.push(256 + n); n++; }
+    }
+    const map = {};
+    bs.forEach((b, i) => { map[b] = String.fromCharCode(cs[i]); });
+    return map;
+}
+
+function bpe(token, mergeRanks) {
+    let word = token.split('').map(c => {
+        let encoded = '';
+        for (const byte of new TextEncoder().encode(c)) {
+            encoded += sdTokenizer.byteEncoder[byte];
+        }
+        return encoded;
+    });
+    // Append end-of-word marker to last char
+    word[word.length - 1] = word[word.length - 1] + '</w>';
+
+    let pairs = getPairs(word);
+    if (!pairs.length) return [word.join('')];
+
+    while (true) {
+        let best = null, bestRank = Infinity;
+        for (const pair of pairs) {
+            const key = pair[0] + '\\u0000' + pair[1];
+            const rank = mergeRanks[key];
+            if (rank !== undefined && rank < bestRank) { bestRank = rank; best = pair; }
+        }
+        if (best === null) break;
+        const [first, second] = best;
+        const newWord = [];
+        let i = 0;
+        while (i < word.length) {
+            const j = word.indexOf(first, i);
+            if (j === -1) { newWord.push(...word.slice(i)); break; }
+            newWord.push(...word.slice(i, j));
+            if (j < word.length - 1 && word[j + 1] === second) {
+                newWord.push(first + second);
+                i = j + 2;
+            } else {
+                newWord.push(word[j]);
+                i = j + 1;
+            }
+        }
+        word = newWord;
+        pairs = getPairs(word);
+        if (!pairs.length) break;
+    }
+    return word;
+}
+
+function getPairs(word) {
+    const pairs = [];
+    for (let i = 0; i < word.length - 1; i++) pairs.push([word[i], word[i+1]]);
+    return pairs;
 }
 
 function tokenize(text) {
-    const tokens = [0];
-    const words = text.toLowerCase().match(/\\b\\w+\\b|[^\\s\\w]/g) || [];
-    for (const word of words)
-        for (const char of word)
-            if (sdTokenizer.vocab[char] !== undefined) tokens.push(sdTokenizer.vocab[char]);
-    while (tokens.length < 77) tokens.push(1);
-    return tokens.slice(0, 77);
+    // SOT=49406, EOT=49407, PAD=49407  (standard CLIP)
+    const SOT = 49406, EOT = 49407;
+    const ids = [SOT];
+
+    // Basic CLIP pre-tokenization: lowercase, strip non-ASCII-ish, split words
+    const cleaned = text.toLowerCase().replace(/["""]/g, '"').replace(/[''']/g, "'");
+    const wordRe = /\\S+/g;
+    const wordTokens = cleaned.match(wordRe) || [];
+
+    for (const word of wordTokens) {
+        const bpeTokens = bpe(word, sdTokenizer.mergeRanks);
+        for (const bt of bpeTokens) {
+            const id = sdTokenizer.encoder[bt];
+            if (id !== undefined) ids.push(id);
+        }
+    }
+
+    ids.push(EOT);
+    while (ids.length < 77) ids.push(EOT);
+    return ids.slice(0, 77);
 }
 
+// ── DDIM scheduler (correct for segmind/tiny-sd distilled SD1.5) ──────────
+// This model is NOT an LCM — it is a distilled SD1.5 that works best with
+// 4-8 DDIM steps at guidance scale 7.5. 1 step = noise/blur.
 function makeScheduler(numSteps) {
-    const N = 1000, bs = 0.00085, be = 0.012;
-    // Build full alphas_cumprod table
-    const alphasCumprod = [];
-    let cum = 1;
+    const N = 1000;
+    // Linear beta schedule (same as SD1.5)
+    const bStart = 0.00085, bEnd = 0.012;
+    const alphasCumprod = new Float64Array(N);
+    let cumProd = 1.0;
     for (let i = 0; i < N; i++) {
-        cum *= 1 - (bs + (i / (N - 1)) * (be - bs));
-        alphasCumprod.push(cum);
+        const beta = bStart + (i / (N - 1)) * (bEnd - bStart);
+        cumProd *= (1.0 - beta);
+        alphasCumprod[i] = cumProd;
     }
-    
-    // For 1 step LCM, timestep should be [999]
+
+    // DDIM timesteps: evenly spaced, descending (high noise → low noise)
+    // For 4 steps: [749, 499, 249, 0]  (approx)
+    const step = Math.floor(N / numSteps);
     const timesteps = [];
-    if (numSteps === 1) {
-        timesteps.push(N - 1);
-    } else {
-        // LCM timesteps: evenly spaced, skipping from high noise to low
-        const spacing = Math.floor(N / numSteps);
-        for (let i = numSteps - 1; i >= 0; i--) {
-            timesteps.push(Math.min(N - 1, i * spacing + spacing - 1));
-        }
-        timesteps.reverse();
+    for (let i = numSteps - 1; i >= 0; i--) {
+        timesteps.push(i * step);
     }
-    
+    // timesteps goes from large → small (999→0 direction for DDIM)
+    // We want descending: start from high noise timestep
+    timesteps.sort((a, b) => b - a);
+
     return { alphasCumprod, timesteps };
 }
 
+// ── float16 → float32 conversion ──────────────────────────────────────────
 async function toF32(tensor) {
     if (!tensor) return null;
     const data = await tensor.getData();
@@ -559,27 +659,29 @@ async function toF32(tensor) {
         const raw = new Uint16Array(data.buffer !== undefined ? data.buffer : data);
         const out = new Float32Array(raw.length);
         for (let i = 0; i < raw.length; i++) {
-            const h = raw[i], s = (h & 0x8000) ? -1 : 1, e = (h >> 10) & 0x1f, m = h & 0x3ff;
-            if (e === 0) out[i] = s * m * Math.pow(2, -24);
+            const h = raw[i];
+            const s = (h & 0x8000) ? -1 : 1;
+            const e = (h >> 10) & 0x1f;
+            const m = h & 0x3ff;
+            if (e === 0) out[i] = s * m * 5.960464477539063e-8;
             else if (e === 31) out[i] = m ? NaN : s * Infinity;
             else out[i] = s * Math.pow(2, e - 15) * (1 + m / 1024);
         }
         return new ort.Tensor('float32', out, tensor.dims);
     }
-    return new ort.Tensor('float32', data instanceof Float32Array ? data : new Float32Array(data), tensor.dims);
+    const f32 = data instanceof Float32Array ? data : new Float32Array(data);
+    return new ort.Tensor('float32', f32, tensor.dims);
 }
 
+// ── Model loading (R2 only, IndexedDB-backed via Cache API) ───────────────
 async function loadModels() {
     if (sdModelLoaded) return;
-    postMessage({ type: 'progress', msg: 'Loading tokenizer...' });
+    postMessage({ type: 'progress', msg: 'Loading tokenizer from R2...' });
     await loadTokenizer();
 
-    const dlState = { UNet: '0MB', 'Text Encoder': '0MB', 'VAE Decoder': '0MB' };
-    function reportDl() {
-        postMessage({ type: 'progress', msg: 'Downloading — ' + Object.entries(dlState).map(([k,v]) => k+': '+v).join(' · ') });
-    }
-    reportDl();
+    postMessage({ type: 'progress', msg: 'Fetching models from R2 (cached after first load)...' });
 
+    // Download all 3 in parallel for speed
     const [unetBuf, teBuf, vdBuf] = await Promise.all([
         fetchModel('unet/model_f32.onnx/model_f32.onnx', 'UNet'),
         fetchModel('text_encoder/model_f32.onnx/model_f32.onnx', 'Text Encoder'),
@@ -587,132 +689,155 @@ async function loadModels() {
     ]);
 
     const sizes = { UNet: unetBuf.byteLength, 'Text Encoder': teBuf.byteLength, 'VAE Decoder': vdBuf.byteLength };
-    const totalMB = (Object.values(sizes).reduce((a,b)=>a+b,0)/1048576).toFixed(0);
-    let doneMB = 0;
+    const totalMB = (Object.values(sizes).reduce((a, b) => a + b, 0) / 1048576).toFixed(0);
 
-    postMessage({ type: 'progress', msg: 'Compiling UNet (' + (sizes.UNet/1048576).toFixed(0) + ' MB) — 0% of ' + totalMB + ' MB total' });
+    postMessage({ type: 'progress', msg: 'Compiling UNet (' + (sizes.UNet/1048576).toFixed(0) + ' MB)...' });
     sdSessions.unet = await createSession(unetBuf);
-    doneMB += sizes.UNet/1048576;
 
-    postMessage({ type: 'progress', msg: 'Compiling Text Encoder (' + (sizes['Text Encoder']/1048576).toFixed(0) + ' MB) — ' + Math.round(doneMB/totalMB*100) + '% of ' + totalMB + ' MB total' });
+    postMessage({ type: 'progress', msg: 'Compiling Text Encoder...' });
     sdSessions.textEncoder = await createSession(teBuf);
-    doneMB += sizes['Text Encoder']/1048576;
 
-    postMessage({ type: 'progress', msg: 'Compiling VAE Decoder (' + (sizes['VAE Decoder']/1048576).toFixed(0) + ' MB) — ' + Math.round(doneMB/totalMB*100) + '% of ' + totalMB + ' MB total' });
+    postMessage({ type: 'progress', msg: 'Compiling VAE Decoder...' });
     sdSessions.vaeDecoder = await createSession(vdBuf);
 
     sdModelLoaded = true;
-    postMessage({ type: 'progress', msg: 'Pipeline ready!' });
+    postMessage({ type: 'progress', msg: 'Pipeline ready! (' + totalMB + ' MB total)' });
 }
 
+// ── UNet inference with int64 timestep (correct ONNX type for SD) ─────────
+async function runUNet(latentSlice, timestepInt, embeds, lH, lW) {
+    const uInputs = sdSessions.unet.inputNames || ['sample', 'timestep', 'encoder_hidden_states'];
+    const lT  = new ort.Tensor('float32', latentSlice, [1, 4, lH, lW]);
+    // SD ONNX models always want int64 for the timestep input
+    const tT  = new ort.Tensor('int64', new BigInt64Array([BigInt(timestepInt)]), [1]);
+    const feeds = {};
+    feeds[uInputs[0]] = lT;
+    feeds[uInputs[1]] = tT;
+    feeds[uInputs[2]] = embeds;
+
+    let uRes;
+    try {
+        uRes = await sdSessions.unet.run(feeds);
+    } catch (e) {
+        // Fallback: some exports want float32 timestep
+        if (e.message && (e.message.includes('type') || e.message.includes('dtype'))) {
+            const tTf = new ort.Tensor('float32', new Float32Array([timestepInt]), [1]);
+            feeds[uInputs[1]] = tTf;
+            uRes = await sdSessions.unet.run(feeds);
+        } else {
+            throw e;
+        }
+    }
+    const result = await toF32(Object.values(uRes)[0]);
+    if (lT.dispose) lT.dispose();
+    if (tT.dispose) tT.dispose();
+    Object.values(uRes).forEach(x => { if (x && x.dispose) x.dispose(); });
+    return result;
+}
+
+// ── Main generation: DDIM + CFG ───────────────────────────────────────────
 async function generate(prompt, width, height, numSteps) {
     await loadModels();
 
-    let W = Math.floor(Math.min(width||512,640)/64)*64;
-    let H = Math.floor(Math.min(height||512,640)/64)*64;
-    const lH = H/8, lW = W/8;
+    const W = Math.floor(Math.min(width  || 512, 640) / 64) * 64;
+    const H = Math.floor(Math.min(height || 512, 640) / 64) * 64;
+    const lH = H / 8, lW = W / 8;
+    const CFG_SCALE = 7.5;  // standard guidance scale for SD1.5 distilled
 
-    postMessage({ type: 'progress', msg: 'Tokenizing...' });
-    const tokens = tokenize(prompt);
-    const inputIds = new ort.Tensor('int32', Int32Array.from(tokens), [1,77]);
-    const teName = (sdSessions.textEncoder.inputNames && sdSessions.textEncoder.inputNames[0]) || 'input_ids';
-    const teFeeds = {}; teFeeds[teName] = inputIds;
-
+    // ── 1. Encode prompt + unconditional (empty) for CFG ─────────────────
     postMessage({ type: 'progress', msg: 'Encoding prompt...' });
-    const encResult = await sdSessions.textEncoder.run(teFeeds);
-    let textEmb = encResult.last_hidden_state || Object.values(encResult)[0];
-    if (inputIds.dispose) inputIds.dispose();
 
-    // Use 1 step for LCM
-    const actualSteps = 1;
-    const { alphasCumprod, timesteps } = makeScheduler(actualSteps);
-    
-    // LCM specific latent scaling
-    const latent = new Float32Array(lH * lW * 4);
-    for (let i = 0; i < latent.length; i++) latent[i] = (Math.random()*2-1)*1.5;
+    const condTokens   = tokenize(prompt);
+    const uncondTokens = tokenize('');  // empty prompt → unconditional
 
-    const uInputs = sdSessions.unet.inputNames || ['sample','timestep','encoder_hidden_states'];
-    const encF32 = textEmb.type === 'float16' ? await toF32(textEmb) : textEmb;
+    const teName = (sdSessions.textEncoder.inputNames && sdSessions.textEncoder.inputNames[0]) || 'input_ids';
+
+    const condIds   = new ort.Tensor('int32', Int32Array.from(condTokens),   [1, 77]);
+    const uncondIds = new ort.Tensor('int32', Int32Array.from(uncondTokens), [1, 77]);
+
+    const [condResult, uncondResult] = await Promise.all([
+        sdSessions.textEncoder.run({ [teName]: condIds }),
+        sdSessions.textEncoder.run({ [teName]: uncondIds }),
+    ]);
+    if (condIds.dispose)   condIds.dispose();
+    if (uncondIds.dispose) uncondIds.dispose();
+
+    const condEmb   = await toF32(condResult.last_hidden_state   || Object.values(condResult)[0]);
+    const uncondEmb = await toF32(uncondResult.last_hidden_state || Object.values(uncondResult)[0]);
+
+    // ── 2. Initial latent noise ───────────────────────────────────────────
+    const latent = new Float32Array(4 * lH * lW);
+    // Scale initial noise by sqrt of first alphasCumprod-derived factor
+    // Standard SD1.5: init_noise_sigma = 1.0 (DDIM doesn't scale)
+    for (let i = 0; i < latent.length; i++) {
+        // Box-Muller for Gaussian noise
+        const u1 = Math.random() || 1e-10, u2 = Math.random();
+        latent[i] = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+    }
+
+    // ── 3. DDIM denoising loop ────────────────────────────────────────────
+    const { alphasCumprod, timesteps } = makeScheduler(numSteps);
 
     for (let s = 0; s < timesteps.length; s++) {
-        postMessage({ type: 'progress', msg: 'Denoising pass (LCM 1-step)...' });
-        const t = timesteps[s];
-        const tT = new ort.Tensor('float32', new Float32Array([t]), [1]);
-        const lT = new ort.Tensor('float32', latent.slice(), [1,4,lH,lW]);
-        const feeds = {}; feeds[uInputs[0]]=lT; feeds[uInputs[1]]=tT; feeds[uInputs[2]]=encF32;
-        
-        // Ensure timestep is passed as int64 if required by the model, otherwise float32
-        // Trying float32 first as per previous code, if it fails, it might need int64.
-        let uRes;
-        try {
-            uRes = await sdSessions.unet.run(feeds);
-        } catch (e) {
-             // Fallback if model expects int64 timestep
-             if(e.message && e.message.includes("Tensor type mismatch")) {
-                 const tT_int = new ort.Tensor('int64', new BigInt64Array([BigInt(t)]), [1]);
-                 feeds[uInputs[1]] = tT_int;
-                 uRes = await sdSessions.unet.run(feeds);
-                 if (tT_int.dispose) tT_int.dispose();
-             } else {
-                 throw e;
-             }
-        }
-        
-        const np = await toF32(Object.values(uRes)[0]);
-        
-        // LCM step: model predicts x0 directly, we jump straight there
-        const aT    = alphasCumprod[t];
-        const aPrev = s < timesteps.length - 1 ? alphasCumprod[timesteps[s + 1]] : 1.0;
-        const sqrtAT         = Math.sqrt(aT);
-        const sqrtOneMinusAT = Math.sqrt(1 - aT);
-        const sqrtAPrev         = Math.sqrt(aPrev);
-        const sqrtOneMinusAPrev = Math.sqrt(1 - aPrev);
-        
-        // For 1-step, aPrev is 1.0, so sqrtAPrev = 1, sqrtOneMinusAPrev = 0
-        // Meaning latent becomes exactly clampedX0
-        
-        for (let i = 0; i < latent.length; i++) {
-            // UNet output in LCM is the predicted noise or velocity, but for this specific LCM ONNX export
-            // it usually predicts the noise (epsilon) or directly x0 depending on the wrapper.
-            // Assuming it predicts noise (epsilon) like standard SD, then LCM formula is:
-            // predX0 = (x_t - sqrt(1-aT) * epsilon) / sqrt(aT)
-            const epsilon = np.data[i];
-            const predX0 = (latent[i] - sqrtOneMinusAT * epsilon) / (sqrtAT + 1e-8);
-            // const clampedX0 = Math.max(-2, Math.min(2, predX0)); // optional clamping
-            
-            // LCM update: jump to x_prev
-            latent[i] = sqrtAPrev * predX0 + sqrtOneMinusAPrev * epsilon;
-        }
-        
-        if (tT.dispose) tT.dispose(); if (lT.dispose) lT.dispose();
-        Object.values(uRes).forEach(x => { if (x && x.dispose) x.dispose(); });
-    }
-    
-    if (encF32 && encF32 !== textEmb && encF32.dispose) encF32.dispose();
+        const t     = timesteps[s];
+        const tPrev = s < timesteps.length - 1 ? timesteps[s + 1] : 0;
 
+        postMessage({ type: 'progress', msg: 'Denoising step ' + (s + 1) + '/' + timesteps.length + ' (t=' + t + ')...' });
+
+        const aT    = alphasCumprod[t];
+        const aPrev = alphasCumprod[tPrev];
+        const sqrtAT    = Math.sqrt(aT);
+        const sqrtATPrev = Math.sqrt(aPrev);
+        const sqrtOneMinusAT    = Math.sqrt(1 - aT);
+        const sqrtOneMinusATPrev = Math.sqrt(1 - aPrev);
+
+        // Run UNet for conditional embedding
+        const condNoise   = await runUNet(latent.slice(), t, condEmb,   lH, lW);
+        // Run UNet for unconditional embedding
+        const uncondNoise = await runUNet(latent.slice(), t, uncondEmb, lH, lW);
+
+        // CFG: guided_noise = uncond + scale * (cond - uncond)
+        // DDIM step: predict x0, then step to x_{t-1}
+        for (let i = 0; i < latent.length; i++) {
+            const eps = uncondNoise.data[i] + CFG_SCALE * (condNoise.data[i] - uncondNoise.data[i]);
+            // Predict x0: x0 = (x_t - sqrt(1-aT)*eps) / sqrt(aT)
+            const predX0 = (latent[i] - sqrtOneMinusAT * eps) / (sqrtAT + 1e-8);
+            // DDIM step to x_{t-1}
+            latent[i] = sqrtATPrev * predX0 + sqrtOneMinusATPrev * eps;
+        }
+    }
+
+    if (condEmb.dispose)   condEmb.dispose();
+    if (uncondEmb.dispose) uncondEmb.dispose();
+
+    // ── 4. VAE decode ─────────────────────────────────────────────────────
     postMessage({ type: 'progress', msg: 'Decoding image...' });
-    const scale = 1/0.18215;
-    const scaled = new Float32Array(latent.length);
-    for (let i = 0; i < scaled.length; i++) scaled[i] = latent[i] * scale;
-    const scaledT = new ort.Tensor('float32', scaled, [1,4,lH,lW]);
+
+    const VAE_SCALE = 1.0 / 0.18215;
+    const scaledLatent = new Float32Array(latent.length);
+    for (let i = 0; i < latent.length; i++) scaledLatent[i] = latent[i] * VAE_SCALE;
+
+    const scaledT = new ort.Tensor('float32', scaledLatent, [1, 4, lH, lW]);
     const vaeName = (sdSessions.vaeDecoder.inputNames && sdSessions.vaeDecoder.inputNames[0]) || 'latent_sample';
-    const vaeFeeds = {}; vaeFeeds[vaeName] = scaledT;
-    const vaeRes = await sdSessions.vaeDecoder.run(vaeFeeds);
-    const imgT = await toF32(Object.values(vaeRes)[0]);
+    const vaeRes  = await sdSessions.vaeDecoder.run({ [vaeName]: scaledT });
+    const imgT    = await toF32(Object.values(vaeRes)[0]);
     if (scaledT.dispose) scaledT.dispose();
     Object.values(vaeRes).forEach(x => { if (x && x.dispose) x.dispose(); });
-    if (textEmb.dispose) textEmb.dispose();
 
-    // Convert tensor to RGBA pixels and send back
+    // ── 5. Tensor → RGBA pixels ───────────────────────────────────────────
+    // Output shape: [1, 3, H, W] — channel-first
     const imgData = imgT.data;
-    const plane = H * W;
-    const pixels = new Uint8ClampedArray(H * W * 4);
+    const plane   = H * W;
+    const pixels  = new Uint8ClampedArray(H * W * 4);
     for (let i = 0; i < plane; i++) {
-        const r = imgData[i], g = imgData[plane+i], b = imgData[plane*2+i];
-        pixels[i*4]   = isNaN(r)?0:Math.min(255,Math.max(0,Math.round((r+1)*127.5)));
-        pixels[i*4+1] = isNaN(g)?0:Math.min(255,Math.max(0,Math.round((g+1)*127.5)));
-        pixels[i*4+2] = isNaN(b)?0:Math.min(255,Math.max(0,Math.round((b+1)*127.5)));
-        pixels[i*4+3] = 255;
+        const r = imgData[i],             // channel 0
+              g = imgData[plane + i],     // channel 1
+              b = imgData[plane * 2 + i]; // channel 2
+        // Clamp from [-1, 1] → [0, 255]
+        pixels[i * 4]     = isNaN(r) ? 0 : Math.min(255, Math.max(0, Math.round((r + 1) * 127.5)));
+        pixels[i * 4 + 1] = isNaN(g) ? 0 : Math.min(255, Math.max(0, Math.round((g + 1) * 127.5)));
+        pixels[i * 4 + 2] = isNaN(b) ? 0 : Math.min(255, Math.max(0, Math.round((b + 1) * 127.5)));
+        pixels[i * 4 + 3] = 255;
     }
     postMessage({ type: 'done', pixels: pixels.buffer, width: W, height: H }, [pixels.buffer]);
 }
@@ -722,7 +847,7 @@ self.onmessage = async (e) => {
     if (bu) baseUrl = bu;
     if (type === 'generate') {
         try { await generate(prompt, width, height, numSteps); }
-        catch(err) { postMessage({ type: 'error', msg: err.message }); }
+        catch(err) { postMessage({ type: 'error', msg: err.message || String(err) }); }
     }
 };
         `;
@@ -1246,8 +1371,8 @@ self.onmessage = async (e) => {
                 const finalPrompt = buildImagePrompt(userText, styleMod);
                 for (let i = 0; i < count; i++) {
                     updateProgress(`Generating image ${i + 1} of ${count}...`);
-                    // Call generation with 1 step specifically for LCM
-                    const imgUrl = await sdGenerateImage(finalPrompt, width, height, 1, updateProgress);
+                    // 4 DDIM steps with CFG=7.5 — correct for segmind/tiny-sd (distilled SD1.5)
+                    const imgUrl = await sdGenerateImage(finalPrompt, width, height, 4, updateProgress);
 
                     const imgObj = { url: imgUrl, prompt: finalPrompt };
                     const loader = document.getElementById(loaderId);
