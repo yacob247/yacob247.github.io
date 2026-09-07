@@ -504,7 +504,7 @@ async function createSession(buf) {
     throw new Error('Could not create ONNX session — all configs failed');
 }
 
-// ── BPE Tokenizer (real CLIP tokenizer, not char-level) ───────────────────
+// ── BPE Tokenizer: worker-safe, no TextEncoder, correct merge key sep ──────
 async function loadTokenizer() {
     if (sdTokenizer) return;
     const [vr, mr] = await Promise.all([
@@ -512,107 +512,75 @@ async function loadTokenizer() {
         fetch(baseUrl + 'tokenizer/merges.txt')
     ]);
     if (!vr.ok || !mr.ok) throw new Error('Tokenizer files missing from R2');
-    const vocab = await vr.json();
+    const encoder = await vr.json();
     const mergesText = await mr.text();
 
-    // Build encoder: token-string → id
-    // Build decoder: id → token-string
-    const encoder = vocab; // { "token</w>": id, ... }
-    const decoder = {};
-    for (const [k,v] of Object.entries(encoder)) decoder[v] = k;
-
-    // Build merge rank map: "a|b" → rank (lower = higher priority)
+    // Build merge rank map. Key separator is a real null byte written as a
+    // JS string literal inside the blob — safe because blob source is a JS
+    // string, not parsed template. We use String.fromCharCode(0) at runtime.
+    const SEP = String.fromCharCode(0);
     const mergeRanks = {};
-    mergesText.split('\\n').slice(1).filter(Boolean).forEach((line, idx) => {
-        const [a, b] = line.split(' ');
-        if (a && b) mergeRanks[a + '\\u0000' + b] = idx;
-    });
+    const lines = mergesText.split('\n');
+    for (let i = 1; i < lines.length; i++) {
+        const sp = lines[i].trim().split(' ');
+        if (sp.length === 2) mergeRanks[sp[0] + SEP + sp[1]] = i - 1;
+    }
 
-    // Byte-to-unicode map (standard CLIP/GPT-2)
-    const byteEncoder = buildByteEncoder();
-
-    sdTokenizer = { encoder, decoder, mergeRanks, byteEncoder };
-}
-
-function buildByteEncoder() {
-    const bs = [];
-    for (let i = '!'.charCodeAt(0); i <= '~'.charCodeAt(0); i++) bs.push(i);
-    for (let i = '¡'.charCodeAt(0); i <= '¬'.charCodeAt(0); i++) bs.push(i);
-    for (let i = '®'.charCodeAt(0); i <= 'ÿ'.charCodeAt(0); i++) bs.push(i);
-    const cs = bs.slice();
-    let n = 0;
+    // GPT-2 / CLIP byte-to-unicode table (no TextEncoder needed)
+    const byteToUnicode = {};
+    const printable = [];
+    for (let i = 33;  i <= 126; i++) printable.push(i);
+    for (let i = 161; i <= 172; i++) printable.push(i);
+    for (let i = 174; i <= 255; i++) printable.push(i);
+    let extra = 0;
     for (let b = 0; b < 256; b++) {
-        if (!bs.includes(b)) { bs.push(b); cs.push(256 + n); n++; }
+        byteToUnicode[b] = printable.indexOf(b) !== -1
+            ? String.fromCharCode(b)
+            : String.fromCharCode(256 + extra++);
     }
-    const map = {};
-    bs.forEach((b, i) => { map[b] = String.fromCharCode(cs[i]); });
-    return map;
+
+    sdTokenizer = { encoder, mergeRanks, byteToUnicode, SEP };
 }
 
-function bpe(token, mergeRanks) {
-    let word = token.split('').map(c => {
-        let encoded = '';
-        for (const byte of new TextEncoder().encode(c)) {
-            encoded += sdTokenizer.byteEncoder[byte];
-        }
-        return encoded;
-    });
-    // Append end-of-word marker to last char
-    word[word.length - 1] = word[word.length - 1] + '</w>';
-
-    let pairs = getPairs(word);
-    if (!pairs.length) return [word.join('')];
-
-    while (true) {
-        let best = null, bestRank = Infinity;
-        for (const pair of pairs) {
-            const key = pair[0] + '\\u0000' + pair[1];
-            const rank = mergeRanks[key];
-            if (rank !== undefined && rank < bestRank) { bestRank = rank; best = pair; }
-        }
-        if (best === null) break;
-        const [first, second] = best;
-        const newWord = [];
-        let i = 0;
-        while (i < word.length) {
-            const j = word.indexOf(first, i);
-            if (j === -1) { newWord.push(...word.slice(i)); break; }
-            newWord.push(...word.slice(i, j));
-            if (j < word.length - 1 && word[j + 1] === second) {
-                newWord.push(first + second);
-                i = j + 2;
-            } else {
-                newWord.push(word[j]);
-                i = j + 1;
-            }
-        }
-        word = newWord;
-        pairs = getPairs(word);
-        if (!pairs.length) break;
-    }
-    return word;
+// UTF-8 encode a single char to its GPT-2 byte-unicode representation
+function charToByteStr(ch) {
+    const code = ch.charCodeAt(0);
+    const B = sdTokenizer.byteToUnicode;
+    if (code < 128) return B[code];
+    if (code < 2048) return B[0xC0 | (code >> 6)] + B[0x80 | (code & 0x3F)];
+    return B[0xE0 | (code >> 12)] + B[0x80 | ((code >> 6) & 0x3F)] + B[0x80 | (code & 0x3F)];
 }
 
-function getPairs(word) {
-    const pairs = [];
-    for (let i = 0; i < word.length - 1; i++) pairs.push([word[i], word[i+1]]);
-    return pairs;
+// Iterative BPE merge (no recursion, no pairs array allocation each loop)
+function bpeMerge(syms) {
+    const SEP = sdTokenizer.SEP;
+    const ranks = sdTokenizer.mergeRanks;
+    while (syms.length > 1) {
+        let best = Infinity, bestIdx = -1;
+        for (let i = 0; i < syms.length - 1; i++) {
+            const r = ranks[syms[i] + SEP + syms[i + 1]];
+            if (r !== undefined && r < best) { best = r; bestIdx = i; }
+        }
+        if (bestIdx === -1) break;
+        syms.splice(bestIdx, 1, syms[bestIdx] + syms[bestIdx + 1]);
+        syms.splice(bestIdx + 1, 1);
+    }
+    return syms;
 }
 
 function tokenize(text) {
-    // SOT=49406, EOT=49407, PAD=49407  (standard CLIP)
     const SOT = 49406, EOT = 49407;
     const ids = [SOT];
+    const words = ((text || '').toLowerCase()).match(/\S+/g) || [];
 
-    // Basic CLIP pre-tokenization: lowercase, strip non-ASCII-ish, split words
-    const cleaned = text.toLowerCase().replace(/["""]/g, '"').replace(/[''']/g, "'");
-    const wordRe = /\\S+/g;
-    const wordTokens = cleaned.match(wordRe) || [];
-
-    for (const word of wordTokens) {
-        const bpeTokens = bpe(word, sdTokenizer.mergeRanks);
-        for (const bt of bpeTokens) {
-            const id = sdTokenizer.encoder[bt];
+    for (const word of words) {
+        const syms = [];
+        for (let i = 0; i < word.length; i++) syms.push(charToByteStr(word[i]));
+        if (!syms.length) continue;
+        syms[syms.length - 1] += '</w>';
+        const merged = bpeMerge(syms);
+        for (const tok of merged) {
+            const id = sdTokenizer.encoder[tok];
             if (id !== undefined) ids.push(id);
         }
     }
