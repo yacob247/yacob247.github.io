@@ -1870,9 +1870,12 @@ Return ONLY the runnable code — no explanations outside comments, no markdown 
             
             // Fast path: pass URL directly to ORT for streaming load
             // ORT will use browser HTTP cache if available - much faster than loading full buffer
-            onProgress(`${label} loading...`);
+            onProgress('0');
             await new Promise(r => setTimeout(r, 50));
-            return await sdCreateSession(modelUrl);
+            onProgress('50');
+            const session = await sdCreateSession(modelUrl);
+            onProgress('100');
+            return session;
         }
 
         async function sdLoadModel(onProgress) {
@@ -1887,21 +1890,30 @@ Return ONLY the runnable code — no explanations outside comments, no markdown 
                 // tight machines. Sequential = one big alloc at a time.
                 await sdLoadTokenizer();
 
-                onProgress('Preparing UNet (fp16)...');
-                sdSessions.unet = await sdLoadComponentSession('unet/model.onnx', 'UNet', onProgress);
+                // Step 1/3: UNet
+                onProgress('Step 1/3 - Loading UNet (33%)');
+                sdSessions.unet = await sdLoadComponentSession('unet/model.onnx', 'UNet', (pct) => {
+                    onProgress(`Step 1/3 - Loading UNet (${pct}%)`);
+                });
 
-                onProgress('Preparing Text Encoder (fp16)...');
-                sdSessions.textEncoder = await sdLoadComponentSession('text_encoder/model.onnx', 'Text Encoder', onProgress);
+                // Step 2/3: Text Encoder
+                onProgress('Step 2/3 - Loading Text Encoder (66%)');
+                sdSessions.textEncoder = await sdLoadComponentSession('text_encoder/model.onnx', 'Text Encoder', (pct) => {
+                    onProgress(`Step 2/3 - Loading Text Encoder (${pct}%)`);
+                });
 
-                onProgress('Preparing VAE Decoder (fp16)...');
-                sdSessions.vaeDecoder = await sdLoadComponentSession('vae_decoder/model.onnx', 'VAE Decoder', onProgress);
+                // Step 3/3: VAE Decoder
+                onProgress('Step 3/3 - Loading VAE Decoder (90%)');
+                sdSessions.vaeDecoder = await sdLoadComponentSession('vae_decoder/model.onnx', 'VAE Decoder', (pct) => {
+                    onProgress(`Step 3/3 - Loading VAE Decoder (${pct}%)`);
+                });
 
                 sdModelLoaded = true;
                 // Weights were copied into the ORT WASM heap - free the JS-side copies
                 // (~1GB of RAM) so runtime runs have maximum headroom.
                 sdModelBuffers = {};
                 setSpeedStatus('Local WASM SIMD', true);
-                onProgress('Local pipeline ready!');
+                onProgress('Complete! Local pipeline ready! (100%)');
             } catch(e) { 
                 sdModelLoading = false; 
                 throw e; 
@@ -3012,7 +3024,7 @@ async function sdGenerateImageWithRecovery(prompt, width, height, numSteps, onPr
                     temperature: 0.7,
                     top_p: 0.9,
                     stream: false,
-                    max_tokens: 1500
+                    max_tokens: 120000
                 }).then(r => {
                     const content = r.choices && r.choices[0] && r.choices[0].message && r.choices[0].message.content;
                     return content || '';
@@ -3239,10 +3251,14 @@ async function sdGenerateImageWithRecovery(prompt, width, height, numSteps, onPr
             if (sdModelLoaded || sdModelLoading) return;
             sdLoadModel((msg) => {
                 // Route loading progress into the sidebar status pill instead of a chat loader
-                if (msg.includes('ready')) setSpeedStatus('Engine Ready', true);
-                else setSpeedStatus('Preloading: ' + msg.replace(/ \(instant\)|Compiling /g, '').substring(0, 28), false);
+                if (msg.includes('ready') || msg.includes('100%')) {
+                    setSpeedStatus('Engine Ready ✓', true);
+                } else {
+                    // Show step and percentage: "Step 1/3 - Loading UNet (33%)"
+                    setSpeedStatus(msg.substring(0, 35), false);
+                }
             }).then(() => {
-                showToast('Image engine preloaded and ready');
+                showToast('Image engine preloaded and ready! ✓');
             }).catch((e) => {
                 console.warn('[Preload] Background model load failed (will retry on first generation):', e);
                 preloadStarted = false;
