@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en" data-theme="claude" data-mode="dark" class="antialiased scroll-smooth">
 
 <head>
@@ -1743,6 +1743,7 @@ Return ONLY the runnable code — no explanations outside comments, no markdown 
                 ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/';
                 ort.env.wasm.numThreads = (self.crossOriginIsolated && navigator.hardwareConcurrency) ? Math.min(8, navigator.hardwareConcurrency) : 1;
                 ort.env.wasm.simd = true;
+                ort.env.wasm.proxy = false;
             }
         }
 
@@ -1786,15 +1787,20 @@ Return ONLY the runnable code — no explanations outside comments, no markdown 
 
         // Backend: WASM CPU only. No WebGPU code path exists - zero GPU crashes.
         // Memory pattern/arena caching disabled to minimise WASM heap pressure (OOM safety).
-        async function sdCreateSession(arrayBuffer) {
-            const bufferView = new Uint8Array(arrayBuffer);
+        async function sdCreateSession(source) {
             setSpeedStatus('CPU (WASM SIMD)', true);
-            return await ort.InferenceSession.create(bufferView, {
+            // Pass URL string directly to ORT for faster streaming load (avoids loading entire buffer into JS heap)
+            const sessionOptions = {
                 executionProviders: ['wasm'],
                 graphOptimizationLevel: 'all',
                 enableMemPattern: false,
                 enableCpuMemArena: false
-            });
+            };
+            if (typeof source === 'string') {
+                return await ort.InferenceSession.create(source, sessionOptions);
+            }
+            const bufferView = new Uint8Array(source);
+            return await ort.InferenceSession.create(bufferView, sessionOptions);
         }
 
         // --- Reliability-first engine config ---
@@ -1859,10 +1865,14 @@ Return ONLY the runnable code — no explanations outside comments, no markdown 
         // (it doubles memory and would only break a tight machine worse). Instead the
         // caller drops to 384px, and beyond that a reload resets the heap.
         async function sdLoadComponentSession(filename, label, onProgress) {
-            const buf = await sdGetModelBuffer(filename, onProgress, label);
-            onProgress('Compiling ' + label + ' session...');
+            const baseUrl = getBaseUrl();
+            const modelUrl = baseUrl + filename;
+            
+            // Fast path: pass URL directly to ORT for streaming load
+            // ORT will use browser HTTP cache if available - much faster than loading full buffer
+            onProgress(`${label} loading...`);
             await new Promise(r => setTimeout(r, 50));
-            return await sdCreateSession(buf);
+            return await sdCreateSession(modelUrl);
         }
 
         async function sdLoadModel(onProgress) {
@@ -4248,7 +4258,7 @@ function renderCodePreview() {
     if (lang === 'html') iframe.srcdoc = code;
     else if (lang === 'css') iframe.srcdoc = '<style>' + code + '</style><h1>Heading</h1><p>Sample paragraph.</p><button>Button</button>';
     else iframe.srcdoc = '<body style="font-family:monospace;background:#111;color:#9f9;padding:12px;white-space:pre-wrap">' +
-        escapeHTML('// Preview for HTML/CSS. Use Run for JS / Python.') + '</body>';
+    escapeHTML('// Preview for HTML/CSS. Use Run for JS / Python.') + '<\/body>';
 }
 function toggleCodePreview() {
     const frame = ui$('code-preview-frame');
