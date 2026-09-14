@@ -220,12 +220,16 @@ async function detectBackend() {
 // Besides telling the UI whether the model is cached, this fires off a
 // background warmup so the 180 MB model, the ORT runtime and the parsed ONNX
 // session are all ready by the time the user clicks "Separate".
-async function preloadCheck() {
+async function preloadCheck(warm) {
   try {
     const cached = await idbGet(IDB_KEY);
     const has = cached && ((cached instanceof Blob && cached.size > 0) || (cached instanceof ArrayBuffer && cached.byteLength > 0));
     self.postMessage({ type: 'cacheStatus', has });
   } catch(e) { self.postMessage({ type: 'cacheStatus', has: false }); }
+  // On mobile we do NOT auto-download the big model (that's what makes the
+  // browser run out of memory and reload the page). We only warm it up on
+  // desktop; on phones the model loads when the user clicks "Separate".
+  if (!warm) return;
   warmup().catch(() => self.postMessage({ type: 'cacheStatus', has: false }));   // fire-and-forget; 'separate' joins it if still running, retries on failure
 }
 
@@ -307,7 +311,12 @@ self.onmessage = async (e) => {
   const { cmd } = e.data;
 
   if (cmd === 'precheck') {
-    await preloadCheck();
+    await preloadCheck(true);
+    return;
+  }
+
+  if (cmd === 'checkOnly') {
+    await preloadCheck(false);
     return;
   }
 
@@ -379,10 +388,13 @@ let _onDone = null;
 let _onError = (err) => { console.error('Worker error:', err); };
 worker.onerror = (e) => { if (_onError) _onError(new Error(e.message)); };
 
-// Precheck + background preload: the worker downloads the cached model (if
-// missing) and parses the ONNX session right away, so click→"Separate"
-// skips download / import / parse entirely. Status is mirrored to the badge.
-worker.postMessage({ cmd: 'precheck' });
+// Precheck + background preload: on desktop the worker downloads the cached
+// model (if missing) and parses the ONNX session right away, so click→
+// "Separate" skips download / import / parse entirely. On phones we only
+// check the cache and wait — auto-loading the 180 MB model is what makes the
+// mobile browser run out of memory and reload (refresh) the page.
+const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+worker.postMessage({ cmd: isMobile ? 'checkOnly' : 'precheck' });
 
 // ── Worker message router ────────────────────────────────────
 worker.onmessage = (e) => {
