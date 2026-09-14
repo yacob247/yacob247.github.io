@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stemly — AI Vocal & Instrumental Separator</title>
+<style>
+:root { --bg0:#06080f; --card:rgba(17,24,39,.72); --line:rgba(94,234,212,.14);
+  --teal:#2dd4bf; --violet:#a78bfa; --pink:#f472b6; --text:#e2e8f0; --dim:#7c8aa5; }
+* { box-sizing:border-box; margin:0; padding:0; }
+body { font-family:'Segoe UI',system-ui,sans-serif; color:var(--text); background:var(--bg0); overflow-x:hidden; min-height:100vh; }
+.aurora{position:fixed;inset:0;z-index:-1;overflow:hidden;}
+.aurora span{position:absolute;border-radius:50%;filter:blur(90px);opacity:.5;animation:drift 22s ease-in-out infinite alternate;}
+.aurora span:nth-child(1){width:46vw;height:46vw;left:-10vw;top:-12vw;background:#134e4a;}
+.aurora span:nth-child(2){width:40vw;height:40vw;right:-8vw;top:10vh;background:#3b1d5e;animation-delay:-7s;}
+.aurora span:nth-child(3){width:34vw;height:34vw;left:25vw;bottom:-16vw;background:#0c2d48;animation-delay:-13s;}
+@keyframes drift{from{transform:translate(0,0) scale(1);}to{transform:translate(6vw,4vh) scale(1.15);}}
+.wrap{max-width:860px;margin:0 auto;padding:40px 20px 80px;}
+header{text-align:center;margin-bottom:36px;}
+.logo{display:inline-flex;align-items:center;gap:12px;margin-bottom:10px;}
+.logo .dot{width:14px;height:14px;border-radius:50%;background:linear-gradient(135deg,var(--teal),var(--violet));box-shadow:0 0 18px var(--teal);animation:pulse 2.4s ease-in-out infinite;}
+@keyframes pulse{50%{box-shadow:0 0 30px var(--teal);transform:scale(1.15);}}
+.logo h1{font-size:2.1rem;letter-spacing:-.5px;background:linear-gradient(90deg,var(--teal),var(--violet),var(--pink));-webkit-background-clip:text;background-clip:text;color:transparent;}
+header p{color:var(--dim);font-size:.95rem;}
+.badge{display:inline-block;margin-top:12px;padding:5px 14px;font-size:.72rem;font-weight:700;letter-spacing:1.2px;border-radius:999px;border:1px solid var(--line);color:var(--teal);background:rgba(45,212,191,.06);text-transform:uppercase;}
+.dropzone{border:2px dashed rgba(148,163,184,.35);border-radius:20px;padding:56px 24px;text-align:center;cursor:pointer;transition:all .25s ease;background:var(--card);backdrop-filter:blur(14px);}
+.dropzone:hover,.dropzone.over{border-color:var(--teal);background:rgba(45,212,191,.05);transform:translateY(-2px);box-shadow:0 12px 40px rgba(45,212,191,.12);}
+.dropzone.over .dz-icon{transform:scale(1.25) rotate(-6deg);}
+.dz-icon{font-size:3rem;margin-bottom:14px;transition:transform .25s ease;}
+.dz-title{font-size:1.25rem;font-weight:700;}
+.dz-sub{color:var(--dim);margin-top:6px;font-size:.9rem;}
+.filecard{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:18px;display:flex;align-items:center;gap:16px;backdrop-filter:blur(14px);animation:rise .4s ease;}
+.filecard canvas{flex:1;min-width:0;border-radius:10px;background:rgba(0,0,0,.3);}
+.filemeta{min-width:180px;}
+.fname{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px;}
+.fdur{color:var(--dim);font-size:.85rem;margin-top:4px;}
+.changebtn{background:none;border:1px solid var(--line);color:var(--dim);padding:8px 16px;border-radius:10px;cursor:pointer;font-size:.85rem;}
+.changebtn:hover{color:var(--teal);border-color:var(--teal);}
+@keyframes rise{from{opacity:0;transform:translateY(14px);}to{opacity:1;transform:none;}}
+</style>
+</head>
+<body>
+<div class="aurora"><span></span><span></span><span></span></div>
+<div class="wrap">
+  <header>
+    <div class="logo"><div class="dot"></div><h1>Stemly</h1></div>
+    <p>AI-powered vocal &amp; instrumental separation. Runs 100% on your device — nothing is uploaded.</p>
+    <div class="badge" id="backendBadge">Detecting engine…</div>
+  </header>
+  <section id="stageUpload">
+    <div id="dropzone" class="dropzone">
+      <div class="dz-icon">🎵</div>
+      <div class="dz-title">Drop your track here</div>
+      <div class="dz-sub">or click to browse — MP3, WAV, OGG, FLAC</div>
+      <input type="file" id="fileInput" accept="audio/*" hidden>
+    </div>
+    <div id="fileCard" class="filecard" hidden>
+      <canvas id="wavePreview" height="72"></canvas>
+      <div class="filemeta"><div class="fname" id="fileName"></div><div class="fdur" id="fileDur"></div></div>
+      <button class="changebtn" id="changeBtn">Change</button>
+    </div>
+    <button id="runBtn" class="cta" disabled><span id="ctaText">Select a track to begin</span></button>
+    <div id="modelStatus" class="model-status"><span class="spinner"></span>Loading AI model…</div>
+  </section>
+  <section id="stageProcess" hidden>
+    <div class="card">
+      <canvas id="procViz" width="760" height="120"></canvas>
+      <div class="bar"><div class="bar-fill" id="barFill"></div></div>
+      <div class="prow"><div class="ptext" id="procText">Initializing AI engine…</div><div class="ptimer" id="procTimer">0:00</div></div>
+      <div class="pnote">AI processing algorithm running locally on your device</div>
+    </div>
+  </section>
+  <section id="stageResult" hidden>
+    <div id="doneStat" class="donestat"></div>
+    <div id="stems"></div>
+    <button id="againBtn" class="cta ghost">Separate another track</button>
+  </section>
+</div>
+<script type="importmap">
+{"imports":{"onnxruntime-web":"https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.all.bundle.min.mjs"}}
+</script>
+<style>
+.cta{display:block;width:100%;margin-top:18px;padding:16px 24px;font-size:1.05rem;font-weight:700;color:#041210;background:linear-gradient(90deg,var(--teal),#4ade80);border:none;border-radius:16px;cursor:pointer;transition:all .25s ease;box-shadow:0 8px 30px rgba(45,212,191,.25);}
+.cta:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 12px 44px rgba(45,212,191,.4);}
+.cta:disabled{opacity:.35;cursor:not-allowed;filter:saturate(.4);}
+.cta.ghost{background:none;border:1px solid var(--line);color:var(--dim);box-shadow:none;}
+.cta.ghost:hover{color:var(--teal);border-color:var(--teal);}
+.card{background:var(--card);border:1px solid var(--line);border-radius:24px;padding:26px;backdrop-filter:blur(14px);animation:rise .4s ease;}
+#procViz{width:100%;height:120px;display:block;border-radius:12px;background:rgba(0,0,0,.35);}
+.bar{height:10px;background:rgba(148,163,184,.12);border-radius:999px;margin-top:18px;overflow:hidden;}
+.bar-fill{height:100%;width:0%;border-radius:999px;background:linear-gradient(90deg,var(--teal),var(--violet),var(--pink));position:relative;overflow:hidden;transition:width .4s ease;contain:layout style paint;}
+.bar-fill::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.35) 50%,transparent 100%);background-size:50% 100%;background-repeat:no-repeat;animation:shimmer 1.6s linear infinite;will-change:transform;}
+@keyframes shimmer{from{transform:translateX(-50%);}to{transform:translateX(150%);}}
+.prow{display:flex;justify-content:space-between;align-items:center;margin-top:14px;}
+.ptext{font-size:1.02rem;}
+.ptimer{font-variant-numeric:tabular-nums;color:var(--teal);font-weight:700;font-size:1.02rem;}
+.pnote{color:var(--dim);font-size:.82rem;margin-top:8px;text-align:center;}
+.donestat{background:linear-gradient(90deg,rgba(45,212,191,.1),rgba(167,139,250,.1));border:1px solid var(--line);border-radius:16px;padding:18px 24px;text-align:center;margin-bottom:22px;animation:rise .5s ease;}
+.donestat .big{font-size:1.25rem;font-weight:800;}
+.donestat .sub{color:var(--dim);font-size:.88rem;margin-top:6px;}
+.stemcard{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:20px;margin-top:16px;backdrop-filter:blur(14px);animation:rise .5s ease;}
+.stemcard canvas{width:100%;height:84px;display:block;border-radius:10px;background:rgba(0,0,0,.35);}
+.stemhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}
+.stemname{font-weight:800;font-size:1.05rem;letter-spacing:.5px;text-transform:uppercase;}
+.stemname.vocals{color:var(--teal);} .stemname.instrumental{color:var(--violet);}
+.stemactions{display:flex;gap:10px;}
+.btn{background:rgba(45,212,191,.1);border:1px solid var(--line);color:var(--teal);padding:9px 18px;border-radius:10px;font-weight:700;font-size:.85rem;cursor:pointer;text-decoration:none;transition:all .2s ease;}
+.btn:hover{background:rgba(45,212,191,.2);transform:translateY(-1px);}
+audio{width:100%;margin-top:12px;height:36px;}
+.fade-in{animation:rise .5s ease;}
+[hidden]{display:none !important;}
+.model-status{text-align:center;margin-top:14px;font-size:.82rem;color:var(--dim);min-height:1.2em;transition:color .3s;}
+.model-status.ready{color:var(--teal);}
+.model-status.error{color:#fbbf24;}
+.model-status .spinner{display:inline-block;width:12px;height:12px;border:2px solid var(--line);border-top-color:var(--teal);border-radius:50%;animation:spin .8s linear infinite;vertical-align:middle;margin-right:6px;}
+@keyframes spin{to{transform:rotate(360deg);}}
+</style>
+<script type="module">
+import * as ort from 'onnxruntime-web';
+import { DemucsProcessor, CONSTANTS } from './demucs-web-lib/index.js';
+
+const MODEL_URLS = [
+  'https://pub-406a7f3fa4d44f41b5317520aa1aaf4a.r2.dev/newwwww/htdemucs_embedded.onnx', // published (Cloudflare R2)
+  './htdemucs_embedded.onnx' // local dev fallback
+];
+const SAMPLE_RATE = CONSTANTS.SAMPLE_RATE;
+const $ = id => document.getElementById(id);
+const fmtTime = s => { s = Math.max(0, Math.round(s)); return Math.floor(s/60) + ':' + String(s%60).padStart(2,'0'); };
+
+function drawWave(canvas, left, c1, c2) {
+  const dpr = 2;
+  const W = canvas.width = canvas.clientWidth * dpr;
+  const H = canvas.height;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+  const grad = ctx.createLinearGradient(0, 0, W, 0);
+  grad.addColorStop(0, c1); grad.addColorStop(1, c2);
+  ctx.fillStyle = grad;
+  const step = left.length / W;
+  for (let x = 0; x < W; x++) {
+    let mn = 1, mx = -1;
+    const s0 = Math.floor(x * step), s1 = Math.min(left.length, Math.floor((x + 1) * step));
+    const inc = Math.max(1, Math.floor((s1 - s0) / 50));
+    for (let i = s0; i < s1; i += inc) { if (left[i] < mn) mn = left[i]; if (left[i] > mx) mx = left[i]; }
+    if (mn > mx) { mn = 0; mx = 0; }
+    const y1 = (H / 2) * (1 - mx), y2 = (H / 2) * (1 - mn);
+    ctx.fillRect(x, y1, dpr * 0.6, Math.max(dpr * 0.6, y2 - y1));
+  }
+}
+
+/* ---------- animated processing visualizer ---------- */
+let vizRAF = null;
+function startProcViz() {
+  const canvas = $('procViz');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const bars = 64;
+  let t = 0;
+  function frame() {
+    t += 0.06;
+    ctx.clearRect(0, 0, W, H);
+    const bw = W / bars;
+    for (let i = 0; i < bars; i++) {
+      const v = Math.abs(Math.sin(t * 1.4 + i * 0.55)) * Math.abs(Math.sin(t * 0.7 + i * 0.21));
+      const h = 8 + v * (H - 24);
+      const x = i * bw + bw * 0.2, w = bw * 0.6;
+      const g = ctx.createLinearGradient(0, H / 2 - h / 2, 0, H / 2 + h / 2);
+      const hue = 170 + Math.sin(i * 0.15 + t * 0.5) * 60;
+      g.addColorStop(0, `hsla(${hue},80%,65%,.95)`);
+      g.addColorStop(1, `hsla(${hue + 40},80%,55%,.35)`);
+      ctx.fillStyle = g;
+      const y = H / 2 - h / 2;
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, w / 2);
+      ctx.fill();
+    }
+    vizRAF = requestAnimationFrame(frame);
+  }
+  frame();
+}
+function stopProcViz() { if (vizRAF) { cancelAnimationFrame(vizRAF); vizRAF = null; } }
+
+/* ---------- state & stages ---------- */
+let currentFile = null, decoded = null, elapsedStart = 0, elapsedTimer = null;
+
+function showStage(name) {
+  ['stageUpload', 'stageProcess', 'stageResult'].forEach(id => $(id).hidden = (id !== name));
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+async function decodeToBuffer(file) {
+  const arrayBuffer = await file.arrayBuffer();
+  const audioCtx = new AudioContext({ sampleRate: SAMPLE_RATE });
+  const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+  const length = Math.ceil(audioBuffer.duration * SAMPLE_RATE);
+  const offline = new OfflineAudioContext(2, length, SAMPLE_RATE);
+  const src = offline.createBufferSource();
+  src.buffer = audioBuffer;
+  src.connect(offline.destination);
+  src.start();
+  const rendered = await offline.startRendering();
+  return { audioBuffer, left: rendered.getChannelData(0),
+    right: rendered.numberOfChannels > 1 ? rendered.getChannelData(1) : rendered.getChannelData(0) };
+}
+
+function loadFile(file) {
+  if (!file) return;
+  currentFile = file;
+  $('fileName').textContent = file.name;
+  $('fileDur').textContent = 'analyzing…';
+  $('dropzone').hidden = true;
+  $('fileCard').hidden = false;
+  $('runBtn').disabled = true;
+  $('ctaText').textContent = 'Analyzing track…';
+  decodeToBuffer(file).then(({ audioBuffer, left, right }) => {
+    decoded = { audioBuffer, left, right };
+    $('fileDur').textContent = fmtTime(audioBuffer.duration) + ' · ' + file.name.split('.').pop().toUpperCase();
+    drawWave($('wavePreview'), left, '#2dd4bf', '#a78bfa');
+    $('runBtn').disabled = false;
+    $('ctaText').textContent = '✨  Separate Vocals & Instrumental';
+  }).catch(err => {
+    $('ctaText').textContent = 'Could not read this file';
+    console.error(err);
+  });
+}
+
+function encodeWav(left, right, sampleRate) {
+  const len = left.length;
+  const buffer = new ArrayBuffer(44 + len * 4);
+  const view = new DataView(buffer);
+  const wstr = (o, s) => { for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i)); };
+  wstr(0, 'RIFF'); view.setUint32(4, 36 + len * 4, true); wstr(8, 'WAVE');
+  wstr(12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, 1, true);
+  view.setUint16(22, 2, true); view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 4, true); view.setUint16(32, 4, true); view.setUint16(34, 16, true);
+  wstr(36, 'data'); view.setUint32(40, len * 4, true);
+  for (let i = 0; i < len; i++) {
+    const l = Math.max(-1, Math.min(1, left[i])), r = Math.max(-1, Math.min(1, right[i]));
+    view.setInt16(44 + i * 4, l < 0 ? l * 0x8000 : l * 0x7FFF, true);
+    view.setInt16(46 + i * 4, r < 0 ? r * 0x8000 : r * 0x7FFF, true);
+  }
+  return URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }));
+}
+
+/* ---------- upload wiring ---------- */
+const dz = $('dropzone');
+dz.addEventListener('click', () => $('fileInput').click());
+$('fileInput').addEventListener('change', e => loadFile(e.target.files[0]));
+$('changeBtn').addEventListener('click', e => {
+  e.stopPropagation();
+  currentFile = null; decoded = null;
+  $('fileCard').hidden = true; $('dropzone').hidden = false;
+  $('runBtn').disabled = true; $('ctaText').textContent = 'Select a track to begin';
+  $('fileInput').value = '';
+});
+['dragover', 'dragenter'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('over'); }));
+['dragleave', 'drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('over'); }));
+dz.addEventListener('drop', e => loadFile(e.dataTransfer.files[0]));
+
+/* ---------- model cache (IndexedDB) ---------- */
+const IDB_NAME = 'stemly-cache', IDB_STORE = 'models';
+function idbOpen() {
+  return new Promise((res, rej) => {
+    const rq = indexedDB.open(IDB_NAME, 1);
+    rq.onupgradeneeded = () => rq.result.createObjectStore(IDB_STORE);
+    rq.onsuccess = () => res(rq.result);
+    rq.onerror = () => rej(rq.error);
+  });
+}
+async function idbGet(key) {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const rq = db.transaction(IDB_STORE).objectStore(IDB_STORE).get(key);
+    rq.onsuccess = () => res(rq.result || null);
+    rq.onerror = () => rej(rq.error);
+  });
+}
+async function idbPut(key, value) {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const rq = db.transaction(IDB_STORE, 'readwrite').objectStore(IDB_STORE).put(value, key);
+    rq.onsuccess = () => res(true);
+    rq.onerror = () => rej(rq.error);
+  });
+}
+async function loadModelCached(processor) {
+  const KEY = 'htdemucs_embedded_v1';
+  // 1. Cached? Load instantly from IndexedDB — no network at all.
+  let buffer = await idbGet(KEY).catch(() => null);
+  if (buffer) {
+    $('procText').textContent = 'Loading AI… it won’t take long ⚡ (cached on your device)';
+    const blobUrl = URL.createObjectURL(new Blob([buffer], { type: 'application/octet-stream' }));
+    await processor.loadModel(blobUrl);
+    URL.revokeObjectURL(blobUrl);
+    return 'cache';
+  }
+  // 2. Otherwise download once, with live progress, then save to IndexedDB.
+  let lastErr = null;
+  for (const url of MODEL_URLS) {
+    try {
+      $('procText').textContent = 'Downloading AI model… this only happens once';
+      const resp = await fetch(url, { mode: 'cors' });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const total = Number(resp.headers.get('content-length')) || 0;
+      const reader = resp.body.getReader();
+      const chunks = []; let loaded = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value); loaded += value.length;
+        if (total) {
+          const pct = (loaded / total * 100).toFixed(0);
+          $('procText').textContent = 'Downloading AI model… ' + (loaded / 1048576).toFixed(0) + ' MB (' + pct + '%) — one time only';
+          $('barFill').style.width = (loaded / total * 0.25 * 100) + '%'; // download = first 25% of the bar
+        }
+      }
+      buffer = new Blob(chunks).arrayBuffer ? await new Blob(chunks).arrayBuffer() : null;
+      if (!buffer) throw new Error('Empty download');
+      try { await idbPut(KEY, buffer); } catch (e) { console.warn('IndexedDB cache failed', e); }
+      $('procText').textContent = 'Loading AI… it won’t take long ⚡';
+      const blobUrl = URL.createObjectURL(new Blob([buffer], { type: 'application/octet-stream' }));
+      await processor.loadModel(blobUrl);
+      URL.revokeObjectURL(blobUrl);
+      return 'download';
+    } catch (e) { lastErr = e; console.warn('Model source failed:', url, e); }
+  }
+  throw lastErr || new Error('Could not load the AI model.');
+}
+
+async function detectBackend() {
+  if ('gpu' in navigator) {
+    try {
+      const adapter = await navigator.gpu.requestAdapter();
+      if (adapter) { $('backendBadge').textContent = 'WebGPU · GPU accelerated'; return 'webgpu'; }
+    } catch (e) { /* ignore */ }
+  }
+  $('backendBadge').textContent = 'WASM · CPU';
+  return 'wasm';
+}
+detectBackend();
+
+/* ---------- eager model preload (runs on page load) ---------- */
+let preloadedProcessor = null;
+
+async function fetchModelBuffer() {
+  const KEY = 'htdemucs_embedded_v1';
+  let buffer = await idbGet(KEY).catch(() => null);
+  if (buffer) return { buffer, source: 'cache' };
+
+  let lastErr = null;
+  for (const url of MODEL_URLS) {
+    try {
+      const resp = await fetch(url, { mode: 'cors' });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const total = Number(resp.headers.get('content-length')) || 0;
+      const reader = resp.body.getReader();
+      const chunks = []; let loaded = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value); loaded += value.length;
+        if (total) {
+          const pct = (loaded / total * 100).toFixed(0);
+          const el = $('modelStatus');
+          if (el) el.innerHTML = '<span class="spinner"></span>Downloading AI model… ' + pct + '%';
+        }
+      }
+      buffer = new Blob(chunks).arrayBuffer ? await new Blob(chunks).arrayBuffer() : null;
+      if (!buffer) throw new Error('Empty download');
+      try { await idbPut(KEY, buffer); } catch (e) { console.warn('IndexedDB cache failed', e); }
+      return { buffer, source: 'download' };
+    } catch (e) { lastErr = e; console.warn('Model source failed:', url, e); }
+  }
+  throw lastErr || new Error('Could not load the AI model.');
+}
+
+async function preloadModel() {
+  try {
+    const backend = await detectBackend();
+    ort.env.wasm.numThreads = (self.crossOriginIsolated ? (navigator.hardwareConcurrency || 4) : 1);
+    if (backend === 'webgpu') ort.env.webgpu = { powerPreference: 'high-performance' };
+
+    const el = $('modelStatus');
+    if (el) el.innerHTML = '<span class="spinner"></span>Loading AI engine…';
+
+    const { buffer } = await fetchModelBuffer();
+    const processor = new DemucsProcessor({
+      ort,
+      sessionOptions: backend === 'webgpu' ? undefined : { executionProviders: ['wasm'] },
+      onProgress: () => {},
+      onLog: () => {}
+    });
+
+    const blobUrl = URL.createObjectURL(new Blob([buffer], { type: 'application/octet-stream' }));
+    await processor.loadModel(blobUrl);
+    URL.revokeObjectURL(blobUrl);
+
+    preloadedProcessor = processor;
+    preloadedProcessor._backend = backend; // store for later retrieval
+    if (el) {
+      el.textContent = '✓ AI model ready — upload a track to begin';
+      el.classList.add('ready');
+    }
+  } catch (err) {
+    console.error('Model preload failed:', err);
+    preloadedProcessor = null;
+    const el = $('modelStatus');
+    if (el) {
+      el.textContent = '⚠ AI model will load when you process';
+      el.classList.add('error');
+    }
+  }
+}
+
+// Start loading the model immediately on page load
+preloadModel();
+
+/* ---------- main run ---------- */
+$('runBtn').addEventListener('click', async () => {
+  if (!decoded) return;
+  runBtn.disabled = true;
+  showStage('stageProcess');
+  startProcViz();
+  elapsedStart = Date.now();
+  elapsedTimer = setInterval(() => { $('procTimer').textContent = fmtTime((Date.now() - elapsedStart) / 1000); }, 500);
+  const phases = ['Analyzing audio structure…', 'AI processing algorithm running…', 'Isolating vocal harmonics…', 'Extracting instrumental layer…', 'Refining output quality…'];
+  let phaseIdx = 0;
+  const phaseTimer = setInterval(() => {
+    phaseIdx = (phaseIdx + 1) % phases.length;
+    $('procText').textContent = phases[phaseIdx];
+  }, 6000);
+  $('procText').textContent = phases[0];
+
+  try {
+    let processor;
+    let backend = 'wasm'; // default, will be overwritten below
+
+    if (preloadedProcessor) {
+      // Model already loaded during page load — skip loading entirely
+      processor = preloadedProcessor;
+      backend = preloadedProcessor._backend || 'wasm';
+      $('procText').textContent = 'AI model ready — starting separation…';
+      $('barFill').style.width = '25%';
+    } else {
+      // Fallback: preload didn't finish yet, load now
+      backend = await detectBackend();
+      ort.env.wasm.numThreads = (self.crossOriginIsolated ? (navigator.hardwareConcurrency || 4) : 1);
+      if (backend === 'webgpu') ort.env.webgpu = { powerPreference: 'high-performance' };
+
+      processor = new DemucsProcessor({
+        ort,
+        sessionOptions: backend === 'webgpu' ? undefined : { executionProviders: ['wasm'] },
+        onProgress: ({ progress }) => { $('barFill').style.width = (progress * 100).toFixed(1) + '%'; },
+        onLog: () => {}
+      });
+
+      $('procText').textContent = 'Loading AI model…';
+      let session = null;
+      for (const url of MODEL_URLS) {
+        try { await processor.loadModel(url); session = true; break; }
+        catch (e) { console.warn('Model load failed from', url, e); }
+      }
+      if (!session) throw new Error('Could not load the AI model from any source.');
+    }
+
+    $('procText').textContent = 'AI processing algorithm running…';
+
+    const t0 = Date.now();
+    const result = await processor.separate(decoded.left, decoded.right);
+    const elapsed = (Date.now() - t0) / 1000;
+    clearInterval(phaseTimer); clearInterval(elapsedTimer);
+    stopProcViz();
+
+    // vocals + instrumental
+    const instL = new Float32Array(decoded.left.length), instR = new Float32Array(decoded.left.length);
+    ['drums', 'bass', 'other'].forEach(name => {
+      const s = result[name]; if (!s) return;
+      for (let i = 0; i < instL.length; i++) { instL[i] += s.left[i]; instR[i] += s.right[i]; }
+    });
+    const outputs = [
+      ['vocals', result.vocals.left, result.vocals.right, '#2dd4bf', '#4ade80'],
+      ['instrumental', instL, instR, '#a78bfa', '#f472b6']
+    ];
+
+    $('doneStat').innerHTML =
+      '<div class="big">✨ AI processing completed — ' + fmtTime(decoded.audioBuffer.duration) +
+      ' of audio in ' + fmtTime(elapsed) + '</div>' +
+      '<div class="sub">Processed locally at ' + (decoded.audioBuffer.duration / elapsed).toFixed(2) + '× realtime · ' +
+      backend.toUpperCase() + ' engine · 100% private, nothing uploaded</div>';
+
+    const stemsEl = $('stems');
+    stemsEl.innerHTML = '';
+    const baseName = currentFile.name.replace(/\.[^.]+$/, '');
+    outputs.forEach(([name, l, r, c1, c2], idx) => {
+      const url = encodeWav(l, r, SAMPLE_RATE);
+      const card = document.createElement('div');
+      card.className = 'stemcard fade-in';
+      card.style.animationDelay = (idx * 0.15) + 's';
+      card.innerHTML =
+        '<div class="stemhead"><div class="stemname ' + name + '">' + name + '</div>' +
+        '<a class="btn" href="' + url + '" download="' + baseName + '_' + name + '.wav">⬇ Download WAV</a></div>' +
+        '<canvas height="84"></canvas>' +
+        '<audio controls src="' + url + '"></audio>';
+      stemsEl.appendChild(card);
+      drawWave(card.querySelector('canvas'), l, c1, c2);
+    });
+
+    showStage('stageResult');
+  } catch (err) {
+    console.error(err);
+    clearInterval(phaseTimer); clearInterval(elapsedTimer);
+    stopProcViz();
+    $('procText').textContent = 'Something went wrong: ' + (err.message || err);
+    setTimeout(() => { showStage('stageUpload'); runBtn.disabled = false; }, 4000);
+  }
+});
+
+$('againBtn').addEventListener('click', () => {
+  currentFile = null; decoded = null;
+  $('fileCard').hidden = true; $('dropzone').hidden = false;
+  $('runBtn').disabled = true; $('ctaText').textContent = 'Select a track to begin';
+  $('fileInput').value = '';
+  showStage('stageUpload');
+});
+</script>
+</body>
+</html>
