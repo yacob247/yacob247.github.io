@@ -114,18 +114,242 @@ audio{width:100%;margin-top:12px;height:36px;}
   </section>
 </div>
 
-<script type="module">
-import * as ort from 'onnxruntime-web';
-import { DemucsProcessor, CONSTANTS } from 'https://pub-406a7f3fa4d44f41b5317520aa1aaf4a.r2.dev/newwwww/demucs-web-lib/index.js';
+<!-- ═══════════════════════════════════════════════════════════════
+     WORKER BLOB — all heavy ONNX / model work runs here, off the
+     main thread so UI, YouTube, other tabs are never blocked.
+     ═══════════════════════════════════════════════════════════════ -->
+<script id="workerSrc" type="text/plain">
+// This script runs inside a Web Worker — no DOM access here.
+importScripts(); // no-op; just ensures strict worker scope
 
-const MODEL_URLS = [
-  'https://pub-406a7f3fa4d44f41b5317520aa1aaf4a.r2.dev/newwwww/htdemucs_embedded.onnx'
-];
-const SAMPLE_RATE = CONSTANTS.SAMPLE_RATE;
+// Dynamic ESM import inside worker
+let ort, DemucsProcessor, CONSTANTS;
+
+const MODEL_URL = 'https://pub-406a7f3fa4d44f41b5317520aa1aaf4a.r2.dev/newwwww/htdemucs_embedded.onnx';
+const IDB_NAME  = 'stemly-cache';
+const IDB_STORE = 'models';
+const IDB_KEY   = 'htdemucs_embedded_v1';
+
+// ── IDB helpers ──────────────────────────────────────────────
+function idbOpen() {
+  return new Promise((res, rej) => {
+    const rq = indexedDB.open(IDB_NAME, 1);
+    rq.onupgradeneeded = () => rq.result.createObjectStore(IDB_STORE);
+    rq.onsuccess = () => res(rq.result);
+    rq.onerror  = () => rej(rq.error);
+  });
+}
+async function idbGet(key) {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const rq = db.transaction(IDB_STORE).objectStore(IDB_STORE).get(key);
+    rq.onsuccess = () => res(rq.result || null);
+    rq.onerror   = () => rej(rq.error);
+  });
+}
+async function idbPut(key, value) {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const rq = db.transaction(IDB_STORE, 'readwrite').objectStore(IDB_STORE).put(value, key);
+    rq.onsuccess = () => res(true);
+    rq.onerror   = () => rej(rq.error);
+  });
+}
+
+// ── Model fetch (cache-first) ────────────────────────────────
+async function fetchModelBuffer() {
+  try {
+    const cached = await idbGet(IDB_KEY);
+    if (cached) {
+      const valid = (cached instanceof Blob && cached.size > 0) ||
+                    (cached instanceof ArrayBuffer && cached.byteLength > 0);
+      if (valid) { self.postMessage({ type: 'progress', pct: 0.25, text: 'Restoring model from offline cache…' }); return cached; }
+    }
+  } catch(e) { console.warn('IDB get failed', e); }
+
+  self.postMessage({ type: 'progress', pct: 0, text: 'Downloading AI engine… 0%' });
+  const resp = await fetch(MODEL_URL, { mode: 'cors', priority: 'high' });
+  if (!resp.ok) throw new Error('HTTP ' + resp.status);
+
+  const total = Number(resp.headers.get('content-length')) || 179300000;
+  const reader = resp.body.getReader();
+  const chunks = [];
+  let loaded = 0, lastUpdate = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    loaded += value.length;
+    const now = performance.now();
+    if (now - lastUpdate > 100) {
+      const pct = loaded / total;
+      self.postMessage({ type: 'progress', pct: pct * 0.25, text: 'Downloading AI engine… ' + Math.round(pct * 100) + '%' });
+      lastUpdate = now;
+    }
+  }
+
+  const blob = new Blob(chunks, { type: 'application/octet-stream' });
+  if (blob.size === 0) throw new Error('Empty download');
+  try { await idbPut(IDB_KEY, blob); } catch(e) { console.warn('IDB save failed (non-fatal):', e); }
+  return blob;
+}
+
+// ── Backend detection (WebGPU → WASM) ───────────────────────
+async function detectBackend() {
+  if ('gpu' in self) {
+    try {
+      const adapter = await Promise.race([
+        self.gpu.requestAdapter(),
+        new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 3000))
+      ]);
+      if (adapter) { self.postMessage({ type: 'backend', label: 'WebGPU · GPU accelerated' }); return 'webgpu'; }
+    } catch(e) {}
+  }
+  self.postMessage({ type: 'backend', label: 'WASM · CPU' });
+  return 'wasm';
+}
+
+// ── Cache pre-check (called on worker start) ─────────────────
+async function preloadCheck() {
+  try {
+    const cached = await idbGet(IDB_KEY);
+    const has = cached && ((cached instanceof Blob && cached.size > 0) || (cached instanceof ArrayBuffer && cached.byteLength > 0));
+    self.postMessage({ type: 'cacheStatus', has });
+  } catch(e) { self.postMessage({ type: 'cacheStatus', has: false }); }
+}
+
+// ── Main message handler ─────────────────────────────────────
+self.onmessage = async (e) => {
+  const { cmd } = e.data;
+
+  if (cmd === 'precheck') {
+    await preloadCheck();
+    return;
+  }
+
+  if (cmd === 'separate') {
+    const { leftBuf, rightBuf, duration } = e.data;
+    const left  = new Float32Array(leftBuf);
+    const right = new Float32Array(rightBuf);
+    const t0 = performance.now();
+
+    try {
+      // Lazy-import ESM modules (only supported in module workers; we pass type:'module' below)
+      if (!ort) {
+        self.postMessage({ type: 'progress', pct: 0, text: 'Loading AI engine…' });
+        const ortMod  = await import('https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.all.bundle.min.mjs');
+        const demMod  = await import('https://pub-406a7f3fa4d44f41b5317520aa1aaf4a.r2.dev/newwwww/demucs-web-lib/index.js');
+        ort            = ortMod;
+        DemucsProcessor = demMod.DemucsProcessor;
+        CONSTANTS      = demMod.CONSTANTS;
+      }
+
+      const backend = await detectBackend();
+      const totalCores  = (self.navigator && self.navigator.hardwareConcurrency) || 4;
+      const safeThreads = Math.max(1, Math.floor(totalCores / 2));
+      ort.env.wasm.numThreads = self.crossOriginIsolated ? safeThreads : Math.min(safeThreads, 4);
+      ort.env.wasm.simd = true;
+      if (backend === 'webgpu') ort.env.webgpu = { powerPreference: 'high-performance' };
+
+      const processor = new DemucsProcessor({
+        ort,
+        sessionOptions: backend === 'webgpu' ? undefined : { executionProviders: ['wasm'] },
+        onProgress: ({ progress }) => {
+          self.postMessage({ type: 'progress', pct: 0.25 + progress * 0.5, text: 'AI separating…' });
+        },
+        onLog: () => {}
+      });
+
+      self.postMessage({ type: 'progress', pct: 0, text: 'Checking AI model availability…' });
+      const buffer = await fetchModelBuffer();
+
+      self.postMessage({ type: 'progress', pct: 0.25, text: 'Loading AI into execution memory…' });
+      const modelBlob = (buffer instanceof Blob) ? buffer : new Blob([buffer], { type: 'application/octet-stream' });
+      const blobUrl   = URL.createObjectURL(modelBlob);
+      await processor.loadModel(blobUrl);
+      URL.revokeObjectURL(blobUrl);
+
+      self.postMessage({ type: 'progress', pct: 0.25, text: 'Starting AI Separation Task…' });
+      const results = await processor.separate(left, right);
+
+      // Merge drums+bass+other → instrumental
+      const len = left.length;
+      const instL = new Float32Array(len), instR = new Float32Array(len);
+      ['drums','bass','other'].forEach(name => {
+        if (!results[name]) return;
+        for (let i = 0; i < len; i++) { instL[i] += results[name].left[i]; instR[i] += results[name].right[i]; }
+      });
+
+      const elapsed = (performance.now() - t0) / 1000;
+      const speed   = (duration / elapsed).toFixed(1);
+
+      // Transfer Float32Arrays as transferable buffers (zero-copy)
+      const vL = results.vocals.left.buffer;
+      const vR = results.vocals.right.buffer;
+      const iL = instL.buffer;
+      const iR = instR.buffer;
+
+      self.postMessage(
+        { type: 'done', speed, sampleRate: CONSTANTS.SAMPLE_RATE,
+          vocals:       { left: vL, right: vR },
+          instrumental: { left: iL, right: iR } },
+        [vL, vR, iL, iR]  // transfer — no copy
+      );
+
+    } catch(err) {
+      self.postMessage({ type: 'error', message: err.message });
+    }
+  }
+};
+</script>
+
+<script type="module">
+// ═══════════════════════════════════════════════════════════════
+// MAIN THREAD — only UI, audio decode, waveform, WAV encode.
+// The Worker above does everything else.
+// ═══════════════════════════════════════════════════════════════
+
 const $ = id => document.getElementById(id);
 const fmtTime = s => { s = Math.max(0, Math.round(s)); return Math.floor(s/60) + ':' + String(s%60).padStart(2,'0'); };
 
-// Utilities
+// ── Spin up the worker from the inline script blob ───────────
+const workerCode = document.getElementById('workerSrc').textContent;
+const workerBlob = new Blob([workerCode], { type: 'text/javascript' });
+const workerUrl  = URL.createObjectURL(workerBlob);
+// type:'module' lets the worker use dynamic import() for ort + demucs
+const worker = new Worker(workerUrl, { type: 'module' });
+
+// Attach error handler IMMEDIATELY — module workers evaluate top-level code
+// synchronously during construction, so onerror MUST be set before any postMessage
+let _onDone = null, _onError = null;
+worker.onerror = (e) => { if (_onError) _onError(new Error(e.message)); };
+
+// Tell worker to check cache immediately (shows status badge without waiting for user click)
+worker.postMessage({ cmd: 'precheck' });
+
+// ── Worker message router ────────────────────────────────────
+worker.onmessage = (e) => {
+  const d = e.data;
+  if (d.type === 'backend') {
+    $('backendBadge').textContent = d.label;
+  } else if (d.type === 'cacheStatus') {
+    const el = $('modelStatus');
+    if (!el) return;
+    if (d.has) { el.textContent = '✓ AI model ready'; el.classList.add('ready'); }
+    else        { el.textContent = 'ℹ First run will securely download the AI model into offline storage'; }
+  } else if (d.type === 'progress') {
+    $('barFill').style.width = (d.pct * 100).toFixed(1) + '%';
+    const stepInfo = d.step !== undefined ? ` · Step ${d.step}/${d.totalSteps}` : '';
+    $('procText').textContent = d.text + stepInfo;
+  } else if (d.type === 'done') {
+    if (_onDone) _onDone(d);
+  } else if (d.type === 'error') {
+    if (_onError) _onError(new Error(d.message));
+  }
+};
+
+// ── Waveform drawing ─────────────────────────────────────────
 function drawWave(canvas, left, c1, c2) {
   const dpr = 2;
   const W = canvas.width = canvas.clientWidth * dpr;
@@ -138,47 +362,39 @@ function drawWave(canvas, left, c1, c2) {
   const step = left.length / W;
   for (let x = 0; x < W; x++) {
     let mn = 1, mx = -1;
-    const s0 = Math.floor(x * step), s1 = Math.min(left.length, Math.floor((x + 1) * step));
-    const inc = Math.max(1, Math.floor((s1 - s0) / 50));
+    const s0 = Math.floor(x * step), s1 = Math.min(left.length, Math.floor((x+1)*step));
+    const inc = Math.max(1, Math.floor((s1-s0)/50));
     for (let i = s0; i < s1; i += inc) { if (left[i] < mn) mn = left[i]; if (left[i] > mx) mx = left[i]; }
     if (mn > mx) { mn = 0; mx = 0; }
-    const y1 = (H / 2) * (1 - mx), y2 = (H / 2) * (1 - mn);
-    ctx.fillRect(x, y1, dpr * 0.6, Math.max(dpr * 0.6, y2 - y1));
+    const y1 = (H/2)*(1-mx), y2 = (H/2)*(1-mn);
+    ctx.fillRect(x, y1, dpr*0.6, Math.max(dpr*0.6, y2-y1));
   }
 }
 
+// ── Processing visualiser ────────────────────────────────────
 let vizRAF = null;
 function startProcViz() {
   const canvas = $('procViz');
   const ctx = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height;
-  const bars = 64;
-  const bw = W / bars;
-  const barW = bw * 0.6;
-
-  // Pre-build one gradient per bar at full height, then scale vertically via transform.
-  // This avoids allocating 64 gradient objects on every single frame (was 64 × 60fps = 3,840/s).
+  const bars = 64, bw = W/bars, barW = bw*0.6;
   const gradients = Array.from({ length: bars }, (_, i) => {
-    const hue = 170 + Math.sin(i * 0.15) * 60;
+    const hue = 170 + Math.sin(i*0.15)*60;
     const g = ctx.createLinearGradient(0, 0, 0, H);
     g.addColorStop(0, `hsla(${hue},80%,65%,.95)`);
-    g.addColorStop(1, `hsla(${hue + 40},80%,55%,.35)`);
+    g.addColorStop(1, `hsla(${hue+40},80%,55%,.35)`);
     return g;
   });
-
   let t = 0;
   function frame() {
     t += 0.06;
     ctx.clearRect(0, 0, W, H);
     for (let i = 0; i < bars; i++) {
-      const v = Math.abs(Math.sin(t * 1.4 + i * 0.55)) * Math.abs(Math.sin(t * 0.7 + i * 0.21));
-      const h = 8 + v * (H - 24);
-      const x = i * bw + bw * 0.2;
-      const y = H / 2 - h / 2;
+      const v = Math.abs(Math.sin(t*1.4+i*0.55))*Math.abs(Math.sin(t*0.7+i*0.21));
+      const h = 8 + v*(H-24);
+      const x = i*bw + bw*0.2, y = H/2 - h/2;
       ctx.fillStyle = gradients[i];
-      ctx.beginPath();
-      ctx.roundRect(x, y, barW, h, barW / 2);
-      ctx.fill();
+      ctx.beginPath(); ctx.roundRect(x, y, barW, h, barW/2); ctx.fill();
     }
     vizRAF = requestAnimationFrame(frame);
   }
@@ -186,27 +402,30 @@ function startProcViz() {
 }
 function stopProcViz() { if (vizRAF) { cancelAnimationFrame(vizRAF); vizRAF = null; } }
 
-// Audio Decoder
-let currentFile = null, decoded = null, elapsedStart = 0, elapsedTimer = null;
-
+// ── Stage management ─────────────────────────────────────────
 function showStage(name) {
-  ['stageUpload', 'stageProcess', 'stageResult'].forEach(id => $(id).hidden = (id !== name));
+  ['stageUpload','stageProcess','stageResult'].forEach(id => $(id).hidden = (id !== name));
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
+// ── Audio decode (main thread — uses AudioContext, not in worker) ──
+const SAMPLE_RATE = 44100; // will be overridden by worker's CONSTANTS value in results
+let currentFile = null, decoded = null, elapsedStart = 0, elapsedTimer = null;
+
 async function decodeToBuffer(file) {
   const arrayBuffer = await file.arrayBuffer();
-  const audioCtx = new AudioContext({ sampleRate: SAMPLE_RATE });
+  const audioCtx = new AudioContext({ sampleRate: 44100 });
   const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-  const length = Math.ceil(audioBuffer.duration * SAMPLE_RATE);
-  const offline = new OfflineAudioContext(2, length, SAMPLE_RATE);
+  const length = Math.ceil(audioBuffer.duration * 44100);
+  const offline = new OfflineAudioContext(2, length, 44100);
   const src = offline.createBufferSource();
-  src.buffer = audioBuffer;
-  src.connect(offline.destination);
-  src.start();
+  src.buffer = audioBuffer; src.connect(offline.destination); src.start();
   const rendered = await offline.startRendering();
-  return { audioBuffer, left: rendered.getChannelData(0),
-    right: rendered.numberOfChannels > 1 ? rendered.getChannelData(1) : rendered.getChannelData(0) };
+  return {
+    audioBuffer,
+    left:  rendered.getChannelData(0),
+    right: rendered.numberOfChannels > 1 ? rendered.getChannelData(1) : rendered.getChannelData(0)
+  };
 }
 
 function loadFile(file) {
@@ -230,286 +449,83 @@ function loadFile(file) {
   });
 }
 
-// Track all active stem blob URLs so we can revoke them when the user starts a new separation,
-// preventing unbounded memory growth.
+// ── Blob URL tracking ─────────────────────────────────────────
 let _stemBlobUrls = [];
-function revokeOldStemUrls() {
-  _stemBlobUrls.forEach(u => URL.revokeObjectURL(u));
-  _stemBlobUrls = [];
-}
+function revokeOldStemUrls() { _stemBlobUrls.forEach(u => URL.revokeObjectURL(u)); _stemBlobUrls = []; }
 
+// ── WAV encoder ───────────────────────────────────────────────
 function encodeWav(left, right, sampleRate) {
-  const numFrames = left.length;           // frames (one sample pair per frame)
-  const numChannels = 2;
-  const bitsPerSample = 16;
-  const bytesPerSample = bitsPerSample / 8; // 2
-  const blockAlign = numChannels * bytesPerSample; // 4
-  const byteRate = sampleRate * blockAlign;        // bytes/sec
-  const dataBytes = numFrames * blockAlign;        // CORRECT: frames × 4 bytes
-  const buffer = new ArrayBuffer(44 + dataBytes);
-  const view = new DataView(buffer);
-  const wstr = (o, s) => { for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i)); };
-  // RIFF chunk
-  wstr(0, 'RIFF');
-  view.setUint32(4, 36 + dataBytes, true);  // FIXED: was 36 + len*4 (same value, but now explicit)
-  wstr(8, 'WAVE');
-  // fmt  sub-chunk
-  wstr(12, 'fmt ');
-  view.setUint32(16, 16, true);             // PCM fmt chunk size
-  view.setUint16(20, 1, true);              // PCM = 1
-  view.setUint16(22, numChannels, true);    // stereo
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, byteRate, true);       // FIXED: was sampleRate*4, now computed correctly
-  view.setUint16(32, blockAlign, true);     // FIXED: was hardcoded 4, now computed
-  view.setUint16(34, bitsPerSample, true);
-  // data sub-chunk
-  wstr(36, 'data');
-  view.setUint32(40, dataBytes, true);      // FIXED: was len*4 (accidentally same), now explicit
-  // Interleave L/R samples
-  for (let i = 0; i < numFrames; i++) {
-    const l = Math.max(-1, Math.min(1, left[i]));
-    const r = Math.max(-1, Math.min(1, right[i]));
-    view.setInt16(44 + i * 4,     l < 0 ? l * 0x8000 : l * 0x7FFF, true);
-    view.setInt16(44 + i * 4 + 2, r < 0 ? r * 0x8000 : r * 0x7FFF, true); // FIXED: was offset 46, skipped 2 bytes
+  const numFrames = left.length, numChannels = 2, bitsPerSample = 16;
+  const bytesPerSample = 2, blockAlign = numChannels*bytesPerSample;
+  const byteRate = sampleRate*blockAlign, dataBytes = numFrames*blockAlign;
+  const buf = new ArrayBuffer(44+dataBytes), view = new DataView(buf);
+  const wstr = (o,s) => { for (let i=0;i<s.length;i++) view.setUint8(o+i, s.charCodeAt(i)); };
+  wstr(0,'RIFF'); view.setUint32(4, 36+dataBytes, true); wstr(8,'WAVE');
+  wstr(12,'fmt '); view.setUint32(16,16,true); view.setUint16(20,1,true);
+  view.setUint16(22,numChannels,true); view.setUint32(24,sampleRate,true);
+  view.setUint32(28,byteRate,true); view.setUint16(32,blockAlign,true);
+  view.setUint16(34,bitsPerSample,true); wstr(36,'data'); view.setUint32(40,dataBytes,true);
+  for (let i=0;i<numFrames;i++) {
+    const l = Math.max(-1,Math.min(1,left[i])), r = Math.max(-1,Math.min(1,right[i]));
+    view.setInt16(44+i*4,   l<0?l*0x8000:l*0x7FFF, true);
+    view.setInt16(44+i*4+2, r<0?r*0x8000:r*0x7FFF, true);
   }
-  const url = URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }));
-  _stemBlobUrls.push(url); // Register for later cleanup
+  const url = URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+  _stemBlobUrls.push(url);
   return url;
 }
 
+// ── Drop zone ─────────────────────────────────────────────────
 const dz = $('dropzone');
 dz.addEventListener('click', () => $('fileInput').click());
 $('fileInput').addEventListener('change', e => loadFile(e.target.files[0]));
 $('changeBtn').addEventListener('click', e => {
   e.stopPropagation();
   currentFile = null; decoded = null;
-  revokeOldStemUrls(); // Free memory from previous run
+  revokeOldStemUrls();
   $('fileCard').hidden = true; $('dropzone').hidden = false;
   $('runBtn').disabled = true; $('ctaText').textContent = 'Select a track to begin';
   $('fileInput').value = '';
 });
-['dragover', 'dragenter'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('over'); }));
-['dragleave', 'drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('over'); }));
+['dragover','dragenter'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('over'); }));
+['dragleave','drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('over'); }));
 dz.addEventListener('drop', e => loadFile(e.dataTransfer.files[0]));
 
-const IDB_NAME = 'stemly-cache', IDB_STORE = 'models';
-function idbOpen() {
-  return new Promise((res, rej) => {
-    const rq = indexedDB.open(IDB_NAME, 1);
-    rq.onupgradeneeded = () => rq.result.createObjectStore(IDB_STORE);
-    rq.onsuccess = () => res(rq.result);
-    rq.onerror = () => rej(rq.error);
-  });
-}
-async function idbGet(key) {
-  const db = await idbOpen();
-  return new Promise((res, rej) => {
-    const rq = db.transaction(IDB_STORE).objectStore(IDB_STORE).get(key);
-    rq.onsuccess = () => res(rq.result || null);
-    rq.onerror = () => rej(rq.error);
-  });
-}
-async function idbPut(key, value) {
-  const db = await idbOpen();
-  return new Promise((res, rej) => {
-    const rq = db.transaction(IDB_STORE, 'readwrite').objectStore(IDB_STORE).put(value, key);
-    rq.onsuccess = () => res(true);
-    rq.onerror = () => rej(rq.error);
-  });
-}
-
-// Detect once, cache the promise so every caller shares the same result without re-running.
-let _backendPromise = null;
-function detectBackend() {
-  if (_backendPromise) return _backendPromise;
-  _backendPromise = (async () => {
-    if ('gpu' in navigator) {
-      try {
-        const adapter = await Promise.race([
-          navigator.gpu.requestAdapter(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000))
-        ]);
-        if (adapter) { $('backendBadge').textContent = 'WebGPU · GPU accelerated'; return 'webgpu'; }
-      } catch (e) {}
-    }
-    $('backendBadge').textContent = 'WASM · CPU';
-    return 'wasm';
-  })();
-  return _backendPromise;
-}
-detectBackend(); // Kick off early so result is ready by the time user clicks Run.
-
-const IDB_KEY  = 'htdemucs_embedded_v1';
-
-async function fetchModelBuffer(url, onProgress) {
-  try {
-    const cached = await idbGet(IDB_KEY);
-    // Blobs are stored natively by IDB as file references — check .size, not .byteLength.
-    // Falls back gracefully if an old ArrayBuffer was previously stored (has .byteLength).
-    if (cached) {
-      const valid = (cached instanceof Blob && cached.size > 0) ||
-                    (cached instanceof ArrayBuffer && cached.byteLength > 0);
-      if (valid) { onProgress(1, 'cache'); return cached; }
-    }
-  } catch(e) { console.warn('IDB get failed', e); }
-
-  onProgress(0, 'network');
-  // priority:'high' = max bandwidth. No cache:'no-store' — that forces a full re-download
-  // every time AND disables browser download acceleration. Let the browser cache freely.
-  const resp = await fetch(url, { mode: 'cors', priority: 'high' });
-  if (!resp.ok) throw new Error('HTTP ' + resp.status);
-  
-  const total = Number(resp.headers.get('content-length')) || 179300000;
-  const reader = resp.body.getReader();
-  const chunks = [];
-  let loaded = 0;
-  let lastProgressUpdate = 0;
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-    loaded += value.length;
-    // Throttle DOM updates to max ~10/sec — chunks arrive ~34,000 times for 550MB.
-    // Calling onProgress every chunk forces 34,000 style recalcs and visibly slows the loop.
-    const now = performance.now();
-    if (now - lastProgressUpdate > 100) {
-      onProgress(loaded / total, 'network');
-      lastProgressUpdate = now;
-    }
-  }
-  onProgress(1, 'network'); // Ensure 100% is always reported
-
-  // PERF FIX: Store as Blob, NOT ArrayBuffer.
-  // IDB serialises ArrayBuffers into its B-tree byte-by-byte → 3-5s freeze for 550 MB.
-  // IDB stores Blobs as opaque file-system references — the write is near-instant.
-  const blob = new Blob(chunks, { type: 'application/octet-stream' });
-  if (blob.size === 0) throw new Error('Empty download');
-
-  try { await idbPut(IDB_KEY, blob); } catch(e) { console.warn('IDB save failed (non-fatal):', e); }
-  return blob;
-}
-
-// Memory-Friendly Idle Check: Checks cache on load, strictly prevents eager network downloads and memory allocation.
-async function preloadCheck() {
-  const el = $('modelStatus');
-  try {
-    const backend = await detectBackend();
-    const cached = await idbGet(IDB_KEY);
-    const hasModel = cached &&
-      ((cached instanceof Blob && cached.size > 0) ||
-       (cached instanceof ArrayBuffer && cached.byteLength > 0));
-    if (hasModel) {
-      if (el) { el.textContent = '✓ AI model ready (' + backend.toUpperCase() + ')'; el.classList.add('ready'); }
-    } else {
-      if (el) { el.textContent = 'ℹ First run will securely download the AI model into offline storage'; }
-    }
-  } catch (err) {
-    console.error('Cache check failed:', err);
-  }
-}
-preloadCheck(); // Check quietly.
-
-$('runBtn').addEventListener('click', async () => {
+// ── Run button ────────────────────────────────────────────────
+$('runBtn').addEventListener('click', () => {
   if (!decoded) return;
-  runBtn.disabled = true;
+  $('runBtn').disabled = true;
   showStage('stageProcess');
   startProcViz();
-  
+
   elapsedStart = Date.now();
-  elapsedTimer = setInterval(() => { $('procTimer').textContent = fmtTime((Date.now() - elapsedStart) / 1000); }, 500);
-  
-  const phases = ['Analyzing audio structure…', 'AI processing algorithm running…', 'Isolating vocal harmonics…', 'Extracting instrumental layer…', 'Refining output quality…'];
+  elapsedTimer = setInterval(() => { $('procTimer').textContent = fmtTime((Date.now()-elapsedStart)/1000); }, 500);
+
+  const phases = ['Analyzing audio structure…','AI processing algorithm running…','Isolating vocal harmonics…','Extracting instrumental layer…','Refining output quality…'];
   let phaseIdx = 0;
-  const phaseTimer = setInterval(() => {
-    phaseIdx = (phaseIdx + 1) % phases.length;
-    $('procText').textContent = phases[phaseIdx];
-  }, 6000);
+  const phaseTimer = setInterval(() => { phaseIdx = (phaseIdx+1)%phases.length; $('procText').textContent = phases[phaseIdx]; }, 6000);
 
-  try {
-    // 1. Determine environment strictly at runtime to avoid blocking main thread at boot.
-    const backend = await detectBackend();
+  const cleanup = () => { clearInterval(phaseTimer); clearInterval(elapsedTimer); stopProcViz(); };
 
-    // Cap threads at HALF the logical cores so the other half stay free for the rest of the
-    // browser (other tabs, UI thread, etc.).  Full hardwareConcurrency would starve other tabs.
-    const totalCores = navigator.hardwareConcurrency || 4;
-    const safeThreads = Math.max(1, Math.floor(totalCores / 2));
-    ort.env.wasm.numThreads = self.crossOriginIsolated ? safeThreads : Math.min(safeThreads, 4);
-    ort.env.wasm.simd = true;
-    if (backend === 'webgpu') ort.env.webgpu = { powerPreference: 'high-performance' };
+  _onDone = (d) => {
+    cleanup();
+    const speed = d.speed;
+    const sr    = d.sampleRate;
 
-    const processor = new DemucsProcessor({
-      ort,
-      sessionOptions: backend === 'webgpu' ? undefined : { executionProviders: ['wasm'] },
-      onProgress: ({ progress }) => { $('barFill').style.width = (progress * 25).toFixed(1) + '%'; },
-      onLog: () => {}
-    });
-
-    $('procText').textContent = 'Checking AI model availability…';
-    
-    // 2. Fetch locally from IDB, or download over Cloudflare R2 if not present.
-    const buffer = await fetchModelBuffer(MODEL_URLS[0], (pct, src) => {
-      $('procText').textContent = src === 'cache'
-        ? 'Restoring model from offline cache…'
-        : 'Downloading AI engine… ' + Math.round(pct * 100) + '%';
-      $('barFill').style.width = (pct * 25).toFixed(1) + '%';
-    });
-
-    $('procText').textContent = 'Loading AI into execution memory…';
-    
-    // 3. Compile model locally. Will release the reference when processor drops.
-    // If buffer is already a Blob (new fast path), createObjectURL it directly — no copy.
-    // If it's an ArrayBuffer (legacy cache hit), wrap it first.
-    const modelBlob = (buffer instanceof Blob)
-      ? buffer
-      : new Blob([buffer], { type: 'application/octet-stream' });
-    const blobUrl = URL.createObjectURL(modelBlob);
-    await processor.loadModel(blobUrl);
-    URL.revokeObjectURL(blobUrl); 
-
-    $('barFill').style.width = '25%';
-    $('procText').textContent = 'Starting AI Separation Task…';
-
-    // Run the heavy separation at background scheduler priority so it yields to other tabs/pages.
-    // Falls back silently to a plain call on browsers without scheduler.postTask (Safari, Firefox).
-    const results = await (
-      typeof scheduler !== 'undefined' && scheduler.postTask
-        ? scheduler.postTask(() => processor.separate(decoded.left, decoded.right), { priority: 'background' })
-        : processor.separate(decoded.left, decoded.right)
-    );
-    const speed = (decoded.audioBuffer.duration / ((Date.now() - elapsedStart) / 1000)).toFixed(1);
-    
-    clearInterval(phaseTimer);
-    clearInterval(elapsedTimer);
-    stopProcViz();
-    
     $('doneStat').innerHTML = `<div class="big">Success! Track Separated</div><div class="sub">Separation speed: ${speed}x real-time</div>`;
     $('barFill').style.width = '100%';
-    
+
     const stemsContainer = $('stems');
     stemsContainer.innerHTML = '';
-    revokeOldStemUrls(); // Free memory from any previous separation run
-    const stemOrder = ['vocals', 'drums', 'bass', 'other'];
-    const mergedInst = { left: new Float32Array(decoded.left.length), right: new Float32Array(decoded.right.length) };
-    
-    // Result Rendering 
-    stemOrder.forEach(name => {
-      if (!results[name]) return;
-      if (name !== 'vocals') {
-        for (let i = 0; i < decoded.left.length; i++) {
-          mergedInst.left[i] += results[name].left[i];
-          mergedInst.right[i] += results[name].right[i];
-        }
-      }
-    });
+    revokeOldStemUrls();
 
     const displayStems = [
-      { name: 'vocals', left: results.vocals.left, right: results.vocals.right, color: '#2dd4bf', c2: '#a78bfa' },
-      { name: 'instrumental', left: mergedInst.left, right: mergedInst.right, color: '#a78bfa', c2: '#f472b6' }
+      { name: 'vocals',        left: new Float32Array(d.vocals.left),        right: new Float32Array(d.vocals.right),        color: '#2dd4bf', c2: '#a78bfa' },
+      { name: 'instrumental',  left: new Float32Array(d.instrumental.left),  right: new Float32Array(d.instrumental.right),  color: '#a78bfa', c2: '#f472b6' }
     ];
 
     displayStems.forEach(stem => {
-      const url = encodeWav(stem.left, stem.right, SAMPLE_RATE);
+      const url = encodeWav(stem.left, stem.right, sr);
       const card = document.createElement('div');
       card.className = 'stemcard fade-in';
       card.innerHTML = `
@@ -525,18 +541,27 @@ $('runBtn').addEventListener('click', async () => {
     });
 
     showStage('stageResult');
-  } catch (err) {
-    clearInterval(phaseTimer);
-    clearInterval(elapsedTimer);
-    stopProcViz();
+  };
+
+  _onError = (err) => {
+    cleanup();
     console.error(err);
     alert('Processing failed: ' + err.message);
     showStage('stageUpload');
-  }
+    $('runBtn').disabled = false;
+  };
+
+  // Send audio to worker as transferable buffers (zero-copy, instant)
+  const leftBuf  = decoded.left.buffer.slice(0);
+  const rightBuf = decoded.right.buffer.slice(0);
+  worker.postMessage(
+    { cmd: 'separate', leftBuf, rightBuf, duration: decoded.audioBuffer.duration },
+    [leftBuf, rightBuf]
+  );
 });
 
 $('againBtn').addEventListener('click', () => {
-  revokeOldStemUrls(); // Free memory before resetting
+  revokeOldStemUrls();
   $('changeBtn').click();
   showStage('stageUpload');
   $('barFill').style.width = '0%';
