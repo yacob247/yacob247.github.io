@@ -354,23 +354,31 @@ async function fetchModelBuffer(url, onProgress) {
   } catch(e) { console.warn('IDB get failed', e); }
 
   onProgress(0, 'network');
-  // fetchPriority:'high' tells the browser to treat this as a top-priority network request,
-  // giving it maximum bandwidth — exactly what we want for the model download.
-  const resp = await fetch(url, { mode: 'cors', cache: 'no-store', priority: 'high' });
+  // priority:'high' = max bandwidth. No cache:'no-store' — that forces a full re-download
+  // every time AND disables browser download acceleration. Let the browser cache freely.
+  const resp = await fetch(url, { mode: 'cors', priority: 'high' });
   if (!resp.ok) throw new Error('HTTP ' + resp.status);
   
   const total = Number(resp.headers.get('content-length')) || 179300000;
   const reader = resp.body.getReader();
-  const chunks = []; 
+  const chunks = [];
   let loaded = 0;
-  
+  let lastProgressUpdate = 0;
+
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    chunks.push(value); 
+    chunks.push(value);
     loaded += value.length;
-    onProgress(loaded / total, 'network'); 
+    // Throttle DOM updates to max ~10/sec — chunks arrive ~34,000 times for 550MB.
+    // Calling onProgress every chunk forces 34,000 style recalcs and visibly slows the loop.
+    const now = performance.now();
+    if (now - lastProgressUpdate > 100) {
+      onProgress(loaded / total, 'network');
+      lastProgressUpdate = now;
+    }
   }
+  onProgress(1, 'network'); // Ensure 100% is always reported
 
   // PERF FIX: Store as Blob, NOT ArrayBuffer.
   // IDB serialises ArrayBuffers into its B-tree byte-by-byte → 3-5s freeze for 550 MB.
