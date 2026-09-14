@@ -282,55 +282,11 @@ async function idbPut(key, value) {
     rq.onerror = () => rej(rq.error);
   });
 }
-async function loadModelCached(processor) {
-  const KEY = 'htdemucs_embedded_v1';
-  // 1. Cached? Load instantly from IndexedDB — no network at all.
-  let buffer = await idbGet(KEY).catch(() => null);
-  if (buffer) {
-    $('procText').textContent = 'Loading AI… it won’t take long ⚡ (cached on your device)';
-    const blobUrl = URL.createObjectURL(new Blob([buffer], { type: 'application/octet-stream' }));
-    await processor.loadModel(blobUrl);
-    URL.revokeObjectURL(blobUrl);
-    return 'cache';
-  }
-  // 2. Otherwise download once, with live progress, then save to IndexedDB.
-  let lastErr = null;
-  for (const url of MODEL_URLS) {
-    try {
-      $('procText').textContent = 'Downloading AI model… this only happens once';
-      const resp = await fetch(url, { mode: 'cors' });
-      if (!resp.ok) throw new Error('HTTP ' + resp.status);
-      const total = Number(resp.headers.get('content-length')) || 0;
-      const reader = resp.body.getReader();
-      const chunks = []; let loaded = 0;
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value); loaded += value.length;
-        if (total) {
-          const pct = (loaded / total * 100).toFixed(0);
-          $('procText').textContent = 'Downloading AI model… ' + (loaded / 1048576).toFixed(0) + ' MB (' + pct + '%) — one time only';
-          $('barFill').style.width = (loaded / total * 0.25 * 100) + '%'; // download = first 25% of the bar
-        }
-      }
-      buffer = new Blob(chunks).arrayBuffer ? await new Blob(chunks).arrayBuffer() : null;
-      if (!buffer) throw new Error('Empty download');
-      try { await idbPut(KEY, buffer); } catch (e) { console.warn('IndexedDB cache failed', e); }
-      $('procText').textContent = 'Loading AI… it won’t take long ⚡';
-      const blobUrl = URL.createObjectURL(new Blob([buffer], { type: 'application/octet-stream' }));
-      await processor.loadModel(blobUrl);
-      URL.revokeObjectURL(blobUrl);
-      return 'download';
-    } catch (e) { lastErr = e; console.warn('Model source failed:', url, e); }
-  }
-  throw lastErr || new Error('Could not load the AI model.');
-}
-
 async function detectBackend() {
   if ('gpu' in navigator) {
     try {
       const adapter = await Promise.race([
-        navigator.gpu.requestAdapter(),
+        navigator.gpu.requestAdapter(), // powerPreference ignored on Windows (crbug.com/369219127)
         new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000))
       ]);
       if (adapter) { $('backendBadge').textContent = 'WebGPU · GPU accelerated'; return 'webgpu'; }
@@ -341,6 +297,76 @@ async function detectBackend() {
 }
 detectBackend();
 
+/* ---------- fast model fetch: IDB → Cache API → network ---------- */
+const IDB_KEY  = 'htdemucs_embedded_v1';
+const CACHE_NAME = 'stemly-model-v1';
+
+async function fetchModelBuffer(url, onProgress) {
+  // 1. Try IndexedDB (fastest — raw ArrayBuffer, no re-download)
+  try {
+    const buf = await idbGet(IDB_KEY);
+    if (buf) { onProgress(1, 'cache'); return { buf, source: 'idb' }; }
+  } catch(e) { console.warn('IDB get failed', e); }
+
+  // 2. Try Cache API (serves from disk, no network, streams fast)
+  if ('caches' in self) {
+    try {
+      const cache = await caches.open(CACHE_NAME);
+      const cached = await cache.match(url);
+      if (cached) {
+        const buf = await cached.arrayBuffer();
+        if (buf && buf.byteLength > 0) { onProgress(1, 'cache'); return { buf, source: 'cache-api' }; }
+      }
+    } catch(e) { console.warn('Cache API get failed', e); }
+  }
+
+  // 3. Network download with streaming progress
+  onProgress(0, 'network');
+  const resp = await fetch(url, { mode: 'cors', cache: 'no-store' });
+  if (!resp.ok) throw new Error('HTTP ' + resp.status);
+  const total = Number(resp.headers.get('content-length')) || 0;
+
+  // Stream into a pre-allocated Uint8Array when size known (avoids Blob GC churn)
+  let buf;
+  if (total > 0) {
+    const dest = new Uint8Array(total);
+    const reader = resp.clone().body.getReader();
+    let offset = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      dest.set(value, offset); offset += value.length;
+      onProgress(offset / total, 'network');
+    }
+    buf = dest.buffer;
+  } else {
+    // Unknown size — collect chunks
+    const reader = resp.body.getReader();
+    const chunks = []; let loaded = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value); loaded += value.length;
+      onProgress(loaded / (loaded + 1), 'network'); // fake progress
+    }
+    buf = await new Blob(chunks).arrayBuffer();
+  }
+  if (!buf || buf.byteLength === 0) throw new Error('Empty download');
+
+  // Save to both caches in background (don't await — don't block load)
+  (async () => {
+    try { await idbPut(IDB_KEY, buf); } catch(e) { console.warn('IDB save failed', e); }
+    try {
+      if ('caches' in self) {
+        const cache = await caches.open(CACHE_NAME);
+        await cache.put(url, new Response(buf.slice(0), { headers: { 'Content-Type': 'application/octet-stream' } }));
+      }
+    } catch(e) { console.warn('Cache API save failed', e); }
+  })();
+
+  return { buf, source: 'network' };
+}
+
 /* ---------- eager model preload (runs on page load) ---------- */
 let preloadedProcessor = null;
 
@@ -350,8 +376,14 @@ async function preloadModel() {
     if (el) el.innerHTML = '<span class="spinner"></span>Loading AI model…';
 
     const backend = await detectBackend();
-    ort.env.wasm.numThreads = (self.crossOriginIsolated ? (navigator.hardwareConcurrency || 4) : 1);
-    if (backend === 'webgpu') ort.env.webgpu = { powerPreference: 'high-performance' };
+
+    // WASM: use as many threads as possible — try without crossOriginIsolated check first
+    // (some hosts set COOP/COEP, some don't; hardwareConcurrency is a good hint regardless)
+    ort.env.wasm.numThreads = Math.max(1, Math.min(navigator.hardwareConcurrency || 4, self.crossOriginIsolated ? (navigator.hardwareConcurrency || 4) : 4));
+    ort.env.wasm.simd = true; // explicit SIMD enable
+    if (backend === 'webgpu') {
+      ort.env.webgpu = { powerPreference: 'high-performance' };
+    }
 
     const processor = new DemucsProcessor({
       ort,
@@ -360,42 +392,28 @@ async function preloadModel() {
       onLog: () => {}
     });
 
-    // Download from R2 with progress, then load into ORT (caches compiled model)
-    for (const url of MODEL_URLS) {
-      try {
-        if (el) el.innerHTML = '<span class="spinner"></span>Downloading… 0%';
-        
-        // Fetch with progress tracking
-        const resp = await fetch(url, { mode: 'cors' });
-        if (!resp.ok) throw new Error('HTTP ' + resp.status);
-        const total = Number(resp.headers.get('content-length')) || 0;
-        const reader = resp.body.getReader();
-        const chunks = []; let loaded = 0;
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          chunks.push(value); loaded += value.length;
-          if (total) {
-            const pct = Math.round(loaded / total * 100);
-            if (el) el.innerHTML = '<span class="spinner"></span>Downloading… ' + pct + '%';
-          }
-        }
-        const buffer = await new Blob(chunks).arrayBuffer();
-        if (!buffer) throw new Error('Empty download');
+   const url = MODEL_URLS[0];
+const resp = await fetch(url, { mode: 'cors', cache: 'force-cache' });
+if (!resp.ok) throw new Error('HTTP ' + resp.status);
+const total = Number(resp.headers.get('content-length')) || 179300000;
+const reader = resp.body.getReader();
+const chunks = []; let loaded = 0;
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
+  chunks.push(value); loaded += value.length;
+  if (el) el.innerHTML = '<span class="spinner"></span>Downloading… ' + Math.round(loaded / total * 100) + '%';
+}
+const buffer = await new Blob(chunks).arrayBuffer();
+if (!buffer || buffer.byteLength === 0) throw new Error('Empty download');
 
-        // Load from buffer (ORT Web caches compiled model for next time)
-        if (el) el.innerHTML = '<span class="spinner"></span>Compiling model…';
-        const blobUrl = URL.createObjectURL(new Blob([buffer], { type: 'application/octet-stream' }));
-        await processor.loadModel(blobUrl);
-        URL.revokeObjectURL(blobUrl);
-        break;
-      } catch (e) {
-        console.warn('Model load failed from', url, e);
-        if (url === MODEL_URLS[MODEL_URLS.length - 1]) {
-          throw new Error('Could not load AI model from any source.');
-        }
-      }
-    }
+idbPut(IDB_KEY, buffer).catch(e => console.warn('IDB save failed', e));
+if (el) el.innerHTML = '<span class="spinner"></span>Compiling model…';
+
+
+const blobUrl = URL.createObjectURL(new Blob([buffer], { type: 'application/octet-stream' }));
+    await processor.loadModel(blobUrl);
+    URL.revokeObjectURL(blobUrl);
 
     preloadedProcessor = processor;
     preloadedProcessor._backend = backend;
@@ -443,25 +461,30 @@ $('runBtn').addEventListener('click', async () => {
       $('procText').textContent = 'AI model ready — starting separation…';
       $('barFill').style.width = '25%';
     } else {
-      // Fallback: preload didn't finish yet, load now
+      // Fallback: preload didn't finish yet, load now (reuses IDB/Cache cache if available)
       backend = await detectBackend();
-      ort.env.wasm.numThreads = (self.crossOriginIsolated ? (navigator.hardwareConcurrency || 4) : 1);
+      ort.env.wasm.numThreads = Math.max(1, Math.min(navigator.hardwareConcurrency || 4, self.crossOriginIsolated ? (navigator.hardwareConcurrency || 4) : 4));
+      ort.env.wasm.simd = true;
       if (backend === 'webgpu') ort.env.webgpu = { powerPreference: 'high-performance' };
 
       processor = new DemucsProcessor({
         ort,
         sessionOptions: backend === 'webgpu' ? undefined : { executionProviders: ['wasm'] },
-        onProgress: ({ progress }) => { $('barFill').style.width = (progress * 100).toFixed(1) + '%'; },
+        onProgress: ({ progress }) => { $('barFill').style.width = (progress * 25).toFixed(1) + '%'; },
         onLog: () => {}
       });
 
       $('procText').textContent = 'Loading AI model…';
-      let session = null;
-      for (const url of MODEL_URLS) {
-        try { await processor.loadModel(url); session = true; break; }
-        catch (e) { console.warn('Model load failed from', url, e); }
-      }
-      if (!session) throw new Error('Could not load the AI model from any source.');
+      const { buf: fallbackBuf } = await fetchModelBuffer(MODEL_URLS[0], (pct, src) => {
+        $('procText').textContent = src === 'cache'
+          ? 'Loading model from cache…'
+          : 'Downloading AI model… ' + Math.round(pct * 100) + '%';
+        $('barFill').style.width = (pct * 25).toFixed(1) + '%';
+      });
+      $('procText').textContent = 'Compiling model…';
+      const fbUrl = URL.createObjectURL(new Blob([fallbackBuf], { type: 'application/octet-stream' }));
+      await processor.loadModel(fbUrl);
+      URL.revokeObjectURL(fbUrl);
     }
 
     $('procText').textContent = 'AI processing algorithm running…';
