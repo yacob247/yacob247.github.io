@@ -125,6 +125,12 @@ audio{width:100%;margin-top:12px;height:36px;}
 // Dynamic ESM import inside worker
 let ort, DemucsProcessor, CONSTANTS;
 
+// Warm, parsed ONNX session — created once during background preload (see
+// preloadCheck -> warmup) and reused for every separation so the
+// click-to-inference path skips download / import / parse entirely.
+let _processor = null;
+let _warmupPromise = null;
+
 const MODEL_URL = 'https://pub-406a7f3fa4d44f41b5317520aa1aaf4a.r2.dev/newwwww/htdemucs_embedded.onnx';
 const IDB_NAME  = 'stemly-cache';
 const IDB_STORE = 'models';
@@ -210,13 +216,90 @@ async function detectBackend() {
   return 'wasm';
 }
 
-// ── Cache pre-check (called on worker start) ─────────────────
+// ── Cache pre-check + background AI preload (called on worker start) ──
+// Besides telling the UI whether the model is cached, this fires off a
+// background warmup so the 180 MB model, the ORT runtime and the parsed ONNX
+// session are all ready by the time the user clicks "Separate".
 async function preloadCheck() {
   try {
     const cached = await idbGet(IDB_KEY);
     const has = cached && ((cached instanceof Blob && cached.size > 0) || (cached instanceof ArrayBuffer && cached.byteLength > 0));
     self.postMessage({ type: 'cacheStatus', has });
   } catch(e) { self.postMessage({ type: 'cacheStatus', has: false }); }
+  warmup().catch(() => self.postMessage({ type: 'cacheStatus', has: false }));   // fire-and-forget; 'separate' joins it if still running, retries on failure
+}
+
+// ── Background warmup: import runtime + parse ONNX session once ────────────────
+// Started by `precheck` so the 180 MB download, the ORT import and the (slow)
+// model-graph parsing all happen while the user is still on the upload screen.
+// The parsed session is kept on `_processor` and reused by every later
+// separation, so clicking "Separate" skips straight to inference.
+async function warmup() {
+  if (_processor) return _processor;
+  if (_warmupPromise) return _warmupPromise;
+
+  _warmupPromise = (async () => {
+    self.postMessage({ type: 'cacheStatus', has: 'loading', text: 'Preparing AI engine…' });
+
+    // 1) Import ONNX Runtime Web + the demucs wrapper (HTTP-cacheable bundles)
+    self.postMessage({ type: 'progress', pct: 0, text: 'Loading AI engine…' });
+    const ortMod = await import('https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.all.bundle.min.mjs');
+    const demMod = await import('https://pub-406a7f3fa4d44f41b5317520aa1aaf4a.r2.dev/newwwww/demucs-web-lib/index.js');
+    ort = ortMod;
+    DemucsProcessor = demMod.DemucsProcessor;
+    CONSTANTS = demMod.CONSTANTS;
+
+    // 2) Backend + thread configuration
+    const backend     = await detectBackend();
+    const totalCores  = (self.navigator && self.navigator.hardwareConcurrency) || 4;
+    const safeThreads = Math.max(1, Math.floor(totalCores / 2));
+    ort.env.wasm.numThreads = self.crossOriginIsolated ? safeThreads : Math.min(safeThreads, 4);
+    ort.env.wasm.simd = true;
+    if (backend === 'webgpu') ort.env.webgpu = { powerPreference: 'high-performance' };
+
+    // 3) Model bytes — cache-first via IndexedDB
+    self.postMessage({ type: 'progress', pct: 0.25, text: 'Checking AI model availability…' });
+    const buffer = await fetchModelBuffer();
+
+    // 4) Parse the ONNX graph into an InferenceSession (the slow bit — off screen)
+    self.postMessage({ type: 'progress', pct: 0.25, text: 'Loading AI into execution memory…' });
+    const arrayBuffer = buffer instanceof ArrayBuffer ? buffer : await buffer.arrayBuffer();
+
+    let parseTick = 0;
+    const parseMessages = [
+      'Parsing AI model graph…',
+      'Optimizing model for your device…',
+      'Building computation graph…',
+      'Finalizing model setup…'
+    ];
+    const parseInterval = setInterval(() => {
+      parseTick = (parseTick + 1) % parseMessages.length;
+      self.postMessage({ type: 'progress', pct: 0.25 + Math.min(parseTick * 0.01, 0.05), text: parseMessages[parseTick] });
+    }, 2000);
+
+    try {
+      const processor = new DemucsProcessor({
+        ort,
+        sessionOptions: { executionProviders: [backend] },
+        onProgress: ({ progress }) => {
+          self.postMessage({ type: 'progress', pct: 0.25 + progress * 0.5, text: 'AI separating…' });
+        },
+        onLog: () => {}
+      });
+      await processor.loadModel(arrayBuffer);
+      _processor = processor;
+      self.postMessage({ type: 'cacheStatus', has: true });
+      return processor;
+    } finally {
+      clearInterval(parseInterval);
+    }
+  })();
+
+  try {
+    return await _warmupPromise;
+  } finally {
+    _warmupPromise = null;   // release so a failed warmup can be retried on 'separate'
+  }
 }
 
 // ── Main message handler ─────────────────────────────────────
@@ -235,41 +318,12 @@ self.onmessage = async (e) => {
     const t0 = performance.now();
 
     try {
-      // Lazy-import ESM modules (only supported in module workers; we pass type:'module' below)
-      if (!ort) {
-        self.postMessage({ type: 'progress', pct: 0, text: 'Loading AI engine…' });
-        const ortMod  = await import('https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.all.bundle.min.mjs');
-        const demMod  = await import('https://pub-406a7f3fa4d44f41b5317520aa1aaf4a.r2.dev/newwwww/demucs-web-lib/index.js');
-        ort            = ortMod;
-        DemucsProcessor = demMod.DemucsProcessor;
-        CONSTANTS      = demMod.CONSTANTS;
-      }
+      // Heavy lifting (download / import / parse) now happens in the
+      // background warmup() started at page load. Here we just join it —
+      // instant if it already finished — then run inference on the ready session.
+      self.postMessage({ type: 'progress', pct: 0, text: 'Starting AI Separation Task…' });
+      const processor = await warmup();
 
-      const backend = await detectBackend();
-      const totalCores  = (self.navigator && self.navigator.hardwareConcurrency) || 4;
-      const safeThreads = Math.max(1, Math.floor(totalCores / 2));
-      ort.env.wasm.numThreads = self.crossOriginIsolated ? safeThreads : Math.min(safeThreads, 4);
-      ort.env.wasm.simd = true;
-      if (backend === 'webgpu') ort.env.webgpu = { powerPreference: 'high-performance' };
-
-      const processor = new DemucsProcessor({
-        ort,
-        sessionOptions: { executionProviders: [backend] },
-        onProgress: ({ progress }) => {
-          self.postMessage({ type: 'progress', pct: 0.25 + progress * 0.5, text: 'AI separating…' });
-        },
-        onLog: () => {}
-      });
-
-      self.postMessage({ type: 'progress', pct: 0, text: 'Checking AI model availability…' });
-      const buffer = await fetchModelBuffer();
-
-      self.postMessage({ type: 'progress', pct: 0.25, text: 'Loading AI into execution memory…' });
-      // Convert Blob to ArrayBuffer if needed, then pass directly to skip the fetch() overhead
-      const arrayBuffer = buffer instanceof ArrayBuffer ? buffer : await buffer.arrayBuffer();
-      await processor.loadModel(arrayBuffer);
-
-      self.postMessage({ type: 'progress', pct: 0.25, text: 'Starting AI Separation Task…' });
       const results = await processor.separate(left, right);
 
       // Merge drums+bass+other → instrumental
@@ -325,7 +379,9 @@ let _onDone = null;
 let _onError = (err) => { console.error('Worker error:', err); };
 worker.onerror = (e) => { if (_onError) _onError(new Error(e.message)); };
 
-// Tell worker to check cache immediately (shows status badge without waiting for user click)
+// Precheck + background preload: the worker downloads the cached model (if
+// missing) and parses the ONNX session right away, so click→"Separate"
+// skips download / import / parse entirely. Status is mirrored to the badge.
 worker.postMessage({ cmd: 'precheck' });
 
 // ── Worker message router ────────────────────────────────────
@@ -336,8 +392,9 @@ worker.onmessage = (e) => {
   } else if (d.type === 'cacheStatus') {
     const el = $('modelStatus');
     if (!el) return;
-    if (d.has) { el.textContent = '✓ AI model ready'; el.classList.add('ready'); }
-    else        { el.textContent = 'ℹ First run will securely download the AI model into offline storage'; }
+    if (d.has === 'loading') { el.textContent = d.text || 'Preloading AI engine…'; el.classList.remove('ready'); }
+    else if (d.has)          { el.textContent = '✓ AI model ready'; el.classList.add('ready'); }
+    else                     { el.textContent = 'ℹ First run will securely download the AI model into offline storage'; }
   } else if (d.type === 'progress') {
     $('barFill').style.width = (d.pct * 100).toFixed(1) + '%';
     const stepInfo = d.step !== undefined ? ` · Step ${d.step}/${d.totalSteps}` : '';
@@ -465,10 +522,16 @@ function encodeWav(left, right, sampleRate) {
   view.setUint16(22,numChannels,true); view.setUint32(24,sampleRate,true);
   view.setUint32(28,byteRate,true); view.setUint16(32,blockAlign,true);
   view.setUint16(34,bitsPerSample,true); wstr(36,'data'); view.setUint32(40,dataBytes,true);
+  // Fast PCM-16 encode: bulk-write samples through an Int16Array view over the
+  // data region (little-endian on all desktop/mobile browsers = WAV byte order),
+  // avoiding the slow per-sample DataView.setInt16() call for long tracks.
+  const samples = new Int16Array(buf, 44);
   for (let i=0;i<numFrames;i++) {
-    const l = Math.max(-1,Math.min(1,left[i])), r = Math.max(-1,Math.min(1,right[i]));
-    view.setInt16(44+i*4,   l<0?l*0x8000:l*0x7FFF, true);
-    view.setInt16(44+i*4+2, r<0?r*0x8000:r*0x7FFF, true);
+    let l = left[i], r = right[i];
+    if (l > 1) l = 1; else if (l < -1) l = -1;
+    if (r > 1) r = 1; else if (r < -1) r = -1;
+    samples[i*2]   = (l < 0 ? l * 0x8000 : l * 0x7FFF) | 0;
+    samples[i*2+1] = (r < 0 ? r * 0x8000 : r * 0x7FFF) | 0;
   }
   const url = URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
   _stemBlobUrls.push(url);
