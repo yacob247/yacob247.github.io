@@ -120,7 +120,7 @@ audio{width:100%;margin-top:12px;height:36px;}
      ═══════════════════════════════════════════════════════════════ -->
 <script id="workerSrc" type="text/plain">
 // This script runs inside a Web Worker — no DOM access here.
-importScripts(); // no-op; just ensures strict worker scope
+// Module worker — importScripts() not available; using dynamic import() instead
 
 // Dynamic ESM import inside worker
 let ort, DemucsProcessor, CONSTANTS;
@@ -254,7 +254,7 @@ self.onmessage = async (e) => {
 
       const processor = new DemucsProcessor({
         ort,
-        sessionOptions: backend === 'webgpu' ? undefined : { executionProviders: ['wasm'] },
+        sessionOptions: { executionProviders: [backend] },
         onProgress: ({ progress }) => {
           self.postMessage({ type: 'progress', pct: 0.25 + progress * 0.5, text: 'AI separating…' });
         },
@@ -265,10 +265,9 @@ self.onmessage = async (e) => {
       const buffer = await fetchModelBuffer();
 
       self.postMessage({ type: 'progress', pct: 0.25, text: 'Loading AI into execution memory…' });
-      const modelBlob = (buffer instanceof Blob) ? buffer : new Blob([buffer], { type: 'application/octet-stream' });
-      const blobUrl   = URL.createObjectURL(modelBlob);
-      await processor.loadModel(blobUrl);
-      URL.revokeObjectURL(blobUrl);
+      // Convert Blob to ArrayBuffer if needed, then pass directly to skip the fetch() overhead
+      const arrayBuffer = buffer instanceof ArrayBuffer ? buffer : await buffer.arrayBuffer();
+      await processor.loadModel(arrayBuffer);
 
       self.postMessage({ type: 'progress', pct: 0.25, text: 'Starting AI Separation Task…' });
       const results = await processor.separate(left, right);
@@ -320,9 +319,10 @@ const workerUrl  = URL.createObjectURL(workerBlob);
 // type:'module' lets the worker use dynamic import() for ort + demucs
 const worker = new Worker(workerUrl, { type: 'module' });
 
-// Attach error handler IMMEDIATELY — module workers evaluate top-level code
-// synchronously during construction, so onerror MUST be set before any postMessage
-let _onDone = null, _onError = null;
+// Initialize error handler BEFORE worker starts — if the worker fails during
+// module evaluation (e.g. import() fails), we need to log it, not swallow it
+let _onDone = null;
+let _onError = (err) => { console.error('Worker error:', err); };
 worker.onerror = (e) => { if (_onError) _onError(new Error(e.message)); };
 
 // Tell worker to check cache immediately (shows status badge without waiting for user click)
