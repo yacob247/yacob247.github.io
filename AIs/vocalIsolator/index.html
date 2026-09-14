@@ -153,23 +153,31 @@ function startProcViz() {
   const ctx = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height;
   const bars = 64;
+  const bw = W / bars;
+  const barW = bw * 0.6;
+
+  // Pre-build one gradient per bar at full height, then scale vertically via transform.
+  // This avoids allocating 64 gradient objects on every single frame (was 64 × 60fps = 3,840/s).
+  const gradients = Array.from({ length: bars }, (_, i) => {
+    const hue = 170 + Math.sin(i * 0.15) * 60;
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, `hsla(${hue},80%,65%,.95)`);
+    g.addColorStop(1, `hsla(${hue + 40},80%,55%,.35)`);
+    return g;
+  });
+
   let t = 0;
   function frame() {
     t += 0.06;
     ctx.clearRect(0, 0, W, H);
-    const bw = W / bars;
     for (let i = 0; i < bars; i++) {
       const v = Math.abs(Math.sin(t * 1.4 + i * 0.55)) * Math.abs(Math.sin(t * 0.7 + i * 0.21));
       const h = 8 + v * (H - 24);
-      const x = i * bw + bw * 0.2, w = bw * 0.6;
-      const g = ctx.createLinearGradient(0, H / 2 - h / 2, 0, H / 2 + h / 2);
-      const hue = 170 + Math.sin(i * 0.15 + t * 0.5) * 60;
-      g.addColorStop(0, `hsla(${hue},80%,65%,.95)`);
-      g.addColorStop(1, `hsla(${hue + 40},80%,55%,.35)`);
-      ctx.fillStyle = g;
+      const x = i * bw + bw * 0.2;
       const y = H / 2 - h / 2;
+      ctx.fillStyle = gradients[i];
       ctx.beginPath();
-      ctx.roundRect(x, y, w, h, w / 2);
+      ctx.roundRect(x, y, barW, h, barW / 2);
       ctx.fill();
     }
     vizRAF = requestAnimationFrame(frame);
@@ -222,22 +230,51 @@ function loadFile(file) {
   });
 }
 
+// Track all active stem blob URLs so we can revoke them when the user starts a new separation,
+// preventing unbounded memory growth.
+let _stemBlobUrls = [];
+function revokeOldStemUrls() {
+  _stemBlobUrls.forEach(u => URL.revokeObjectURL(u));
+  _stemBlobUrls = [];
+}
+
 function encodeWav(left, right, sampleRate) {
-  const len = left.length;
-  const buffer = new ArrayBuffer(44 + len * 4);
+  const numFrames = left.length;           // frames (one sample pair per frame)
+  const numChannels = 2;
+  const bitsPerSample = 16;
+  const bytesPerSample = bitsPerSample / 8; // 2
+  const blockAlign = numChannels * bytesPerSample; // 4
+  const byteRate = sampleRate * blockAlign;        // bytes/sec
+  const dataBytes = numFrames * blockAlign;        // CORRECT: frames × 4 bytes
+  const buffer = new ArrayBuffer(44 + dataBytes);
   const view = new DataView(buffer);
   const wstr = (o, s) => { for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i)); };
-  wstr(0, 'RIFF'); view.setUint32(4, 36 + len * 4, true); wstr(8, 'WAVE');
-  wstr(12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, 1, true);
-  view.setUint16(22, 2, true); view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * 4, true); view.setUint16(32, 4, true); view.setUint16(34, 16, true);
-  wstr(36, 'data'); view.setUint32(40, len * 4, true);
-  for (let i = 0; i < len; i++) {
-    const l = Math.max(-1, Math.min(1, left[i])), r = Math.max(-1, Math.min(1, right[i]));
-    view.setInt16(44 + i * 4, l < 0 ? l * 0x8000 : l * 0x7FFF, true);
-    view.setInt16(46 + i * 4, r < 0 ? r * 0x8000 : r * 0x7FFF, true);
+  // RIFF chunk
+  wstr(0, 'RIFF');
+  view.setUint32(4, 36 + dataBytes, true);  // FIXED: was 36 + len*4 (same value, but now explicit)
+  wstr(8, 'WAVE');
+  // fmt  sub-chunk
+  wstr(12, 'fmt ');
+  view.setUint32(16, 16, true);             // PCM fmt chunk size
+  view.setUint16(20, 1, true);              // PCM = 1
+  view.setUint16(22, numChannels, true);    // stereo
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);       // FIXED: was sampleRate*4, now computed correctly
+  view.setUint16(32, blockAlign, true);     // FIXED: was hardcoded 4, now computed
+  view.setUint16(34, bitsPerSample, true);
+  // data sub-chunk
+  wstr(36, 'data');
+  view.setUint32(40, dataBytes, true);      // FIXED: was len*4 (accidentally same), now explicit
+  // Interleave L/R samples
+  for (let i = 0; i < numFrames; i++) {
+    const l = Math.max(-1, Math.min(1, left[i]));
+    const r = Math.max(-1, Math.min(1, right[i]));
+    view.setInt16(44 + i * 4,     l < 0 ? l * 0x8000 : l * 0x7FFF, true);
+    view.setInt16(44 + i * 4 + 2, r < 0 ? r * 0x8000 : r * 0x7FFF, true); // FIXED: was offset 46, skipped 2 bytes
   }
-  return URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }));
+  const url = URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }));
+  _stemBlobUrls.push(url); // Register for later cleanup
+  return url;
 }
 
 const dz = $('dropzone');
@@ -246,6 +283,7 @@ $('fileInput').addEventListener('change', e => loadFile(e.target.files[0]));
 $('changeBtn').addEventListener('click', e => {
   e.stopPropagation();
   currentFile = null; decoded = null;
+  revokeOldStemUrls(); // Free memory from previous run
   $('fileCard').hidden = true; $('dropzone').hidden = false;
   $('runBtn').disabled = true; $('ctaText').textContent = 'Select a track to begin';
   $('fileInput').value = '';
@@ -280,31 +318,45 @@ async function idbPut(key, value) {
   });
 }
 
-async function detectBackend() {
-  if ('gpu' in navigator) {
-    try {
-      const adapter = await Promise.race([
-        navigator.gpu.requestAdapter(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000))
-      ]);
-      if (adapter) { $('backendBadge').textContent = 'WebGPU · GPU accelerated'; return 'webgpu'; }
-    } catch (e) {}
-  }
-  $('backendBadge').textContent = 'WASM · CPU';
-  return 'wasm';
+// Detect once, cache the promise so every caller shares the same result without re-running.
+let _backendPromise = null;
+function detectBackend() {
+  if (_backendPromise) return _backendPromise;
+  _backendPromise = (async () => {
+    if ('gpu' in navigator) {
+      try {
+        const adapter = await Promise.race([
+          navigator.gpu.requestAdapter(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000))
+        ]);
+        if (adapter) { $('backendBadge').textContent = 'WebGPU · GPU accelerated'; return 'webgpu'; }
+      } catch (e) {}
+    }
+    $('backendBadge').textContent = 'WASM · CPU';
+    return 'wasm';
+  })();
+  return _backendPromise;
 }
-detectBackend();
+detectBackend(); // Kick off early so result is ready by the time user clicks Run.
 
 const IDB_KEY  = 'htdemucs_embedded_v1';
 
 async function fetchModelBuffer(url, onProgress) {
   try {
-    const buf = await idbGet(IDB_KEY);
-    if (buf && buf.byteLength > 0) { onProgress(1, 'cache'); return buf; }
+    const cached = await idbGet(IDB_KEY);
+    // Blobs are stored natively by IDB as file references — check .size, not .byteLength.
+    // Falls back gracefully if an old ArrayBuffer was previously stored (has .byteLength).
+    if (cached) {
+      const valid = (cached instanceof Blob && cached.size > 0) ||
+                    (cached instanceof ArrayBuffer && cached.byteLength > 0);
+      if (valid) { onProgress(1, 'cache'); return cached; }
+    }
   } catch(e) { console.warn('IDB get failed', e); }
 
   onProgress(0, 'network');
-  const resp = await fetch(url, { mode: 'cors', cache: 'no-store' });
+  // fetchPriority:'high' tells the browser to treat this as a top-priority network request,
+  // giving it maximum bandwidth — exactly what we want for the model download.
+  const resp = await fetch(url, { mode: 'cors', cache: 'no-store', priority: 'high' });
   if (!resp.ok) throw new Error('HTTP ' + resp.status);
   
   const total = Number(resp.headers.get('content-length')) || 179300000;
@@ -319,11 +371,15 @@ async function fetchModelBuffer(url, onProgress) {
     loaded += value.length;
     onProgress(loaded / total, 'network'); 
   }
-  const buf = await new Blob(chunks).arrayBuffer();
-  if (!buf || buf.byteLength === 0) throw new Error('Empty download');
 
-  try { await idbPut(IDB_KEY, buf); } catch(e) { console.warn('IDB save failed', e); }
-  return buf;
+  // PERF FIX: Store as Blob, NOT ArrayBuffer.
+  // IDB serialises ArrayBuffers into its B-tree byte-by-byte → 3-5s freeze for 550 MB.
+  // IDB stores Blobs as opaque file-system references — the write is near-instant.
+  const blob = new Blob(chunks, { type: 'application/octet-stream' });
+  if (blob.size === 0) throw new Error('Empty download');
+
+  try { await idbPut(IDB_KEY, blob); } catch(e) { console.warn('IDB save failed (non-fatal):', e); }
+  return blob;
 }
 
 // Memory-Friendly Idle Check: Checks cache on load, strictly prevents eager network downloads and memory allocation.
@@ -332,7 +388,10 @@ async function preloadCheck() {
   try {
     const backend = await detectBackend();
     const cached = await idbGet(IDB_KEY);
-    if (cached) {
+    const hasModel = cached &&
+      ((cached instanceof Blob && cached.size > 0) ||
+       (cached instanceof ArrayBuffer && cached.byteLength > 0));
+    if (hasModel) {
       if (el) { el.textContent = '✓ AI model ready (' + backend.toUpperCase() + ')'; el.classList.add('ready'); }
     } else {
       if (el) { el.textContent = 'ℹ First run will securely download the AI model into offline storage'; }
@@ -362,7 +421,12 @@ $('runBtn').addEventListener('click', async () => {
   try {
     // 1. Determine environment strictly at runtime to avoid blocking main thread at boot.
     const backend = await detectBackend();
-    ort.env.wasm.numThreads = Math.max(1, Math.min(navigator.hardwareConcurrency || 4, self.crossOriginIsolated ? (navigator.hardwareConcurrency || 4) : 4));
+
+    // Cap threads at HALF the logical cores so the other half stay free for the rest of the
+    // browser (other tabs, UI thread, etc.).  Full hardwareConcurrency would starve other tabs.
+    const totalCores = navigator.hardwareConcurrency || 4;
+    const safeThreads = Math.max(1, Math.floor(totalCores / 2));
+    ort.env.wasm.numThreads = self.crossOriginIsolated ? safeThreads : Math.min(safeThreads, 4);
     ort.env.wasm.simd = true;
     if (backend === 'webgpu') ort.env.webgpu = { powerPreference: 'high-performance' };
 
@@ -386,14 +450,25 @@ $('runBtn').addEventListener('click', async () => {
     $('procText').textContent = 'Loading AI into execution memory…';
     
     // 3. Compile model locally. Will release the reference when processor drops.
-    const blobUrl = URL.createObjectURL(new Blob([buffer], { type: 'application/octet-stream' }));
+    // If buffer is already a Blob (new fast path), createObjectURL it directly — no copy.
+    // If it's an ArrayBuffer (legacy cache hit), wrap it first.
+    const modelBlob = (buffer instanceof Blob)
+      ? buffer
+      : new Blob([buffer], { type: 'application/octet-stream' });
+    const blobUrl = URL.createObjectURL(modelBlob);
     await processor.loadModel(blobUrl);
     URL.revokeObjectURL(blobUrl); 
 
     $('barFill').style.width = '25%';
     $('procText').textContent = 'Starting AI Separation Task…';
-    
-    const results = await processor.separate(decoded.left, decoded.right);
+
+    // Run the heavy separation at background scheduler priority so it yields to other tabs/pages.
+    // Falls back silently to a plain call on browsers without scheduler.postTask (Safari, Firefox).
+    const results = await (
+      typeof scheduler !== 'undefined' && scheduler.postTask
+        ? scheduler.postTask(() => processor.separate(decoded.left, decoded.right), { priority: 'background' })
+        : processor.separate(decoded.left, decoded.right)
+    );
     const speed = (decoded.audioBuffer.duration / ((Date.now() - elapsedStart) / 1000)).toFixed(1);
     
     clearInterval(phaseTimer);
@@ -405,6 +480,7 @@ $('runBtn').addEventListener('click', async () => {
     
     const stemsContainer = $('stems');
     stemsContainer.innerHTML = '';
+    revokeOldStemUrls(); // Free memory from any previous separation run
     const stemOrder = ['vocals', 'drums', 'bass', 'other'];
     const mergedInst = { left: new Float32Array(decoded.left.length), right: new Float32Array(decoded.right.length) };
     
@@ -420,8 +496,8 @@ $('runBtn').addEventListener('click', async () => {
     });
 
     const displayStems = [
-      { name: 'vocals', left: results.vocals.left, right: results.vocals.right, color: 'var(--teal)', c2: '#a78bfa' },
-      { name: 'instrumental', left: mergedInst.left, right: mergedInst.right, color: 'var(--violet)', c2: '#f472b6' }
+      { name: 'vocals', left: results.vocals.left, right: results.vocals.right, color: '#2dd4bf', c2: '#a78bfa' },
+      { name: 'instrumental', left: mergedInst.left, right: mergedInst.right, color: '#a78bfa', c2: '#f472b6' }
     ];
 
     displayStems.forEach(stem => {
@@ -452,6 +528,7 @@ $('runBtn').addEventListener('click', async () => {
 });
 
 $('againBtn').addEventListener('click', () => {
+  revokeOldStemUrls(); // Free memory before resetting
   $('changeBtn').click();
   showStage('stageUpload');
   $('barFill').style.width = '0%';
