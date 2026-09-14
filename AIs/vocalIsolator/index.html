@@ -360,49 +360,41 @@ async function preloadModel() {
       onLog: () => {}
     });
 
-    // Check IndexedDB first — if model is cached, load directly from blob (fast!)
-    const KEY = 'htdemucs_embedded_v1';
-    let buffer = await idbGet(KEY).catch(() => null);
-
-    if (buffer) {
-      // Model cached in IndexedDB — load directly, no download needed
-      if (el) el.innerHTML = '<span class="spinner"></span>Loading from device cache…';
-      const blobUrl = URL.createObjectURL(new Blob([buffer], { type: 'application/octet-stream' }));
-      await processor.loadModel(blobUrl);
-      URL.revokeObjectURL(blobUrl);
-    } else {
-      // Not cached — download with progress, then cache to IndexedDB
-      if (el) el.innerHTML = '<span class="spinner"></span>Downloading AI model…';
-      let lastErr = null;
-      for (const url of MODEL_URLS) {
-        try {
-          const resp = await fetch(url, { mode: 'cors' });
-          if (!resp.ok) throw new Error('HTTP ' + resp.status);
-          const total = Number(resp.headers.get('content-length')) || 0;
-          const reader = resp.body.getReader();
-          const chunks = []; let loaded = 0;
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            chunks.push(value); loaded += value.length;
-            if (total) {
-              const pct = (loaded / total * 100).toFixed(0);
-              if (el) el.innerHTML = '<span class="spinner"></span>Downloading… ' + pct + '%';
-            }
+    // Download from R2 with progress, then load into ORT (caches compiled model)
+    for (const url of MODEL_URLS) {
+      try {
+        if (el) el.innerHTML = '<span class="spinner"></span>Downloading… 0%';
+        
+        // Fetch with progress tracking
+        const resp = await fetch(url, { mode: 'cors' });
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const total = Number(resp.headers.get('content-length')) || 0;
+        const reader = resp.body.getReader();
+        const chunks = []; let loaded = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value); loaded += value.length;
+          if (total) {
+            const pct = Math.round(loaded / total * 100);
+            if (el) el.innerHTML = '<span class="spinner"></span>Downloading… ' + pct + '%';
           }
-          buffer = await new Blob(chunks).arrayBuffer();
-          if (!buffer) throw new Error('Empty download');
-          await idbPut(KEY, buffer).catch(e => console.warn('IndexedDB save failed', e));
+        }
+        const buffer = await new Blob(chunks).arrayBuffer();
+        if (!buffer) throw new Error('Empty download');
 
-          // Load from the downloaded buffer
-          if (el) el.innerHTML = '<span class="spinner"></span>Compiling model…';
-          const blobUrl = URL.createObjectURL(new Blob([buffer], { type: 'application/octet-stream' }));
-          await processor.loadModel(blobUrl);
-          URL.revokeObjectURL(blobUrl);
-          break;
-        } catch (e) { lastErr = e; console.warn('Download failed:', url, e); }
+        // Load from buffer (ORT Web caches compiled model for next time)
+        if (el) el.innerHTML = '<span class="spinner"></span>Compiling model…';
+        const blobUrl = URL.createObjectURL(new Blob([buffer], { type: 'application/octet-stream' }));
+        await processor.loadModel(blobUrl);
+        URL.revokeObjectURL(blobUrl);
+        break;
+      } catch (e) {
+        console.warn('Model load failed from', url, e);
+        if (url === MODEL_URLS[MODEL_URLS.length - 1]) {
+          throw new Error('Could not load AI model from any source.');
+        }
       }
-      if (!buffer && !processor.session) throw lastErr || new Error('Could not load AI model.');
     }
 
     preloadedProcessor = processor;
@@ -415,7 +407,7 @@ async function preloadModel() {
     console.error('Model preload failed:', err);
     preloadedProcessor = null;
     if (el) {
-      el.textContent = '⚠ AI model will load when you process';
+      el.textContent = '⚠ AI model failed to load — check connection';
       el.classList.add('error');
     }
   }
