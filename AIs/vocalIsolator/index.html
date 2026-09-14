@@ -342,48 +342,15 @@ detectBackend();
 /* ---------- eager model preload (runs on page load) ---------- */
 let preloadedProcessor = null;
 
-async function fetchModelBuffer() {
-  const KEY = 'htdemucs_embedded_v1';
-  let buffer = await idbGet(KEY).catch(() => null);
-  if (buffer) return { buffer, source: 'cache' };
-
-  let lastErr = null;
-  for (const url of MODEL_URLS) {
-    try {
-      const resp = await fetch(url, { mode: 'cors' });
-      if (!resp.ok) throw new Error('HTTP ' + resp.status);
-      const total = Number(resp.headers.get('content-length')) || 0;
-      const reader = resp.body.getReader();
-      const chunks = []; let loaded = 0;
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value); loaded += value.length;
-        if (total) {
-          const pct = (loaded / total * 100).toFixed(0);
-          const el = $('modelStatus');
-          if (el) el.innerHTML = '<span class="spinner"></span>Downloading AI model… ' + pct + '%';
-        }
-      }
-      buffer = new Blob(chunks).arrayBuffer ? await new Blob(chunks).arrayBuffer() : null;
-      if (!buffer) throw new Error('Empty download');
-      try { await idbPut(KEY, buffer); } catch (e) { console.warn('IndexedDB cache failed', e); }
-      return { buffer, source: 'download' };
-    } catch (e) { lastErr = e; console.warn('Model source failed:', url, e); }
-  }
-  throw lastErr || new Error('Could not load the AI model.');
-}
-
 async function preloadModel() {
+  const el = $('modelStatus');
   try {
+    if (el) el.innerHTML = '<span class="spinner"></span>Loading AI model…';
+
     const backend = await detectBackend();
     ort.env.wasm.numThreads = (self.crossOriginIsolated ? (navigator.hardwareConcurrency || 4) : 1);
     if (backend === 'webgpu') ort.env.webgpu = { powerPreference: 'high-performance' };
 
-    const el = $('modelStatus');
-    if (el) el.innerHTML = '<span class="spinner"></span>Loading AI engine…';
-
-    const { buffer } = await fetchModelBuffer();
     const processor = new DemucsProcessor({
       ort,
       sessionOptions: backend === 'webgpu' ? undefined : { executionProviders: ['wasm'] },
@@ -391,12 +358,53 @@ async function preloadModel() {
       onLog: () => {}
     });
 
-    const blobUrl = URL.createObjectURL(new Blob([buffer], { type: 'application/octet-stream' }));
-    await processor.loadModel(blobUrl);
-    URL.revokeObjectURL(blobUrl);
+    // Check IndexedDB first — if model is cached, load directly from blob (fast!)
+    const KEY = 'htdemucs_embedded_v1';
+    let buffer = await idbGet(KEY).catch(() => null);
+
+    if (buffer) {
+      // Model cached in IndexedDB — load directly, no download needed
+      if (el) el.innerHTML = '<span class="spinner"></span>Loading from device cache…';
+      const blobUrl = URL.createObjectURL(new Blob([buffer], { type: 'application/octet-stream' }));
+      await processor.loadModel(blobUrl);
+      URL.revokeObjectURL(blobUrl);
+    } else {
+      // Not cached — download with progress, then cache to IndexedDB
+      if (el) el.innerHTML = '<span class="spinner"></span>Downloading AI model…';
+      let lastErr = null;
+      for (const url of MODEL_URLS) {
+        try {
+          const resp = await fetch(url, { mode: 'cors' });
+          if (!resp.ok) throw new Error('HTTP ' + resp.status);
+          const total = Number(resp.headers.get('content-length')) || 0;
+          const reader = resp.body.getReader();
+          const chunks = []; let loaded = 0;
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value); loaded += value.length;
+            if (total) {
+              const pct = (loaded / total * 100).toFixed(0);
+              if (el) el.innerHTML = '<span class="spinner"></span>Downloading… ' + pct + '%';
+            }
+          }
+          buffer = await new Blob(chunks).arrayBuffer();
+          if (!buffer) throw new Error('Empty download');
+          await idbPut(KEY, buffer).catch(e => console.warn('IndexedDB save failed', e));
+
+          // Load from the downloaded buffer
+          if (el) el.innerHTML = '<span class="spinner"></span>Compiling model…';
+          const blobUrl = URL.createObjectURL(new Blob([buffer], { type: 'application/octet-stream' }));
+          await processor.loadModel(blobUrl);
+          URL.revokeObjectURL(blobUrl);
+          break;
+        } catch (e) { lastErr = e; console.warn('Download failed:', url, e); }
+      }
+      if (!buffer && !processor.session) throw lastErr || new Error('Could not load AI model.');
+    }
 
     preloadedProcessor = processor;
-    preloadedProcessor._backend = backend; // store for later retrieval
+    preloadedProcessor._backend = backend;
     if (el) {
       el.textContent = '✓ AI model ready — upload a track to begin';
       el.classList.add('ready');
@@ -404,7 +412,6 @@ async function preloadModel() {
   } catch (err) {
     console.error('Model preload failed:', err);
     preloadedProcessor = null;
-    const el = $('modelStatus');
     if (el) {
       el.textContent = '⚠ AI model will load when you process';
       el.classList.add('error');
@@ -412,7 +419,7 @@ async function preloadModel() {
   }
 }
 
-// Start loading the model immediately on page load
+// Start loading immediately on page load
 preloadModel();
 
 /* ---------- main run ---------- */
