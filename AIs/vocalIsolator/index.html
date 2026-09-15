@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stemly — AI Vocal & Instrumental Separator</title>
+<style>
+:root { --bg0:#06080f; --card:rgba(17,24,39,.72); --line:rgba(94,234,212,.14);
+  --teal:#2dd4bf; --violet:#a78bfa; --pink:#f472b6; --text:#e2e8f0; --dim:#7c8aa5; }
+* { box-sizing:border-box; margin:0; padding:0; }
+body { font-family:'Segoe UI',system-ui,sans-serif; color:var(--text); background:var(--bg0); overflow-x:hidden; min-height:100vh; }
+.aurora{position:fixed;inset:0;z-index:-1;overflow:hidden;}
+.aurora span{position:absolute;border-radius:50%;filter:blur(90px);opacity:.5;animation:drift 22s ease-in-out infinite alternate;}
+.aurora span:nth-child(1){width:46vw;height:46vw;left:-10vw;top:-12vw;background:#134e4a;}
+.aurora span:nth-child(2){width:40vw;height:40vw;right:-8vw;top:10vh;background:#3b1d5e;animation-delay:-7s;}
+.aurora span:nth-child(3){width:34vw;height:34vw;left:25vw;bottom:-16vw;background:#0c2d48;animation-delay:-13s;}
+@keyframes drift{from{transform:translate(0,0) scale(1);}to{transform:translate(6vw,4vh) scale(1.15);}}
+.wrap{max-width:860px;margin:0 auto;padding:40px 20px 80px;}
+header{text-align:center;margin-bottom:36px;}
+.logo{display:inline-flex;align-items:center;gap:12px;margin-bottom:10px;}
+.logo .dot{width:14px;height:14px;border-radius:50%;background:linear-gradient(135deg,var(--teal),var(--violet));box-shadow:0 0 18px var(--teal);animation:pulse 2.4s ease-in-out infinite;}
+@keyframes pulse{50%{box-shadow:0 0 30px var(--teal);transform:scale(1.15);}}
+.logo h1{font-size:2.1rem;letter-spacing:-.5px;background:linear-gradient(90deg,var(--teal),var(--violet),var(--pink));-webkit-background-clip:text;background-clip:text;color:transparent;}
+header p{color:var(--dim);font-size:.95rem;}
+.badge{display:inline-block;margin-top:12px;padding:5px 14px;font-size:.72rem;font-weight:700;letter-spacing:1.2px;border-radius:999px;border:1px solid var(--line);color:var(--teal);background:rgba(45,212,191,.06);text-transform:uppercase;}
+.dropzone{border:2px dashed rgba(148,163,184,.35);border-radius:20px;padding:56px 24px;text-align:center;cursor:pointer;transition:all .25s ease;background:var(--card);backdrop-filter:blur(14px);}
+.dropzone:hover,.dropzone.over{border-color:var(--teal);background:rgba(45,212,191,.05);transform:translateY(-2px);box-shadow:0 12px 40px rgba(45,212,191,.12);}
+.dropzone.over .dz-icon{transform:scale(1.25) rotate(-6deg);}
+.dz-icon{font-size:3rem;margin-bottom:14px;transition:transform .25s ease;}
+.dz-title{font-size:1.25rem;font-weight:700;}
+.dz-sub{color:var(--dim);margin-top:6px;font-size:.9rem;}
+.filecard{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:18px;display:flex;align-items:center;gap:16px;backdrop-filter:blur(14px);animation:rise .4s ease;}
+.filecard canvas{flex:1;min-width:0;border-radius:10px;background:rgba(0,0,0,.3);}
+.filemeta{min-width:180px;}
+.fname{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px;}
+.fdur{color:var(--dim);font-size:.85rem;margin-top:4px;}
+.changebtn{background:none;border:1px solid var(--line);color:var(--dim);padding:8px 16px;border-radius:10px;cursor:pointer;font-size:.85rem;}
+.changebtn:hover{color:var(--teal);border-color:var(--teal);}
+@keyframes rise{from{opacity:0;transform:translateY(14px);}to{opacity:1;transform:none;}}
+.cta{display:block;width:100%;margin-top:18px;padding:16px 24px;font-size:1.05rem;font-weight:700;color:#041210;background:linear-gradient(90deg,var(--teal),#4ade80);border:none;border-radius:16px;cursor:pointer;transition:all .25s ease;box-shadow:0 8px 30px rgba(45,212,191,.25);}
+.cta:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 12px 44px rgba(45,212,191,.4);}
+.cta:disabled{opacity:.35;cursor:not-allowed;filter:saturate(.4);}
+.cta.ghost{background:none;border:1px solid var(--line);color:var(--dim);box-shadow:none;}
+.cta.ghost:hover{color:var(--teal);border-color:var(--teal);}
+.card{background:var(--card);border:1px solid var(--line);border-radius:24px;padding:26px;backdrop-filter:blur(14px);animation:rise .4s ease;}
+#procViz{width:100%;height:120px;display:block;border-radius:12px;background:rgba(0,0,0,.35);}
+.bar{height:10px;background:rgba(148,163,184,.12);border-radius:999px;margin-top:18px;overflow:hidden;}
+.bar-fill{height:100%;width:0%;border-radius:999px;background:linear-gradient(90deg,var(--teal),var(--violet),var(--pink));position:relative;overflow:hidden;transition:width .4s ease;contain:layout style paint;}
+.bar-fill::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.35) 50%,transparent 100%);background-size:50% 100%;background-repeat:no-repeat;animation:shimmer 1.6s linear infinite;will-change:transform;}
+@keyframes shimmer{from{transform:translateX(-50%);}to{transform:translateX(150%);}}
+.prow{display:flex;justify-content:space-between;align-items:center;margin-top:14px;}
+.ptext{font-size:1.02rem;}
+.ptimer{font-variant-numeric:tabular-nums;color:var(--teal);font-weight:700;font-size:1.02rem;}
+.pnote{color:var(--dim);font-size:.82rem;margin-top:8px;text-align:center;}
+.donestat{background:linear-gradient(90deg,rgba(45,212,191,.1),rgba(167,139,250,.1));border:1px solid var(--line);border-radius:16px;padding:18px 24px;text-align:center;margin-bottom:22px;animation:rise .5s ease;}
+.donestat .big{font-size:1.25rem;font-weight:800;}
+.donestat .sub{color:var(--dim);font-size:.88rem;margin-top:6px;}
+.stemcard{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:20px;margin-top:16px;backdrop-filter:blur(14px);animation:rise .5s ease;}
+.stemcard canvas{width:100%;height:84px;display:block;border-radius:10px;background:rgba(0,0,0,.35);}
+.stemhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}
+.stemname{font-weight:800;font-size:1.05rem;letter-spacing:.5px;text-transform:uppercase;}
+.stemname.vocals{color:var(--teal);} .stemname.instrumental{color:var(--violet);}
+.stemactions{display:flex;gap:10px;}
+.btn{background:rgba(45,212,191,.1);border:1px solid var(--line);color:var(--teal);padding:9px 18px;border-radius:10px;font-weight:700;font-size:.85rem;cursor:pointer;text-decoration:none;transition:all .2s ease;}
+.btn:hover{background:rgba(45,212,191,.2);transform:translateY(-1px);}
+audio{width:100%;margin-top:12px;height:36px;}
+.fade-in{animation:rise .5s ease;}
+[hidden]{display:none !important;}
+.model-status{text-align:center;margin-top:14px;font-size:.82rem;color:var(--dim);min-height:1.2em;transition:color .3s;}
+.model-status.ready{color:var(--teal);}
+.model-status.error{color:#fbbf24;}
+.model-status .spinner{display:inline-block;width:12px;height:12px;border:2px solid var(--line);border-top-color:var(--teal);border-radius:50%;animation:spin .8s linear infinite;vertical-align:middle;margin-right:6px;}
+@keyframes spin{to{transform:rotate(360deg);}}
+</style>
+<script type="importmap">
+{"imports":{"onnxruntime-web":"https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.all.bundle.min.mjs"}}
+</script>
+</head>
+<body>
+<div class="aurora"><span></span><span></span><span></span></div>
+<div class="wrap">
+  <header>
+    <div class="logo"><div class="dot"></div><h1>Stemly</h1></div>
+    <p>AI-powered vocal &amp; instrumental separation. Runs 100% on your device — nothing is uploaded.</p>
+    <div class="badge" id="backendBadge">Detecting engine…</div>
+  </header>
+  <section id="stageUpload">
+    <div id="dropzone" class="dropzone">
+      <div class="dz-icon">🎵</div>
+      <div class="dz-title">Drop your track here</div>
+      <div class="dz-sub">or click to browse — MP3, WAV, OGG, FLAC</div>
+      <input type="file" id="fileInput" accept="audio/*" hidden>
+    </div>
+    <div id="fileCard" class="filecard" hidden>
+      <canvas id="wavePreview" height="72"></canvas>
+      <div class="filemeta"><div class="fname" id="fileName"></div><div class="fdur" id="fileDur"></div></div>
+      <button class="changebtn" id="changeBtn">Change</button>
+    </div>
+    <button id="runBtn" class="cta" disabled><span id="ctaText">Select a track to begin</span></button>
+    <div id="modelStatus" class="model-status"></div>
+  </section>
+  <section id="stageProcess" hidden>
+    <div class="card">
+      <canvas id="procViz" width="760" height="120"></canvas>
+      <div class="bar"><div class="bar-fill" id="barFill"></div></div>
+      <div class="prow"><div class="ptext" id="procText">Initializing AI engine…</div><div class="ptimer" id="procTimer">0:00</div></div>
+      <div class="pnote">AI processing algorithm running locally on your device</div>
+    </div>
+  </section>
+  <section id="stageResult" hidden>
+    <div id="doneStat" class="donestat"></div>
+    <div id="stems"></div>
+    <button id="againBtn" class="cta ghost">Separate another track</button>
+  </section>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     WORKER BLOB — all heavy ONNX / model work runs here, off the
+     main thread so UI, YouTube, other tabs are never blocked.
+     ═══════════════════════════════════════════════════════════════ -->
+<script id="workerSrc" type="text/plain">
+// This script runs inside a Web Worker — no DOM access here.
+// Module worker — importScripts() not available; using dynamic import() instead
+
+// Dynamic ESM import inside worker
+let ort, DemucsProcessor, CONSTANTS;
+
+// Warm, parsed ONNX session — created once during background preload (see
+// preloadCheck -> warmup) and reused for every separation so the
+// click-to-inference path skips download / import / parse entirely.
+let _processor = null;
+let _warmupPromise = null;
+
+const MODEL_URL = 'https://pub-406a7f3fa4d44f41b5317520aa1aaf4a.r2.dev/newwwww/htdemucs_embedded.onnx';
+const IDB_NAME  = 'stemly-cache';
+const IDB_STORE = 'models';
+const IDB_KEY   = 'htdemucs_embedded_v1';
+
+// ── IDB helpers ──────────────────────────────────────────────
+function idbOpen() {
+  return new Promise((res, rej) => {
+    const rq = indexedDB.open(IDB_NAME, 1);
+    rq.onupgradeneeded = () => rq.result.createObjectStore(IDB_STORE);
+    rq.onsuccess = () => res(rq.result);
+    rq.onerror  = () => rej(rq.error);
+  });
+}
+async function idbGet(key) {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const rq = db.transaction(IDB_STORE).objectStore(IDB_STORE).get(key);
+    rq.onsuccess = () => res(rq.result || null);
+    rq.onerror   = () => rej(rq.error);
+  });
+}
+async function idbPut(key, value) {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const rq = db.transaction(IDB_STORE, 'readwrite').objectStore(IDB_STORE).put(value, key);
+    rq.onsuccess = () => res(true);
+    rq.onerror   = () => rej(rq.error);
+  });
+}
+
+// ── Model fetch (cache-first) ────────────────────────────────
+async function fetchModelBuffer() {
+  try {
+    const cached = await idbGet(IDB_KEY);
+    if (cached) {
+      const valid = (cached instanceof Blob && cached.size > 0) ||
+                    (cached instanceof ArrayBuffer && cached.byteLength > 0);
+      if (valid) { self.postMessage({ type: 'progress', pct: 0.25, text: 'Restoring model from offline cache…' }); return cached; }
+    }
+  } catch(e) { console.warn('IDB get failed', e); }
+
+  self.postMessage({ type: 'progress', pct: 0, text: 'Downloading AI engine… 0%' });
+  const resp = await fetch(MODEL_URL, { mode: 'cors', priority: 'high' });
+  if (!resp.ok) throw new Error('HTTP ' + resp.status);
+
+  const total = Number(resp.headers.get('content-length')) || 179300000;
+  const reader = resp.body.getReader();
+  const chunks = [];
+  let loaded = 0, lastUpdate = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    loaded += value.length;
+    const now = performance.now();
+    if (now - lastUpdate > 100) {
+      const pct = loaded / total;
+      self.postMessage({ type: 'progress', pct: pct * 0.25, text: 'Downloading AI engine… ' + Math.round(pct * 100) + '%' });
+      lastUpdate = now;
+    }
+  }
+
+  const blob = new Blob(chunks, { type: 'application/octet-stream' });
+  if (blob.size === 0) throw new Error('Empty download');
+  try { await idbPut(IDB_KEY, blob); } catch(e) { console.warn('IDB save failed (non-fatal):', e); }
+  return blob;
+}
+
+// ── Backend detection (WebGPU → WASM) ───────────────────────
+async function detectBackend() {
+  if ('gpu' in self) {
+    try {
+      const adapter = await Promise.race([
+        self.gpu.requestAdapter(),
+        new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 3000))
+      ]);
+      if (adapter) { self.postMessage({ type: 'backend', label: 'WebGPU · GPU accelerated' }); return 'webgpu'; }
+    } catch(e) {}
+  }
+  self.postMessage({ type: 'backend', label: 'WASM · CPU' });
+  return 'wasm';
+}
+
+// ── Cache pre-check + background AI preload (called on worker start) ──
+// Besides telling the UI whether the model is cached, this fires off a
+// background warmup so the 180 MB model, the ORT runtime and the parsed ONNX
+// session are all ready by the time the user clicks "Separate".
+async function preloadCheck(warm) {
+  try {
+    const cached = await idbGet(IDB_KEY);
+    const has = cached && ((cached instanceof Blob && cached.size > 0) || (cached instanceof ArrayBuffer && cached.byteLength > 0));
+    self.postMessage({ type: 'cacheStatus', has });
+  } catch(e) { self.postMessage({ type: 'cacheStatus', has: false }); }
+  // On mobile we do NOT auto-download the big model (that's what makes the
+  // browser run out of memory and reload the page). We only warm it up on
+  // desktop; on phones the model loads when the user clicks "Separate".
+  if (!warm) return;
+  warmup().catch(() => self.postMessage({ type: 'cacheStatus', has: false }));   // fire-and-forget; 'separate' joins it if still running, retries on failure
+}
+
+// ── Background warmup: import runtime + parse ONNX session once ────────────────
+// Started by `precheck` so the 180 MB download, the ORT import and the (slow)
+// model-graph parsing all happen while the user is still on the upload screen.
+// The parsed session is kept on `_processor` and reused by every later
+// separation, so clicking "Separate" skips straight to inference.
+async function warmup() {
+  if (_processor) return _processor;
+  if (_warmupPromise) return _warmupPromise;
+
+  _warmupPromise = (async () => {
+    self.postMessage({ type: 'cacheStatus', has: 'loading', text: 'Preparing AI engine…' });
+
+    // 1) Import ONNX Runtime Web + the demucs wrapper (HTTP-cacheable bundles)
+    self.postMessage({ type: 'progress', pct: 0, text: 'Loading AI engine…' });
+    const ortMod = await import('https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.all.bundle.min.mjs');
+    const demMod = await import('https://pub-406a7f3fa4d44f41b5317520aa1aaf4a.r2.dev/newwwww/demucs-web-lib/index.js');
+    ort = ortMod;
+    DemucsProcessor = demMod.DemucsProcessor;
+    CONSTANTS = demMod.CONSTANTS;
+
+    // 2) Backend + thread configuration
+    const backend     = await detectBackend();
+    const totalCores  = (self.navigator && self.navigator.hardwareConcurrency) || 4;
+    const safeThreads = Math.max(1, Math.floor(totalCores / 2));
+    ort.env.wasm.numThreads = self.crossOriginIsolated ? safeThreads : Math.min(safeThreads, 4);
+    ort.env.wasm.simd = true;
+    if (backend === 'webgpu') ort.env.webgpu = { powerPreference: 'high-performance' };
+
+    // 3) Model bytes — cache-first via IndexedDB
+    self.postMessage({ type: 'progress', pct: 0.25, text: 'Checking AI model availability…' });
+    const buffer = await fetchModelBuffer();
+
+    // 4) Parse the ONNX graph into an InferenceSession (the slow bit — off screen)
+    self.postMessage({ type: 'progress', pct: 0.25, text: 'Loading AI into execution memory…' });
+    const arrayBuffer = buffer instanceof ArrayBuffer ? buffer : await buffer.arrayBuffer();
+
+    let parseTick = 0;
+    const parseMessages = [
+      'Parsing AI model graph…',
+      'Optimizing model for your device…',
+      'Building computation graph…',
+      'Finalizing model setup…'
+    ];
+    const parseInterval = setInterval(() => {
+      parseTick = (parseTick + 1) % parseMessages.length;
+      self.postMessage({ type: 'progress', pct: 0.25 + Math.min(parseTick * 0.01, 0.05), text: parseMessages[parseTick] });
+    }, 2000);
+
+    try {
+      const processor = new DemucsProcessor({
+        ort,
+        sessionOptions: { executionProviders: [backend] },
+        onProgress: ({ progress }) => {
+          self.postMessage({ type: 'progress', pct: 0.25 + progress * 0.5, text: 'AI separating…' });
+        },
+        onLog: () => {}
+      });
+      await processor.loadModel(arrayBuffer);
+      _processor = processor;
+      self.postMessage({ type: 'cacheStatus', has: true });
+      return processor;
+    } finally {
+      clearInterval(parseInterval);
+    }
+  })();
+
+  try {
+    return await _warmupPromise;
+  } finally {
+    _warmupPromise = null;   // release so a failed warmup can be retried on 'separate'
+  }
+}
+
+// ── Main message handler ─────────────────────────────────────
+self.onmessage = async (e) => {
+  const { cmd } = e.data;
+
+  if (cmd === 'precheck') {
+    await preloadCheck(true);
+    return;
+  }
+
+  if (cmd === 'checkOnly') {
+    await preloadCheck(false);
+    return;
+  }
+
+  if (cmd === 'separate') {
+    const { leftBuf, rightBuf, duration } = e.data;
+    const left  = new Float32Array(leftBuf);
+    const right = new Float32Array(rightBuf);
+    const t0 = performance.now();
+
+    try {
+      // Heavy lifting (download / import / parse) now happens in the
+      // background warmup() started at page load. Here we just join it —
+      // instant if it already finished — then run inference on the ready session.
+      self.postMessage({ type: 'progress', pct: 0, text: 'Starting AI Separation Task…' });
+      const processor = await warmup();
+
+      const results = await processor.separate(left, right);
+
+      // Merge drums+bass+other → instrumental
+      const len = left.length;
+      const instL = new Float32Array(len), instR = new Float32Array(len);
+      ['drums','bass','other'].forEach(name => {
+        if (!results[name]) return;
+        for (let i = 0; i < len; i++) { instL[i] += results[name].left[i]; instR[i] += results[name].right[i]; }
+      });
+
+      const elapsed = (performance.now() - t0) / 1000;
+      const speed   = (duration / elapsed).toFixed(1);
+
+      // Transfer Float32Arrays as transferable buffers (zero-copy)
+      const vL = results.vocals.left.buffer;
+      const vR = results.vocals.right.buffer;
+      const iL = instL.buffer;
+      const iR = instR.buffer;
+
+      self.postMessage(
+        { type: 'done', speed, sampleRate: CONSTANTS.SAMPLE_RATE,
+          vocals:       { left: vL, right: vR },
+          instrumental: { left: iL, right: iR } },
+        [vL, vR, iL, iR]  // transfer — no copy
+      );
+
+    } catch(err) {
+      self.postMessage({ type: 'error', message: err.message });
+    }
+  }
+};
+</script>
+
+<script type="module">
+// ═══════════════════════════════════════════════════════════════
+// MAIN THREAD — only UI, audio decode, waveform, WAV encode.
+// The Worker above does everything else.
+// ═══════════════════════════════════════════════════════════════
+
+const $ = id => document.getElementById(id);
+const fmtTime = s => { s = Math.max(0, Math.round(s)); return Math.floor(s/60) + ':' + String(s%60).padStart(2,'0'); };
+
+// ── Spin up the worker from the inline script blob ───────────
+const workerCode = document.getElementById('workerSrc').textContent;
+const workerBlob = new Blob([workerCode], { type: 'text/javascript' });
+const workerUrl  = URL.createObjectURL(workerBlob);
+// type:'module' lets the worker use dynamic import() for ort + demucs
+const worker = new Worker(workerUrl, { type: 'module' });
+
+// Initialize error handler BEFORE worker starts — if the worker fails during
+// module evaluation (e.g. import() fails), we need to log it, not swallow it
+let _onDone = null;
+let _onError = (err) => { console.error('Worker error:', err); };
+worker.onerror = (e) => { if (_onError) _onError(new Error(e.message)); };
+
+// Precheck + background preload: on desktop the worker downloads the cached
+// model (if missing) and parses the ONNX session right away, so click→
+// "Separate" skips download / import / parse entirely. On phones we only
+// check the cache and wait — auto-loading the 180 MB model is what makes the
+// mobile browser run out of memory and reload (refresh) the page.
+const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+worker.postMessage({ cmd: isMobile ? 'checkOnly' : 'precheck' });
+
+// ── Worker message router ────────────────────────────────────
+worker.onmessage = (e) => {
+  const d = e.data;
+  if (d.type === 'backend') {
+    $('backendBadge').textContent = d.label;
+  } else if (d.type === 'cacheStatus') {
+    const el = $('modelStatus');
+    if (!el) return;
+    if (d.has === 'loading') { el.textContent = d.text || 'Preloading AI engine…'; el.classList.remove('ready'); }
+    else if (d.has)          { el.textContent = '✓ AI model ready'; el.classList.add('ready'); }
+    else                     { el.textContent = 'ℹ First run will securely download the AI model into offline storage'; }
+  } else if (d.type === 'progress') {
+    $('barFill').style.width = (d.pct * 100).toFixed(1) + '%';
+    const stepInfo = d.step !== undefined ? ` · Step ${d.step}/${d.totalSteps}` : '';
+    $('procText').textContent = d.text + stepInfo;
+  } else if (d.type === 'done') {
+    if (_onDone) _onDone(d);
+  } else if (d.type === 'error') {
+    if (_onError) _onError(new Error(d.message));
+  }
+};
+
+// ── Waveform drawing ─────────────────────────────────────────
+function drawWave(canvas, left, c1, c2) {
+  const dpr = 2;
+  const W = canvas.width = canvas.clientWidth * dpr;
+  const H = canvas.height;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+  const grad = ctx.createLinearGradient(0, 0, W, 0);
+  grad.addColorStop(0, c1); grad.addColorStop(1, c2);
+  ctx.fillStyle = grad;
+  const step = left.length / W;
+  for (let x = 0; x < W; x++) {
+    let mn = 1, mx = -1;
+    const s0 = Math.floor(x * step), s1 = Math.min(left.length, Math.floor((x+1)*step));
+    const inc = Math.max(1, Math.floor((s1-s0)/50));
+    for (let i = s0; i < s1; i += inc) { if (left[i] < mn) mn = left[i]; if (left[i] > mx) mx = left[i]; }
+    if (mn > mx) { mn = 0; mx = 0; }
+    const y1 = (H/2)*(1-mx), y2 = (H/2)*(1-mn);
+    ctx.fillRect(x, y1, dpr*0.6, Math.max(dpr*0.6, y2-y1));
+  }
+}
+
+// ── Processing visualiser ────────────────────────────────────
+let vizRAF = null;
+function startProcViz() {
+  const canvas = $('procViz');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const bars = 64, bw = W/bars, barW = bw*0.6;
+  const gradients = Array.from({ length: bars }, (_, i) => {
+    const hue = 170 + Math.sin(i*0.15)*60;
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, `hsla(${hue},80%,65%,.95)`);
+    g.addColorStop(1, `hsla(${hue+40},80%,55%,.35)`);
+    return g;
+  });
+  let t = 0;
+  function frame() {
+    t += 0.06;
+    ctx.clearRect(0, 0, W, H);
+    for (let i = 0; i < bars; i++) {
+      const v = Math.abs(Math.sin(t*1.4+i*0.55))*Math.abs(Math.sin(t*0.7+i*0.21));
+      const h = 8 + v*(H-24);
+      const x = i*bw + bw*0.2, y = H/2 - h/2;
+      ctx.fillStyle = gradients[i];
+      ctx.beginPath(); ctx.roundRect(x, y, barW, h, barW/2); ctx.fill();
+    }
+    vizRAF = requestAnimationFrame(frame);
+  }
+  frame();
+}
+function stopProcViz() { if (vizRAF) { cancelAnimationFrame(vizRAF); vizRAF = null; } }
+
+// ── Stage management ─────────────────────────────────────────
+function showStage(name) {
+  ['stageUpload','stageProcess','stageResult'].forEach(id => $(id).hidden = (id !== name));
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ── Audio decode (main thread — uses AudioContext, not in worker) ──
+const SAMPLE_RATE = 44100; // will be overridden by worker's CONSTANTS value in results
+let currentFile = null, decoded = null, elapsedStart = 0, elapsedTimer = null;
+
+async function decodeToBuffer(file) {
+  const arrayBuffer = await file.arrayBuffer();
+  const audioCtx = new AudioContext({ sampleRate: 44100 });
+  const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+  const length = Math.ceil(audioBuffer.duration * 44100);
+  const offline = new OfflineAudioContext(2, length, 44100);
+  const src = offline.createBufferSource();
+  src.buffer = audioBuffer; src.connect(offline.destination); src.start();
+  const rendered = await offline.startRendering();
+  return {
+    audioBuffer,
+    left:  rendered.getChannelData(0),
+    right: rendered.numberOfChannels > 1 ? rendered.getChannelData(1) : rendered.getChannelData(0)
+  };
+}
+
+function loadFile(file) {
+  if (!file) return;
+  currentFile = file;
+  $('fileName').textContent = file.name;
+  $('fileDur').textContent = 'analyzing…';
+  $('dropzone').hidden = true;
+  $('fileCard').hidden = false;
+  $('runBtn').disabled = true;
+  $('ctaText').textContent = 'Analyzing track…';
+  decodeToBuffer(file).then(({ audioBuffer, left, right }) => {
+    decoded = { audioBuffer, left, right };
+    $('fileDur').textContent = fmtTime(audioBuffer.duration) + ' · ' + file.name.split('.').pop().toUpperCase();
+    drawWave($('wavePreview'), left, '#2dd4bf', '#a78bfa');
+    $('runBtn').disabled = false;
+    $('ctaText').textContent = '✨  Separate Vocals & Instrumental';
+  }).catch(err => {
+    $('ctaText').textContent = 'Could not read this file';
+    console.error(err);
+  });
+}
+
+// ── Blob URL tracking ─────────────────────────────────────────
+let _stemBlobUrls = [];
+function revokeOldStemUrls() { _stemBlobUrls.forEach(u => URL.revokeObjectURL(u)); _stemBlobUrls = []; }
+
+// ── WAV encoder ───────────────────────────────────────────────
+function encodeWav(left, right, sampleRate) {
+  const numFrames = left.length, numChannels = 2, bitsPerSample = 16;
+  const bytesPerSample = 2, blockAlign = numChannels*bytesPerSample;
+  const byteRate = sampleRate*blockAlign, dataBytes = numFrames*blockAlign;
+  const buf = new ArrayBuffer(44+dataBytes), view = new DataView(buf);
+  const wstr = (o,s) => { for (let i=0;i<s.length;i++) view.setUint8(o+i, s.charCodeAt(i)); };
+  wstr(0,'RIFF'); view.setUint32(4, 36+dataBytes, true); wstr(8,'WAVE');
+  wstr(12,'fmt '); view.setUint32(16,16,true); view.setUint16(20,1,true);
+  view.setUint16(22,numChannels,true); view.setUint32(24,sampleRate,true);
+  view.setUint32(28,byteRate,true); view.setUint16(32,blockAlign,true);
+  view.setUint16(34,bitsPerSample,true); wstr(36,'data'); view.setUint32(40,dataBytes,true);
+  // Fast PCM-16 encode: bulk-write samples through an Int16Array view over the
+  // data region (little-endian on all desktop/mobile browsers = WAV byte order),
+  // avoiding the slow per-sample DataView.setInt16() call for long tracks.
+  const samples = new Int16Array(buf, 44);
+  for (let i=0;i<numFrames;i++) {
+    let l = left[i], r = right[i];
+    if (l > 1) l = 1; else if (l < -1) l = -1;
+    if (r > 1) r = 1; else if (r < -1) r = -1;
+    samples[i*2]   = (l < 0 ? l * 0x8000 : l * 0x7FFF) | 0;
+    samples[i*2+1] = (r < 0 ? r * 0x8000 : r * 0x7FFF) | 0;
+  }
+  const url = URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+  _stemBlobUrls.push(url);
+  return url;
+}
+
+// ── Drop zone ─────────────────────────────────────────────────
+const dz = $('dropzone');
+dz.addEventListener('click', () => $('fileInput').click());
+$('fileInput').addEventListener('change', e => loadFile(e.target.files[0]));
+$('changeBtn').addEventListener('click', e => {
+  e.stopPropagation();
+  currentFile = null; decoded = null;
+  revokeOldStemUrls();
+  $('fileCard').hidden = true; $('dropzone').hidden = false;
+  $('runBtn').disabled = true; $('ctaText').textContent = 'Select a track to begin';
+  $('fileInput').value = '';
+});
+['dragover','dragenter'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('over'); }));
+['dragleave','drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('over'); }));
+dz.addEventListener('drop', e => loadFile(e.dataTransfer.files[0]));
+
+// ── Run button ────────────────────────────────────────────────
+$('runBtn').addEventListener('click', () => {
+  if (!decoded) return;
+  $('runBtn').disabled = true;
+  showStage('stageProcess');
+  startProcViz();
+
+  elapsedStart = Date.now();
+  elapsedTimer = setInterval(() => { $('procTimer').textContent = fmtTime((Date.now()-elapsedStart)/1000); }, 500);
+
+  const phases = ['Analyzing audio structure…','AI processing algorithm running…','Isolating vocal harmonics…','Extracting instrumental layer…','Refining output quality…'];
+  let phaseIdx = 0;
+  const phaseTimer = setInterval(() => { phaseIdx = (phaseIdx+1)%phases.length; $('procText').textContent = phases[phaseIdx]; }, 6000);
+
+  const cleanup = () => { clearInterval(phaseTimer); clearInterval(elapsedTimer); stopProcViz(); };
+
+  _onDone = (d) => {
+    cleanup();
+    const speed = d.speed;
+    const sr    = d.sampleRate;
+
+    $('doneStat').innerHTML = `<div class="big">Success! Track Separated</div><div class="sub">Separation speed: ${speed}x real-time</div>`;
+    $('barFill').style.width = '100%';
+
+    const stemsContainer = $('stems');
+    stemsContainer.innerHTML = '';
+    revokeOldStemUrls();
+
+    const displayStems = [
+      { name: 'vocals',        left: new Float32Array(d.vocals.left),        right: new Float32Array(d.vocals.right),        color: '#2dd4bf', c2: '#a78bfa' },
+      { name: 'instrumental',  left: new Float32Array(d.instrumental.left),  right: new Float32Array(d.instrumental.right),  color: '#a78bfa', c2: '#f472b6' }
+    ];
+
+    displayStems.forEach(stem => {
+      const url = encodeWav(stem.left, stem.right, sr);
+      const card = document.createElement('div');
+      card.className = 'stemcard fade-in';
+      card.innerHTML = `
+        <div class="stemhead">
+          <div class="stemname ${stem.name}">${stem.name}</div>
+          <div class="stemactions"><a href="${url}" download="${currentFile.name.split('.')[0]}_${stem.name}.wav" class="btn">Download</a></div>
+        </div>
+        <canvas height="84"></canvas>
+        <audio controls src="${url}"></audio>
+      `;
+      stemsContainer.appendChild(card);
+      drawWave(card.querySelector('canvas'), stem.left, stem.color, stem.c2);
+    });
+
+    showStage('stageResult');
+  };
+
+  _onError = (err) => {
+    cleanup();
+    console.error(err);
+    alert('Processing failed: ' + err.message);
+    showStage('stageUpload');
+    $('runBtn').disabled = false;
+  };
+
+  // Send audio to worker as transferable buffers (zero-copy, instant)
+  const leftBuf  = decoded.left.buffer.slice(0);
+  const rightBuf = decoded.right.buffer.slice(0);
+  worker.postMessage(
+    { cmd: 'separate', leftBuf, rightBuf, duration: decoded.audioBuffer.duration },
+    [leftBuf, rightBuf]
+  );
+});
+
+$('againBtn').addEventListener('click', () => {
+  revokeOldStemUrls();
+  $('changeBtn').click();
+  showStage('stageUpload');
+  $('barFill').style.width = '0%';
+});
+</script>
+</body>
+</html>
