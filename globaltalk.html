@@ -764,7 +764,7 @@ kbd{
           <label class="switch"><input type="checkbox" id="tgStartCamOff"><span class="track"></span></label>
         </div>
         <div class="row">
-          <div class="grow"><div class="lbl">Soft focus (blur my background preview)</div><div class="desc">Applies a light blur to your outgoing video on this device only.</div></div>
+          <div class="grow"><div class="lbl">Soft focus (blur my background preview)</div><div class="desc">Blurs your preview only.</div></div>
           <label class="switch"><input type="checkbox" id="tgBlur"><span class="track"></span></label>
         </div>
       </div>
@@ -1177,21 +1177,7 @@ function applyRemoteVolume(){ remote.volume = Math.max(0, Math.min(1, settings.v
 /* ================================================================
    8. CONFIG CHECK + FIREBASE
    ================================================================ */
-loadLocal();
-applyAppearance();
-buildInterestClouds();
-buildLanguageSelect();
-buildReasons();
-buildEmoji();
-renderBlockList();
-updateStatCards();
-syncSettingsUI();
-
-if(!CONFIGURED){
-  showScreen("setup");
-}else{
-  initFirebase();
-}
+/* init moved to end of script */
 
 async function initFirebase(){
   const [{initializeApp},AUTH,DB] = await Promise.all([
@@ -1255,6 +1241,8 @@ googleBtn?.addEventListener("click", async () => {
 
 signOutBtn?.addEventListener("click", async () => {
   endCall(true);
+  try{ await fb.remove(fb.ref(db, "presence/" + myUid)); }catch{}
+  if(onlineUnsub){ onlineUnsub(); onlineUnsub = null; }
   try{ await fb.signOut(auth); }catch(e){ console.error(e); }
 });
 
@@ -1410,8 +1398,7 @@ function listenOnlineCount(){
   if(onlineUnsub || !myUid) return;
   const presRef = fb.ref(db, "presence/" + myUid);
   fb.set(presRef, { t: fb.serverTimestamp() }).catch(()=>{});
-  const od = fb.onDisconnect(presRef); od.remove();
-  odHooks.push(od);
+  fb.onDisconnect(presRef).remove();
 
   onlineUnsub = fb.onValue(fb.ref(db, "presence"), snap => {
     const v = snap.val() || {};
@@ -1471,9 +1458,9 @@ function renderBlockList(){
     const row = document.createElement("div");
     row.className = "blockitem";
     row.innerHTML = `
-      <img src="${b.picture || 'data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 40 40%22><circle cx=%2220%22 cy=%2220%22 r=%2220%22 fill=%22%23333a52%22/></svg>'}" alt="">
+      <img src="${escapeHtml(b.picture) || 'data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 40 40%22><circle cx=%2220%22 cy=%2220%22 r=%2220%22 fill=%22%23333a52%22/></svg>'}" alt="">
       <span class="nm">${escapeHtml(b.name)}</span>
-      <button class="btn sm" data-unblock="${b.uid}">Unblock</button>`;
+      <button class="btn sm" data-unblock="${escapeHtml(b.uid)}">Unblock</button>`;
     el.appendChild(row);
   });
   el.querySelectorAll("[data-unblock]").forEach(btn=>{
@@ -1530,6 +1517,7 @@ async function joinQueue(){
     name: settings.hideName ? "" : myProfile.name,
     picture: settings.hideName ? "" : (myProfile.picture || ""),
     interests: settings.interests || [],
+    blocks: blocked.map(b => b.uid),
     lang: settings.language
   };
   try{
@@ -1558,7 +1546,7 @@ function onQueueChange(snap){
   const myInts = me.interests || [];
 
   // candidate selection
-  let candidates = uids.slice(1).filter(u => q[u] && !isBlocked(u));
+  let candidates = uids.slice(1).filter(u => q[u] && !isBlocked(u) && !(q[u].blocks || []).includes(myUid));
   if(!candidates.length) return;
 
   // language preference (soft filter)
@@ -1616,6 +1604,11 @@ const roomIdFor = (a,b) => [a,b].sort().join("_");
 /* ================================================================
    14. WEBRTC
    ================================================================ */
+async function addCand(c){
+  for(let i=0; i<30 && pc && !pc.remoteDescription; i++) await new Promise(r=>setTimeout(r,150));
+  if(pc) try{ await pc.addIceCandidate(new RTCIceCandidate(c)); }catch{}
+}
+
 function buildPeerConnection(){
   const conn = new RTCPeerConnection({ iceServers: ICE_SERVERS });
 
@@ -1631,6 +1624,7 @@ function buildPeerConnection(){
   conn.onconnectionstatechange = () => {
     const s = conn.connectionState;
     if(s === "connected"){
+      qualityPill.classList.remove("hidden");
       setStatus("Connected", "live");
       centerState.classList.add("hidden");
     }else if(s === "disconnected" || s === "failed" || s === "closed"){
@@ -1763,7 +1757,7 @@ async function startAsCaller(){
 
   unsubs.push(fb.onChildAdded(fb.ref(db, `rooms/${currentRoomId}/calleeCandidates`), (s) => {
     const c = s.val();
-    if(c && pc) pc.addIceCandidate(new RTCIceCandidate(c)).catch(()=>{});
+    if(c) addCand(c);
   }, ()=>{}));
 
   searchTimer = setTimeout(() => {
@@ -1832,7 +1826,7 @@ async function acceptOffer(offer){
 
   unsubs.push(fb.onChildAdded(fb.ref(db, `rooms/${currentRoomId}/callerCandidates`), (s) => {
     const c = s.val();
-    if(c && pc) pc.addIceCandidate(new RTCIceCandidate(c)).catch(()=>{});
+    if(c) addCand(c);
   }, ()=>{}));
 }
 
@@ -1841,11 +1835,12 @@ async function acceptOffer(offer){
    ================================================================ */
 function startStatsPolling(){
   stopStatsPolling();
+  let prevBytes = null, prevTs = null;
   statsTimer = setInterval(async () => {
     if(!pc || !inCall) return;
     try{
       const stats = await pc.getStats();
-      let rtt = null, lossPct = null, bitrate = 0, prevBytes = null, prevTs = null;
+      let rtt = null, lossPct = null, bitrate = 0;
 
       stats.forEach(r => {
         if(r.type === "candidate-pair" && r.state === "succeeded" && r.currentRoundTripTime != null)
@@ -2182,6 +2177,7 @@ function stopMicMeter(){
 function buildInterestClouds(){
   [ $("interestCloud"), $("interestCloud2") ].forEach(cloud=>{
     if(!cloud) return;
+    cloud.innerHTML = "";
     INTERESTS.forEach(tag=>{
       const b = document.createElement("button");
       b.type = "button";
@@ -2208,6 +2204,7 @@ function syncInterestUI(){
 function buildLanguageSelect(){
   const sel = $("selLang");
   if(!sel) return;
+  sel.innerHTML = "";
   LANGUAGES.forEach(l=>{
     const o = document.createElement("option");
     o.value = l; o.textContent = l;
@@ -2409,6 +2406,23 @@ acceptOffer = async function(){
   startStatsPolling();
   return _origAcceptOffer.apply(this, arguments);
 };
+
+/* 26. INIT (runs last so every const/let is initialized) */
+loadLocal();
+applyAppearance();
+buildInterestClouds();
+buildLanguageSelect();
+buildReasons();
+buildEmoji();
+renderBlockList();
+updateStatCards();
+syncSettingsUI();
+
+if(!CONFIGURED){
+  showScreen("setup");
+}else{
+  initFirebase();
+}
 </script>
 </body>
 </html>
