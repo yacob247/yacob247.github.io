@@ -1,0 +1,1041 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HUSH — SUBLEVEL 4</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#0a0a0c;
+    font-family:'Segoe UI',system-ui,sans-serif;color:#e8e6e1}
+  #hud{position:fixed;top:16px;left:16px;font-size:13px;line-height:1.7;
+    pointer-events:none;text-shadow:0 1px 3px #000;z-index:10}
+  #hud .k{display:inline-block;min-width:80px;color:#8fa8c8}
+  #hud .v{color:#f0f0f0;font-weight:600}
+  #zone{position:fixed;top:16px;right:16px;text-align:right;
+    text-shadow:0 1px 3px #000;z-index:10}
+  #zone .name{font-size:20px;font-weight:700;letter-spacing:3px;color:#7fd4ff}
+  #zone .coord{color:#8fa8c8;font-size:11px;margin-top:4px}
+  #crosshair{position:fixed;left:50%;top:50%;width:6px;height:6px;
+    margin:-3px 0 0 -3px;border-radius:50%;background:rgba(255,255,255,.5);
+    box-shadow:0 0 6px rgba(255,255,255,.4);pointer-events:none;z-index:10}
+  #mic{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
+    width:280px;z-index:10;pointer-events:none}
+  #micbar{height:10px;background:rgba(255,255,255,.08);
+    border:1px solid rgba(255,255,255,.2);border-radius:5px;overflow:hidden;
+    backdrop-filter:blur(4px)}
+  #micfill{height:100%;width:0%;
+    background:linear-gradient(90deg,#3aa0ff,#7fd4ff,#fff);transition:width .05s}
+  #miclabel{text-align:center;font-size:11px;letter-spacing:3px;
+    color:#8fa8c8;margin-bottom:6px;text-shadow:0 1px 3px #000}
+  #mode{position:fixed;bottom:24px;right:24px;font-size:12px;
+    letter-spacing:2px;padding:8px 14px;border-radius:6px;
+    background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.15);
+    backdrop-filter:blur(6px);z-index:10;pointer-events:none}
+  #mode.lit{color:#ffd77a;border-color:rgba(255,215,122,.4)}
+  #mode.hush{color:#ff5a5a;border-color:rgba(255,90,90,.4)}
+  #overlay{position:fixed;inset:0;
+    background:radial-gradient(circle at 50% 40%,rgba(10,20,40,.88),rgba(0,0,0,.97));
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    z-index:100;cursor:pointer;transition:opacity .4s}
+  #overlay h1{font-size:64px;letter-spacing:16px;margin:0 0 8px;font-weight:800;
+    color:#e8e6e1;text-shadow:0 0 40px rgba(120,200,255,.5)}
+  #overlay .sub{font-size:14px;letter-spacing:6px;color:#7fd4ff;margin-bottom:40px}
+  #overlay .info{font-size:13px;color:#8fa8c8;line-height:2;text-align:center}
+  #overlay .info b{color:#e8e6e1}
+  #overlay .cta{margin-top:40px;font-size:12px;letter-spacing:4px;color:#ffd77a;
+    animation:pulse 1.6s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:.4}50%{opacity:1}}
+</style>
+</head>
+<body>
+
+<div id="hud">
+  <div><span class="k">MOVE</span><span class="v">W A S D</span></div>
+  <div><span class="k">SPRINT</span><span class="v">SHIFT</span></div>
+  <div><span class="k">CROUCH</span><span class="v">CTRL</span></div>
+  <div><span class="k">TALK</span><span class="v">MIC (hold T if no mic)</span></div>
+  <div><span class="k">LIGHTS</span><span class="v">F — LIT / HUSH</span></div>
+  <div><span class="k">ESC</span><span class="v">release mouse</span></div>
+</div>
+
+<div id="zone">
+  <div class="name" id="zonename">ATRIUM</div>
+  <div class="coord" id="zonecoord">X 0.0 · Z 0.0</div>
+</div>
+
+<div id="crosshair"></div>
+
+<div id="mic">
+  <div id="miclabel">VOICE LAMP</div>
+  <div id="micbar"><div id="micfill"></div></div>
+</div>
+
+<div id="mode" class="lit">MODE · LIT</div>
+
+<div id="overlay">
+  <h1>HUSH</h1>
+  <div class="sub">SUBLEVEL 4 · RESEARCH ANNEX</div>
+  <div class="info">
+    <b>WASD</b> move · <b>MOUSE</b> look · <b>SHIFT</b> sprint · <b>CTRL</b> crouch<br>
+    <b>SPEAK</b> to light the room · <b>F</b> toggles facility lights<br>
+    Silence is safety. Light is danger.
+  </div>
+  <div class="cta">CLICK TO ENTER SUBLEVEL 4</div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getDatabase, ref, set, onValue, onDisconnect, remove, update, get, child, serverTimestamp }
+  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
+
+/* ============================================================
+   0. FIREBASE
+   ============================================================ */
+const firebaseConfig = {
+  apiKey: "AIzaSyDLeM4MrsA1Q8zq7_QcQfTJKk049vOVOO4",
+  authDomain: "envizionwork.firebaseapp.com",
+  databaseURL: "https://envizionwork-default-rtdb.firebaseio.com",
+  projectId: "envizionwork",
+  storageBucket: "envizionwork.firebasestorage.app",
+  messagingSenderId: "706251024837",
+  appId: "1:706251024837:web:4c931733d3a9f430a703ac",
+  measurementId: "G-9CL929H67Z"
+};
+const fbApp = initializeApp(firebaseConfig);
+const db = getDatabase(fbApp);
+
+/* ============================================================
+   1. MULTIPLAYER STATE
+   ============================================================ */
+const MP = {
+  connected: false,
+  roomCode: null,
+  playerId: 'p_' + Math.random().toString(36).slice(2, 9),
+  playerName: '',
+  playerColor: '#7fd4ff',
+  isHost: false,
+  players: {},           // { id: {name, color, x, y, z, ry, zone, mic, lastSeen} }
+  remoteMeshes: {},      // { id: THREE.Mesh }
+  syncTimer: 0,
+  syncInterval: 1/15,    // 15 writes per second
+};
+
+const PLAYER_COLORS = [
+  '#7fd4ff', '#ff7f9f', '#9fff7f', '#ffd77a',
+  '#c47fff', '#7fffd4', '#ff9f7f', '#ff7fff'
+];
+
+function randomRoomCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let c = '';
+  for (let i = 0; i < 6; i++) c += chars[Math.floor(Math.random() * chars.length)];
+  return c;
+}
+function pickColor() {
+  const used = Object.values(MP.players).map(p => p.color);
+  return PLAYER_COLORS.find(c => !used.includes(c)) || PLAYER_COLORS[0];
+}
+
+/* ============================================================
+   2. RENDERER · SCENE · CAMERA  (unchanged)
+   ============================================================ */
+const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x05070c);
+scene.fog = new THREE.FogExp2(0x05070c, 0.018);
+
+const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.05, 300);
+camera.position.set(0, 1.7, 5);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+/* ============================================================
+   3. PROCEDURAL PBR TEXTURES  (unchanged — same as before)
+   ============================================================ */
+function makeCanvas(s=512){ const c=document.createElement('canvas'); c.width=c.height=s; return c; }
+function toTex(c, r=1){
+  const t=new THREE.CanvasTexture(c);
+  t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(r,r);
+  t.anisotropy=renderer.capabilities.getMaxAnisotropy();
+  t.colorSpace=THREE.SRGBColorSpace;
+  return t;
+}
+function toData(c, r=1){ const t=toTex(c,r); t.colorSpace=THREE.NoColorSpace; return t; }
+function fillNoise(ctx,s,base,v,speck=0){
+  ctx.fillStyle=base; ctx.fillRect(0,0,s,s);
+  const img=ctx.getImageData(0,0,s,s), d=img.data;
+  for(let i=0;i<d.length;i+=4){
+    const n=(Math.random()-0.5)*v;
+    d[i]=Math.max(0,Math.min(255,d[i]+n));
+    d[i+1]=Math.max(0,Math.min(255,d[i+1]+n));
+    d[i+2]=Math.max(0,Math.min(255,d[i+2]+n));
+  }
+  ctx.putImageData(img,0,0);
+  if(speck) for(let i=0;i<speck;i++){
+    ctx.fillStyle=`rgba(0,0,0,${Math.random()*0.15})`;
+    ctx.fillRect(Math.random()*s,Math.random()*s,1+Math.random()*2,1+Math.random()*2);
+  }
+}
+function texConcreteFloor(){
+  const c=makeCanvas(512),x=c.getContext('2d');
+  fillNoise(x,512,'#b8b5ae',34,900);
+  x.strokeStyle='rgba(0,0,0,0.22)'; x.lineWidth=2;
+  for(let i=0;i<=512;i+=128){
+    x.beginPath();x.moveTo(i,0);x.lineTo(i,512);x.stroke();
+    x.beginPath();x.moveTo(0,i);x.lineTo(512,i);x.stroke();
+  }
+  for(let i=0;i<12;i++){
+    const g=x.createRadialGradient(Math.random()*512,Math.random()*512,0,
+      Math.random()*512,Math.random()*512,40+Math.random()*60);
+    g.addColorStop(0,'rgba(60,55,45,0.10)'); g.addColorStop(1,'rgba(0,0,0,0)');
+    x.fillStyle=g; x.fillRect(0,0,512,512);
+  }
+  return c;
+}
+function texPolishedFloor(){
+  const c=makeCanvas(512),x=c.getContext('2d');
+  fillNoise(x,512,'#cfccc4',14,300);
+  x.strokeStyle='rgba(0,0,0,0.35)'; x.lineWidth=3;
+  for(let i=0;i<=512;i+=256){
+    x.beginPath();x.moveTo(i,0);x.lineTo(i,512);x.stroke();
+    x.beginPath();x.moveTo(0,i);x.lineTo(512,i);x.stroke();
+  }
+  return c;
+}
+function texSteel(){
+  const c=makeCanvas(512),x=c.getContext('2d');
+  fillNoise(x,512,'#6e7276',18,200);
+  x.globalAlpha=0.10;
+  for(let y=0;y<512;y+=2){
+    x.fillStyle=Math.random()>0.5?'#ffffff':'#000000';
+    x.fillRect(0,y,512,1);
+  }
+  x.globalAlpha=1;
+  x.strokeStyle='rgba(0,0,0,0.4)'; x.lineWidth=2;
+  for(let i=0;i<=512;i+=128){ x.beginPath();x.moveTo(i,0);x.lineTo(i,512);x.stroke(); }
+  return c;
+}
+function texPaintedWall(){
+  const c=makeCanvas(512),x=c.getContext('2d');
+  fillNoise(x,512,'#d8d2c4',16,150);
+  for(let i=0;i<20;i++){
+    x.fillStyle=`rgba(80,70,60,${Math.random()*0.08})`;
+    x.fillRect(Math.random()*512,420+Math.random()*80,20+Math.random()*60,3+Math.random()*10);
+  }
+  return c;
+}
+function texCeiling(){
+  const c=makeCanvas(512),x=c.getContext('2d');
+  fillNoise(x,512,'#e8e6e1',10,400);
+  x.strokeStyle='rgba(0,0,0,0.18)'; x.lineWidth=3;
+  for(let i=0;i<=512;i+=128){
+    x.beginPath();x.moveTo(i,0);x.lineTo(i,512);x.stroke();
+    x.beginPath();x.moveTo(0,i);x.lineTo(512,i);x.stroke();
+  }
+  return c;
+}
+function texWood(base,dark){
+  const c=makeCanvas(512),x=c.getContext('2d');
+  x.fillStyle=base; x.fillRect(0,0,512,512);
+  for(let i=0;i<220;i++){
+    x.strokeStyle=`rgba(0,0,0,${0.03+Math.random()*0.10})`;
+    x.lineWidth=0.5+Math.random()*1.6;
+    x.beginPath(); const y=Math.random()*512; x.moveTo(0,y);
+    for(let px=0;px<=512;px+=32)
+      x.lineTo(px, y+Math.sin(px*0.02+i)*3+(Math.random()-0.5)*2);
+    x.stroke();
+  }
+  for(let i=0;i<4;i++){
+    const kx=Math.random()*512, ky=Math.random()*512;
+    const g=x.createRadialGradient(kx,ky,0,kx,ky,14);
+    g.addColorStop(0,dark); g.addColorStop(1,'rgba(0,0,0,0)');
+    x.fillStyle=g; x.beginPath(); x.arc(kx,ky,14,0,Math.PI*2); x.fill();
+  }
+  return c;
+}
+function texRough(g,v){
+  const c=makeCanvas(256),x=c.getContext('2d');
+  fillNoise(x,256,`rgb(${g},${g},${g})`,v,0);
+  return c;
+}
+
+const TEX = {
+  floorConc:   toTex(texConcreteFloor(),4),
+  floorPolish: toTex(texPolishedFloor(),6),
+  steel:       toTex(texSteel(),2),
+  painted:     toTex(texPaintedWall(),2),
+  ceiling:     toTex(texCeiling(),4),
+  woodOak:     toTex(texWood('#8b5a2b','#3d2510'),1),
+  woodDark:    toTex(texWood('#4a2f1a','#1f1108'),1),
+  roughHigh:   toData(texRough(220,50)),
+  roughMid:    toData(texRough(140,40)),
+  roughLow:    toData(texRough(60,30)),
+};
+
+/* ============================================================
+   4. MATERIAL LIBRARY  (unchanged)
+   ============================================================ */
+const MAT = {
+  floorAtrium: new THREE.MeshStandardMaterial({ map:TEX.floorPolish, roughnessMap:TEX.roughLow, roughness:0.35, metalness:0.10 }),
+  floorConc:   new THREE.MeshStandardMaterial({ map:TEX.floorConc,   roughnessMap:TEX.roughHigh, roughness:0.92, metalness:0.02 }),
+  ceiling:     new THREE.MeshStandardMaterial({ map:TEX.ceiling,     roughnessMap:TEX.roughHigh, roughness:0.95, metalness:0.00 }),
+  wallSteel:   new THREE.MeshStandardMaterial({ map:TEX.steel,       roughnessMap:TEX.roughMid, roughness:0.45, metalness:0.80 }),
+  wallPainted: new THREE.MeshStandardMaterial({ map:TEX.painted,     roughnessMap:TEX.roughHigh, roughness:0.88, metalness:0.00 }),
+  steelDark:   new THREE.MeshStandardMaterial({ color:0x3a3e42, roughness:0.42, metalness:0.90 }),
+  steelLight:  new THREE.MeshStandardMaterial({ color:0xa8adb2, roughness:0.35, metalness:0.85 }),
+  copper:      new THREE.MeshStandardMaterial({ color:0xb87333, roughness:0.32, metalness:1.00 }),
+  brass:       new THREE.MeshStandardMaterial({ color:0xc5a55a, roughness:0.28, metalness:1.00 }),
+  woodOak:     new THREE.MeshStandardMaterial({ map:TEX.woodOak,  roughnessMap:TEX.roughMid, roughness:0.68, metalness:0.00 }),
+  woodDark:    new THREE.MeshStandardMaterial({ map:TEX.woodDark, roughnessMap:TEX.roughMid, roughness:0.72, metalness:0.00 }),
+  plasticWhite:   new THREE.MeshStandardMaterial({ color:0xf0f0ee, roughness:0.35, metalness:0.05 }),
+  plasticBlack:   new THREE.MeshStandardMaterial({ color:0x14161a, roughness:0.55, metalness:0.05 }),
+  rubberMatte:    new THREE.MeshStandardMaterial({ color:0x0e0e10, roughness:0.96, metalness:0.00 }),
+  fabricNavy:     new THREE.MeshStandardMaterial({ color:0x2c3e50, roughness:0.95, metalness:0.00 }),
+  fabricCharcoal: new THREE.MeshStandardMaterial({ color:0x3a3a3c, roughness:0.95, metalness:0.00 }),
+  leatherTan:     new THREE.MeshStandardMaterial({ color:0x8a6b4a, roughness:0.55, metalness:0.02 }),
+  glass:     new THREE.MeshPhysicalMaterial({ color:0xa8c8d8, roughness:0.05, metalness:0.0, transmission:0.9, thickness:0.4, ior:1.5 }),
+  screen:    new THREE.MeshStandardMaterial({ color:0x0a1a2a, emissive:0x4a9eff, emissiveIntensity:0.9, roughness:0.3, metalness:0.1 }),
+  screenRed: new THREE.MeshStandardMaterial({ color:0x1a0a0a, emissive:0xff3b30, emissiveIntensity:0.7, roughness:0.3, metalness:0.1 }),
+  lampPanel: new THREE.MeshStandardMaterial({ color:0xf6f4ee, emissive:0xfff4d6, emissiveIntensity:1.4, roughness:0.4, metalness:0.0 }),
+  lampEmerg: new THREE.MeshStandardMaterial({ color:0x2a0a0a, emissive:0xff3b30, emissiveIntensity:1.8, roughness:0.4 }),
+  foliage:   new THREE.MeshStandardMaterial({ color:0x3d6b3a, roughness:0.85, metalness:0.0 }),
+  soil:      new THREE.MeshStandardMaterial({ color:0x2a1f15, roughness:0.98 }),
+  ceramicPot:new THREE.MeshStandardMaterial({ color:0xb85c3a, roughness:0.50, metalness:0.0 }),
+  cardboard: new THREE.MeshStandardMaterial({ color:0xb08a5a, roughness:0.95 }),
+  crateMetal:new THREE.MeshStandardMaterial({ color:0x4a5a4a, roughness:0.60, metalness:0.70 }),
+  barrel:    new THREE.MeshStandardMaterial({ color:0x8a3a1a, roughness:0.50, metalness:0.60 }),
+};
+
+/* ============================================================
+   5. GEOMETRY HELPERS + WORLD  (unchanged — same build as before)
+   ============================================================ */
+const root = new THREE.Group();
+scene.add(root);
+
+function addBox(x,y,z,w,h,d,mat,o={}){
+  const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);
+  m.position.set(x, y+h/2, z);
+  m.castShadow = o.cast!==false;
+  m.receiveShadow = o.recv!==false;
+  if(o.rotY) m.rotation.y=o.rotY;
+  root.add(m); return m;
+}
+function addCyl(x,y,z,r,h,mat,seg=20){
+  const m=new THREE.Mesh(new THREE.CylinderGeometry(r,r,h,seg),mat);
+  m.position.set(x,y+h/2,z);
+  m.castShadow=m.receiveShadow=true;
+  root.add(m); return m;
+}
+
+const WALL_H = { atrium:6.0, wing:4.0, corridor:3.4 };
+
+function buildFloorCeil(x1,z1,x2,z2,h,fm,cm){
+  const w=x2-x1, d=z2-z1, cx=(x1+x2)/2, cz=(z1+z2)/2;
+  const f=new THREE.Mesh(new THREE.BoxGeometry(w,0.2,d),fm);
+  f.position.set(cx,-0.1,cz); f.receiveShadow=true; root.add(f);
+  const c=new THREE.Mesh(new THREE.BoxGeometry(w,0.2,d),cm);
+  c.position.set(cx,h+0.1,cz); c.receiveShadow=true; root.add(c);
+}
+function addWall(x1,z1,x2,z2,h,T,mat){
+  const w=Math.abs(x2-x1)||T, d=Math.abs(z2-z1)||T;
+  const cx=(x1+x2)/2, cz=(z1+z2)/2;
+  const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);
+  m.position.set(cx,h/2,cz);
+  m.castShadow=m.receiveShadow=true;
+  root.add(m);
+}
+function buildWalls(x1,z1,x2,z2,h,mat,doors=[]){
+  const T=0.28;
+  const sides={ n:{f:'z',v:z1,a:x1,b:x2}, s:{f:'z',v:z2,a:x1,b:x2},
+                w:{f:'x',v:x1,a:z1,b:z2}, e:{f:'x',v:x2,a:z1,b:z2} };
+  for(const side of ['n','s','w','e']){
+    const s=sides[side], door=doors.find(d=>d.side===side);
+    const seg=(p,q)=>{ if(q<=p) return;
+      if(s.f==='z') addWall(p,s.v,q,s.v,h,T,mat); else addWall(s.v,p,s.v,q,h,T,mat); };
+    if(!door){ seg(s.a,s.b); continue; }
+    seg(s.a, door.center-door.width/2);
+    seg(door.center+door.width/2, s.b);
+  }
+}
+function buildCorridor(x1,z1,x2,z2,h,mat){
+  const T=0.28; const horiz=(x2-x1)>=(z2-z1);
+  if(horiz){ addWall(x1,z1,x2,z1,h,T,mat); addWall(x1,z2,x2,z2,h,T,mat); }
+  else     { addWall(x1,z1,x1,z2,h,T,mat); addWall(x2,z1,x2,z2,h,T,mat); }
+}
+
+const ZONES = [
+  { name:'ATRIUM',      x1:-9,  z1:-9,  x2:9,  z2:9,   h:WALL_H.atrium,
+    floor:'floorAtrium', ceil:'ceiling', wall:'wallPainted',
+    doors:[{side:'w',center:0,width:4},{side:'e',center:0,width:4},
+           {side:'n',center:0,width:4},{side:'s',center:0,width:4}] },
+  { name:'LABORATORY',  x1:-34, z1:-7,  x2:-18,z2:7,   h:WALL_H.wing,
+    floor:'floorConc', ceil:'ceiling', wall:'wallSteel', doors:[{side:'e',center:0,width:4}] },
+  { name:'SERVER ROOM', x1:-7,  z1:-32, x2:7,  z2:-20, h:WALL_H.wing,
+    floor:'floorConc', ceil:'ceiling', wall:'wallSteel', doors:[{side:'s',center:0,width:4}] },
+  { name:'BREAK ROOM',  x1:18,  z1:-7,  x2:34, z2:7,   h:WALL_H.wing,
+    floor:'floorConc', ceil:'ceiling', wall:'wallPainted', doors:[{side:'w',center:0,width:4}] },
+  { name:'STORAGE BAY', x1:-9,  z1:18,  x2:9,  z2:34,  h:5.0,
+    floor:'floorConc', ceil:'ceiling', wall:'wallSteel', doors:[{side:'n',center:0,width:4}] },
+];
+const CORRIDORS = [
+  { name:'WEST CORRIDOR',  x1:-18, z1:-2,  x2:-9, z2:2  },
+  { name:'EAST CORRIDOR',  x1:9,   z1:-2,  x2:18, z2:2  },
+  { name:'NORTH CORRIDOR', x1:-2,  z1:-20, x2:2,  z2:-9 },
+  { name:'SOUTH CORRIDOR', x1:-2,  z1:9,   x2:2,  z2:18 },
+];
+const WALKABLE = [
+  ...ZONES.map(z=>({x1:z.x1,z1:z.z1,x2:z.x2,z2:z.z2,name:z.name})),
+  ...CORRIDORS.map(c=>({x1:c.x1,z1:c.z1,x2:c.x2,z2:c.z2,name:c.name})),
+];
+
+for(const z of ZONES){
+  buildFloorCeil(z.x1,z.z1,z.x2,z.z2,z.h,MAT[z.floor],MAT[z.ceil]);
+  buildWalls(z.x1,z.z1,z.x2,z.z2,z.h,MAT[z.wall],z.doors);
+}
+for(const c of CORRIDORS){
+  buildFloorCeil(c.x1,c.z1,c.x2,c.z2,WALL_H.corridor,MAT.floorConc,MAT.ceiling);
+  buildCorridor(c.x1,c.z1,c.x2,c.z2,WALL_H.corridor,MAT.wallSteel);
+}
+
+/* ---- LIGHTS ---- */
+const facilityLights = [];
+const emissivePanels = [];
+let lightBudget = 10;
+function addCeilingPanel(x,z,y,w=2.4,d=1.2,color=0xfff4d6){
+  addBox(x,y-0.08,z,w+0.2,0.16,d+0.2,MAT.steelDark);
+  const mat = MAT.lampPanel.clone(); mat.emissive = new THREE.Color(color);
+  const panel = addBox(x,y-0.02,z,w,0.06,d,mat,{cast:false});
+  panel.userData.baseEm = 1.4; emissivePanels.push(panel);
+  if(lightBudget>0){
+    const l=new THREE.PointLight(color,14,18,2.0);
+    l.position.set(x,y-0.4,z); l.userData.base=14;
+    scene.add(l); facilityLights.push(l); lightBudget--;
+  }
+}
+function addEmergencyLight(x,y,z,axis){
+  const rotY = axis==='x'?0:Math.PI/2;
+  addBox(x,y,z,0.5,0.2,0.16,MAT.steelDark,{rotY});
+  const mat = MAT.lampEmerg.clone();
+  const panel = addBox(x,y-0.02,z,0.42,0.14,0.06,mat,{cast:false,rotY});
+  panel.userData.baseEm = 1.8; emissivePanels.push(panel);
+  const l=new THREE.PointLight(0xff3b30,2.5,7,2.0);
+  l.position.set(x,y-0.6,z); l.userData.base=2.5;
+  scene.add(l); facilityLights.push(l);
+}
+
+/* ---- PROPS ---- */
+function propDesk(x,z,w=4.0,rotY=0){
+  addBox(x,1.02,z,w,0.08,1.2,MAT.woodOak,{rotY});
+  addBox(x,0.10,z+0.45,w-0.3,0.92,0.06,MAT.woodDark,{rotY});
+  addBox(x-w/2+0.3,0,z,0.5,1.0,1.0,MAT.steelDark,{rotY});
+  addBox(x+w/2-0.3,0,z,0.5,1.0,1.0,MAT.steelDark,{rotY});
+}
+function propOfficeChair(x,z){
+  addBox(x,0.45,z,0.55,0.10,0.55,MAT.fabricNavy);
+  addBox(x,0.55,z-0.24,0.55,0.55,0.08,MAT.fabricNavy);
+  addCyl(x,0.10,z,0.06,0.35,MAT.steelDark);
+  addCyl(x,0.02,z,0.28,0.06,MAT.plasticBlack);
+}
+function propSimpleChair(x,z){
+  addBox(x,0.44,z,0.44,0.06,0.44,MAT.woodOak);
+  addBox(x,0.50,z-0.20,0.44,0.50,0.05,MAT.woodOak);
+  for(const sx of[-0.18,0.18]) for(const sz of[-0.18,0.18])
+    addBox(x+sx,0,z+sz,0.05,0.44,0.05,MAT.woodDark);
+}
+function propStool(x,z){
+  addCyl(x,0.62,z,0.18,0.05,MAT.plasticWhite);
+  addCyl(x,0.0, z,0.04,0.62,MAT.steelLight);
+  addCyl(x,0.0, z,0.22,0.03,MAT.steelDark);
+}
+function propPlant(x,z){
+  addCyl(x,0,z,0.42,0.55,MAT.ceramicPot);
+  addCyl(x,0.55,z,0.40,0.05,MAT.soil);
+  for(let i=0;i<12;i++){
+    const r=0.20+Math.random()*0.18;
+    const s=new THREE.Mesh(new THREE.SphereGeometry(r,8,6),MAT.foliage);
+    s.position.set(x+(Math.random()-0.5)*0.8,0.85+Math.random()*0.9,z+(Math.random()-0.5)*0.8);
+    s.castShadow=s.receiveShadow=true; root.add(s);
+  }
+}
+function propServerRack(x,z){
+  addBox(x,0,z,1.1,2.20,1.0,MAT.steelDark);
+  for(let row=0;row<10;row++){
+    const y=0.15+row*0.20;
+    addBox(x,y,z+0.51,0.95,0.16,0.02,MAT.plasticBlack,{cast:false});
+    const led=new THREE.Mesh(new THREE.SphereGeometry(0.02,6,4),
+      Math.random()>0.3?MAT.screen:MAT.screenRed);
+    led.position.set(x+0.32,y+0.08,z+0.53); root.add(led);
+  }
+}
+function propLabBench(x,z,w=5.0,rotY=0){
+  addBox(x,0.90,z,w,0.06,1.3,MAT.plasticWhite,{rotY});
+  addBox(x,0.00,z,w,0.90,1.3,MAT.steelLight,{rotY});
+  for(let i=0;i<4;i++){
+    const dx=x-w/2+0.6+i*(w-1.2)/3;
+    addBox(dx,0.35,z+0.66,(w-1.2)/3-0.1,0.30,0.02,MAT.steelDark,{cast:false,rotY});
+    addBox(dx,0.68,z+0.66,(w-1.2)/3-0.1,0.30,0.02,MAT.steelDark,{cast:false,rotY});
+  }
+}
+function propBeaker(x,z,y){
+  const m=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.07,0.16,12),MAT.glass);
+  m.position.set(x,y+0.08,z); root.add(m);
+}
+function propMicroscope(x,z,y){
+  addCyl(x,y,z,0.05,0.05,MAT.steelDark);
+  addBox(x,y+0.05,z,0.06,0.22,0.06,MAT.steelLight);
+  addBox(x,y+0.20,z,0.20,0.06,0.10,MAT.plasticBlack);
+}
+function propKitchenCounter(x,z,w=8.0){
+  addBox(x,0.88,z,w,0.06,0.70,MAT.steelLight);
+  addBox(x,0.00,z,w,0.88,0.70,MAT.plasticWhite);
+  addBox(x-w/2+1.0,0.86,z-0.05,0.7,0.06,0.5,MAT.steelDark);
+  addCyl(x-w/2+1.0,0.94,z-0.25,0.025,0.25,MAT.steelLight);
+  addBox(x,2.20,z-0.30,w,0.7,0.35,MAT.woodDark);
+}
+function propFridge(x,z){
+  addBox(x,0,z,0.80,2.00,0.72,MAT.steelLight);
+  addBox(x+0.41,1.10,z,0.03,0.60,0.03,MAT.steelDark);
+}
+function propMicrowave(x,z,y){
+  addBox(x,y,z,0.55,0.32,0.42,MAT.plasticBlack);
+  addBox(x-0.05,y+0.05,z+0.22,0.35,0.22,0.01,MAT.screen,{cast:false});
+}
+function propVending(x,z){
+  addBox(x,0,z,0.95,1.95,0.75,MAT.steelDark);
+  addBox(x,0.15,z+0.38,0.85,1.55,0.02,MAT.screen,{cast:false});
+}
+function propCouch(x,z,rotY=0){
+  addBox(x,0.22,z,2.0,0.35,0.85,MAT.fabricCharcoal,{rotY});
+  addBox(x,0.57,z-0.34,2.0,0.55,0.20,MAT.fabricCharcoal,{rotY});
+  addBox(x-0.95,0.50,z,0.18,0.30,0.85,MAT.fabricCharcoal,{rotY});
+  addBox(x+0.95,0.50,z,0.18,0.30,0.85,MAT.fabricCharcoal,{rotY});
+}
+function propTV(x,y,z,rotY=0){
+  addBox(x,y,z,1.3,0.75,0.06,MAT.plasticBlack,{rotY});
+  addBox(x,y+0.05,z+0.04,1.20,0.65,0.02,MAT.screen,{cast:false,rotY});
+}
+function propShelf(x,z,w=3.0,d=0.8,h=3.0){
+  for(let l=0;l<4;l++){
+    const y=0.15+l*(h/4);
+    addBox(x,y,z,w,0.05,d,MAT.steelLight);
+  }
+  for(const sx of[-w/2+0.05,0,w/2-0.05]){
+    addBox(x+sx,0,z-d/2+0.05,0.06,h,0.06,MAT.steelDark);
+    addBox(x+sx,0,z+d/2-0.05,0.06,h,0.06,MAT.steelDark);
+  }
+}
+function propCrate(x,y,z,size=0.7,mat=MAT.cardboard){
+  addBox(x,y,z,size,size,size,mat);
+  addBox(x,y+size*0.5,z+size*0.51,size*0.9,0.04,0.01,MAT.woodDark,{cast:false});
+}
+function propBarrel(x,z){
+  addCyl(x,0,z,0.32,0.95,MAT.barrel);
+  addCyl(x,0.30,z,0.335,0.05,MAT.steelDark);
+  addCyl(x,0.60,z,0.335,0.05,MAT.steelDark);
+}
+function propForklift(x,z,rotY=0){
+  addBox(x,0.15,z,1.2,0.55,1.8,MAT.steelDark,{rotY});
+  addBox(x,0.70,z-0.30,0.9,0.90,0.9,MAT.steelDark,{rotY});
+  addBox(x,0.30,z+1.1,0.9,0.05,0.08,MAT.steelLight,{rotY});
+  addBox(x,0.15,z+1.1,0.05,0.55,0.05,MAT.steelLight,{rotY});
+  for(const sx of[-0.55,0.55]) for(const sz of[-0.55,0.55])
+    addCyl(x+sx,0,z+sz,0.28,0.18,MAT.rubberMatte);
+}
+function propWhiteboard(x,y,z,w=3.0,h=1.6){
+  addBox(x,y,z,w,h,0.06,MAT.steelLight);
+  addBox(x,y+0.05,z+0.035,w-0.1,h-0.1,0.005,MAT.plasticWhite,{cast:false});
+}
+function propCabinet(x,z,w=1.6,h=2.0,d=0.6){
+  addBox(x,0,z,w,h,d,MAT.steelLight);
+  for(let i=0;i<4;i++)
+    addBox(x,i*h/4,z+d/2+0.005,w-0.06,h/4-0.02,0.01,MAT.steelDark,{cast:false});
+}
+function propColumn(x,z,h){
+  addBox(x,0,z,0.45,h,0.45,MAT.steelDark);
+  addBox(x,0,z,0.60,0.20,0.60,MAT.steelDark);
+  addBox(x,h-0.20,z,0.60,0.20,0.60,MAT.steelDark);
+}
+function propWallSign(x,y,z,rotY,w=1.6,h=0.5){
+  addBox(x,y,z,w,h,0.05,MAT.steelDark,{rotY});
+  addBox(x,y+0.03,z+0.03,w-0.12,h-0.12,0.005,MAT.screen,{cast:false,rotY});
+}
+
+/* ---- PLACE PROPS ---- */
+propColumn(-6,-6,6); propColumn(6,-6,6);
+propColumn(-6, 6,6); propColumn(6, 6,6);
+propDesk(-4,4,4.0);
+propOfficeChair(-4,5.4);
+propSimpleChair(-8,-2); propSimpleChair(-8,0); propSimpleChair(-8,2);
+propPlant(-7.6,-7.6); propPlant(7.6,7.6);
+propWallSign(0,2.6,-8.85,0,3.2,0.6);
+propWallSign(0,2.6, 8.85,Math.PI,3.2,0.6);
+addBox(0,5.4,-8.7,0.30,0.22,0.22,MAT.steelDark);
+addCeilingPanel(-4,-4,5.9,3.0,1.4); addCeilingPanel( 4,-4,5.9,3.0,1.4);
+addCeilingPanel(-4, 4,5.9,3.0,1.4); addCeilingPanel( 4, 4,5.9,3.0,1.4);
+addEmergencyLight(0,5.7,0,'z');
+
+propLabBench(-31,0,5.5); propLabBench(-27,0,5.5);
+propLabBench(-23,0,5.5); propLabBench(-19,0,5.5);
+for(const bx of[-31,-27,-23,-19]){ propStool(bx-1.5,1.5); propStool(bx+1.5,1.5); }
+propMicroscope(-31,0,0.96); propMicroscope(-27,0,0.96);
+propBeaker(-30.5,-0.3,0.96); propBeaker(-30.2,0.2,0.96);
+propBeaker(-29.8,-0.1,0.96); propBeaker(-23.6,0.2,0.96);
+propBeaker(-19.5,-0.2,0.96);
+addBox(-31,0,-6.2,2.4,2.4,1.0,MAT.steelDark);
+addBox(-31,0.9,-5.68,2.2,1.3,0.03,MAT.glass,{cast:false});
+propWhiteboard(-23,1.6,-6.85,3.0,1.6);
+propDesk(-19,5.8,3.0);
+addBox(-19,1.10,5.5,0.85,0.55,0.06,MAT.plasticBlack);
+addBox(-19,1.15,5.54,0.78,0.48,0.005,MAT.screen,{cast:false});
+propCabinet(-31,5.8);
+addCeilingPanel(-31,-3,3.9); addCeilingPanel(-27,-3,3.9);
+addCeilingPanel(-31, 3,3.9); addCeilingPanel(-27, 3,3.9);
+addCeilingPanel(-23,-3,3.9); addCeilingPanel(-19,-3,3.9);
+addCeilingPanel(-23, 3,3.9); addCeilingPanel(-19, 3,3.9);
+
+propServerRack(-4,-28); propServerRack(0,-28); propServerRack(4,-28);
+propServerRack(-4,-24); propServerRack(0,-24); propServerRack(4,-24);
+addBox(5.6,0,-30,1.6,2.2,1.4,MAT.steelLight);
+propDesk(-5,-21,3.0);
+addBox(-5,1.10,-21.4,0.85,0.55,0.06,MAT.plasticBlack);
+addBox(-5,1.15,-21.44,0.78,0.48,0.005,MAT.screen,{cast:false});
+addBox(0,3.55,-27,12,0.08,0.35,MAT.steelLight,{cast:false});
+addBox(0,3.55,-25,12,0.08,0.35,MAT.steelLight,{cast:false});
+addCeilingPanel(-3,-28,3.9); addCeilingPanel(3,-28,3.9);
+addCeilingPanel(-3,-24,3.9); addCeilingPanel(3,-24,3.9);
+addEmergencyLight(0,3.8,-30,'z');
+
+propKitchenCounter(24,-6.3,9.0);
+propFridge(30,-6.3);
+propMicrowave(21,-6.3,0.94);
+propDesk(26,2,2.4);
+propSimpleChair(26,0.6); propSimpleChair(26,3.4);
+propSimpleChair(24.6,2); propSimpleChair(27.4,2);
+propVending(33,5.5);
+propCouch(20,4);
+propTV(19,1.6,4,Math.PI/2);
+addCeilingPanel(22,-3,3.9); addCeilingPanel(30,-3,3.9);
+addCeilingPanel(22, 3,3.9); addCeilingPanel(30, 3,3.9);
+addEmergencyLight(33,3.8,0,'x');
+
+propShelf(-6,19.5,4.0,1.0,3.0); propShelf(0,19.5,4.0,1.0,3.0); propShelf(6,19.5,4.0,1.0,3.0);
+propShelf(-6,32.5,4.0,1.0,3.0); propShelf(0,32.5,4.0,1.0,3.0); propShelf(6,32.5,4.0,1.0,3.0);
+propCrate(-6.5,0,26); propCrate(-6.5,0.7,26); propCrate(-7.4,0,26.8);
+propCrate(7.0,0,28); propCrate(7.0,0.7,28); propCrate(7.8,0,28.9,0.7);
+propCrate(7.0,0,30);
+propCrate(-4,0,31.5); propCrate(-4,0.7,31.5); propCrate(-4.8,0,31.0);
+propCrate(3,0,19,0.8,MAT.crateMetal); propCrate(4.0,0,19,0.8,MAT.crateMetal);
+propBarrel(5,24); propBarrel(5.7,24.8); propBarrel(4.4,24.9); propBarrel(6.2,23.6);
+propForklift(0,27);
+propLabBench(-4,33,4.0);
+addCeilingPanel(-5,22,4.9,3.0,1.4); addCeilingPanel(5,22,4.9,3.0,1.4);
+addCeilingPanel(-5,30,4.9,3.0,1.4); addCeilingPanel(5,30,4.9,3.0,1.4);
+addEmergencyLight(0,4.8,26,'z');
+
+addCeilingPanel(-13.5,0,3.3,2.0,0.8);
+addCeilingPanel( 13.5,0,3.3,2.0,0.8);
+addCeilingPanel(0,-14.5,3.3,0.8,2.0);
+addCeilingPanel(0, 13.5,3.3,0.8,2.0);
+
+/* ---- AMBIENT LIGHT ---- */
+const hemi = new THREE.HemisphereLight(0xbfd4e8, 0x3a3a34, 0.55);
+scene.add(hemi);
+const dir = new THREE.DirectionalLight(0xdfe8ff, 0.35);
+dir.position.set(20,40,15); scene.add(dir);
+const rim = new THREE.DirectionalLight(0xffd0a0, 0.15);
+rim.position.set(-25,15,-20); scene.add(rim);
+
+/* ============================================================
+   6. MULTIPLAYER — REMOTE PLAYER RENDERING
+   ============================================================ */
+function remoteSpawnPoint(index){
+  const spots = [
+    { x: 0,  z: 0  },
+    { x: 3,  z: 3  },
+    { x:-3,  z: 3  },
+    { x: 3,  z:-3 },
+  ];
+  return spots[index % spots.length];
+}
+function createRemoteMesh(color){
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(
+    new THREE.CapsuleGeometry(0.28, 0.9, 6, 12),
+    new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity:0.6, roughness:0.4 })
+  );
+  body.position.y = 1.0; body.castShadow = true;
+  g.add(body);
+  const halo = new THREE.Mesh(
+    new THREE.SphereGeometry(0.55, 16, 12),
+    new THREE.MeshBasicMaterial({ color, transparent:true, opacity:0.12 })
+  );
+  halo.position.y = 1.0; g.add(halo);
+  const glow = new THREE.PointLight(color, 2.0, 8, 2.0);
+  glow.position.y = 1.0; g.add(glow);
+  return g;
+}
+function syncRemotePlayers(players){
+  const seen = new Set();
+  for (const id in players){
+    if (id === MP.playerId) continue;
+    seen.add(id);
+    const p = players[id];
+    if (!p || p.x === undefined) continue;
+    if (!MP.remoteMeshes[id]){
+      MP.remoteMeshes[id] = createRemoteMesh(p.color || '#ffffff');
+      scene.add(MP.remoteMeshes[id]);
+    }
+    const mesh = MP.remoteMeshes[id];
+    mesh.position.lerp(new THREE.Vector3(p.x, 0, p.z), 0.25);
+    mesh.rotation.y = p.ry || 0;
+    // voice level → halo size
+    const halo = mesh.children[1];
+    const s = 1 + (p.mic || 0) * 1.4;
+    halo.scale.setScalar(s);
+    halo.material.opacity = 0.08 + (p.mic || 0) * 0.25;
+  }
+  for (const id in MP.remoteMeshes){
+    if (!seen.has(id)){ scene.remove(MP.remoteMeshes[id]); delete MP.remoteMeshes[id]; }
+  }
+}
+
+/* ============================================================
+   7. PLAYER CONTROLLER + VOICE LAMP  (unchanged logic)
+   ============================================================ */
+const controls = new PointerLockControls(camera, renderer.domElement);
+const PLAYER = { height:1.7, crouch:1.05, speed:4.4, sprint:7.6, crouchSpeed:2.2 };
+const keys = {};
+addEventListener('keydown', e=>{ keys[e.code]=true; if(e.code==='KeyF') toggleLights(); });
+addEventListener('keyup',   e=>{ keys[e.code]=false; });
+
+const voiceLamp = new THREE.SpotLight(0xcfe6ff, 0, 30, Math.PI/6, 0.5, 1.4);
+voiceLamp.castShadow = false; scene.add(voiceLamp);
+const voiceTarget = new THREE.Object3D(); scene.add(voiceTarget);
+voiceLamp.target = voiceTarget;
+
+let micAnalyser = null, micReady = false;
+const micBuf = new Uint8Array(256);
+async function initMic(){
+  try{
+    const stream = await navigator.mediaDevices.getUserMedia({ audio:true });
+    const ctx = new (window.AudioContext||window.webkitAudioContext)();
+    micAnalyser = ctx.createAnalyser(); micAnalyser.fftSize = 512;
+    ctx.createMediaStreamSource(stream).connect(micAnalyser);
+    micReady = true;
+  }catch(e){ console.warn('Mic unavailable — hold T as fallback.'); }
+}
+initMic();
+function readMic(){
+  if(!micReady) return keys['KeyT'] ? 1 : 0;
+  micAnalyser.getByteFrequencyData(micBuf);
+  let sum = 0;
+  for(let i=0;i<micBuf.length;i++) sum += micBuf[i]*micBuf[i];
+  return Math.min(1, Math.sqrt(sum/micBuf.length)/90);
+}
+
+/* ---- LIGHT TOGGLE ---- */
+let litMode = true;
+function toggleLights(){
+  litMode = !litMode;
+  for(const l of facilityLights) l.intensity = litMode ? l.userData.base : 0;
+  for(const p of emissivePanels) p.material.emissiveIntensity = litMode ? p.userData.baseEm : 0.05;
+  hemi.intensity = litMode ? 0.55 : 0.04;
+  dir.intensity  = litMode ? 0.35 : 0.00;
+  rim.intensity  = litMode ? 0.15 : 0.00;
+  scene.fog.density = litMode ? 0.018 : 0.055;
+  const m = document.getElementById('mode');
+  if (m){ m.className = litMode ? 'lit' : 'hush';
+    m.textContent = litMode ? 'MODE · LIT' : 'MODE · HUSH'; }
+}
+
+/* ---- COLLISION ---- */
+function inWalkable(x,z){
+  const pad = 0.35;
+  for(const r of WALKABLE){
+    if(x>r.x1+pad && x<r.x2-pad && z>r.z1+pad && z<r.z2-pad) return true;
+  }
+  return false;
+}
+function currentZone(x,z){
+  for(const r of WALKABLE)
+    if(x>r.x1 && x<r.x2 && z>r.z1 && z<r.z2) return r.name;
+  return '—';
+}
+
+/* ============================================================
+   8. UI — LOBBY OVERLAY
+   ============================================================ */
+const overlay = document.getElementById('overlay');
+let gameStarted = false;
+
+// Build lobby UI dynamically
+function buildLobbyUI(){
+  overlay.innerHTML = `
+    <h1>HUSH</h1>
+    <div class="sub">SUBLEVEL 4 · MULTIPLAYER</div>
+    <div id="lobby-status" class="info">ENTER YOUR NAME AND CONNECT</div>
+    <input id="player-name" type="text" maxlength="12" placeholder="YOUR NAME"
+      style="margin:16px 0;padding:12px 16px;width:280px;background:rgba(255,255,255,.08);
+             border:1px solid rgba(255,255,255,.25);border-radius:6px;color:#fff;
+             font-size:16px;text-align:center;letter-spacing:2px;outline:none;">
+    <div style="display:flex;gap:12px;margin-top:8px;">
+      <button id="btn-create" style="padding:12px 24px;background:rgba(127,212,255,.15);
+        border:1px solid #7fd4ff;border-radius:6px;color:#7fd4ff;font-size:14px;
+        letter-spacing:2px;cursor:pointer;">CREATE ROOM</button>
+      <button id="btn-join" style="padding:12px 24px;background:rgba(255,215,122,.15);
+        border:1px solid #ffd77a;border-radius:6px;color:#ffd77a;font-size:14px;
+        letter-spacing:2px;cursor:pointer;">JOIN ROOM</button>
+    </div>
+    <input id="room-code" type="text" maxlength="6" placeholder="ROOM CODE"
+      style="margin-top:12px;padding:12px 16px;width:200px;background:rgba(255,255,255,.08);
+             border:1px solid rgba(255,255,255,.25);border-radius:6px;color:#fff;
+             font-size:18px;text-align:center;letter-spacing:6px;text-transform:uppercase;outline:none;">
+    <div style="margin-top:16px;">
+      <button id="btn-solo" style="padding:10px 20px;background:transparent;
+        border:1px solid rgba(255,255,255,.3);border-radius:6px;color:#aaa;
+        font-size:12px;letter-spacing:2px;cursor:pointer;">PLAY SOLO</button>
+    </div>
+  `;
+  document.getElementById('btn-create').onclick = () => startMultiplayer('create');
+  document.getElementById('btn-join').onclick   = () => startMultiplayer('join');
+  document.getElementById('btn-solo').onclick   = () => startSolo();
+}
+
+function getPlayerName(){
+  const el = document.getElementById('player-name');
+  return (el && el.value.trim()) || 'PLAYER';
+}
+function getRoomCode(){
+  const el = document.getElementById('room-code');
+  return (el && el.value.trim().toUpperCase()) || '';
+}
+
+/* ---- CREATE / JOIN ---- */
+async function startMultiplayer(mode){
+  const name = getPlayerName();
+  MP.playerName = name;
+
+  let code = mode === 'create' ? randomRoomCode() : getRoomCode();
+  if (!code){ alert('Enter a room code first.'); return; }
+
+  MP.roomCode = code;
+  MP.isHost = (mode === 'create');
+
+  const roomRef = ref(db, 'hush/rooms/' + code);
+
+  if (mode === 'create'){
+    await set(roomRef, {
+      host: MP.playerId,
+      created: Date.now(),
+      status: 'lobby',
+      players: {}
+    });
+  } else {
+    const snap = await get(child(ref(db), 'hush/rooms/' + code));
+    if (!snap.exists()){ alert('Room not found.'); return; }
+  }
+
+  // Register player
+  MP.playerColor = pickColor();
+  const meRef = ref(db, `hush/rooms/${code}/players/${MP.playerId}`);
+  await set(meRef, {
+    name, color: MP.playerColor, x:0, z:0, ry:0, zone:'ATRIUM', mic:0, ts: serverTimestamp()
+  });
+  onDisconnect(meRef).remove();
+
+  // Listen to all players
+  const playersRef = ref(db, `hush/rooms/${code}/players`);
+  onValue(playersRef, snap => {
+    MP.players = snap.val() || {};
+    updateLobbyPlayers();
+    if (gameStarted) syncRemotePlayers(MP.players);
+  });
+
+  // Listen to room status (host starts the game)
+  const statusRef = ref(db, `hush/rooms/${code}/status`);
+  onValue(statusRef, snap => {
+    if (snap.val() === 'playing' && !gameStarted) enterGame();
+  });
+
+  MP.connected = true;
+  showLobbyScreen();
+}
+
+function startSolo(){
+  MP.connected = false;
+  MP.playerName = getPlayerName();
+  enterGame();
+}
+
+/* ---- LOBBY SCREEN ---- */
+function showLobbyScreen(){
+  overlay.innerHTML = `
+    <h1>${MP.roomCode}</h1>
+    <div class="sub">SHARE THIS CODE WITH FRIENDS</div>
+    <div id="lobby-status" class="info">WAITING FOR PLAYERS...</div>
+    <div id="lobby-players" style="margin-top:24px;font-size:14px;line-height:2.4;
+         color:#e8e6e1;min-width:280px;"></div>
+    <div id="lobby-start" style="margin-top:32px;display:none;">
+      <button id="btn-start" style="padding:14px 40px;background:rgba(127,255,127,.15);
+        border:1px solid #7fff7f;border-radius:6px;color:#7fff7f;font-size:16px;
+        letter-spacing:3px;cursor:pointer;animation:pulse 1.6s infinite;">START GAME</button>
+    </div>
+    <div id="lobby-wait" class="cta" style="margin-top:32px;">WAITING FOR HOST...</div>
+  `;
+  if (MP.isHost){
+    document.getElementById('lobby-start').style.display = 'block';
+    document.getElementById('lobby-wait').style.display   = 'none';
+    document.getElementById('btn-start').onclick = () => {
+      update(ref(db, `hush/rooms/${MP.roomCode}`), { status: 'playing' });
+    };
+  }
+}
+
+function updateLobbyPlayers(){
+  const el = document.getElementById('lobby-players');
+  if (!el) return;
+  const list = Object.entries(MP.players).map(([id, p]) =>
+    `<div style="display:flex;align-items:center;gap:10px;justify-content:center;">
+       <span style="width:10px;height:10px;border-radius:50%;background:${p.color};
+         box-shadow:0 0 10px ${p.color};"></span>
+       <span>${p.name || 'PLAYER'}</span>
+       ${id === MP.playerId ? '<span style="color:#7fd4ff;font-size:11px;">(YOU)</span>' : ''}
+     </div>`
+  ).join('');
+  el.innerHTML = list;
+  const status = document.getElementById('lobby-status');
+  if (status) status.textContent = `${Object.keys(MP.players).length} PLAYER(S) IN LOBBY`;
+}
+
+/* ---- ENTER GAME ---- */
+function enterGame(){
+  gameStarted = true;
+  overlay.style.opacity = 0;
+  setTimeout(()=>{ overlay.style.display = 'none'; }, 400);
+  controls.lock();
+  // spawn position
+  const idx = Object.keys(MP.players).indexOf(MP.playerId);
+  const spawn = remoteSpawnPoint(idx < 0 ? 0 : idx);
+  camera.position.set(spawn.x, PLAYER.height, spawn.z);
+}
+controls.addEventListener('unlock', ()=>{ if (gameStarted) overlay.style.opacity = 1; });
+controls.addEventListener('lock',   ()=>{ overlay.style.opacity = 0; });
+
+/* ============================================================
+   9. FIREBASE SYNC LOOP
+   ============================================================ */
+function pushMyState(micLevel){
+  if (!MP.connected || !MP.roomCode) return;
+  const meRef = ref(db, `hush/rooms/${MP.roomCode}/players/${MP.playerId}`);
+  update(meRef, {
+    x: +camera.position.x.toFixed(2),
+    z: +camera.position.z.toFixed(2),
+    ry: +camera.rotation.y.toFixed(2),
+    zone: currentZone(camera.position.x, camera.position.z),
+    mic: +micLevel.toFixed(2),
+    ts: Date.now()
+  });
+}
+
+/* ============================================================
+   10. HUD REFS
+   ============================================================ */
+const zoneName  = document.getElementById('zonename');
+const zoneCoord = document.getElementById('zonecoord');
+const micFill   = document.getElementById('micfill');
+
+/* ============================================================
+   11. MAIN LOOP
+   ============================================================ */
+const clock = new THREE.Clock();
+const forward = new THREE.Vector3();
+const right = new THREE.Vector3();
+let micLevel = 0;
+
+function tick(){
+  requestAnimationFrame(tick);
+  const dt = Math.min(clock.getDelta(), 0.05);
+
+  const crouching = !!(keys['ControlLeft']||keys['KeyC']);
+  const targetH = crouching ? PLAYER.crouch : PLAYER.height;
+  camera.position.y += (targetH - camera.position.y) * Math.min(1, dt*10);
+
+  camera.getWorldDirection(forward);
+  forward.y = 0; forward.normalize();
+  right.crossVectors(forward, camera.up).normalize();
+
+  const speed = crouching ? PLAYER.crouchSpeed : (keys['ShiftLeft'] ? PLAYER.sprint : PLAYER.speed);
+  const mv = new THREE.Vector3();
+  if(keys['KeyW']) mv.add(forward);
+  if(keys['KeyS']) mv.sub(forward);
+  if(keys['KeyD']) mv.add(right);
+  if(keys['KeyA']) mv.sub(right);
+  if(mv.lengthSq()>0) mv.normalize().multiplyScalar(speed*dt);
+
+  const nx = camera.position.x + mv.x;
+  const nz = camera.position.z + mv.z;
+  if(inWalkable(nx, camera.position.z)) camera.position.x = nx;
+  if(inWalkable(camera.position.x, nz)) camera.position.z = nz;
+
+  // voice lamp
+  const raw = readMic();
+  micLevel += (raw - micLevel) * Math.min(1, dt*12);
+  const targetI = THREE.MathUtils.lerp(0.05, 12, micLevel);
+  const targetR = THREE.MathUtils.lerp(6, 34, micLevel);
+  voiceLamp.intensity += (targetI - voiceLamp.intensity) * Math.min(1, dt*10);
+  voiceLamp.distance  += (targetR - voiceLamp.distance)  * Math.min(1, dt*10);
+  voiceLamp.position.copy(camera.position);
+  voiceTarget.position.copy(camera.position).add(forward.clone().multiplyScalar(8));
+  voiceTarget.position.y -= 0.4;
+  if (micFill) micFill.style.width = (micLevel*100).toFixed(0) + '%';
+
+  // network sync
+  MP.syncTimer += dt;
+  if (MP.syncTimer >= MP.syncInterval){
+    MP.syncTimer = 0;
+    pushMyState(micLevel);
+  }
+
+  // HUD
+  if (zoneName)  zoneName.textContent  = currentZone(camera.position.x, camera.position.z);
+  if (zoneCoord) zoneCoord.textContent = `X ${camera.position.x.toFixed(1)} · Z ${camera.position.z.toFixed(1)}`;
+
+  renderer.render(scene, camera);
+}
+
+/* ============================================================
+   12. BOOT
+   ============================================================ */
+buildLobbyUI();
+tick();
+
+addEventListener('resize', ()=>{
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>
