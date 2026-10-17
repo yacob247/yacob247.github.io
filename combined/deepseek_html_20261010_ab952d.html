@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>RDR2 Realistic Snow - Fixed</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #0d1b2a; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+        #loading {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            color: #a0c4ff; font-family: monospace; font-size: 20px; pointer-events: none;
+            text-shadow: 1px 1px 2px black; text-align: center;
+        }
+        #info {
+            position: absolute; bottom: 10px; left: 10px; color: #a0c4ff;
+            font-family: monospace; font-size: 12px; pointer-events: none;
+            text-shadow: 1px 1px 2px black;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="glCanvas"></canvas>
+    <div id="loading">Generating Procedural World...<br>(This may take a moment)</div>
+    <div id="info">Drag to look | Scroll to zoom | 30,000 Snowflakes | Pure WebGL PBR</div>
+
+    <script>
+        // ==========================================
+        // 1. MATRIX MATH (FROM SCRATCH)
+        // ==========================================
+        const mat4 = {
+            create: () => new Float32Array(16),
+            identity: (out) => {
+                out[0]=1; out[1]=0; out[2]=0; out[3]=0;
+                out[4]=0; out[5]=1; out[6]=0; out[7]=0;
+                out[8]=0; out[9]=0; out[10]=1; out[11]=0;
+                out[12]=0; out[13]=0; out[14]=0; out[15]=1;
+                return out;
+            },
+            perspective: (out, fovy, aspect, near, far) => {
+                const f = 1.0 / Math.tan(fovy / 2);
+                out[0]=f/aspect; out[1]=0; out[2]=0; out[3]=0;
+                out[4]=0; out[5]=f; out[6]=0; out[7]=0;
+                out[8]=0; out[9]=0; out[10]=(far+near)/(near-far); out[11]=-1;
+                out[12]=0; out[13]=0; out[14]=(2*far*near)/(near-far); out[15]=0;
+                return out;
+            },
+            lookAt: (out, eye, center, up) => {
+                let z = [eye[0]-center[0], eye[1]-center[1], eye[2]-center[2]];
+                let len = Math.hypot(z[0], z[1], z[2]);
+                z = [z[0]/len, z[1]/len, z[2]/len];
+                let x = [up[1]*z[2] - up[2]*z[1], up[2]*z[0] - up[0]*z[2], up[0]*z[1] - up[1]*z[0]];
+                len = Math.hypot(x[0], x[1], x[2]);
+                x = [x[0]/len, x[1]/len, x[2]/len];
+                let y = [z[1]*x[2] - z[2]*x[1], z[2]*x[0] - z[0]*x[2], z[0]*x[1] - z[1]*x[0]];
+                out[0]=x[0]; out[1]=y[0]; out[2]=z[0]; out[3]=0;
+                out[4]=x[1]; out[5]=y[1]; out[6]=z[1]; out[7]=0;
+                out[8]=x[2]; out[9]=y[2]; out[10]=z[2]; out[11]=0;
+                out[12]=-(x[0]*eye[0]+x[1]*eye[1]+x[2]*eye[2]);
+                out[13]=-(y[0]*eye[0]+y[1]*eye[1]+y[2]*eye[2]);
+                out[14]=-(z[0]*eye[0]+z[1]*eye[1]+z[2]*eye[2]);
+                out[15]=1;
+                return out;
+            },
+            multiply: (out, a, b) => {
+                let a00=a[0], a01=a[1], a02=a[2], a03=a[3];
+                let a10=a[4], a11=a[5], a12=a[6], a13=a[7];
+                let a20=a[8], a21=a[9], a22=a[10], a23=a[11];
+                let a30=a[12], a31=a[13], a32=a[14], a33=a[15];
+                for (let i = 0; i < 4; i++) {
+                    let b0=b[i*4], b1=b[i*4+1], b2=b[i*4+2], b3=b[i*4+3];
+                    out[i*4] = b0*a00 + b1*a10 + b2*a20 + b3*a30;
+                    out[i*4+1] = b0*a01 + b1*a11 + b2*a21 + b3*a31;
+                    out[i*4+2] = b0*a02 + b1*a12 + b2*a22 + b3*a32;
+                    out[i*4+3] = b0*a03 + b1*a13 + b2*a23 + b3*a33;
+                }
+                return out;
+            },
+            translate: (out, a, v) => {
+                let x=v[0], y=v[1], z=v[2];
+                let a00=a[0], a01=a[1], a02=a[2], a03=a[3];
+                let a10=a[4], a11=a[5], a12=a[6], a13=a[7];
+                let a20=a[8], a21=a[9], a22=a[10], a23=a[11];
+                out[0]=a00; out[1]=a01; out[2]=a02; out[3]=a03;
+                out[4]=a10; out[5]=a11; out[6]=a12; out[7]=a13;
+                out[8]=a20; out[9]=a21; out[10]=a22; out[11]=a23;
+                out[12]=a00*x + a10*y + a20*z + a[12];
+                out[13]=a01*x + a11*y + a21*z + a[13];
+                out[14]=a02*x + a12*y + a22*z + a[14];
+                out[15]=a03*x + a13*y + a23*z + a[15];
+                return out;
+            },
+            scale: (out, a, v) => {
+                let x=v[0], y=v[1], z=v[2];
+                out[0]=a[0]*x; out[1]=a[1]*x; out[2]=a[2]*x; out[3]=a[3]*x;
+                out[4]=a[4]*y; out[5]=a[5]*y; out[6]=a[6]*y; out[7]=a[7]*y;
+                out[8]=a[8]*z; out[9]=a[9]*z; out[10]=a[10]*z; out[11]=a[11]*z;
+                out[12]=a[12]; out[13]=a[13]; out[14]=a[14]; out[15]=a[15];
+                return out;
+            }
+        };
+
+        // ==========================================
+        // 2. WEBGL SETUP
+        // ==========================================
+        const canvas = document.getElementById('glCanvas');
+        const gl = canvas.getContext('webgl', { antialias: true, alpha: false });
+        if (!gl) { alert("WebGL not supported"); }
+        gl.getExtension('OES_element_index_uint');
+        gl.getExtension('OES_standard_derivatives');
+
+        function createShader(type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error(gl.getShaderInfoLog(shader));
+                return null;
+            }
+            return shader;
+        }
+
+        function createProgram(vsSource, fsSource) {
+            const vs = createShader(gl.VERTEX_SHADER, vsSource);
+            const fs = createShader(gl.FRAGMENT_SHADER, fsSource);
+            const program = gl.createProgram();
+            gl.attachShader(program, vs);
+            gl.attachShader(program, fs);
+            gl.linkProgram(program);
+            return program;
+        }
+
+        // ==========================================
+        // 3. NOISE FUNCTIONS (FOR PROCEDURAL TERRAIN)
+        // ==========================================
+        function fract(x) { return x - Math.floor(x); }
+        function hash(n) { return fract(Math.sin(n) * 43758.5453123); }
+        
+        function noise2D(x, y) {
+            let i = Math.floor(x);
+            let j = Math.floor(y);
+            let fx = fract(x);
+            let fy = fract(y);
+            let u = fx * fx * (3.0 - 2.0 * fx);
+            let v = fy * fy * (3.0 - 2.0 * fy);
+            let a = hash(i + j * 57.0);
+            let b = hash(i + 1.0 + j * 57.0);
+            let c = hash(i + (j + 1.0) * 57.0);
+            let d = hash(i + 1.0 + (j + 1.0) * 57.0);
+            return a * (1.0 - u) * (1.0 - v) + b * u * (1.0 - v) + c * (1.0 - u) * v + d * u * v;
+        }
+
+        function fbm(x, y) {
+            let value = 0.0;
+            let amplitude = 1.0;
+            let frequency = 0.0;
+            for (let i = 0; i < 5; i++) {
+                value += amplitude * noise2D(x * frequency, y * frequency);
+                frequency *= 2.0;
+                amplitude *= 0.5;
+            }
+            return value;
+        }
+
+        function getTerrainHeight(x, z) {
+            let h = fbm(x * 0.02, z * 0.02) * 15.0;
+            h += Math.sin(x * 0.05) * Math.cos(z * 0.05) * 2.0;
+            return h - 5.0;
+        }
+
+        // ==========================================
+        // 4. SHADERS
+        // ==========================================
+
+        // --- SKY SHADER (Clear Winter Sky) ---
+        const skyVS = `
+            attribute vec2 aPosition;
+            varying vec2 vUv;
+            void main() {
+                vUv = aPosition * 0.5 + 0.5;
+                gl_Position = vec4(aPosition, 0.999, 1.0);
+            }
+        `;
+        const skyFS = `
+            precision highp float;
+            varying vec2 vUv;
+            void main() {
+                // Clear blue winter sky
+                vec3 topColor = vec3(0.1, 0.3, 0.7);
+                vec3 bottomColor = vec3(0.7, 0.85, 1.0);
+                float mixFactor = smoothstep(0.0, 1.0, vUv.y);
+                vec3 color = mix(bottomColor, topColor, mixFactor);
+                
+                // Add some clouds
+                float cloud = sin(vUv.x * 10.0) * cos(vUv.y * 20.0) * 0.05;
+                color += cloud;
+                
+                gl_FragColor = vec4(color, 1.0);
+            }
+        `;
+
+        // --- TERRAIN PBR SHADER ---
+        const terrainVS = `
+            attribute vec3 aPosition;
+            attribute vec3 aNormal;
+            uniform mat4 uProjection;
+            uniform mat4 uView;
+            uniform mat4 uModel;
+            varying vec3 vWorldPos;
+            varying vec3 vNormal;
+            void main() {
+                vec4 worldPos = uModel * vec4(aPosition, 1.0);
+                vWorldPos = worldPos.xyz;
+                vNormal = normalize(mat3(uModel) * aNormal);
+                gl_Position = uProjection * uView * worldPos;
+            }
+        `;
+        const terrainFS = `
+            precision highp float;
+            varying vec3 vWorldPos;
+            varying vec3 vNormal;
+            uniform vec3 uCameraPos;
+            uniform vec3 uLightDir;
+            uniform vec3 uLightColor;
+            uniform vec3 uAmbientColor;
+            
+            const float PI = 3.14159265359;
+
+            float DistributionGGX(vec3 N, vec3 H, float roughness) {
+                float a = roughness * roughness;
+                float a2 = a * a;
+                float NdotH = max(dot(N, H), 0.0);
+                float NdotH2 = NdotH * NdotH;
+                float nom = a2;
+                float denom = (NdotH2 * (a2 - 1.0) + 1.0);
+                denom = PI * denom * denom;
+                return nom / max(denom, 0.001);
+            }
+
+            float GeometrySchlickGGX(float NdotV, float roughness) {
+                float r = (roughness + 1.0);
+                float k = (r * r) / 8.0;
+                float nom = NdotV;
+                float denom = NdotV * (1.0 - k) + k;
+                return nom / max(denom, 0.001);
+            }
+
+            float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness) {
+                float NdotV = max(dot(N, V), 0.0);
+                float NdotL = max(dot(N, L), 0.0);
+                float ggx2 = GeometrySchlickGGX(NdotV, roughness);
+                float ggx1 = GeometrySchlickGGX(NdotL, roughness);
+                return ggx1 * ggx2;
+            }
+
+            vec3 fresnelSchlick(float cosTheta, vec3 F0) {
+                return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+            }
+
+            void main() {
+                vec3 N = normalize(vNormal);
+                vec3 V = normalize(uCameraPos - vWorldPos);
+                
+                float roughness = 0.9;
+                vec3 albedo = vec3(0.9, 0.95, 1.0);
+                vec3 F0 = vec3(0.04); 
+
+                vec3 L = normalize(-uLightDir);
+                vec3 H = normalize(V + L);
+                float NdotL = max(dot(N, L), 0.0);
+                
+                float NDF = DistributionGGX(N, H, roughness);
+                float G = GeometrySmith(N, V, L, roughness);
+                vec3 F = fresnelSchlick(max(dot(H, V), 0.0), F0);
+                
+                vec3 numerator = NDF * G * F;
+                float denominator = 4.0 * max(dot(N, V), 0.0) * NdotL + 0.001;
+                vec3 specular = numerator / denominator;
+                
+                vec3 kS = F;
+                vec3 kD = vec3(1.0) - kS;
+                
+                vec3 color = (kD * albedo / PI + specular) * uLightColor * NdotL;
+                
+                // Subsurface Scattering (Snow glow)
+                float sss = max(dot(N, L), 0.0) * 0.3;
+                color += albedo * sss * uLightColor;
+                
+                vec3 ambient = uAmbientColor * albedo;
+                color += ambient;
+                
+                // Reduced Fog so the environment is visible
+                float dist = length(uCameraPos - vWorldPos);
+                float fogDensity = 0.002;
+                float fogFactor = exp(-dist * fogDensity);
+                fogFactor = clamp(fogFactor, 0.0, 1.0);
+                vec3 fogColor = vec3(0.8, 0.85, 0.9);
+                
+                color = mix(fogColor, color, fogFactor);
+                gl_FragColor = vec4(color, 1.0);
+            }
+        `;
+
+        // --- OBJECT SHADER (TREES & SNOWMAN) ---
+        const objectVS = `
+            attribute vec3 aPosition;
+            attribute vec3 aNormal;
+            uniform mat4 uProjection;
+            uniform mat4 uView;
+            uniform mat4 uModel;
+            varying vec3 vWorldPos;
+            varying vec3 vNormal;
+            void main() {
+                vec4 worldPos = uModel * vec4(aPosition, 1.0);
+                vWorldPos = worldPos.xyz;
+                vNormal = normalize(mat3(uModel) * aNormal);
+                gl_Position = uProjection * uView * worldPos;
+            }
+        `;
+        const objectFS = `
+            precision highp float;
+            varying vec3 vWorldPos;
+            varying vec3 vNormal;
+            uniform vec3 uCameraPos;
+            uniform vec3 uLightDir;
+            uniform vec3 uLightColor;
+            uniform vec3 uAmbientColor;
+            uniform vec3 uColor;
+            uniform float uRoughness;
+            
+            void main() {
+                vec3 N = normalize(vNormal);
+                vec3 V = normalize(uCameraPos - vWorldPos);
+                vec3 L = normalize(-uLightDir);
+                
+                float NdotL = max(dot(N, L), 0.0);
+                
+                vec3 diffuse = uColor * NdotL * uLightColor;
+                vec3 ambient = uAmbientColor * uColor;
+                
+                vec3 H = normalize(V + L);
+                float NdotH = max(dot(N, H), 0.0);
+                float spec = pow(NdotH, 32.0) * (1.0 - uRoughness) * 0.5;
+                
+                vec3 color = diffuse + ambient + vec3(spec);
+                
+                float dist = length(uCameraPos - vWorldPos);
+                float fogFactor = exp(-dist * 0.002);
+                fogFactor = clamp(fogFactor, 0.0, 1.0);
+                vec3 fogColor = vec3(0.8, 0.85, 0.9);
+                
+                color = mix(fogColor, color, fogFactor);
+                gl_FragColor = vec4(color, 1.0);
+            }
+        `;
+
+        // --- FIXED BLIZZARD SNOW SHADER ---
+        const snowVS = `
+            attribute vec3 aPosition;
+            attribute float aRandom;
+            uniform mat4 uProjection;
+            uniform mat4 uView;
+            uniform float uTime;
+            uniform vec3 uCameraPos;
+            varying float vAlpha;
+            varying float vSize;
+
+            void main() {
+                vec3 pos = aPosition;
+                
+                // Gentle wind turbulence
+                float t = uTime * 0.8 + aRandom * 100.0;
+                float windX = sin(t) * 0.2 + cos(t * 0.3) * 0.2;
+                float windZ = cos(t * 0.8) * 0.2 + sin(t * 0.5) * 0.2;
+                
+                // Apply wind and gravity
+                pos.x += windX * 10.0;
+                pos.z += windZ * 10.0;
+                pos.y -= mod(uTime * 3.0 + aRandom * 40.0, 40.0);
+                
+                // Wrap around camera to keep snow everywhere
+                float distX = pos.x - uCameraPos.x;
+                float distZ = pos.z - uCameraPos.z;
+                
+                pos.x = uCameraPos.x + mod(distX + 25.0, 50.0) - 25.0;
+                pos.z = uCameraPos.z + mod(distZ + 25.0, 50.0) - 25.0;
+                pos.y = uCameraPos.y + mod(pos.y - uCameraPos.y + 20.0, 40.0) - 20.0;
+                
+                vec4 mvPos = uView * vec4(pos, 1.0);
+                gl_Position = uProjection * mvPos;
+                
+                // FIXED: Much smaller, clamped particle size
+                vSize = (15.0 / -mvPos.z) * (0.5 + aRandom * 1.5);
+                gl_PointSize = clamp(vSize, 1.0, 12.0);
+                
+                // Fade out based on distance
+                vAlpha = clamp(1.0 - (-mvPos.z / 30.0), 0.0, 1.0);
+            }
+        `;
+        const snowFS = `
+            precision highp float;
+            varying float vAlpha;
+            
+            void main() {
+                // Perfectly round, soft particles
+                vec2 coord = gl_PointCoord - vec2(0.5);
+                float dist = length(coord);
+                if (dist > 0.5) discard;
+                
+                // FIXED: Much more transparent snowflakes
+                float alpha = smoothstep(0.5, 0.1, dist) * vAlpha * 0.3;
+                
+                vec3 color = vec3(0.95, 0.98, 1.0);
+                gl_FragColor = vec4(color, alpha);
+            }
+        `;
+
+        // ==========================================
+        // 5. GEOMETRY GENERATION
+        // ==========================================
+        const terrainProgram = createProgram(terrainVS, terrainFS);
+        const objectProgram = createProgram(objectVS, objectFS);
+        const snowProgram = createProgram(snowVS, snowFS);
+        const skyProgram = createProgram(skyVS, skyFS);
+
+        function createBuffer(data, type) {
+            const buffer = gl.createBuffer();
+            gl.bindBuffer(type, buffer);
+            gl.bufferData(type, new Float32Array(data), gl.STATIC_DRAW);
+            return buffer;
+        }
+
+        // --- TERRAIN ---
+        const TERRAIN_SIZE = 200;
+        const TERRAIN_SEGS = 200;
+        const terrainVerts = [];
+        const terrainNorms = [];
+        const terrainIndices = [];
+
+        for (let z = 0; z <= TERRAIN_SEGS; z++) {
+            for (let x = 0; x <= TERRAIN_SEGS; x++) {
+                const px = (x / TERRAIN_SEGS - 0.5) * TERRAIN_SIZE;
+                const pz = (z / TERRAIN_SEGS - 0.5) * TERRAIN_SIZE;
+                const py = getTerrainHeight(px, pz);
+                terrainVerts.push(px, py, pz);
+
+                const eps = 0.5;
+                const hL = getTerrainHeight(px - eps, pz);
+                const hR = getTerrainHeight(px + eps, pz);
+                const hD = getTerrainHeight(px, pz - eps);
+                const hU = getTerrainHeight(px, pz + eps);
+                let nx = hL - hR;
+                let ny = 2.0 * eps;
+                let nz = hD - hU;
+                let len = Math.hypot(nx, ny, nz);
+                terrainNorms.push(nx/len, ny/len, nz/len);
+            }
+        }
+        for (let z = 0; z < TERRAIN_SEGS; z++) {
+            for (let x = 0; x < TERRAIN_SEGS; x++) {
+                const a = z * (TERRAIN_SEGS + 1) + x;
+                const b = a + 1;
+                const c = (z + 1) * (TERRAIN_SEGS + 1) + x;
+                const d = c + 1;
+                terrainIndices.push(a, b, c);
+                terrainIndices.push(b, d, c);
+            }
+        }
+
+        const terrainVBO = createBuffer(terrainVerts, gl.ARRAY_BUFFER);
+        const terrainNBO = createBuffer(terrainNorms, gl.ARRAY_BUFFER);
+        const terrainIBO = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, terrainIBO);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(terrainIndices), gl.STATIC_DRAW);
+
+        // --- TREES ---
+        const allTreeVerts = [];
+        const allTreeNorms = [];
+        const allTreeIndices = [];
+        let treeIndexOffset = 0;
+
+        function addConeToTree(radius, height, segments, cx, cy, cz) {
+            allTreeVerts.push(cx, cy + height, cz);
+            allTreeNorms.push(0, 1, 0);
+            for (let i = 0; i <= segments; i++) {
+                const angle = (i / segments) * Math.PI * 2;
+                const nx = Math.cos(angle);
+                const nz = Math.sin(angle);
+                allTreeVerts.push(cx + nx * radius, cy, cz + nz * radius);
+                allTreeNorms.push(nx, 0.5, nz);
+            }
+            for (let i = 0; i < segments; i++) {
+                allTreeIndices.push(treeIndexOffset);
+                allTreeIndices.push(treeIndexOffset + 1 + i);
+                allTreeIndices.push(treeIndexOffset + 2 + i);
+            }
+            treeIndexOffset += segments + 2;
+        }
+
+        function addCylinderToTree(radius, height, segments, cx, cy, cz) {
+            for (let i = 0; i <= segments; i++) {
+                const angle = (i / segments) * Math.PI * 2;
+                const nx = Math.cos(angle);
+                const nz = Math.sin(angle);
+                allTreeVerts.push(cx + nx * radius, cy, cz + nz * radius);
+                allTreeVerts.push(cx + nx * radius, cy + height, cz + nz * radius);
+                allTreeNorms.push(nx, 0, nz);
+                allTreeNorms.push(nx, 0, nz);
+            }
+            for (let i = 0; i < segments; i++) {
+                const a = treeIndexOffset + i * 2;
+                const b = a + 1;
+                const c = a + 2;
+                const d = a + 3;
+                allTreeIndices.push(a, b, c);
+                allTreeIndices.push(b, d, c);
+            }
+            treeIndexOffset += (segments + 1) * 2;
+        }
+
+        for (let t = 0; t < 150; t++) {
+            const tx = (Math.random() - 0.5) * 180;
+            const tz = (Math.random() - 0.5) * 180;
+            
+            if (Math.abs(tx) < 15 && Math.abs(tz + 10) < 15) continue;
+
+            const ty = getTerrainHeight(tx, tz);
+            const scale = 1.5 + Math.random() * 2.5;
+
+            addCylinderToTree(0.3 * scale, 3.0 * scale, 6, tx, ty, tz);
+            
+            for (let i = 0; i < 6; i++) {
+                const layerY = ty + (1.0 + i * 1.5) * scale;
+                const layerRadius = (4.0 - i * 0.6) * scale;
+                const layerHeight = 2.0 * scale;
+                addConeToTree(layerRadius, layerHeight, 8, tx, layerY, tz);
+                addConeToTree(layerRadius * 0.95, layerHeight * 0.8, 8, tx, layerY + 0.3 * scale, tz);
+            }
+        }
+
+        const treeVBO = createBuffer(allTreeVerts, gl.ARRAY_BUFFER);
+        const treeNBO = createBuffer(allTreeNorms, gl.ARRAY_BUFFER);
+        const treeIBO = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, treeIBO);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(allTreeIndices), gl.STATIC_DRAW);
+        const treeIndexCount = allTreeIndices.length;
+
+        // --- SNOWMAN ---
+        function createSphere(radius, segments) {
+            const verts = []; const norms = []; const inds = [];
+            for (let y = 0; y <= segments; y++) {
+                for (let x = 0; x <= segments; x++) {
+                    const u = x / segments; const v = y / segments;
+                    const theta = u * Math.PI * 2; const phi = v * Math.PI;
+                    const px = radius * Math.sin(phi) * Math.cos(theta);
+                    const py = radius * Math.cos(phi);
+                    const pz = radius * Math.sin(phi) * Math.sin(theta);
+                    verts.push(px, py, pz); norms.push(px/radius, py/radius, pz/radius);
+                }
+            }
+            for (let y = 0; y < segments; y++) {
+                for (let x = 0; x < segments; x++) {
+                    const a = y * (segments + 1) + x; const b = a + 1;
+                    const c = (y + 1) * (segments + 1) + x; const d = c + 1;
+                    inds.push(a, b, c); inds.push(b, d, c);
+                }
+            }
+            return { verts, norms, inds };
+        }
+
+        const sphereData = createSphere(1.0, 24);
+        const sphereVBO = createBuffer(sphereData.verts, gl.ARRAY_BUFFER);
+        const sphereNBO = createBuffer(sphereData.norms, gl.ARRAY_BUFFER);
+        const sphereIBO = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, sphereIBO);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(sphereData.inds), gl.STATIC_DRAW);
+        const sphereIndexCount = sphereData.inds.length;
+
+        const snowmanParts = [
+            { vbo: sphereVBO, nbo: sphereNBO, ibo: sphereIBO, count: sphereIndexCount, color: [0.95, 0.98, 1.0], pos: [0, -1.5, -10], scale: [2.5, 2.5, 2.5], rough: 0.9 },
+            { vbo: sphereVBO, nbo: sphereNBO, ibo: sphereIBO, count: sphereIndexCount, color: [0.95, 0.98, 1.0], pos: [0, 1.5, -10], scale: [1.8, 1.8, 1.8], rough: 0.9 },
+            { vbo: sphereVBO, nbo: sphereNBO, ibo: sphereIBO, count: sphereIndexCount, color: [0.95, 0.98, 1.0], pos: [0, 3.5, -10], scale: [1.2, 1.2, 1.2], rough: 0.9 },
+            { vbo: sphereVBO, nbo: sphereNBO, ibo: sphereIBO, count: sphereIndexCount, color: [0.1, 0.1, 0.1], pos: [-0.4, 3.8, -9.0], scale: [0.1, 0.1, 0.1], rough: 0.2 },
+            { vbo: sphereVBO, nbo: sphereNBO, ibo: sphereIBO, count: sphereIndexCount, color: [0.1, 0.1, 0.1], pos: [0.4, 3.8, -9.0], scale: [0.1, 0.1, 0.1], rough: 0.2 },
+            { vbo: sphereVBO, nbo: sphereNBO, ibo: sphereIBO, count: sphereIndexCount, color: [1.0, 0.4, 0.0], pos: [0, 3.5, -8.8], scale: [0.15, 0.4, 0.15], rough: 0.5 },
+            { vbo: sphereVBO, nbo: sphereNBO, ibo: sphereIBO, count: sphereIndexCount, color: [0.1, 0.1, 0.1], pos: [0, 2.0, -8.1], scale: [0.15, 0.15, 0.15], rough: 0.2 },
+            { vbo: sphereVBO, nbo: sphereNBO, ibo: sphereIBO, count: sphereIndexCount, color: [0.1, 0.1, 0.1], pos: [0, 1.0, -7.7], scale: [0.15, 0.15, 0.15], rough: 0.2 },
+            { vbo: sphereVBO, nbo: sphereNBO, ibo: sphereIBO, count: sphereIndexCount, color: [0.1, 0.1, 0.1], pos: [0, 0.0, -7.2], scale: [0.15, 0.15, 0.15], rough: 0.2 },
+            { vbo: sphereVBO, nbo: sphereNBO, ibo: sphereIBO, count: sphereIndexCount, color: [0.05, 0.05, 0.05], pos: [0, 4.6, -10], scale: [1.0, 0.1, 1.0], rough: 0.8 },
+            { vbo: sphereVBO, nbo: sphereNBO, ibo: sphereIBO, count: sphereIndexCount, color: [0.05, 0.05, 0.05], pos: [0, 5.2, -10], scale: [0.7, 0.8, 0.7], rough: 0.8 },
+        ];
+
+        // --- SNOW PARTICLES (30,000) ---
+        const MAX_SNOW = 30000;
+        const snowPositions = new Float32Array(MAX_SNOW * 3);
+        const snowRandoms = new Float32Array(MAX_SNOW);
+        for (let i = 0; i < MAX_SNOW; i++) {
+            snowPositions[i*3] = (Math.random() - 0.5) * 100;
+            snowPositions[i*3+1] = (Math.random() - 0.5) * 40;
+            snowPositions[i*3+2] = (Math.random() - 0.5) * 100;
+            snowRandoms[i] = Math.random();
+        }
+        const snowPosBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, snowPosBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, snowPositions, gl.STATIC_DRAW);
+        const snowRandBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, snowRandBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, snowRandoms, gl.STATIC_DRAW);
+
+        // --- SKY FULLSCREEN QUAD ---
+        const skyVBO = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, skyVBO);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+
+        // ==========================================
+        // 6. CAMERA & INPUT
+        // ==========================================
+        let cameraPos = [0, 5, 15];
+        let cameraTarget = [0, 2, -10];
+        let cameraUp = [0, 1, 0];
+        let yaw = 0, pitch = -0.1, radius = 25;
+        let isDragging = false, lastMouseX = 0, lastMouseY = 0;
+
+        canvas.addEventListener('mousedown', (e) => { isDragging = true; lastMouseX = e.clientX; lastMouseY = e.clientY; });
+        canvas.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            yaw -= (e.clientX - lastMouseX) * 0.005;
+            pitch -= (e.clientY - lastMouseY) * 0.005;
+            pitch = Math.max(-1.5, Math.min(1.5, pitch));
+            lastMouseX = e.clientX; lastMouseY = e.clientY;
+        });
+        canvas.addEventListener('mouseup', () => isDragging = false);
+        canvas.addEventListener('mouseleave', () => isDragging = false);
+        canvas.addEventListener('wheel', (e) => { radius += e.deltaY * 0.02; radius = Math.max(10, Math.min(60, radius)); });
+
+        // ==========================================
+        // 7. RENDER LOOP
+        // ==========================================
+        let then = 0;
+        document.getElementById('loading').style.display = 'none';
+
+        function render(now) {
+            now *= 0.001;
+            then = now;
+            
+            const cx = Math.sin(yaw) * Math.cos(pitch) * radius;
+            const cy = Math.sin(pitch) * radius + 5;
+            const cz = Math.cos(yaw) * Math.cos(pitch) * radius;
+            cameraPos = [cx, cy, cz];
+            
+            const projectionMatrix = mat4.create();
+            const viewMatrix = mat4.create();
+            const modelMatrix = mat4.create();
+            
+            mat4.perspective(projectionMatrix, Math.PI / 3, canvas.width / canvas.height, 0.1, 500);
+            mat4.lookAt(viewMatrix, cameraPos, cameraTarget, cameraUp);
+            mat4.identity(modelMatrix);
+            
+            gl.viewport(0, 0, canvas.width, canvas.height);
+            gl.clearColor(0.1, 0.15, 0.25, 1.0);
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+            gl.enable(gl.DEPTH_TEST);
+            gl.enable(gl.BLEND);
+            gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+            
+            const lightDir = [0.3, 0.8, 0.5];
+            const lightColor = [0.9, 0.95, 1.0];
+            const ambientColor = [0.4, 0.5, 0.6];
+
+            // 1. DRAW SKY
+            gl.useProgram(skyProgram);
+            gl.depthMask(false);
+            gl.bindBuffer(gl.ARRAY_BUFFER, skyVBO);
+            const skyPosLoc = gl.getAttribLocation(skyProgram, "aPosition");
+            gl.enableVertexAttribArray(skyPosLoc);
+            gl.vertexAttribPointer(skyPosLoc, 2, gl.FLOAT, false, 0, 0);
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+            gl.depthMask(true);
+
+            // 2. DRAW TERRAIN
+            gl.useProgram(terrainProgram);
+            gl.uniformMatrix4fv(gl.getUniformLocation(terrainProgram, "uProjection"), false, projectionMatrix);
+            gl.uniformMatrix4fv(gl.getUniformLocation(terrainProgram, "uView"), false, viewMatrix);
+            gl.uniformMatrix4fv(gl.getUniformLocation(terrainProgram, "uModel"), false, modelMatrix);
+            gl.uniform3fv(gl.getUniformLocation(terrainProgram, "uCameraPos"), cameraPos);
+            gl.uniform3fv(gl.getUniformLocation(terrainProgram, "uLightDir"), lightDir);
+            gl.uniform3fv(gl.getUniformLocation(terrainProgram, "uLightColor"), lightColor);
+            gl.uniform3fv(gl.getUniformLocation(terrainProgram, "uAmbientColor"), ambientColor);
+            
+            const tPosLoc = gl.getAttribLocation(terrainProgram, "aPosition");
+            const tNormLoc = gl.getAttribLocation(terrainProgram, "aNormal");
+            gl.bindBuffer(gl.ARRAY_BUFFER, terrainVBO);
+            gl.enableVertexAttribArray(tPosLoc);
+            gl.vertexAttribPointer(tPosLoc, 3, gl.FLOAT, false, 0, 0);
+            gl.bindBuffer(gl.ARRAY_BUFFER, terrainNBO);
+            gl.enableVertexAttribArray(tNormLoc);
+            gl.vertexAttribPointer(tNormLoc, 3, gl.FLOAT, false, 0, 0);
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, terrainIBO);
+            gl.drawElements(gl.TRIANGLES, terrainIndices.length, gl.UNSIGNED_INT, 0);
+
+            // 3. DRAW DENSE FOREST
+            gl.useProgram(objectProgram);
+            gl.uniformMatrix4fv(gl.getUniformLocation(objectProgram, "uProjection"), false, projectionMatrix);
+            gl.uniformMatrix4fv(gl.getUniformLocation(objectProgram, "uView"), false, viewMatrix);
+            gl.uniformMatrix4fv(gl.getUniformLocation(objectProgram, "uModel"), false, modelMatrix);
+            gl.uniform3fv(gl.getUniformLocation(objectProgram, "uCameraPos"), cameraPos);
+            gl.uniform3fv(gl.getUniformLocation(objectProgram, "uLightDir"), lightDir);
+            gl.uniform3fv(gl.getUniformLocation(objectProgram, "uLightColor"), lightColor);
+            gl.uniform3fv(gl.getUniformLocation(objectProgram, "uAmbientColor"), ambientColor);
+            
+            const oPosLoc = gl.getAttribLocation(objectProgram, "aPosition");
+            const oNormLoc = gl.getAttribLocation(objectProgram, "aNormal");
+            const uColorLoc = gl.getUniformLocation(objectProgram, "uColor");
+            const uRoughLoc = gl.getUniformLocation(objectProgram, "uRoughness");
+            
+            gl.bindBuffer(gl.ARRAY_BUFFER, treeVBO);
+            gl.enableVertexAttribArray(oPosLoc);
+            gl.vertexAttribPointer(oPosLoc, 3, gl.FLOAT, false, 0, 0);
+            gl.bindBuffer(gl.ARRAY_BUFFER, treeNBO);
+            gl.enableVertexAttribArray(oNormLoc);
+            gl.vertexAttribPointer(oNormLoc, 3, gl.FLOAT, false, 0, 0);
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, treeIBO);
+            gl.uniform3fv(uColorLoc, [1.0, 1.0, 1.0]);
+            gl.uniform1f(uRoughLoc, 0.9);
+            gl.drawElements(gl.TRIANGLES, treeIndexCount, gl.UNSIGNED_INT, 0);
+
+            // 4. DRAW SNOWMAN
+            for (let part of snowmanParts) {
+                mat4.identity(modelMatrix);
+                mat4.translate(modelMatrix, modelMatrix, part.pos);
+                mat4.scale(modelMatrix, modelMatrix, part.scale);
+                gl.uniformMatrix4fv(gl.getUniformLocation(objectProgram, "uModel"), false, modelMatrix);
+                gl.uniform3fv(uColorLoc, part.color);
+                gl.uniform1f(uRoughLoc, part.rough);
+                
+                gl.bindBuffer(gl.ARRAY_BUFFER, part.vbo);
+                gl.enableVertexAttribArray(oPosLoc);
+                gl.vertexAttribPointer(oPosLoc, 3, gl.FLOAT, false, 0, 0);
+                gl.bindBuffer(gl.ARRAY_BUFFER, part.nbo);
+                gl.enableVertexAttribArray(oNormLoc);
+                gl.vertexAttribPointer(oNormLoc, 3, gl.FLOAT, false, 0, 0);
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, part.ibo);
+                gl.drawElements(gl.TRIANGLES, part.count, gl.UNSIGNED_INT, 0);
+            }
+
+            // 5. DRAW FIXED SNOWFALL
+            gl.useProgram(snowProgram);
+            gl.uniformMatrix4fv(gl.getUniformLocation(snowProgram, "uProjection"), false, projectionMatrix);
+            gl.uniformMatrix4fv(gl.getUniformLocation(snowProgram, "uView"), false, viewMatrix);
+            gl.uniform1f(gl.getUniformLocation(snowProgram, "uTime"), now);
+            gl.uniform3fv(gl.getUniformLocation(snowProgram, "uCameraPos"), cameraPos);
+            
+            const sPosLoc = gl.getAttribLocation(snowProgram, "aPosition");
+            const sRandLoc = gl.getAttribLocation(snowProgram, "aRandom");
+            
+            gl.bindBuffer(gl.ARRAY_BUFFER, snowPosBuffer);
+            gl.enableVertexAttribArray(sPosLoc);
+            gl.vertexAttribPointer(sPosLoc, 3, gl.FLOAT, false, 0, 0);
+            gl.bindBuffer(gl.ARRAY_BUFFER, snowRandBuffer);
+            gl.enableVertexAttribArray(sRandLoc);
+            gl.vertexAttribPointer(sRandLoc, 1, gl.FLOAT, false, 0, 0);
+            
+            gl.drawArrays(gl.POINTS, 0, MAX_SNOW);
+            
+            requestAnimationFrame(render);
+        }
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+        requestAnimationFrame(render);
+    </script>
+</body>
+</html>

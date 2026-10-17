@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Asset-Driven Detective Game</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #05070a; font-family: "Courier New", monospace; color: #e8e8e8; }
+  canvas { display: block; }
+  #loading {
+    position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column;
+    justify-content: center; align-items: center; background: #05070a; text-align: center;
+  }
+  #loading h1 { color: #9fd0ff; letter-spacing: 3px; font-size: 24px; }
+  #loading p { color: #8fa08a; font-size: 12px; }
+  #hud {
+    position: fixed; top: 14px; left: 14px; z-index: 10; font-size: 12px;
+    line-height: 1.7; text-shadow: 0 1px 3px #000; pointer-events: none; display: none;
+  }
+  #hud b { color: #9fd0ff; }
+  #crosshair {
+    position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    z-index: 9; font-size: 22px; color: rgba(255,255,255,.6); pointer-events: none;
+    display: none; font-weight: 200;
+  }
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <h1>LOADING ASSETS...</h1>
+  <p>Fetching GLB model and HDRI environment.</p>
+</div>
+
+<div id="hud">
+  <div><b>MODE:</b> <span id="hud-mode">EXPLORATION</span></div>
+</div>
+<div id="crosshair">+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
+
+/* ============================================================
+   1. SCENE SETUP
+============================================================ */
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.1, 500);
+camera.position.set(0, 1.7, 8);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+/* ============================================================
+   2. LIGHTING & ENVIRONMENT (Using Poly Haven HDRI)
+   - We load a free HDRI to create realistic image-based lighting.
+   - Source: https://polyhaven.com/a/spruit_sunrise (CC0)
+============================================================ */
+const hdriLoader = new RGBELoader();
+hdriLoader.load('https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/spruit_sunrise_1k.hdr', (texture) => {
+  texture.mapping = THREE.EquirectangularReflectionMapping;
+  scene.environment = texture;
+  scene.background = new THREE.Color(0x0a0d12); // Keep a dark background
+  scene.fog = new THREE.FogExp2(0x0a0d12, 0.02);
+  
+  // Basic directional light for shadows
+  const sun = new THREE.DirectionalLight(0xffeedd, 2.5);
+  sun.position.set(10, 20, 10);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  scene.add(sun);
+}, undefined, (err) => {
+  console.error('HDRI failed to load', err);
+  // Fallback lighting if HDRI fails
+  scene.add(new THREE.AmbientLight(0x404050, 1.5));
+});
+
+/* ============================================================
+   3. GROUND PLANE (Placeholder)
+   - In the full game, you would load a terrain mesh or use a PBR texture.
+============================================================ */
+const groundMat = new THREE.MeshStandardMaterial({ color: 0x2a3038, roughness: 0.9, metalness: 0.1 });
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(50, 50), groundMat);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+/* ============================================================
+   4. LOAD GLB MODEL (Replacing Hand-Coded Primitives)
+   - This example loads a free "Medieval House" from Poly Haven.
+   - Source: https://polyhaven.com/a/medieval_house (CC0)
+   - Replace this URL with any GLB/GLTF model you download.
+============================================================ */
+const loader = new GLTFLoader();
+loader.load(
+  'https://dl.polyhaven.org/file/ph-assets/Models/gltf/medieval_house_01/medieval_house_01_1k.gltf',
+  (gltf) => {
+    const model = gltf.scene;
+    model.position.set(0, 0, -4);
+    model.scale.set(1.5, 1.5, 1.5);
+    model.traverse((child) => {
+      if (child.isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
+    scene.add(model);
+    
+    // Hide loading screen and show HUD
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('hud').style.display = 'block';
+    document.getElementById('crosshair').style.display = 'block';
+  },
+  (xhr) => {
+    // Progress
+    const percent = (xhr.loaded / xhr.total * 100).toFixed(0);
+    document.querySelector('#loading p').textContent = `Loading model: ${percent}%`;
+  },
+  (error) => {
+    console.error('GLB failed to load', error);
+    document.querySelector('#loading h1').textContent = 'ERROR LOADING MODEL';
+    document.querySelector('#loading p').textContent = 'Check the console. Ensure you are running a local server.';
+  }
+);
+
+/* ============================================================
+   5. FIRST-PERSON CONTROLS
+============================================================ */
+const controls = new PointerLockControls(camera, document.body);
+document.addEventListener('click', () => controls.lock());
+controls.addEventListener('lock', () => { document.getElementById('crosshair').style.display = 'block'; });
+controls.addEventListener('unlock', () => { document.getElementById('crosshair').style.display = 'none'; });
+
+const keys = new Set();
+document.addEventListener('keydown', e => keys.add(e.code));
+document.addEventListener('keyup', e => keys.delete(e.code));
+
+const velocity = new THREE.Vector3();
+let prev = performance.now();
+
+/* ============================================================
+   6. GAME LOOP
+============================================================ */
+function animate() {
+  requestAnimationFrame(animate);
+  const now = performance.now();
+  const dt = Math.min((now - prev) / 1000, 0.05);
+  prev = now;
+
+  if (controls.isLocked) {
+    const run = keys.has('ShiftLeft') || keys.has('ShiftRight');
+    const speed = run ? 12 : 6.5;
+
+    velocity.x -= velocity.x * 9 * dt;
+    velocity.z -= velocity.z * 9 * dt;
+
+    const f = Number(keys.has('KeyW')) - Number(keys.has('KeyS'));
+    const r = Number(keys.has('KeyD')) - Number(keys.has('KeyA'));
+    const dir = new THREE.Vector3(r, 0, -f);
+    if (dir.lengthSq() > 0) dir.normalize();
+
+    velocity.x += dir.x * speed * dt * 9;
+    velocity.z += dir.z * speed * dt * 9;
+
+    controls.moveRight(velocity.x * dt);
+    controls.moveForward(velocity.z * dt);
+
+    camera.position.y = 1.7; // Lock to eye height
+  }
+
+  renderer.render(scene, camera);
+}
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+animate();
+</script>
+</body>
+</html>

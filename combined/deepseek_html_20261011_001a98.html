@@ -1,0 +1,1865 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Procedural PBR — THE TITAN (Live)</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: #05060a; overflow: hidden;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  canvas { display: block; }
+  #hud {
+    position: fixed; left: 22px; bottom: 20px; color: #6f7a8c;
+    font-size: 11px; letter-spacing: .18em; text-transform: uppercase;
+    pointer-events: none; line-height: 1.8;
+  }
+  #hud b {
+    color: #e9eef8; font-weight: 600; display: block;
+    font-size: 15px; letter-spacing: .28em; margin-bottom: 6px;
+  }
+  #hud span { color: #465061; }
+
+  #ui {
+    position: fixed; left: 50%; transform: translateX(-50%);
+    top: 18px; display: flex; gap: 7px; z-index: 5;
+    flex-wrap: wrap; justify-content: center; max-width: 92vw;
+  }
+  #ui button {
+    background: rgba(20,26,36,.72);
+    border: 1px solid rgba(120,150,190,.20);
+    color: #93a3bb; padding: 8px 15px; border-radius: 999px;
+    font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase;
+    cursor: pointer; backdrop-filter: blur(8px);
+    transition: all .22s ease; font-family: inherit;
+  }
+  #ui button:hover { color: #dbe6f5; border-color: rgba(150,190,240,.45); }
+  #ui button.on {
+    background: rgba(90,140,210,.24);
+    border-color: rgba(140,190,255,.65);
+    color: #eaf3ff;
+    box-shadow: 0 0 18px rgba(90,150,230,.30);
+  }
+
+  #loader {
+    position: fixed; inset: 0; display: flex; align-items: center;
+    justify-content: center; flex-direction: column; gap: 16px;
+    background: #05060a; color: #6f7a8c; z-index: 10;
+    font-size: 11px; letter-spacing: .22em; text-transform: uppercase;
+    transition: opacity .8s ease;
+  }
+  #loader.hide { opacity: 0; pointer-events: none; }
+  #bar { width: 220px; height: 2px; background: #141922; overflow: hidden; }
+  #barFill {
+    height: 100%; width: 0%;
+    background: linear-gradient(90deg, #3d5c8a, #c8d8f0);
+    transition: width .25s ease;
+  }
+  #flash {
+    position: fixed; inset: 0; pointer-events: none; z-index: 4;
+    background: radial-gradient(circle at 50% 60%, rgba(255,180,120,.55), rgba(255,90,40,0) 60%);
+    opacity: 0;
+  }
+</style>
+</head>
+<body>
+
+<div id="ui">
+  <button data-act="idle" class="on">Idle</button>
+  <button data-act="walk">Walk</button>
+  <button data-act="run">Run</button>
+  <button data-act="talk">Talk</button>
+  <button data-act="wave">Wave</button>
+  <button data-act="laugh">Laugh</button>
+  <button data-act="angry">Angry</button>
+  <button data-act="happy">Smile</button>
+</div>
+
+<div id="hud">
+  <b>THE TITAN</b>
+  drag · orbit &nbsp;<span>|</span>&nbsp; scroll · zoom &nbsp;<span>|</span>&nbsp; keys 1-8
+</div>
+
+<div id="flash"></div>
+
+<div id="loader">
+  <div id="loadTxt">Forging PBR skin…</div>
+  <div id="bar"><div id="barFill"></div></div>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* ============================================================
+   0 · UTILITIES
+   ============================================================ */
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+const lerp  = (a, b, t) => a + (b - a) * t;
+const nextFrame = () => new Promise(r => requestAnimationFrame(() => r()));
+const setProgress = (p, txt) => {
+  document.getElementById('barFill').style.width = (p * 100) + '%';
+  if (txt) document.getElementById('loadTxt').textContent = txt;
+};
+
+/* ============================================================
+   1 · PROCEDURAL NOISE (tileable value-noise + fBm)
+   ============================================================ */
+const PERM = (() => {
+  let s = 0x9E3779B9 >>> 0;
+  const rnd = () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
+  const p = new Uint8Array(256);
+  for (let i = 0; i < 256; i++) p[i] = i;
+  for (let i = 255; i > 0; i--) {
+    const j = (rnd() * (i + 1)) | 0;
+    const t = p[i]; p[i] = p[j]; p[j] = t;
+  }
+  const P = new Uint8Array(512);
+  for (let i = 0; i < 512; i++) P[i] = p[i & 255];
+  return P;
+})();
+
+function hash2(x, y, px, py) {
+  x = ((x % px) + px) % px;
+  y = ((y % py) + py) % py;
+  return PERM[(PERM[x & 255] + (y & 255)) & 255] / 255;
+}
+
+function vnoise2(x, y, px, py) {
+  const xi = Math.floor(x), yi = Math.floor(y);
+  const xf = x - xi, yf = y - yi;
+  const u = xf * xf * (3 - 2 * xf);
+  const v = yf * yf * (3 - 2 * yf);
+  const a = hash2(xi,     yi,     px, py);
+  const b = hash2(xi + 1, yi,     px, py);
+  const c = hash2(xi,     yi + 1, px, py);
+  const d = hash2(xi + 1, yi + 1, px, py);
+  return (a + (b - a) * u) * (1 - v) + (c + (d - c) * u) * v;
+}
+
+function fbm2(u, v, fx, fy, oct, gain = 0.5) {
+  let amp = 1, sum = 0, norm = 0, ax = fx, ay = fy;
+  for (let i = 0; i < oct; i++) {
+    sum += amp * vnoise2(u * ax, v * ay, ax, ay);
+    norm += amp;
+    amp *= gain;
+    ax *= 2; ay *= 2;
+  }
+  return sum / norm;
+}
+
+/* ============================================================
+   2 · PBR TEXTURE FACTORY
+   ============================================================ */
+const TEX_SIZE = 1024;
+
+function makeSkinMaps() {
+  const N = TEX_SIZE;
+  return {
+    N,
+    albedo: new Uint8Array(N * N * 4),
+    rough:  new Uint8Array(N * N * 4),
+    ao:     new Uint8Array(N * N * 4),
+    height: new Float32Array(N * N)
+  };
+}
+
+function passHeight(m) {
+  const { N, height } = m;
+  for (let j = 0; j < N; j++) {
+    const v = j / N;
+    for (let i = 0; i < N; i++) {
+      const u = i / N;
+      const pores = fbm2(u, v, 190, 190, 2);
+      const bumps = fbm2(u, v,  38,  38, 3);
+      const macro = fbm2(u, v,   6,   6, 3);
+      let   w     = fbm2(u, v,   3,  34, 2);
+      w = 1 - Math.abs(w * 2 - 1);
+      let h = 0.5
+        + (pores - 0.5) * 0.50
+        + (bumps - 0.5) * 0.34
+        + (macro - 0.5) * 0.58
+        + (w     - 0.5) * 0.14;
+      height[j * N + i] = clamp(h, 0, 1);
+    }
+  }
+}
+
+function passAlbedo(m) {
+  const { N, height, albedo, rough, ao } = m;
+  for (let j = 0; j < N; j++) {
+    const v = j / N;
+    for (let i = 0; i < N; i++) {
+      const u = i / N;
+      const idx = j * N + i;
+      const h = height[idx];
+      const mott   = fbm2(u, v, 9, 9, 4);
+      const blotch = fbm2(u, v, 4, 4, 2);
+      const fine   = fbm2(u, v, 96, 96, 2);
+
+      let r = 214, g = 170, b = 143;
+      const mm = mott - 0.5;
+      r += mm * 28; g += mm * 36; b += mm * 36;
+
+      const bl = Math.max(0, blotch - 0.56) * 2.4;
+      r += bl * 36; g -= bl * 7; b -= bl * 7;
+
+      const fv = (fine - 0.5) * 13;
+      r += fv; g += fv * 0.82; b += fv * 0.78;
+
+      const shade = 0.76 + h * 0.38;
+      r *= shade; g *= shade; b *= shade;
+
+      albedo[idx * 4 + 0] = clamp(r, 0, 255);
+      albedo[idx * 4 + 1] = clamp(g, 0, 255);
+      albedo[idx * 4 + 2] = clamp(b, 0, 255);
+      albedo[idx * 4 + 3] = 255;
+
+      let ro = 0.56 - (h - 0.5) * 0.56 + (mott - 0.5) * 0.14;
+      ro = clamp(ro, 0.22, 0.96);
+      const rv = ro * 255;
+      rough[idx * 4 + 0] = rv; rough[idx * 4 + 1] = rv;
+      rough[idx * 4 + 2] = rv; rough[idx * 4 + 3] = 255;
+
+      const a = clamp(0.70 + h * 0.36, 0, 1) * 255;
+      ao[idx * 4 + 0] = a; ao[idx * 4 + 1] = a;
+      ao[idx * 4 + 2] = a; ao[idx * 4 + 3] = 255;
+    }
+  }
+}
+
+function passNormal(m) {
+  const { N, height } = m;
+  const out = new Uint8Array(N * N * 4);
+  const S = 6.0;
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      const l = height[j * N + ((i - 1 + N) % N)];
+      const r = height[j * N + ((i + 1) % N)];
+      const d = height[((j - 1 + N) % N) * N + i];
+      const t = height[((j + 1) % N) * N + i];
+      let nx = (l - r) * S, ny = (d - t) * S, nz = 1;
+      const len = Math.hypot(nx, ny, nz);
+      nx /= len; ny /= len; nz /= len;
+      const o = (j * N + i) * 4;
+      out[o + 0] = (nx * 0.5 + 0.5) * 255;
+      out[o + 1] = (ny * 0.5 + 0.5) * 255;
+      out[o + 2] = (nz * 0.5 + 0.5) * 255;
+      out[o + 3] = 255;
+    }
+  }
+  return out;
+}
+
+/* ============================================================
+   3 · GEOMETRY KERNEL
+   ============================================================ */
+function catmullRom(p0, p1, p2, p3, t) {
+  const t2 = t * t, t3 = t2 * t;
+  return 0.5 * (
+    (2 * p1) +
+    (-p0 + p2) * t +
+    (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 +
+    (-p0 + 3 * p1 - 3 * p2 + p3) * t3
+  );
+}
+
+function resampleSeries(values, count) {
+  const m = values.length;
+  if (m === 1) return new Array(count).fill(values[0]);
+  const out = new Array(count);
+  for (let i = 0; i < count; i++) {
+    const f = (i / (count - 1)) * (m - 1);
+    const i1 = Math.floor(f);
+    const t = f - i1;
+    const i0 = Math.max(0, i1 - 1);
+    const i2 = Math.min(m - 1, i1 + 1);
+    const i3 = Math.min(m - 1, i1 + 2);
+    out[i] = catmullRom(values[i0], values[i1], values[i2], values[i3], t);
+  }
+  return out;
+}
+
+function buildTube(sectionsIn, radialSegments = 32, rows = 96) {
+  const sections = sectionsIn.slice().sort((a, b) => a.y - b.y);
+  const def = { y: 0, cx: 0, cz: 0, rx: 0.01, rz: 0.01, e: 2.2 };
+  const S = {};
+  for (const k of ['y', 'cx', 'cz', 'rx', 'rz', 'e']) {
+    S[k] = resampleSeries(sections.map(s => (s[k] !== undefined ? s[k] : def[k])), rows);
+  }
+
+  const stride    = radialSegments + 1;
+  const ringVerts = rows * stride;
+  const vCount    = ringVerts + 2;
+
+  const positions = new Float32Array(vCount * 3);
+  const uvs       = new Float32Array(vCount * 2);
+  const indices   = [];
+
+  let p = 0, q = 0;
+  for (let i = 0; i < rows; i++) {
+    const y  = S.y[i],  cx = S.cx[i], cz = S.cz[i];
+    const rx = Math.max(0.002, S.rx[i]);
+    const rz = Math.max(0.002, S.rz[i]);
+    const e  = Math.max(1.2, S.e[i]);
+    const inv = 2 / e;
+
+    for (let j = 0; j <= radialSegments; j++) {
+      const t  = (j / radialSegments) * Math.PI * 2;
+      const ct = Math.cos(t), st = Math.sin(t);
+      const px = Math.sign(ct) * Math.pow(Math.abs(ct), inv) * rx;
+      const pz = Math.sign(st) * Math.pow(Math.abs(st), inv) * rz;
+      positions[p++] = cx + px;
+      positions[p++] = y;
+      positions[p++] = cz + pz;
+      uvs[q++] = j / radialSegments;
+      uvs[q++] = i / (rows - 1);
+    }
+  }
+
+  for (let i = 0; i < rows - 1; i++) {
+    for (let j = 0; j < radialSegments; j++) {
+      const a = i * stride + j;
+      const b = a + 1;
+      const c = a + stride;
+      const d = c + 1;
+      indices.push(a, c, b, b, c, d);
+    }
+  }
+
+  const base = ringVerts;
+  const c0 = [S.cx[0], S.y[0], S.cz[0]];
+  positions[base * 3 + 0] = c0[0];
+  positions[base * 3 + 1] = c0[1];
+  positions[base * 3 + 2] = c0[2];
+  uvs[base * 2 + 0] = 0.5;
+  uvs[base * 2 + 1] = 0.0;
+  for (let j = 0; j < radialSegments; j++) indices.push(base, j, j + 1);
+
+  const topIdx = base + 1;
+  const c1 = [S.cx[rows - 1], S.y[rows - 1], S.cz[rows - 1]];
+  positions[topIdx * 3 + 0] = c1[0];
+  positions[topIdx * 3 + 1] = c1[1];
+  positions[topIdx * 3 + 2] = c1[2];
+  uvs[topIdx * 2 + 0] = 0.5;
+  uvs[topIdx * 2 + 1] = 1.0;
+  const ring = (rows - 1) * stride;
+  for (let j = 0; j < radialSegments; j++) indices.push(topIdx, ring + j + 1, ring + j);
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('uv',       new THREE.BufferAttribute(uvs, 2));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+function mirrorGeometry(geo) {
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) pos.setX(i, -pos.getX(i));
+  const idx = geo.index.array;
+  for (let i = 0; i < idx.length; i += 3) {
+    const t = idx[i + 1]; idx[i + 1] = idx[i + 2]; idx[i + 2] = t;
+  }
+  pos.needsUpdate = true;
+  geo.index.needsUpdate = true;
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/* ============================================================
+   4 · MUSCLE SCULPTING
+   ============================================================ */
+function mirrorBlobs(list) {
+  const out = [];
+  for (const b of list) {
+    out.push(b);
+    if (Math.abs(b.x) > 1e-4) {
+      out.push({
+        x: -b.x, y: b.y, z: b.z, r: b.r, s: b.s,
+        n: b.n ? [-b.n[0], b.n[1], b.n[2]] : null
+      });
+    }
+  }
+  return out;
+}
+
+function sculpt(geo, blobs) {
+  geo.computeVertexNormals();
+  const pos = geo.attributes.position;
+  const nrm = geo.attributes.normal;
+  const count = pos.count;
+  const disp = new Float32Array(count);
+
+  for (let i = 0; i < count; i++) {
+    const px = pos.getX(i), py = pos.getY(i), pz = pos.getZ(i);
+    const nx = nrm.getX(i), ny = nrm.getY(i), nz = nrm.getZ(i);
+    let d = 0;
+    for (let k = 0; k < blobs.length; k++) {
+      const b = blobs[k];
+      const dx = px - b.x, dy = py - b.y, dz = pz - b.z;
+      const dist2 = dx * dx + dy * dy + dz * dz;
+      const w = Math.exp(-dist2 / (b.r * b.r));
+      if (w < 0.002) continue;
+      let mask = 1;
+      if (b.n) {
+        const dot = nx * b.n[0] + ny * b.n[1] + nz * b.n[2];
+        if (dot <= 0) continue;
+        mask = dot * dot;
+      }
+      d += w * mask * b.s;
+    }
+    disp[i] = d;
+  }
+
+  for (let i = 0; i < count; i++) {
+    const nx = nrm.getX(i), ny = nrm.getY(i), nz = nrm.getZ(i);
+    const d = disp[i];
+    pos.setXYZ(i,
+      pos.getX(i) + nx * d,
+      pos.getY(i) + ny * d,
+      pos.getZ(i) + nz * d
+    );
+  }
+  pos.needsUpdate = true;
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/* ============================================================
+   5 · ANATOMY TABLES
+   ============================================================ */
+
+/* ---------- TORSO (world Y) ---------- */
+const TORSO_SECTIONS = [
+  { y: 0.880, rx: 0.152, rz: 0.126, cz:  0.014, e: 2.9 },
+  { y: 0.970, rx: 0.176, rz: 0.140, cz:  0.008, e: 2.7 },
+  { y: 1.060, rx: 0.170, rz: 0.130, cz:  0.004, e: 2.5 },
+  { y: 1.150, rx: 0.158, rz: 0.118, cz:  0.002, e: 2.4 },
+  { y: 1.240, rx: 0.168, rz: 0.126, cz:  0.005, e: 2.3 },
+  { y: 1.320, rx: 0.186, rz: 0.140, cz:  0.011, e: 2.3 },
+  { y: 1.400, rx: 0.198, rz: 0.150, cz:  0.015, e: 2.3 },
+  { y: 1.470, rx: 0.203, rz: 0.146, cz:  0.008, e: 2.4 },
+  { y: 1.530, rx: 0.176, rz: 0.128, cz: -0.004, e: 2.5 },
+  { y: 1.580, rx: 0.114, rz: 0.102, cz: -0.012, e: 2.3 },
+  { y: 1.630, rx: 0.078, rz: 0.084, cz: -0.006, e: 2.1 },
+  { y: 1.690, rx: 0.074, rz: 0.080, cz:  0.000, e: 2.0 }
+];
+
+const TORSO_BLOBS = mirrorBlobs([
+  { x: 0.088, y: 1.400, z: 0.128, r: 0.105, s: 0.030, n: [0, 0.12, 1] },
+  { x: 0.058, y: 1.355, z: 0.128, r: 0.078, s: 0.018, n: [0, 0.12, 1] },
+  { x: 0.206, y: 1.492, z: 0.000, r: 0.092, s: 0.026, n: [1, 0.25, 0] },
+  { x: 0.166, y: 1.290, z: -0.050, r: 0.115, s: 0.026, n: [1, 0, -0.3] },
+  { x: 0.152, y: 1.200, z: -0.060, r: 0.100, s: 0.016, n: [1, 0, -0.3] },
+  { x: 0.072, y: 1.532, z: -0.058, r: 0.096, s: 0.030, n: [0.25, 0.55, -0.8] },
+  { x: 0.146, y: 1.192, z: 0.032, r: 0.078, s: 0.012, n: [1, 0, 0.3] },
+  { x: 0.035, y: 1.302, z: 0.116, r: 0.048, s: 0.013, n: [0, 0, 1] },
+  { x: 0.036, y: 1.246, z: 0.110, r: 0.046, s: 0.013, n: [0, 0, 1] },
+  { x: 0.036, y: 1.190, z: 0.104, r: 0.044, s: 0.012, n: [0, 0, 1] },
+  { x: 0.084, y: 0.958, z: -0.126, r: 0.108, s: 0.034, n: [0, -0.2, -1] },
+  { x: 0.046, y: 1.235, z: -0.118, r: 0.092, s: 0.014, n: [0, 0, -1] }
+]);
+
+const TORSO_CARVE = [
+  { x: 0.000, y: 1.170, z: 0.112, r: 0.030, s: -0.006, n: [0, 0, 1] },
+  { x: 0.000, y: 1.225, z: 0.118, r: 0.030, s: -0.006, n: [0, 0, 1] },
+  { x: 0.000, y: 1.278, z: 0.122, r: 0.030, s: -0.006, n: [0, 0, 1] },
+  { x: 0.000, y: 1.330, z: 0.126, r: 0.030, s: -0.005, n: [0, 0, 1] },
+  { x: 0.000, y: 1.150, z: -0.120, r: 0.032, s: -0.010, n: [0, 0, -1] },
+  { x: 0.000, y: 1.270, z: -0.132, r: 0.032, s: -0.011, n: [0, 0, -1] },
+  { x: 0.000, y: 1.390, z: -0.142, r: 0.032, s: -0.011, n: [0, 0, -1] },
+  { x: 0.000, y: 1.490, z: -0.132, r: 0.032, s: -0.009, n: [0, 0, -1] }
+];
+
+/* ---------- HEAD (world Y) ---------- */
+const HEAD_SECTIONS = [
+  { y: 1.655, rx: 0.070, rz: 0.076, cz:  0.000, e: 2.1 },
+  { y: 1.685, rx: 0.078, rz: 0.090, cz:  0.008, e: 2.2 },
+  { y: 1.715, rx: 0.090, rz: 0.106, cz:  0.012, e: 2.2 },
+  { y: 1.750, rx: 0.099, rz: 0.118, cz:  0.010, e: 2.1 },
+  { y: 1.782, rx: 0.103, rz: 0.124, cz:  0.006, e: 2.0 },
+  { y: 1.815, rx: 0.101, rz: 0.120, cz:  0.002, e: 2.0 },
+  { y: 1.848, rx: 0.093, rz: 0.108, cz: -0.002, e: 2.0 },
+  { y: 1.876, rx: 0.078, rz: 0.090, cz: -0.006, e: 2.0 },
+  { y: 1.896, rx: 0.048, rz: 0.056, cz: -0.008, e: 2.0 },
+  { y: 1.905, rx: 0.014, rz: 0.016, cz: -0.008, e: 2.0 }
+];
+
+const HEAD_BLOBS = mirrorBlobs([
+  { x: 0.052, y: 1.812, z: 0.106, r: 0.044, s: 0.012, n: [0.25, 0.10, 1] },
+  { x: 0.082, y: 1.766, z: 0.068, r: 0.045, s: 0.011, n: [0.8, 0, 0.5] },
+  { x: 0.078, y: 1.712, z: 0.028, r: 0.050, s: 0.014, n: [0.7, 0, 0.3] },
+  { x: 0.088, y: 1.816, z: 0.044, r: 0.040, s: -0.008, n: [1, 0, 0.2] },
+  { x: 0.038, y: 1.780, z: 0.108, r: 0.034, s: -0.013, n: [0, 0, 1] },
+  { x: 0.000, y: 1.842, z: -0.078, r: 0.092, s: 0.010, n: [0, 0, -1] },
+  { x: 0.000, y: 1.766, z: 0.114, r: 0.030, s: 0.019, n: [0, 0, 1] },
+  { x: 0.000, y: 1.742, z: 0.108, r: 0.026, s: 0.022, n: [0, 0, 1] },
+  { x: 0.000, y: 1.722, z: 0.098, r: 0.022, s: 0.009, n: [0, 0, 1] },
+  { x: 0.000, y: 1.692, z: 0.096, r: 0.032, s: 0.013, n: [0, 0, 1] }
+]);
+
+/* hair cap (world Y) */
+const HAIR_SECTIONS = [
+  { y: 1.762, rx: 0.112, rz: 0.132, cz: -0.018, e: 2.1 },
+  { y: 1.800, rx: 0.114, rz: 0.132, cz: -0.012, e: 2.0 },
+  { y: 1.835, rx: 0.108, rz: 0.122, cz: -0.008, e: 2.0 },
+  { y: 1.868, rx: 0.092, rz: 0.106, cz: -0.008, e: 2.0 },
+  { y: 1.894, rx: 0.056, rz: 0.066, cz: -0.010, e: 2.0 },
+  { y: 1.910, rx: 0.022, rz: 0.026, cz: -0.010, e: 2.0 }
+];
+
+/* ---------- ARM (local to shoulder) ---------- */
+const UPPERARM_SECTIONS = [
+  { y: -0.310, rx: 0.053, rz: 0.055, cx: 0, cz:  0.000, e: 2.0 },
+  { y: -0.240, rx: 0.057, rz: 0.059, cx: 0, cz:  0.002, e: 2.0 },
+  { y: -0.170, rx: 0.062, rz: 0.064, cx: 0, cz:  0.004, e: 2.0 },
+  { y: -0.100, rx: 0.068, rz: 0.070, cx: 0, cz:  0.004, e: 2.0 },
+  { y: -0.045, rx: 0.076, rz: 0.078, cx: 0, cz:  0.002, e: 2.0 },
+  { y:  0.000, rx: 0.084, rz: 0.084, cx: 0, cz:  0.000, e: 2.1 },
+  { y:  0.046, rx: 0.070, rz: 0.072, cx: 0, cz:  0.000, e: 2.2 }
+];
+
+const UPPERARM_BLOBS = [
+  { x: 0.000, y: -0.200, z: 0.046, r: 0.062, s: 0.014, n: [0, 0, 1] },
+  { x: 0.000, y: -0.190, z: -0.048, r: 0.066, s: 0.013, n: [0, 0, -1] },
+  { x: 0.046, y: -0.030, z: 0.000, r: 0.070, s: 0.019, n: [1, 0, 0] },
+  { x: 0.020, y: -0.110, z: 0.038, r: 0.050, s: 0.008, n: [0.3, 0, 1] }
+];
+
+const FOREARM_SECTIONS = [
+  { y: -0.270, rx: 0.031, rz: 0.033, cx: 0, cz: 0.004, e: 2.0 },
+  { y: -0.220, rx: 0.036, rz: 0.038, cx: 0, cz: 0.004, e: 2.0 },
+  { y: -0.160, rx: 0.044, rz: 0.046, cx: 0, cz: 0.004, e: 2.0 },
+  { y: -0.100, rx: 0.050, rz: 0.052, cx: 0, cz: 0.004, e: 2.0 },
+  { y: -0.040, rx: 0.055, rz: 0.057, cx: 0, cz: 0.002, e: 2.0 },
+  { y:  0.000, rx: 0.056, rz: 0.058, cx: 0, cz: 0.000, e: 2.0 }
+];
+
+const FOREARM_BLOBS = [
+  { x: 0.000, y: -0.100, z: 0.046, r: 0.052, s: 0.009, n: [0, 0, 1] },
+  { x: 0.000, y: -0.090, z: -0.044, r: 0.050, s: 0.007, n: [0, 0, -1] }
+];
+
+const HAND_SECTIONS = [
+  { y: -0.190, rx: 0.011, rz: 0.026, cx: 0, cz: 0.006, e: 2.2 },
+  { y: -0.165, rx: 0.020, rz: 0.040, cx: 0, cz: 0.008, e: 2.4 },
+  { y: -0.130, rx: 0.027, rz: 0.048, cx: 0, cz: 0.008, e: 2.6 },
+  { y: -0.090, rx: 0.030, rz: 0.052, cx: 0, cz: 0.006, e: 2.8 },
+  { y: -0.050, rx: 0.032, rz: 0.052, cx: 0, cz: 0.004, e: 2.8 },
+  { y: -0.015, rx: 0.032, rz: 0.044, cx: 0, cz: 0.002, e: 2.6 },
+  { y:  0.000, rx: 0.031, rz: 0.036, cx: 0, cz: 0.000, e: 2.3 }
+];
+
+const THUMB_SECTIONS = [
+  { y: -0.062, rx: 0.010, rz: 0.010, e: 2.0 },
+  { y: -0.040, rx: 0.013, rz: 0.013, e: 2.0 },
+  { y: -0.015, rx: 0.014, rz: 0.014, e: 2.0 },
+  { y:  0.006, rx: 0.014, rz: 0.014, e: 2.0 }
+];
+
+/* ---------- LEG (local to hip) ---------- */
+const THIGH_SECTIONS = [
+  { y: -0.450, rx: 0.062, rz: 0.066, cx: 0, cz: -0.008, e: 2.0 },
+  { y: -0.380, rx: 0.062, rz: 0.066, cx: 0, cz: -0.010, e: 2.0 },
+  { y: -0.300, rx: 0.065, rz: 0.070, cx: 0, cz: -0.008, e: 2.0 },
+  { y: -0.210, rx: 0.072, rz: 0.078, cx: 0, cz: -0.004, e: 2.0 },
+  { y: -0.120, rx: 0.084, rz: 0.090, cx: 0, cz:  0.000, e: 2.0 },
+  { y: -0.040, rx: 0.096, rz: 0.106, cx: 0, cz: -0.002, e: 2.1 },
+  { y:  0.012, rx: 0.100, rz: 0.112, cx: 0, cz: -0.002, e: 2.2 }
+];
+
+const THIGH_BLOBS = [
+  { x: 0.000, y: -0.200, z: 0.078, r: 0.075, s: 0.016, n: [0, 0, 1] },
+  { x: 0.056, y: -0.240, z: 0.030, r: 0.070, s: 0.012, n: [0.8, 0, 0.4] },
+  { x: 0.000, y: -0.240, z: -0.076, r: 0.080, s: 0.012, n: [0, 0, -1] }
+];
+
+const SHIN_SECTIONS = [
+  { y: -0.400, rx: 0.036, rz: 0.038, cx: 0, cz:  0.004, e: 2.2 },
+  { y: -0.340, rx: 0.036, rz: 0.038, cx: 0, cz:  0.003, e: 2.1 },
+  { y: -0.260, rx: 0.044, rz: 0.046, cx: 0, cz:  0.000, e: 2.0 },
+  { y: -0.170, rx: 0.054, rz: 0.058, cx: 0, cz: -0.006, e: 2.0 },
+  { y: -0.080, rx: 0.060, rz: 0.064, cx: 0, cz: -0.010, e: 2.0 },
+  { y:  0.000, rx: 0.062, rz: 0.066, cx: 0, cz: -0.008, e: 2.0 }
+];
+
+const SHIN_BLOBS = [
+  { x: 0.000, y: -0.110, z: -0.062, r: 0.070, s: 0.016, n: [0, 0, -1] },
+  { x: 0.000, y: -0.170, z: 0.052, r: 0.055, s: 0.010, n: [0, 0, 1] }
+];
+
+const FOOT_SECTIONS = [
+  { y: -0.098, rx: 0.046, rz: 0.108, cx: 0, cz: 0.056, e: 3.0 },
+  { y: -0.082, rx: 0.048, rz: 0.110, cx: 0, cz: 0.052, e: 3.0 },
+  { y: -0.060, rx: 0.046, rz: 0.092, cx: 0, cz: 0.034, e: 2.8 },
+  { y: -0.032, rx: 0.042, rz: 0.064, cx: 0, cz: 0.014, e: 2.5 },
+  { y:  0.000, rx: 0.037, rz: 0.044, cx: 0, cz: 0.002, e: 2.2 },
+  { y:  0.020, rx: 0.036, rz: 0.040, cx: 0, cz: 0.000, e: 2.2 }
+];
+
+/* ---------- CLOTHING ---------- */
+const SHIRT_SECTIONS = [
+  { y: 1.000, rx: 0.190, rz: 0.160, cz:  0.005, e: 2.6 },
+  { y: 1.080, rx: 0.184, rz: 0.154, cz:  0.004, e: 2.5 },
+  { y: 1.160, rx: 0.180, rz: 0.150, cz:  0.003, e: 2.4 },
+  { y: 1.250, rx: 0.192, rz: 0.160, cz:  0.006, e: 2.3 },
+  { y: 1.330, rx: 0.212, rz: 0.180, cz:  0.012, e: 2.3 },
+  { y: 1.410, rx: 0.226, rz: 0.194, cz:  0.016, e: 2.3 },
+  { y: 1.480, rx: 0.230, rz: 0.186, cz:  0.008, e: 2.4 },
+  { y: 1.535, rx: 0.204, rz: 0.164, cz: -0.004, e: 2.5 },
+  { y: 1.578, rx: 0.155, rz: 0.140, cz: -0.012, e: 2.4 },
+  { y: 1.606, rx: 0.125, rz: 0.118, cz: -0.012, e: 2.3 }
+];
+
+const SLEEVE_SECTIONS = [
+  { y: -0.140, rx: 0.083, rz: 0.085, e: 2.0 },
+  { y: -0.100, rx: 0.088, rz: 0.090, e: 2.0 },
+  { y: -0.050, rx: 0.094, rz: 0.096, e: 2.0 },
+  { y:  0.000, rx: 0.104, rz: 0.104, e: 2.1 },
+  { y:  0.042, rx: 0.100, rz: 0.100, e: 2.2 }
+];
+
+const SHORTS_SECTIONS = [
+  { y: 0.855, rx: 0.170, rz: 0.164, cz: -0.008, e: 2.9 },
+  { y: 0.920, rx: 0.188, rz: 0.172, cz: -0.010, e: 2.8 },
+  { y: 0.985, rx: 0.194, rz: 0.172, cz: -0.010, e: 2.7 },
+  { y: 1.045, rx: 0.188, rz: 0.158, cz: -0.006, e: 2.6 }
+];
+
+const THIGHSHORT_SECTIONS = [
+  { y: -0.260, rx: 0.088, rz: 0.094, cz: -0.006, e: 2.0 },
+  { y: -0.200, rx: 0.092, rz: 0.098, cz: -0.004, e: 2.0 },
+  { y: -0.120, rx: 0.100, rz: 0.106, cz:  0.000, e: 2.0 },
+  { y: -0.050, rx: 0.112, rz: 0.122, cz: -0.002, e: 2.1 },
+  { y:  0.012, rx: 0.120, rz: 0.132, cz: -0.002, e: 2.2 }
+];
+
+const SHOE_SECTIONS = [
+  { y: -0.100, rx: 0.052, rz: 0.116, cz: 0.056, e: 3.0 },
+  { y: -0.086, rx: 0.054, rz: 0.118, cz: 0.052, e: 3.0 },
+  { y: -0.062, rx: 0.052, rz: 0.098, cz: 0.034, e: 2.8 },
+  { y: -0.034, rx: 0.048, rz: 0.070, cz: 0.016, e: 2.5 },
+  { y:  0.000, rx: 0.043, rz: 0.050, cz: 0.004, e: 2.2 },
+  { y:  0.032, rx: 0.042, rz: 0.046, cz: 0.000, e: 2.2 }
+];
+
+/* ---------- NOSE (head-local) ---------- */
+const NOSE_SECTIONS = [
+  { y: 0.018, rx: 0.021, rz: 0.015, cz: 0.110, e: 2.3 },
+  { y: 0.035, rx: 0.019, rz: 0.016, cz: 0.120, e: 2.3 },
+  { y: 0.050, rx: 0.016, rz: 0.014, cz: 0.128, e: 2.2 },
+  { y: 0.065, rx: 0.013, rz: 0.012, cz: 0.128, e: 2.2 },
+  { y: 0.080, rx: 0.010, rz: 0.011, cz: 0.124, e: 2.2 },
+  { y: 0.098, rx: 0.008, rz: 0.010, cz: 0.121, e: 2.2 }
+];
+
+/* ---------- EAR (local, along Y then rotated) ---------- */
+const EAR_SECTIONS = [
+  { y: -0.026, rx: 0.005, rz: 0.010, e: 2.0 },
+  { y: -0.014, rx: 0.007, rz: 0.018, e: 2.0 },
+  { y:  0.000, rx: 0.008, rz: 0.022, e: 2.2 },
+  { y:  0.014, rx: 0.007, rz: 0.018, e: 2.0 },
+  { y:  0.026, rx: 0.005, rz: 0.012, e: 2.0 }
+];
+
+/* ============================================================
+   6 · ENVIRONMENT MAP
+   ============================================================ */
+function buildEnvironment(renderer) {
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const envScene = new THREE.Scene();
+
+  const domeMat = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    uniforms: {
+      cTop: { value: new THREE.Color(0x1b2331) },
+      cBot: { value: new THREE.Color(0x04050a) }
+    },
+    vertexShader: `
+      varying vec3 vP;
+      void main() {
+        vP = position;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }`,
+    fragmentShader: `
+      uniform vec3 cTop; uniform vec3 cBot;
+      varying vec3 vP;
+      void main() {
+        float h = normalize(vP).y * 0.5 + 0.5;
+        gl_FragColor = vec4(mix(cBot, cTop, pow(h, 0.85)), 1.0);
+      }`
+  });
+  envScene.add(new THREE.Mesh(new THREE.SphereGeometry(40, 32, 24), domeMat));
+
+  const card = (rgb, intensity, w, h, pos, target) => {
+    const mat = new THREE.MeshBasicMaterial({
+      side: THREE.DoubleSide,
+      color: new THREE.Color(rgb[0] * intensity, rgb[1] * intensity, rgb[2] * intensity)
+    });
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+    m.position.set(pos[0], pos[1], pos[2]);
+    m.lookAt(target[0], target[1], target[2]);
+    envScene.add(m);
+  };
+
+  card([1.00, 0.94, 0.86], 9.0, 7, 9, [6.5, 7.5, 6.0], [0, 1.2, 0]);
+  card([0.66, 0.78, 1.00], 2.2, 9, 7, [-8.0, 2.5, 4.5], [0, 1.2, 0]);
+  card([0.72, 0.84, 1.10], 8.0, 6, 6, [-3.0, 5.0, -9.0], [0, 1.2, 0]);
+  card([0.90, 0.86, 0.82], 1.1, 14, 14, [0, -3.5, 0], [0, 2, 0]);
+
+  const rt = pmrem.fromScene(envScene, 0.02, 0.1, 100);
+  pmrem.dispose();
+  envScene.traverse(o => {
+    if (o.geometry) o.geometry.dispose();
+    if (o.material) o.material.dispose();
+  });
+  return rt.texture;
+}
+
+/* ============================================================
+   7 · MOUTH RIBBON HELPERS
+   ============================================================ */
+const MOUTH_N = 22, MOUTH_R = 8;
+
+function makeRibbon(nSeg, nRad) {
+  const geo = new THREE.BufferGeometry();
+  const cnt = (nSeg + 1) * (nRad + 1);
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(cnt * 3), 3));
+  geo.setAttribute('normal',   new THREE.BufferAttribute(new Float32Array(cnt * 3), 3));
+  const idx = [];
+  for (let i = 0; i < nSeg; i++) {
+    for (let j = 0; j < nRad; j++) {
+      const a = i * (nRad + 1) + j;
+      const b = a + 1;
+      const c = a + nRad + 1;
+      const d = c + 1;
+      idx.push(a, b, c, b, d, c);
+    }
+  }
+  geo.setIndex(idx);
+  return geo;
+}
+
+function updateRibbon(geo, fn, radius) {
+  const pos = geo.attributes.position.array;
+  let k = 0;
+  for (let i = 0; i <= MOUTH_N; i++) {
+    const t = (i / MOUTH_N) * 2 - 1;
+    const p = fn(t);
+    for (let j = 0; j <= MOUTH_R; j++) {
+      const a = (j / MOUTH_R) * Math.PI * 2;
+      pos[k++] = p.x;
+      pos[k++] = p.y + Math.cos(a) * radius;
+      pos[k++] = p.z + Math.sin(a) * radius;
+    }
+  }
+  geo.attributes.position.needsUpdate = true;
+  geo.computeVertexNormals();
+}
+
+/* ============================================================
+   8 · POSE SYSTEM
+   ============================================================ */
+const POSE_KEYS_NUM = [
+  'rootY', 'rootRX', 'rootRY', 'rootRZ',
+  'pelvisRX', 'pelvisRY', 'pelvisRZ',
+  'spineRX', 'spineRY', 'spineRZ',
+  'headRX', 'headRY', 'headRZ',
+  'browRaise', 'browAngry', 'browSad',
+  'blink', 'squint',
+  'mouthOpen', 'mouthSmile', 'mouthWide',
+  'eyeLX', 'eyeLY', 'eyeRX', 'eyeRY'
+];
+const POSE_KEYS_VEC = [
+  'shL', 'shR', 'elL', 'elR', 'wrL', 'wrR',
+  'hipL', 'hipR', 'knL', 'knR', 'anL', 'anR'
+];
+
+function newPose() {
+  const P = {};
+  for (const k of POSE_KEYS_NUM) P[k] = 0;
+  for (const k of POSE_KEYS_VEC) P[k] = [0, 0, 0];
+  return P;
+}
+
+function copyPose(dst, src) {
+  for (const k of POSE_KEYS_NUM) dst[k] = src[k];
+  for (const k of POSE_KEYS_VEC) {
+    dst[k][0] = src[k][0];
+    dst[k][1] = src[k][1];
+    dst[k][2] = src[k][2];
+  }
+}
+
+function lerpPose(cur, tgt, a) {
+  for (const k of POSE_KEYS_NUM) cur[k] += (tgt[k] - cur[k]) * a;
+  for (const k of POSE_KEYS_VEC) {
+    const c = cur[k], t = tgt[k];
+    c[0] += (t[0] - c[0]) * a;
+    c[1] += (t[1] - c[1]) * a;
+    c[2] += (t[2] - c[2]) * a;
+  }
+}
+
+/* standing rest values, applied on top of a zeroed pose */
+function restPose(P) {
+  for (const k of POSE_KEYS_NUM) P[k] = 0;
+  for (const k of POSE_KEYS_VEC) { P[k][0] = 0; P[k][1] = 0; P[k][2] = 0; }
+
+  P.shL[2] = -0.15; P.shR[2] = 0.15;
+  P.shL[1] =  0.10; P.shR[1] = -0.10;
+  P.elL[0] = -0.30; P.elR[0] = -0.30;
+  P.elL[2] =  0.14; P.elR[2] = -0.14;
+  P.hipL[2] = -0.05; P.hipR[2] = 0.05;
+  P.mouthWide = 1.0;
+}
+
+/* ============================================================
+   9 · MAIN
+   ============================================================ */
+async function main() {
+  setProgress(0.05, 'Seeding noise fields…');
+  await nextFrame();
+
+  /* ---------- textures ---------- */
+  const maps = makeSkinMaps();
+  setProgress(0.14, 'Sculpting dermis height…');
+  await nextFrame();
+  passHeight(maps);
+
+  setProgress(0.38, 'Synthesising melanin & sebum…');
+  await nextFrame();
+  passAlbedo(maps);
+
+  setProgress(0.62, 'Deriving tangent-space normals…');
+  await nextFrame();
+  const normalData = passNormal(maps);
+
+  const N = maps.N;
+  const mkTex = (data, srgb) => {
+    const t = new THREE.DataTexture(data, N, N, THREE.RGBAFormat);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.minFilter = THREE.LinearMipmapLinearFilter;
+    t.magFilter = THREE.LinearFilter;
+    t.generateMipmaps = true;
+    t.anisotropy = 8;
+    if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+    t.needsUpdate = true;
+    return t;
+  };
+
+  const albedoTex = mkTex(maps.albedo, true);
+  const roughTex  = mkTex(maps.rough, false);
+  const aoTex     = mkTex(maps.ao, false);
+  const normalTex = mkTex(normalData, false);
+
+  setProgress(0.74, 'Assembling anatomy…');
+  await nextFrame();
+
+  /* ---------- renderer ---------- */
+  const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.05;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  document.body.appendChild(renderer.domElement);
+
+  const maxAniso = renderer.capabilities.getMaxAnisotropy();
+  [albedoTex, roughTex, aoTex, normalTex].forEach(t => (t.anisotropy = maxAniso));
+
+  /* ---------- scene ---------- */
+  const scene = new THREE.Scene();
+
+  {
+    const geo = new THREE.SphereGeometry(60, 32, 24);
+    const pos = geo.attributes.position;
+    const cols = new Float32Array(pos.count * 3);
+    const top = new THREE.Color(0x141b27);
+    const bot = new THREE.Color(0x04050a);
+    const c = new THREE.Color();
+    for (let i = 0; i < pos.count; i++) {
+      const t = Math.pow(clamp(pos.getY(i) / 60 * 0.5 + 0.5, 0, 1), 0.9);
+      c.copy(bot).lerp(top, t);
+      cols[i * 3] = c.r; cols[i * 3 + 1] = c.g; cols[i * 3 + 2] = c.b;
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(cols, 3));
+    const bg = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+      vertexColors: true, side: THREE.BackSide,
+      depthWrite: false, toneMapped: false
+    }));
+    bg.renderOrder = -1;
+    scene.add(bg);
+  }
+
+  const camera = new THREE.PerspectiveCamera(38, window.innerWidth / window.innerHeight, 0.05, 200);
+
+  const envTex = buildEnvironment(renderer);
+  scene.environment = envTex;
+
+  /* ---------- lights ---------- */
+  const key = new THREE.DirectionalLight(0xfff0dd, 2.6);
+  key.position.set(3.2, 4.6, 3.0);
+  key.target.position.set(0, 1.05, 0);
+  key.castShadow = true;
+  key.shadow.mapSize.set(2048, 2048);
+  key.shadow.camera.left = -1.8;
+  key.shadow.camera.right = 1.8;
+  key.shadow.camera.top = 2.8;
+  key.shadow.camera.bottom = -0.6;
+  key.shadow.camera.near = 1.0;
+  key.shadow.camera.far = 16;
+  key.shadow.bias = -0.0006;
+  key.shadow.normalBias = 0.022;
+  scene.add(key, key.target);
+
+  const fill = new THREE.DirectionalLight(0x8fb4ff, 0.55);
+  fill.position.set(-4.0, 2.2, 2.6);
+  scene.add(fill);
+
+  const rim = new THREE.DirectionalLight(0xa8c6ff, 2.1);
+  rim.position.set(-1.8, 3.2, -4.0);
+  scene.add(rim);
+
+  scene.add(new THREE.HemisphereLight(0x2a3446, 0x08080c, 0.35));
+
+  /* ---------- floor ---------- */
+  {
+    const size = 320;
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = size;
+    const ctx = cv.getContext('2d');
+    const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+    g.addColorStop(0.0, '#ffffff');
+    g.addColorStop(0.35, '#8a8a8a');
+    g.addColorStop(0.75, '#1a1a1a');
+    g.addColorStop(1.0, '#000000');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, size, size);
+    const alphaTex = new THREE.CanvasTexture(cv);
+    alphaTex.colorSpace = THREE.NoColorSpace;
+
+    const floor = new THREE.Mesh(
+      new THREE.CircleGeometry(7.0, 64),
+      new THREE.MeshStandardMaterial({
+        color: 0x0d1015,
+        roughness: 0.62,
+        metalness: 0.15,
+        alphaMap: alphaTex,
+        transparent: true,
+        envMapIntensity: 0.5
+      })
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.receiveShadow = true;
+    scene.add(floor);
+  }
+
+  /* ---------- desk + monitor (streamer set) ---------- */
+  {
+    const deskMat = new THREE.MeshStandardMaterial({
+      color: 0x22262e, roughness: 0.55, metalness: 0.25, envMapIntensity: 0.8
+    });
+    const darkMat = new THREE.MeshStandardMaterial({
+      color: 0x0b0d12, roughness: 0.35, metalness: 0.55, envMapIntensity: 0.9
+    });
+    const glowMat = new THREE.MeshBasicMaterial({ color: 0x1d3350, toneMapped: false });
+
+    const desk = new THREE.Group();
+    const top = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.05, 0.74), deskMat);
+    top.position.set(0, 0.98, 0.66);
+    top.castShadow = true; top.receiveShadow = true;
+    desk.add(top);
+
+    for (const sx of [-1, 1]) {
+      for (const sz of [-1, 1]) {
+        const leg = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.96, 0.055), deskMat);
+        leg.position.set(sx * 0.94, 0.48, 0.66 + sz * 0.31);
+        leg.castShadow = true;
+        desk.add(leg);
+      }
+    }
+
+    // monitor
+    const mon = new THREE.Mesh(new THREE.BoxGeometry(0.70, 0.42, 0.025), darkMat);
+    mon.position.set(-0.66, 1.26, 0.72);
+    mon.rotation.y = 0.24;
+    mon.rotation.x = -0.06;
+    mon.castShadow = true;
+    desk.add(mon);
+
+    const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.66, 0.38), glowMat);
+    screen.position.set(-0.66, 1.26, 0.735);
+    screen.rotation.y = 0.24;
+    desk.add(screen);
+
+    const stand = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.24, 10), darkMat);
+    stand.position.set(-0.66, 1.13, 0.72);
+    desk.add(stand);
+    const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.012, 20), darkMat);
+    foot.position.set(-0.66, 1.005, 0.72);
+    desk.add(foot);
+
+    // mic boom
+    const boom = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.55, 8), darkMat);
+    boom.position.set(0.72, 1.24, 0.76);
+    boom.rotation.z = 0.55;
+    desk.add(boom);
+    const mic = new THREE.Mesh(new THREE.CapsuleGeometry(0.035, 0.09, 6, 12), darkMat);
+    mic.position.set(0.55, 1.44, 0.80);
+    mic.rotation.z = 0.5;
+    desk.add(mic);
+
+    scene.add(desk);
+  }
+
+  setProgress(0.82, 'Applying PBR shader…');
+  await nextFrame();
+
+  /* ---------- materials ---------- */
+  const skinMat = new THREE.MeshPhysicalMaterial({
+    map: albedoTex,
+    normalMap: normalTex,
+    normalScale: new THREE.Vector2(0.85, 0.85),
+    roughnessMap: roughTex,
+    roughness: 1.0,
+    aoMap: aoTex,
+    aoMapIntensity: 0.55,
+    metalness: 0.0,
+    ior: 1.4,
+    clearcoat: 0.14,
+    clearcoatRoughness: 0.55,
+    sheen: 0.85,
+    sheenRoughness: 0.85,
+    sheenColor: new THREE.Color(0xffb08a),
+    envMapIntensity: 1.0
+  });
+
+  const lipsMat = new THREE.MeshPhysicalMaterial({
+    color: 0xa15a55, roughness: 0.42, clearcoat: 0.45,
+    clearcoatRoughness: 0.35, sheen: 0.6, sheenColor: new THREE.Color(0xff8a7a),
+    envMapIntensity: 1.0
+  });
+
+  const mouthMat = new THREE.MeshStandardMaterial({ color: 0x2a0d0e, roughness: 0.7 });
+  const teethMat = new THREE.MeshPhysicalMaterial({ color: 0xe8e6df, roughness: 0.22, clearcoat: 0.7 });
+  const tongueMat = new THREE.MeshPhysicalMaterial({ color: 0x8e3b46, roughness: 0.5, clearcoat: 0.4 });
+
+  const hairMat = new THREE.MeshPhysicalMaterial({
+    color: 0x1a1410, roughness: 0.42, metalness: 0.0,
+    clearcoat: 0.35, clearcoatRoughness: 0.5,
+    sheen: 0.6, sheenColor: new THREE.Color(0x554433),
+    envMapIntensity: 0.9
+  });
+
+  const browMat = new THREE.MeshStandardMaterial({ color: 0x241a12, roughness: 0.8 });
+
+  const scleraMat = new THREE.MeshPhysicalMaterial({
+    color: 0xf3f1ec, roughness: 0.16, clearcoat: 1.0, clearcoatRoughness: 0.03
+  });
+  const irisMat = new THREE.MeshPhysicalMaterial({
+    color: 0x3f6f8e, roughness: 0.08, clearcoat: 1.0, clearcoatRoughness: 0.02,
+    envMapIntensity: 1.6
+  });
+  const pupilMat = new THREE.MeshBasicMaterial({ color: 0x04060a });
+  const lidMat = new THREE.MeshPhysicalMaterial({
+    color: 0xd7ae92, roughness: 0.52, clearcoat: 0.18, clearcoatRoughness: 0.6,
+    envMapIntensity: 0.9
+  });
+
+  const shirtMat = new THREE.MeshPhysicalMaterial({
+    color: 0x2b3546, roughness: 0.88, metalness: 0.0,
+    sheen: 0.5, sheenRoughness: 0.8, sheenColor: new THREE.Color(0x6d84a8),
+    envMapIntensity: 0.7, side: THREE.DoubleSide
+  });
+  const shortsMat = new THREE.MeshPhysicalMaterial({
+    color: 0x12161e, roughness: 0.9, metalness: 0.0,
+    sheen: 0.35, sheenRoughness: 0.9, sheenColor: new THREE.Color(0x4a5568),
+    envMapIntensity: 0.6, side: THREE.DoubleSide
+  });
+  const shoeMat = new THREE.MeshPhysicalMaterial({
+    color: 0x1c1f26, roughness: 0.55, metalness: 0.05,
+    clearcoat: 0.3, clearcoatRoughness: 0.5, envMapIntensity: 0.9
+  });
+  const soleMat = new THREE.MeshPhysicalMaterial({
+    color: 0xd8dde3, roughness: 0.6, metalness: 0.02, envMapIntensity: 0.7
+  });
+
+  /* ---------- mesh helper ---------- */
+  function addMesh(geo, mat, parent, shadow = true) {
+    if (!geo.attributes.uv1) {
+      geo.setAttribute('uv1', new THREE.BufferAttribute(Float32Array.from(geo.attributes.uv.array), 2));
+    }
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.castShadow = shadow;
+    mesh.receiveShadow = shadow;
+    parent.add(mesh);
+    return mesh;
+  }
+
+  /* ============================================================
+     RIG
+     ============================================================ */
+  const rig = {};
+  const HY = 1.70;   // head pivot world Y
+  const SY = 1.05;   // spine pivot world Y
+  const PY = 0.95;   // pelvis world Y
+
+  rig.root = new THREE.Group();
+  scene.add(rig.root);
+
+  rig.pelvis = new THREE.Group();
+  rig.pelvis.position.y = PY;
+  rig.root.add(rig.pelvis);
+
+  // shorts hip band (stays with pelvis)
+  {
+    const g = buildTube(SHORTS_SECTIONS, 40, 42);
+    g.translate(0, -PY, 0);
+    addMesh(g, shortsMat, rig.pelvis);
+  }
+
+  rig.spine = new THREE.Group();
+  rig.spine.position.y = SY - PY;
+  rig.pelvis.add(rig.spine);
+
+  // torso
+  {
+    const g = sculpt(buildTube(TORSO_SECTIONS, 48, 130), TORSO_BLOBS.concat(TORSO_CARVE));
+    g.translate(0, -SY, 0);
+    addMesh(g, skinMat, rig.spine);
+  }
+
+  // shirt
+  {
+    const g = buildTube(SHIRT_SECTIONS, 44, 80);
+    g.translate(0, -SY, 0);
+    addMesh(g, shirtMat, rig.spine);
+  }
+
+  /* ---------- head ---------- */
+  rig.head = new THREE.Group();
+  rig.head.position.y = HY - SY;
+  rig.spine.add(rig.head);
+
+  {
+    const g = sculpt(buildTube(HEAD_SECTIONS, 44, 100), HEAD_BLOBS);
+    g.translate(0, -HY, 0);
+    addMesh(g, skinMat, rig.head);
+  }
+
+  // hair
+  {
+    const g = buildTube(HAIR_SECTIONS, 40, 44);
+    g.translate(0, -HY, 0);
+    addMesh(g, hairMat, rig.head);
+  }
+
+  // nose
+  {
+    const g = buildTube(NOSE_SECTIONS, 20, 24);
+    addMesh(g, skinMat, rig.head);
+  }
+
+  // ears
+  for (const side of [1, -1]) {
+    const g = buildTube(EAR_SECTIONS, 14, 18);
+    g.rotateX(-Math.PI / 2);
+    if (side < 0) mirrorGeometry(g);
+    const ear = new THREE.Mesh(g, skinMat);
+    ear.position.set(0.100 * side, 1.782 - HY, -0.006);
+    ear.rotation.z = -0.12 * side;
+    ear.castShadow = true;
+    rig.head.add(ear);
+  }
+
+  /* ---------- eyes ---------- */
+  const eyes = { L: {}, R: {} };
+  for (const side of [1, -1]) {
+    const S = side > 0 ? eyes.R : eyes.L;
+    const ex = 0.038 * side;
+    const ey = 1.782 - HY;
+    const ez = 0.102;
+
+    const g = new THREE.Group();
+    g.position.set(ex, ey, ez);
+    rig.head.add(g);
+    S.group = g;
+
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.0135, 24, 18), scleraMat);
+    g.add(ball);
+
+    const iris = new THREE.Mesh(
+      new THREE.SphereGeometry(0.0136, 22, 16, 0, Math.PI * 2, 0, 0.52),
+      irisMat
+    );
+    iris.rotation.x = Math.PI / 2;
+    g.add(iris);
+    S.iris = iris;
+
+    const pupil = new THREE.Mesh(
+      new THREE.SphereGeometry(0.0137, 18, 12, 0, Math.PI * 2, 0, 0.27),
+      pupilMat
+    );
+    pupil.rotation.x = Math.PI / 2;
+    g.add(pupil);
+
+    // upper lid
+    const lidU = new THREE.Group();
+    g.add(lidU);
+    const lidUMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.0148, 22, 16, 0, Math.PI * 2, 0, Math.PI * 0.5),
+      lidMat
+    );
+    lidU.add(lidUMesh);
+    S.lidU = lidU;
+
+    // lower lid
+    const lidL = new THREE.Group();
+    g.add(lidL);
+    const lg = new THREE.SphereGeometry(0.0148, 22, 16, 0, Math.PI * 2, 0, Math.PI * 0.36);
+    lg.rotateZ(Math.PI);
+    lidL.add(new THREE.Mesh(lg, lidMat));
+    S.lidL = lidL;
+  }
+
+  /* ---------- eyebrows ---------- */
+  const brows = {};
+  for (const side of [1, -1]) {
+    const ptsR = [
+      new THREE.Vector3(-0.025, -0.002,  0.004),
+      new THREE.Vector3(-0.011,  0.004,  0.008),
+      new THREE.Vector3( 0.007,  0.004,  0.003),
+      new THREE.Vector3( 0.025, -0.004, -0.014)
+    ];
+    const pts = ptsR.map(p => new THREE.Vector3(p.x * side, p.y, p.z));
+    const curve = new THREE.CatmullRomCurve3(pts);
+    const g = new THREE.TubeGeometry(curve, 16, 0.0062, 6, false);
+    const grp = new THREE.Group();
+    grp.position.set(0.043 * side, 0.102, 0.110);
+    const m = new THREE.Mesh(g, browMat);
+    grp.add(m);
+    rig.head.add(grp);
+    brows[side > 0 ? 'R' : 'L'] = grp;
+  }
+
+  /* ---------- mouth ---------- */
+  const mouthGrp = new THREE.Group();
+  mouthGrp.position.set(0, 0, 0);
+  rig.head.add(mouthGrp);
+
+  const lipGeoU = makeRibbon(MOUTH_N, MOUTH_R);
+  const lipGeoL = makeRibbon(MOUTH_N, MOUTH_R);
+  const lipU = new THREE.Mesh(lipGeoU, lipsMat);
+  const lipL = new THREE.Mesh(lipGeoL, lipsMat);
+  lipU.castShadow = false;
+  lipL.castShadow = false;
+  mouthGrp.add(lipU, lipL);
+
+  const mouthCavity = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), mouthMat);
+  mouthGrp.add(mouthCavity);
+
+  const teeth = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), teethMat);
+  mouthGrp.add(teeth);
+
+  const tongue = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), tongueMat);
+  mouthGrp.add(tongue);
+
+  const MOUTH_Y = 0.008;
+  const MOUTH_Z = 0.110;
+
+  const mouthState = { open: 0, smile: 0, wide: 1 };
+
+  function upperLipFn(t) {
+    const w = 0.031 * mouthState.wide;
+    const x = t * w;
+    const curve = mouthState.smile * 0.014 * t * t;
+    return {
+      x,
+      y: MOUTH_Y + curve + mouthState.open * 0.005,
+      z: MOUTH_Z - 0.006 * (x / 0.031) * (x / 0.031)
+    };
+  }
+  function lowerLipFn(t) {
+    const w = 0.031 * mouthState.wide;
+    const x = t * w;
+    const curve = mouthState.smile * 0.014 * t * t;
+    return {
+      x,
+      y: MOUTH_Y - 0.0045 + curve - mouthState.open * 0.022,
+      z: MOUTH_Z - 0.006 * (x / 0.031) * (x / 0.031)
+    };
+  }
+
+  /* ============================================================
+     LIMBS
+     ============================================================ */
+  function buildSided(builder, side) {
+    const g = builder();
+    if (side < 0) mirrorGeometry(g);
+    return g;
+  }
+
+  const armRefs = {};
+
+  for (const side of [1, -1]) {
+    const key = side > 0 ? 'R' : 'L';
+
+    /* shoulder */
+    const shoulder = new THREE.Group();
+    shoulder.position.set(0.195 * side, 1.505 - SY, 0);
+    rig.spine.add(shoulder);
+
+    /* upper arm */
+    addMesh(buildSided(() => sculpt(buildTube(UPPERARM_SECTIONS, 30, 56), UPPERARM_BLOBS), side),
+            skinMat, shoulder);
+
+    /* sleeve */
+    addMesh(buildSided(() => buildTube(SLEEVE_SECTIONS, 26, 22), side), shirtMat, shoulder);
+
+    /* elbow */
+    const elbow = new THREE.Group();
+    elbow.position.set(0, -0.300, 0);
+    shoulder.add(elbow);
+
+    addMesh(buildSided(() => sculpt(buildTube(FOREARM_SECTIONS, 26, 50), FOREARM_BLOBS), side),
+            skinMat, elbow);
+
+    /* wrist */
+    const wrist = new THREE.Group();
+    wrist.position.set(0, -0.270, 0);
+    elbow.add(wrist);
+
+    addMesh(buildSided(() => buildTube(HAND_SECTIONS, 24, 34), side), skinMat, wrist);
+
+    /* thumb */
+    {
+      const tg = buildTube(THUMB_SECTIONS, 12, 16);
+      tg.rotateX(-0.5);
+      tg.rotateZ(-0.55 * side);
+      tg.translate(0.026 * side, -0.072, 0.028);
+      addMesh(tg, skinMat, wrist);
+    }
+
+    armRefs[key] = { shoulder, elbow, wrist };
+  }
+  rig.shR = armRefs.R.shoulder; rig.elR = armRefs.R.elbow; rig.wrR = armRefs.R.wrist;
+  rig.shL = armRefs.L.shoulder; rig.elL = armRefs.L.elbow; rig.wrL = armRefs.L.wrist;
+
+  /* ---------- legs ---------- */
+  const legRefs = {};
+  for (const side of [1, -1]) {
+    const key = side > 0 ? 'R' : 'L';
+
+    const hip = new THREE.Group();
+    hip.position.set(0.085 * side, 0, 0);
+    rig.pelvis.add(hip);
+
+    addMesh(buildSided(() => sculpt(buildTube(THIGH_SECTIONS, 34, 90), THIGH_BLOBS), side),
+            skinMat, hip);
+    addMesh(buildSided(() => buildTube(THIGHSHORT_SECTIONS, 30, 34), side),
+            shortsMat, hip);
+
+    const knee = new THREE.Group();
+    knee.position.set(0, -0.450, 0);
+    hip.add(knee);
+
+    addMesh(buildSided(() => sculpt(buildTube(SHIN_SECTIONS, 30, 90), SHIN_BLOBS), side),
+            skinMat, knee);
+
+    const ankle = new THREE.Group();
+    ankle.position.set(0, -0.400, 0);
+    knee.add(ankle);
+
+    addMesh(buildSided(() => buildTube(FOOT_SECTIONS, 26, 30), side), skinMat, ankle);
+    addMesh(buildSided(() => buildTube(SHOE_SECTIONS, 28, 34), side), shoeMat, ankle);
+
+    /* shoe sole */
+    {
+      const sole = new THREE.Mesh(new THREE.BoxGeometry(0.098, 0.016, 0.245), soleMat);
+      sole.position.set(0, -0.102, 0.056);
+      sole.castShadow = true;
+      ankle.add(sole);
+    }
+
+    legRefs[key] = { hip, knee, ankle };
+  }
+  rig.hipR = legRefs.R.hip; rig.knR = legRefs.R.knee; rig.anR = legRefs.R.ankle;
+  rig.hipL = legRefs.L.hip; rig.knL = legRefs.L.knee; rig.anL = legRefs.L.ankle;
+
+  /* ============================================================
+     APPLY POSE
+     ============================================================ */
+  function applyPose(P) {
+    rig.root.position.y = P.rootY;
+    rig.root.rotation.set(P.rootRX, P.rootRY, P.rootRZ);
+
+    rig.pelvis.rotation.set(P.pelvisRX, P.pelvisRY, P.pelvisRZ);
+    rig.spine.rotation.set(P.spineRX, P.spineRY, P.spineRZ);
+    rig.head.rotation.set(P.headRX, P.headRY, P.headRZ);
+
+    rig.shL.rotation.set(P.shL[0], P.shL[1], P.shL[2]);
+    rig.shR.rotation.set(P.shR[0], P.shR[1], P.shR[2]);
+    rig.elL.rotation.set(P.elL[0], P.elL[1], P.elL[2]);
+    rig.elR.rotation.set(P.elR[0], P.elR[1], P.elR[2]);
+    rig.wrL.rotation.set(P.wrL[0], P.wrL[1], P.wrL[2]);
+    rig.wrR.rotation.set(P.wrR[0], P.wrR[1], P.wrR[2]);
+
+    rig.hipL.rotation.set(P.hipL[0], P.hipL[1], P.hipL[2]);
+    rig.hipR.rotation.set(P.hipR[0], P.hipR[1], P.hipR[2]);
+    rig.knL.rotation.set(P.knL[0], P.knL[1], P.knL[2]);
+    rig.knR.rotation.set(P.knR[0], P.knR[1], P.knR[2]);
+    rig.anL.rotation.set(P.anL[0], P.anL[1], P.anL[2]);
+    rig.anR.rotation.set(P.anR[0], P.anR[1], P.anR[2]);
+
+    // brows
+    const ang = P.browAngry;
+    brows.R.rotation.z =  ang * 0.42;
+    brows.L.rotation.z = -ang * 0.42;
+    const sad = P.browSad;
+    brows.R.rotation.z += -sad * 0.34;
+    brows.L.rotation.z +=  sad * 0.34;
+    const ry = P.browRaise * 0.011;
+    brows.R.position.y = 0.102 + ry + ang * -0.004 + sad * 0.002;
+    brows.L.position.y = brows.R.position.y;
+
+    // eyes
+    const blink = P.blink;
+    const squint = P.squint;
+    for (const S of [eyes.L, eyes.R]) {
+      S.lidU.rotation.x = 0.15 + blink * 1.15 + squint * 0.30;
+      S.lidL.rotation.x = -(0.12 + blink * 0.75 + squint * 0.42);
+    }
+    const lookX = P.eyeLX * 0.0022;
+    const lookY = P.eyeLY * 0.0018;
+    eyes.L.iris.position.set(lookX, lookY, 0);
+    eyes.R.iris.position.set(lookX, lookY, 0);
+
+    // mouth
+    mouthState.open = P.mouthOpen;
+    mouthState.smile = P.mouthSmile;
+    mouthState.wide = P.mouthWide;
+
+    updateRibbon(lipGeoU, upperLipFn, 0.0065);
+    updateRibbon(lipGeoL, lowerLipFn, 0.0085);
+
+    const o = P.mouthOpen;
+    const w = 0.031 * P.mouthWide;
+    mouthCavity.position.set(0, MOUTH_Y - 0.004 - o * 0.010, MOUTH_Z - 0.014);
+    mouthCavity.scale.set(w * 1.25, 0.0035 + o * 0.023, 0.020);
+
+    teeth.position.set(0, MOUTH_Y + 0.001 - o * 0.001, MOUTH_Z - 0.010);
+    teeth.scale.set(w * 1.55, 0.0075, 0.010);
+    teeth.visible = o > 0.12;
+
+    tongue.position.set(0, MOUTH_Y - 0.008 - o * 0.018, MOUTH_Z - 0.016);
+    tongue.scale.set(w * 0.72, 0.005 + o * 0.007, 0.010);
+    tongue.visible = o > 0.25;
+  }
+
+  /* ============================================================
+     POSE COMPUTATION
+     ============================================================ */
+  const blinkTimer = { next: 2.0, t: 0 };
+
+  function speechOpen(t) {
+    const s = Math.sin(t * 13.1) * 0.5 + Math.sin(t * 7.3 + 1.7) * 0.3 + Math.sin(t * 21.7 + 0.4) * 0.2;
+    return clamp(s * 0.5 + 0.5, 0, 1);
+  }
+
+  function computePose(P, mode, t, dt, st) {
+    restPose(P);
+
+    /* -------- global facial baseline -------- */
+    P.mouthWide = 1.0;
+    P.mouthSmile = 0.10;
+    P.browRaise = 0.20;
+    P.eyeLX = Math.sin(t * 0.31) * 0.9;
+    P.eyeLY = Math.sin(t * 0.47 + 1.1) * 0.6;
+
+    /* blink */
+    blinkTimer.t += dt;
+    if (blinkTimer.t > blinkTimer.next) {
+      blinkTimer.t = 0;
+      blinkTimer.next = 1.8 + Math.random() * 3.4;
+      st.blinkPhase = 0.0001;
+    }
+    if (st.blinkPhase > 0) {
+      st.blinkPhase += dt * 7.0;
+      if (st.blinkPhase >= Math.PI) { st.blinkPhase = 0; P.blink = 0; }
+      else P.blink = Math.sin(st.blinkPhase);
+    }
+
+    const breathe = Math.sin(t * 1.05) * 0.5 + 0.5;
+
+    /* -------- locomotion -------- */
+    if (mode === 'walk' || mode === 'run') {
+      const run = mode === 'run';
+      const p = st.locomotionPhase;
+      const amp = run ? 1.0 : 0.52;
+      const freq = run ? 1.0 : 0.62;
+
+      const hipSwing = 0.52 * amp;
+      const kneeLift = run ? 1.25 : 0.75;
+      const armSwing = run ? 0.85 : 0.42;
+
+      P.hipL[0] = -hipSwing * Math.sin(p);
+      P.hipR[0] = -hipSwing * Math.sin(p + Math.PI);
+
+      P.knL[0] = 0.12 + kneeLift * Math.max(0, Math.sin(p + 2.1));
+      P.knR[0] = 0.12 + kneeLift * Math.max(0, Math.sin(p + Math.PI + 2.1));
+
+      P.anL[0] = -0.22 * Math.sin(p + 0.9) * amp;
+      P.anR[0] = -0.22 * Math.sin(p + Math.PI + 0.9) * amp;
+
+      P.shL[0] = armSwing * Math.sin(p + Math.PI);
+      P.shR[0] = armSwing * Math.sin(p);
+      P.elL[0] = -0.55 - (run ? 0.85 : 0.25) - 0.25 * Math.sin(p);
+      P.elR[0] = -0.55 - (run ? 0.85 : 0.25) - 0.25 * Math.sin(p + Math.PI);
+
+      P.shL[2] = -0.15 - (run ? 0.05 : 0.0);
+      P.shR[2] =  0.15 + (run ? 0.05 : 0.0);
+
+      P.pelvisRY = 0.16 * amp * Math.sin(p);
+      P.pelvisRZ = 0.06 * amp * Math.sin(p * 2);
+      P.spineRX = run ? 0.16 : 0.05;
+      P.spineRY = -0.13 * amp * Math.sin(p);
+      P.headRX = run ? -0.12 : -0.03;
+      P.headRY = 0.07 * Math.sin(p);
+
+      P.rootY = -0.014 * amp + 0.018 * amp * Math.abs(Math.cos(p));
+      P.rootRX = run ? 0.05 : 0.015;
+
+      P.mouthOpen = 0.10 + (run ? 0.22 : 0.05) * (0.5 + 0.5 * Math.sin(t * 4.3));
+      P.mouthSmile = 0.22;
+      P.browRaise = 0.4;
+      P.squint = run ? 0.4 : 0.1;
+
+      st.locomotionPhase += dt * (run ? 9.2 : 5.2) * freq;
+      if (st.locomotionPhase > Math.PI * 2) st.locomotionPhase -= Math.PI * 2;
+    }
+
+    /* -------- talk -------- */
+    else if (mode === 'talk') {
+      const s = speechOpen(t * 1.0);
+      P.mouthOpen = s * 0.62;
+      P.mouthWide = 0.95 + s * 0.15;
+      P.mouthSmile = 0.18 + 0.20 * Math.sin(t * 2.1);
+      P.headRX = 0.05 * Math.sin(t * 1.7) - 0.02;
+      P.headRY = 0.13 * Math.sin(t * 0.83);
+      P.headRZ = 0.04 * Math.sin(t * 1.3);
+      P.spineRX = 0.03;
+      P.spineRY = 0.05 * Math.sin(t * 0.6);
+      P.browRaise = 0.4 + 0.3 * Math.sin(t * 2.9);
+      P.shL[0] = -0.30 + 0.16 * Math.sin(t * 3.1);
+      P.shR[0] = -0.30 + 0.16 * Math.sin(t * 3.1 + 1.4);
+      P.shL[2] = -0.30;
+      P.shR[2] =  0.30;
+      P.elL[0] = -1.15; P.elR[0] = -1.15;
+      P.wrL[0] = -0.25; P.wrR[0] = -0.25;
+      P.rootY = 0.004 * Math.sin(t * 2.2);
+    }
+
+    /* -------- wave -------- */
+    else if (mode === 'wave') {
+      P.shR[0] = -0.15;
+      P.shR[2] = 2.35 + 0.10 * Math.sin(t * 8.0);
+      P.shR[1] = -0.30;
+      P.elR[0] = -0.55;
+      P.elR[2] = -0.30 + 0.55 * Math.sin(t * 8.0);
+      P.wrR[2] = 0.35 * Math.sin(t * 8.0 + 0.6);
+      P.headRZ = -0.10;
+      P.headRY = 0.16 + 0.05 * Math.sin(t * 8.0);
+      P.mouthOpen = 0.16 + 0.10 * Math.sin(t * 8.0);
+      P.mouthSmile = 0.85;
+      P.mouthWide = 1.12;
+      P.browRaise = 0.65;
+      P.squint = 0.3;
+      P.spineRY = -0.08;
+      P.rootY = 0.008 * Math.sin(t * 8.0);
+    }
+
+    /* -------- laugh -------- */
+    else if (mode === 'laugh') {
+      const s = Math.sin(t * 11.5);
+      const s2 = Math.sin(t * 17.0 + 0.7);
+      P.spineRX = -0.20 + 0.09 * s;
+      P.spineRZ = 0.05 * s2;
+      P.pelvisRX = -0.05 + 0.04 * s;
+      P.headRX = -0.32 + 0.13 * s2;
+      P.headRZ = 0.09 * s;
+      P.headRY = 0.10 * s2;
+
+      P.mouthOpen = 0.62 + 0.20 * s2;
+      P.mouthWide = 1.22;
+      P.mouthSmile = 1.0;
+      P.browRaise = 0.9;
+      P.squint = 0.85;
+      P.blink = Math.max(P.blink, 0.35 + 0.2 * s);
+
+      P.shL[0] = -0.35 + 0.10 * s;
+      P.shR[0] = -0.35 - 0.10 * s;
+      P.shL[2] = -0.45;
+      P.shR[2] =  0.45;
+      P.elL[0] = -1.35; P.elR[0] = -1.35;
+      P.elL[2] = 0.35; P.elR[2] = -0.35;
+      P.wrL[0] = -0.35; P.wrR[0] = -0.35;
+
+      P.knL[0] = 0.16 + 0.06 * s;
+      P.knR[0] = 0.16 - 0.06 * s;
+      P.rootY = -0.02 + 0.012 * s2;
+    }
+
+    /* -------- happy / smile -------- */
+    else if (mode === 'happy') {
+      P.mouthSmile = 1.0;
+      P.mouthWide = 1.14;
+      P.mouthOpen = 0.10 + 0.05 * breathe;
+      P.browRaise = 0.75;
+      P.squint = 0.5;
+      P.headRX = -0.08;
+      P.headRZ = 0.06;
+      P.spineRX = -0.05;
+      P.shL[2] = -0.35; P.shR[2] = 0.35;
+      P.elL[0] = -0.75; P.elR[0] = -0.75;
+      P.rootY = 0.012 + 0.010 * Math.sin(t * 2.4);
+    }
+
+    /* -------- angry (table slam) -------- */
+    else if (mode === 'angry') {
+      const u = clamp(st.modeTime / 2.8, 0, 1);
+      let windup = 0, slam = 0, hold = 0;
+
+      if (u < 0.26) {
+        windup = u / 0.26;
+      } else if (u < 0.40) {
+        const k = (u - 0.26) / 0.14;
+        windup = 1 - k;
+        slam = k;
+      } else {
+        hold = 1;
+      }
+
+      const shakeAmp = hold * 0.026;
+      const shk = Math.sin(t * 34) * shakeAmp;
+      const shk2 = Math.sin(t * 27 + 1.3) * shakeAmp;
+
+      // body
+      P.spineRX = -0.06 + windup * (-0.10) + slam * 0.20 + hold * 0.10 + shk;
+      P.spineRZ = -0.04 + windup * 0.06 + shk2 * 0.6;
+      P.pelvisRX = 0.02 + slam * 0.06;
+      P.headRX = 0.05 + windup * (-0.22) + slam * 0.20 + shk2 * 0.8;
+      P.headRZ = -0.05 + windup * 0.10;
+      P.headRY = 0.06;
+      P.rootY = -0.01 - slam * 0.02;
+
+      // right arm
+      P.shR[0] = lerp(0.0, 2.15, windup) + slam * (-2.95) ;
+      P.shR[2] = lerp(0.15, 0.60, windup) + slam * (-0.10);
+      P.shR[1] = -0.10 + slam * 0.15;
+      P.elR[0] = lerp(-0.30, -1.55, windup) + slam * 1.15;
+      P.wrR[0] = lerp(0.0, -0.35, windup) + slam * 0.75;
+
+      // left arm clenched at side
+      P.shL[0] = -0.30 + shk;
+      P.shL[2] = -0.34;
+      P.elL[0] = -1.60;
+      P.elL[2] = 0.45;
+
+      // legs braced
+      P.hipL[0] = -0.10; P.hipR[0] = 0.10;
+      P.knL[0] = 0.22; P.knR[0] = 0.22;
+
+      // face
+      P.browAngry = 1.0;
+      P.browRaise = -0.35;
+      P.squint = 0.55;
+      P.mouthOpen = 0.20 + windup * 0.15 + hold * (0.32 + 0.10 * Math.sin(t * 19));
+      P.mouthSmile = -0.45;
+      P.mouthWide = 1.02;
+
+      // impact flash
+      if (slam > 0 && slam < 0.35 && !st.slamFired) {
+        st.slamFired = true;
+        st.flash = 1.0;
+        st.shake = 1.0;
+      }
+      if (u > 0.9 && st.slamFired) {
+        // reset for potential repeat
+        st.slamFired = u > 0.9 ? st.slamFired : false;
+      }
+
+      if (st.modeTime > 3.6) {
+        setMode('idle');
+      }
+    }
+
+    /* -------- idle -------- */
+    else {
+      P.rootY = 0.006 * Math.sin(t * 1.05) - 0.003;
+      P.spineRX = 0.014 * Math.sin(t * 1.05 + 0.4);
+      P.spineRY = 0.035 * Math.sin(t * 0.42);
+      P.pelvisRY = -0.022 * Math.sin(t * 0.42);
+      P.headRX = -0.02 + 0.03 * Math.sin(t * 0.73 + 1.0);
+      P.headRY = 0.10 * Math.sin(t * 0.31);
+      P.headRZ = 0.025 * Math.sin(t * 0.55);
+      P.shL[0] = 0.05 + 0.03 * Math.sin(t * 1.05 + 0.2);
+      P.shR[0] = 0.05 + 0.03 * Math.sin(t * 1.05 + 0.9);
+      P.elL[0] = -0.32; P.elR[0] = -0.32;
+      P.mouthOpen = 0.03 + 0.02 * breathe;
+      P.mouthSmile = 0.14;
+      P.browRaise = 0.22;
+      P.knL[0] = 0.02; P.knR[0] = 0.02;
+    }
+  }
+
+  /* ============================================================
+     STATE / UI
+     ============================================================ */
+  let mode = 'idle';
+  const st = {
+    modeTime: 0,
+    locomotionPhase: 0,
+    blinkPhase: 0,
+    flash: 0,
+    shake: 0,
+    slamFired: false
+  };
+
+  const curPose = newPose();
+  const tgtPose = newPose();
+  restPose(curPose);
+  restPose(tgtPose);
+
+  const buttons = [...document.querySelectorAll('#ui button')];
+  function setMode(m) {
+    if (mode === m && m !== 'angry') return;
+    mode = m;
+    st.modeTime = 0;
+    st.slamFired = false;
+    if (m === 'walk' || m === 'run') st.locomotionPhase = 0;
+    buttons.forEach(b => b.classList.toggle('on', b.dataset.act === m));
+  }
+  buttons.forEach(b => b.addEventListener('click', () => setMode(b.dataset.act)));
+
+  const keyMap = { '1': 'idle', '2': 'walk', '3': 'run', '4': 'talk', '5': 'wave', '6': 'laugh', '7': 'angry', '8': 'happy' };
+  window.addEventListener('keydown', e => {
+    if (keyMap[e.key]) setMode(keyMap[e.key]);
+  });
+
+  /* ============================================================
+     CAMERA RIG
+     ============================================================ */
+  const cam = {
+    theta: 0.34,
+    phi: 1.34,
+    dist: 4.3,
+    target: new THREE.Vector3(0, 1.05, 0)
+  };
+
+  function updateCamera() {
+    cam.phi = clamp(cam.phi, 0.42, 1.80);
+    cam.dist = clamp(cam.dist, 1.2, 9.0);
+    const sp = Math.sin(cam.phi), cp = Math.cos(cam.phi);
+    camera.position.set(
+      cam.target.x + cam.dist * sp * Math.sin(cam.theta),
+      cam.target.y + cam.dist * cp,
+      cam.target.z + cam.dist * sp * Math.cos(cam.theta)
+    );
+    camera.lookAt(cam.target);
+  }
+
+  let dragging = false, lastX = 0, lastY = 0;
+  const el = renderer.domElement;
+
+  el.addEventListener('pointerdown', e => {
+    dragging = true;
+    lastX = e.clientX; lastY = e.clientY;
+    el.setPointerCapture(e.pointerId);
+  });
+  el.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    cam.theta -= (e.clientX - lastX) * 0.0065;
+    cam.phi   -= (e.clientY - lastY) * 0.0065;
+    lastX = e.clientX; lastY = e.clientY;
+  });
+  const endDrag = e => {
+    dragging = false;
+    if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
+  };
+  el.addEventListener('pointerup', endDrag);
+  el.addEventListener('pointercancel', endDrag);
+
+  el.addEventListener('wheel', e => {
+    e.preventDefault();
+    cam.dist *= Math.exp(e.deltaY * 0.0011);
+  }, { passive: false });
+
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  /* ============================================================
+     LOOP
+     ============================================================ */
+  const flashEl = document.getElementById('flash');
+  let prev = performance.now();
+  let elapsed = 0;
+
+  function tick(now) {
+    requestAnimationFrame(tick);
+    const dt = Math.min(0.05, (now - prev) / 1000);
+    prev = now;
+    elapsed += dt;
+
+    st.modeTime += dt;
+
+    computePose(tgtPose, mode, elapsed, dt, st);
+    lerpPose(curPose, tgtPose, 1 - Math.exp(-dt * 26));
+    applyPose(curPose);
+
+    /* impact effects */
+    st.flash *= Math.exp(-dt * 5.5);
+    st.shake *= Math.exp(-dt * 7.0);
+    flashEl.style.opacity = (st.flash * 0.85).toFixed(3);
+
+    /* camera */
+    if (!dragging && mode !== 'talk' && mode !== 'wave') cam.theta += dt * 0.055;
+    updateCamera();
+
+    if (st.shake > 0.001) {
+      const k = st.shake * 0.012;
+      camera.position.x += Math.sin(now * 0.09) * k;
+      camera.position.y += Math.sin(now * 0.11) * k;
+      camera.position.z += Math.sin(now * 0.07) * k;
+    }
+
+    renderer.render(scene, camera);
+  }
+
+  applyPose(curPose);
+  updateCamera();
+  requestAnimationFrame(tick);
+
+  setProgress(1.0, 'Ready.');
+  await nextFrame();
+  document.getElementById('loader').classList.add('hide');
+}
+
+main().catch(err => {
+  console.error(err);
+  document.getElementById('loadTxt').textContent = 'Error: ' + err.message;
+});
+</script>
+</body>
+</html>

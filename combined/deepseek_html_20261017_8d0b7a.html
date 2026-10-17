@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Vlog: Forest of Evidence - Realistic PBR</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { overflow: hidden; background: #000; font-family: 'Courier New', monospace; color: #fff; }
+  canvas { display: block; }
+  
+  /* Vlogger UI Overlay */
+  #vlog-ui { position: fixed; inset: 0; pointer-events: none; z-index: 10; display: none; border: 2px solid rgba(255,255,255,0.1); }
+  #rec { position: absolute; top: 20px; left: 20px; font-size: 14px; font-weight: bold; color: #ff2b2b; display: flex; align-items: center; gap: 8px; text-shadow: 1px 1px 2px #000; }
+  #rec-dot { width: 12px; height: 12px; background: #ff2b2b; border-radius: 50%; animation: blink 1s infinite; }
+  @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+  #battery { position: absolute; top: 20px; right: 20px; font-size: 12px; color: #fff; text-shadow: 1px 1px 2px #000; }
+  #chat { position: absolute; bottom: 20px; left: 20px; width: 300px; height: 180px; background: rgba(0,0,0,0.6); border: 1px solid rgba(0,255,0,0.2); padding: 10px; font-size: 11px; color: #7dff9a; overflow-y: hidden; display: flex; flex-direction: column; justify-content: flex-end; }
+  .chat-msg { margin-bottom: 4px; text-shadow: 1px 1px 1px #000; }
+  #facecam { position: absolute; bottom: 20px; right: 20px; width: 200px; height: 120px; background: rgba(0,0,0,0.8); border: 1px solid #555; display: flex; justify-content: center; align-items: center; color: #444; font-size: 12px; }
+  
+  #crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 24px; color: rgba(255,255,255,0.8); font-weight: 100; }
+  #prompt { position: absolute; bottom: 130px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.85); border: 1px solid #f0c96a; color: #f0c96a; padding: 8px 16px; font-size: 14px; display: none; text-transform: uppercase; letter-spacing: 1px; white-space: nowrap; }
+  
+  #toolbelt { position: absolute; bottom: 15px; left: 50%; transform: translateX(-50%); display: flex; gap: 5px; background: rgba(8,12,8,0.9); padding: 6px; border-radius: 6px; border: 1px solid #333; pointer-events: auto; }
+  .tool { width: 60px; height: 60px; border: 1px solid #444; border-radius: 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 10px; color: #777; text-align: center; line-height: 1.2; cursor: pointer; }
+  .tool.on { border-color: #f0c96a; color: #f0c96a; background: rgba(240,201,106,0.1); box-shadow: 0 0 10px rgba(240,201,106,0.3); }
+  .tool .k { font-size: 9px; color: #555; margin-bottom: 2px; }
+  .tool.on .k { color: #f0c96a; }
+
+  #start { position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; background: radial-gradient(circle, #1a221a, #000); cursor: pointer; text-align: center; padding: 20px; }
+  #start h1 { color: #f0c96a; font-size: clamp(24px, 5vw, 52px); letter-spacing: 4px; margin-bottom: 15px; text-shadow: 0 0 30px rgba(240,201,106,0.4); }
+  #start p { color: #999; max-width: 620px; line-height: 1.7; font-size: 14px; margin-bottom: 10px; }
+  #start .go { margin-top: 30px; padding: 14px 40px; border: 1px solid #f0c96a; color: #f0c96a; letter-spacing: 3px; font-size: 16px; }
+  #start .go:hover { background: #f0c96a; color: #000; }
+</style>
+</head>
+<body>
+
+<div id="start" onclick="startGame()">
+  <h1>THE VLOG: FOREST OF EVIDENCE</h1>
+  <p>You are a vlogger-detective investigating a missing streamer. A dense, procedural forest. A locked house. A mysterious supercar. Find the truth.</p>
+  <p style="color:#f0c96a; font-size:12px; margin-top:15px;">WASD to Walk · Mouse to Look · E to Interact · 1-6 Tools</p>
+  <div class="go">CLICK TO START RECORDING</div>
+</div>
+
+<div id="vlog-ui">
+  <div id="rec"><div id="rec-dot"></div> REC 4K</div>
+  <div id="battery">🔋 84%</div>
+  <div id="facecam">FACE CAMERA (OFFLINE)</div>
+  <div id="chat"></div>
+  <div id="crosshair">+</div>
+  <div id="prompt"></div>
+</div>
+
+<div id="toolbelt" style="display:none"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+
+// ==========================================
+// PROCEDURAL TEXTURE GENERATORS
+// ==========================================
+function createTex(w, h, drawFunc) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  drawFunc(ctx, w, h);
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.anisotropy = 8;
+  return tex;
+}
+
+// 1. Grass/Dirt Ground
+const groundTex = createTex(512, 512, (ctx, w, h) => {
+  ctx.fillStyle = '#2a3a1a'; ctx.fillRect(0, 0, w, h);
+  for(let i=0; i<20000; i++) {
+    const x = Math.random()*w, y = Math.random()*h;
+    const g = 40 + Math.random()*40;
+    ctx.fillStyle = `rgba(${20+Math.random()*20}, ${g}, ${15+Math.random()*15}, ${Math.random()*0.5})`;
+    ctx.fillRect(x, y, 2+Math.random()*3, 2+Math.random()*3);
+  }
+});
+groundTex.repeat.set(40, 40);
+
+// 2. Tree Bark
+const barkTex = createTex(256, 256, (ctx, w, h) => {
+  ctx.fillStyle = '#2b1d14'; ctx.fillRect(0, 0, w, h);
+  for(let i=0; i<100; i++) {
+    ctx.strokeStyle = `rgba(${20+Math.random()*30}, ${15+Math.random()*20}, ${10+Math.random()*15}, 0.8)`;
+    ctx.lineWidth = 1 + Math.random()*4;
+    ctx.beginPath();
+    const x = Math.random()*w;
+    ctx.moveTo(x, 0);
+    for(let y=0; y<h; y+=10) ctx.lineTo(x + Math.sin(y*0.05)*8, y);
+    ctx.stroke();
+  }
+});
+barkTex.repeat.set(2, 4);
+
+// 3. Car Paint (Metallic Silver/Blue)
+const carPaintTex = createTex(256, 256, (ctx, w, h) => {
+  ctx.fillStyle = '#8899aa'; ctx.fillRect(0, 0, w, h);
+  const grad = ctx.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, 'rgba(255,255,255,0.4)');
+  grad.addColorStop(0.5, 'rgba(0,0,0,0)');
+  grad.addColorStop(1, 'rgba(0,0,0,0.6)');
+  ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h);
+});
+
+// 4. Wood Siding
+const woodTex = createTex(512, 512, (ctx, w, h) => {
+  ctx.fillStyle = '#4a3b32'; ctx.fillRect(0, 0, w, h);
+  for(let y=0; y<h; y+=32) {
+    ctx.fillStyle = `rgba(${70+Math.random()*20}, ${50+Math.random()*15}, ${35+Math.random()*10}, 1)`;
+    ctx.fillRect(0, y, w, 30);
+    ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(0, y+30, w, 2);
+  }
+});
+woodTex.repeat.set(4, 2);
+
+// ==========================================
+// MATERIALS
+// ==========================================
+const M = {
+  ground: new THREE.MeshStandardMaterial({ map: groundTex, roughness: 0.95 }),
+  bark: new THREE.MeshStandardMaterial({ map: barkTex, roughness: 0.9 }),
+  leaves: new THREE.MeshStandardMaterial({ color: 0x1a2e12, roughness: 0.8, flatShading: true }),
+  leavesDark: new THREE.MeshStandardMaterial({ color: 0x0f1a0a, roughness: 0.9, flatShading: true }),
+  wood: new THREE.MeshStandardMaterial({ map: woodTex, roughness: 0.8 }),
+  roof: new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.9 }),
+  carPaint: new THREE.MeshStandardMaterial({ map: carPaintTex, metalness: 0.9, roughness: 0.2, color: 0xffffff }),
+  carGlass: new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.9, roughness: 0.1, transparent: true, opacity: 0.8 }),
+  tire: new THREE.MeshStandardMaterial({ color: 0x0a0a0a, roughness: 1 }),
+  chrome: new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 1, roughness: 0.1 }),
+  headlight: new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xaaddff, emissiveIntensity: 2 }),
+  taillight: new THREE.MeshStandardMaterial({ color: 0xff0000, emissive: 0xaa0000, emissiveIntensity: 1.5 }),
+  metal: new THREE.MeshStandardMaterial({ color: 0x555555, metalness: 0.8, roughness: 0.4 }),
+  glow: new THREE.MeshStandardMaterial({ color: 0x00ff00, emissive: 0x00ff00, emissiveIntensity: 1 })
+};
+
+// ==========================================
+// SCENE SETUP
+// ==========================================
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x8ba8c8);
+scene.fog = new THREE.FogExp2(0x8ba8c8, 0.015); // Thick forest fog
+
+const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 300);
+camera.position.set(0, 1.7, 30); // Eye height
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+document.body.appendChild(renderer.domElement);
+
+// ==========================================
+// LIGHTING (Sunrays through trees)
+// ==========================================
+const hemi = new THREE.HemisphereLight(0xffffff, 0x3a4a2a, 0.8);
+scene.add(hemi);
+
+const sun = new THREE.DirectionalLight(0xffeedd, 3);
+sun.position.set(40, 60, 20);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.left = -60;
+sun.shadow.camera.right = 60;
+sun.shadow.camera.top = 60;
+sun.shadow.camera.bottom = -60;
+sun.shadow.camera.far = 200;
+sun.shadow.bias = -0.0005;
+scene.add(sun);
+
+// ==========================================
+// TERRAIN & DENSE FOREST
+// ==========================================
+const groundGeo = new THREE.PlaneGeometry(300, 300, 100, 100);
+const gPos = groundGeo.attributes.position;
+for (let i = 0; i < gPos.count; i++) {
+  const x = gPos.getX(i), y = gPos.getY(i);
+  // Gentle hills
+  const h = Math.sin(x*0.05)*1.5 + Math.cos(y*0.04)*1.2;
+  gPos.setZ(i, h);
+}
+groundGeo.computeVertexNormals();
+const ground = new THREE.Mesh(groundGeo, M.ground);
+ground.rotation.x = -Math.PI/2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// Ground height function (matches geometry)
+function getTerrainHeight(x, z) {
+  return Math.sin(x*0.05)*1.5 + Math.cos(z*0.04)*1.2;
+}
+
+// --- DENSE TREE GENERATOR ---
+function makePineTree(scale = 1) {
+  const tree = new THREE.Group();
+  const trunkH = 15 * scale;
+  
+  // Tall Pine Trunk
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.2*scale, 0.5*scale, trunkH, 7), M.bark);
+  trunk.position.y = trunkH/2;
+  trunk.castShadow = true; trunk.receiveShadow = true;
+  tree.add(trunk);
+
+  // Layered Pine Cones (Foliage)
+  const layers = 4;
+  for (let i = 0; i < layers; i++) {
+    const coneH = 5 * scale;
+    const coneR = (3 - i*0.6) * scale;
+    const coneY = trunkH - 2*scale - i * (coneH * 0.6);
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(coneR, coneH, 7), i % 2 === 0 ? M.leaves : M.leavesDark);
+    cone.position.y = coneY;
+    cone.castShadow = true;
+    tree.add(cone);
+  }
+  return tree;
+}
+
+// Scatter 400 trees in the forest
+for (let i = 0; i < 400; i++) {
+  const x = (Math.random() - 0.5) * 250;
+  const z = (Math.random() - 0.5) * 250;
+  
+  // Keep spawn, house, and car clear
+  if (Math.abs(x) < 10 && z > 15 && z < 35) continue; 
+  if (Math.abs(x) < 20 && z < -30 && z > -60) continue;
+  if (x > 10 && x < 25 && z > -10 && z < 10) continue; // Car area
+
+  const tree = makePineTree(0.8 + Math.random() * 0.8);
+  tree.position.set(x, getTerrainHeight(x, z), z);
+  tree.rotation.y = Math.random() * Math.PI * 2;
+  scene.add(tree);
+}
+
+// Add scattered rocks/bushes
+for(let i=0; i<100; i++) {
+  const x = (Math.random() - 0.5) * 200;
+  const z = (Math.random() - 0.5) * 200;
+  if (Math.abs(x) < 12 && z > 15 && z < 35) continue;
+  if (Math.abs(x) < 20 && z < -30 && z > -60) continue;
+
+  const r = 0.5 + Math.random()*1.5;
+  const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(r), M.bark);
+  rock.position.set(x, getTerrainHeight(x, z) + r*0.5, z);
+  rock.rotation.set(Math.random(), Math.random(), Math.random());
+  rock.castShadow = true; rock.receiveShadow = true;
+  scene.add(rock);
+}
+
+// ==========================================
+// THE SUPERCAR
+// ==========================================
+const carGroup = new THREE.Group();
+// Chassis
+const chassis = new THREE.Mesh(new THREE.BoxGeometry(5, 0.5, 2.2), M.carPaint);
+chassis.position.y = 0.6; chassis.castShadow = true;
+carGroup.add(chassis);
+
+// Hood (sloped)
+const hood = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.3, 2), M.carPaint);
+hood.position.set(1.8, 0.85, 0); hood.rotation.z = -0.15;
+carGroup.add(hood);
+
+// Cabin (Windshield area)
+const cabin = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.6, 1.8), M.carGlass);
+cabin.position.set(-0.2, 1.1, 0); carGroup.add(cabin);
+
+// Rear engine cover
+const rear = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.4, 2.1), M.carPaint);
+rear.position.set(-2, 0.8, 0);
+carGroup.add(rear);
+
+// Wheels
+const wheelGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.4, 16);
+const rimGeo = new THREE.CylinderGeometry(0.3, 0.3, 0.42, 8);
+const wheelPos = [[1.8, 0.5, 1.1], [1.8, 0.5, -1.1], [-1.8, 0.5, 1.1], [-1.8, 0.5, -1.1]];
+for(const [wx, wy, wz] of wheelPos) {
+  const w = new THREE.Mesh(wheelGeo, M.tire);
+  w.rotation.x = Math.PI/2; w.position.set(wx, wy, wz); w.castShadow = true;
+  carGroup.add(w);
+  const r = new THREE.Mesh(rimGeo, M.chrome);
+  r.rotation.x = Math.PI/2; r.position.set(wx, wy, wz + (wz>0?0.02:-0.02));
+  carGroup.add(r);
+}
+
+// Headlights
+for(const z of [-0.7, 0.7]) {
+  const hl = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.3), M.headlight);
+  hl.position.set(2.7, 0.7, z);
+  carGroup.add(hl);
+}
+
+// Taillights (Full width lightbar)
+const tl = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 1.8), M.taillight);
+tl.position.set(-2.75, 0.9, 0);
+carGroup.add(tl);
+
+// Spoiler
+const spoiler = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.1, 2), M.metal);
+spoiler.position.set(-2.3, 1.3, 0);
+carGroup.add(spoiler);
+
+carGroup.position.set(15, getTerrainHeight(15, 0), 0);
+carGroup.rotation.y = -Math.PI/6;
+scene.add(carGroup);
+
+// ==========================================
+// THE HOUSE & INTERIOR
+// ==========================================
+const houseGroup = new THREE.Group();
+houseGroup.position.set(0, getTerrainHeight(0, -40), -40);
+
+// Floor
+const floor = new THREE.Mesh(new THREE.BoxGeometry(16, 0.2, 16), M.wood);
+floor.position.y = 0.1; floor.receiveShadow = true;
+houseGroup.add(floor);
+
+// Walls
+const wallH = 4;
+const wallData = [
+  { p: [0, wallH/2, -8], s: [16, wallH, 0.3] }, // Back
+  { p: [-8, wallH/2, 0], s: [0.3, wallH, 16] }, // Left
+  { p: [8, wallH/2, 0], s: [0.3, wallH, 16] },  // Right
+  { p: [-4.5, wallH/2, 8], s: [7, wallH, 0.3] }, // Front Left
+  { p: [4.5, wallH/2, 8], s: [7, wallH, 0.3] }   // Front Right
+];
+wallData.forEach(w => {
+  const wall = new THREE.Mesh(new THREE.BoxGeometry(...w.s), M.wood);
+  wall.position.set(...w.p);
+  wall.castShadow = true; wall.receiveShadow = true;
+  houseGroup.add(wall);
+});
+
+// Roof
+const roofGeo = new THREE.ConeGeometry(12, 6, 4);
+const roof = new THREE.Mesh(roofGeo, M.roof);
+roof.position.y = wallH + 3;
+roof.rotation.y = Math.PI/4;
+roof.castShadow = true;
+houseGroup.add(roof);
+
+// Front Door (Locked)
+const door = new THREE.Mesh(new THREE.BoxGeometry(2, 3, 0.2), M.metal);
+door.position.set(0, 1.5, 8);
+door.castShadow = true;
+houseGroup.add(door);
+
+// Evidence inside
+const evidenceBox = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), M.glow);
+evidenceBox.position.set(0, 0.6, -6);
+houseGroup.add(evidenceBox);
+
+scene.add(houseGroup);
+
+// ==========================================
+// VLOGGER PLAYER CONTROLS & UI
+// ==========================================
+const controls = new PointerLockControls(camera, document.body);
+const keys = { w: false, a: false, s: false, d: false };
+const velocity = new THREE.Vector3();
+let activeTool = 'none';
+
+const TOOLS = [
+  { id: 'none', name: 'Hands', key: '1' },
+  { id: 'crowbar', name: 'Crowbar', key: '2' },
+  { id: 'camera', name: 'Vlog Cam', key: '3' }
+];
+
+window.startGame = function() {
+  document.getElementById('start').style.display = 'none';
+  document.getElementById('vlog-ui').style.display = 'block';
+  document.getElementById('toolbelt').style.display = 'flex';
+  controls.lock();
+  renderToolbelt();
+  
+  // Start chat simulation
+  setInterval(() => {
+    if(Math.random() > 0.5) addChat("User" + Math.floor(Math.random()*99), ["yo this forest is creepy", "did you see that car?", "find the house!", "look behind you", "PogChamp"][Math.floor(Math.random()*5)]);
+  }, 4000);
+};
+
+document.addEventListener('keydown', e => {
+  if(e.code === 'KeyW') keys.w = true;
+  if(e.code === 'KeyS') keys.s = true;
+  if(e.code === 'KeyA') keys.a = true;
+  if(e.code === 'KeyD') keys.d = true;
+  if(e.code === 'KeyE') interact();
+  if(e.key >= '1' && e.key <= '3') {
+    const t = TOOLS[parseInt(e.key)-1];
+    if(t) { activeTool = t.id; renderToolbelt(); }
+  }
+});
+
+document.addEventListener('keyup', e => {
+  if(e.code === 'KeyW') keys.w = false;
+  if(e.code === 'KeyS') keys.s = false;
+  if(e.code === 'KeyA') keys.a = false;
+  if(e.code === 'KeyD') keys.d = false;
+});
+
+// Prevent flying, click to lock mouse
+renderer.domElement.addEventListener('click', () => {
+  if(!controls.isLocked) controls.lock();
+});
+
+function renderToolbelt() {
+  document.getElementById('toolbelt').innerHTML = TOOLS.map(t => `
+    <div class="tool ${t.id === activeTool ? 'on' : ''}">
+      <div class="k">${t.key}</div>${t.name}
+    </div>
+  `).join('');
+}
+
+function addChat(user, text) {
+  const c = document.getElementById('chat');
+  const d = document.createElement('div');
+  d.className = 'chat-msg';
+  d.innerText = `${user}: ${text}`;
+  c.appendChild(d);
+  c.scrollTop = c.scrollHeight;
+  if(c.children.length > 7) c.removeChild(c.firstChild);
+}
+
+// ==========================================
+// INTERACTION LOGIC (Raycast)
+// ==========================================
+const raycaster = new THREE.Raycaster();
+const center = new THREE.Vector2(0, 0);
+const promptEl = document.getElementById('prompt');
+
+function interact() {
+  raycaster.setFromCamera(center, camera);
+  const intersects = raycaster.intersectObjects([door, carGroup, evidenceBox], true);
+  
+  if(intersects.length > 0 && intersects[0].distance < 6) {
+    const hit = intersects[0].object;
+    
+    // Check Car
+    if (hit.parent === carGroup || hit === carGroup) {
+      addChat("System", "It's a high-end supercar. Plates: VLOG-1.");
+      return;
+    }
+    
+    // Check Door
+    if (hit === door) {
+      if(activeTool === 'crowbar') {
+        door.rotation.y = Math.PI/2;
+        door.position.x = 1;
+        addChat("System", "Door pried open with crowbar!");
+      } else {
+        addChat("System", "Door is locked. Equip Crowbar (2).");
+      }
+      return;
+    }
+
+    // Check Evidence
+    if (hit === evidenceBox) {
+      addChat("System", "EVIDENCE RECOVERED! Case closed.");
+      document.exitPointerLock();
+      alert("You recovered the evidence! Game Over.");
+      return;
+    }
+  }
+}
+
+// ==========================================
+// GAME LOOP (Walking & Gravity)
+// ==========================================
+let prevTime = performance.now();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const now = performance.now();
+  const dt = Math.min((now - prevTime) / 1000, 0.05);
+  prevTime = now;
+
+  if (controls.isLocked) {
+    // Movement physics
+    velocity.x -= velocity.x * 10.0 * dt;
+    velocity.z -= velocity.z * 10.0 * dt;
+    
+    const dirZ = Number(keys.w) - Number(keys.s);
+    const dirX = Number(keys.d) - Number(keys.a);
+    const dir = new THREE.Vector3(dirX, 0, dirZ).normalize();
+    
+    velocity.z -= dir.z * 400.0 * dt;
+    velocity.x -= dir.x * 400.0 * dt;
+
+    controls.moveRight(-velocity.x * dt);
+    controls.moveForward(-velocity.z * dt);
+
+    // REALISTIC WALKING: Snap to terrain height + eye level
+    const groundY = getTerrainHeight(camera.position.x, camera.position.z);
+    camera.position.y = groundY + 1.7; // 1.7 meters eye height
+  }
+
+  // Interaction Prompt
+  raycaster.setFromCamera(center, camera);
+  const intersects = raycaster.intersectObjects([door, carGroup, evidenceBox], true);
+  
+  if (intersects.length > 0 && intersects[0].distance < 6) {
+    promptEl.style.display = 'block';
+    const hit = intersects[0].object;
+    
+    if (hit.parent === carGroup || hit === carGroup) promptEl.innerText = "[E] Inspect Supercar";
+    else if (hit === door) promptEl.innerText = "[E] Locked Door (Requires Crowbar)";
+    else if (hit === evidenceBox) promptEl.innerText = "[E] Collect Evidence";
+  } else {
+    promptEl.style.display = 'none';
+  }
+
+  renderer.render(scene, camera);
+}
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+animate();
+</script>
+</body>
+</html>

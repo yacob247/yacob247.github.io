@@ -1,0 +1,2280 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>الحفرة التي انتظرت 50 عاماً — درس ثلاثي الأبعاد</title>
+<style>
+  :root{
+    --bg:#05070c;
+    --accent:#4fc3f7;
+    --hot:#ff6b35;
+    --gold:#ffc94d;
+    --green:#4ade80;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);
+    font-family:"Segoe UI","Noto Naskh Arabic",Tahoma,Arial,sans-serif;color:#eaf2ff}
+  canvas{display:block;position:fixed;inset:0}
+
+  #ui{position:fixed;inset:0;pointer-events:none;z-index:10}
+
+  /* ---------- Scene title ---------- */
+  #sceneTitle{
+    position:absolute;top:26px;right:34px;
+    font-size:clamp(16px,2.1vw,26px);font-weight:700;
+    letter-spacing:.5px;
+    text-shadow:0 4px 24px rgba(0,0,0,.9);
+    opacity:0;transform:translateY(-14px);
+    transition:opacity .7s ease,transform .7s ease;
+    border-right:4px solid var(--accent);
+    padding-right:14px;
+    max-width:60vw;
+  }
+  #sceneTitle.show{opacity:1;transform:translateY(0)}
+
+  #sceneSub{
+    position:absolute;top:calc(26px + 2.6em);right:38px;
+    font-size:clamp(11px,1.25vw,15px);color:#9fb4cc;font-weight:400;
+    opacity:0;transition:opacity .7s ease;
+    max-width:60vw;
+  }
+  #sceneSub.show{opacity:1}
+
+  /* ---------- Annotation cards ---------- */
+  #cards{position:absolute;inset:0}
+  .card{
+    position:absolute;
+    width:330px;max-width:38vw;
+    background:linear-gradient(145deg,rgba(10,20,34,.94),rgba(6,12,22,.92));
+    border:1px solid rgba(90,150,200,.28);
+    border-radius:14px;
+    padding:14px 16px 14px 16px;
+    backdrop-filter:blur(14px);
+    -webkit-backdrop-filter:blur(14px);
+    box-shadow:0 18px 50px rgba(0,0,0,.65), inset 0 1px 0 rgba(255,255,255,.07);
+    opacity:0;transform:translateX(38px) scale(.96);
+    transition:opacity .55s cubic-bezier(.2,.8,.2,1),transform .55s cubic-bezier(.2,.8,.2,1);
+    pointer-events:none;
+    overflow:hidden;
+  }
+  .card.show{opacity:1;transform:translateX(0) scale(1)}
+  .card .bar{
+    position:absolute;top:0;right:0;bottom:0;width:5px;border-radius:14px 0 0 14px;
+    background:var(--accent);
+    box-shadow:0 0 18px currentColor;
+  }
+  .card .ttl{font-size:15px;font-weight:700;margin-bottom:6px;color:#fff;padding-right:10px}
+  .card .bdy{font-size:13px;line-height:1.65;color:#a9c2da;padding-right:10px}
+  .card .bdy b{color:var(--gold);font-weight:700}
+  .card .bdy em{color:var(--hot);font-style:normal;font-weight:700}
+
+  .card.r0{top:15%;right:34px}
+  .card.r1{top:36%;right:34px}
+  .card.r2{top:57%;right:34px}
+  .card.r3{top:78%;right:34px}
+  .card.c0{
+    left:50%;bottom:20%;transform:translateX(-50%) translateY(24px) scale(.96);
+    width:auto;max-width:70vw;text-align:center;
+  }
+  .card.c0.show{transform:translateX(-50%) translateY(0) scale(1)}
+  .card.c0 .bar{width:100%;height:4px;top:auto;bottom:0;right:0;left:0;border-radius:0 0 14px 14px}
+  .card.c0 .ttl,.card.c0 .bdy{padding-right:0}
+
+  /* ---------- Subtitle ---------- */
+  #subtitle{
+    position:absolute;bottom:96px;left:50%;transform:translateX(-50%);
+    max-width:78vw;text-align:center;
+    font-size:clamp(13px,1.55vw,19px);line-height:1.7;
+    color:#e8f3ff;
+    text-shadow:0 2px 14px #000,0 0 30px #000;
+    opacity:0;transition:opacity .5s ease;
+    padding:8px 20px;border-radius:10px;
+    background:rgba(4,10,18,.42);
+    backdrop-filter:blur(4px);
+  }
+  #subtitle.show{opacity:1}
+
+  /* ---------- HUD ---------- */
+  #hud{
+    position:absolute;left:0;right:0;bottom:0;
+    padding:14px 26px 18px;
+    display:flex;align-items:center;gap:16px;
+    background:linear-gradient(to top,rgba(2,6,12,.92),transparent);
+    pointer-events:auto;
+  }
+  .btn{
+    pointer-events:auto;
+    background:rgba(20,36,56,.85);border:1px solid rgba(90,150,200,.35);
+    color:#cfe6ff;border-radius:9px;cursor:pointer;
+    font-size:13px;font-family:inherit;
+    padding:8px 14px;transition:.2s;white-space:nowrap;
+  }
+  .btn:hover{background:rgba(40,90,140,.9);color:#fff;border-color:var(--accent)}
+  .btn.active{background:var(--accent);color:#04121e;font-weight:700;border-color:var(--accent)}
+
+  #bar{flex:1;height:5px;background:rgba(255,255,255,.1);border-radius:99px;overflow:hidden;position:relative}
+  #barFill{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--hot));
+    border-radius:99px;transition:width .15s linear}
+  #barSegs{position:absolute;inset:0;display:flex}
+  #barSegs div{flex:1;border-right:1px solid rgba(0,0,0,.6)}
+  #timecode{font-size:12px;color:#7f97b0;font-variant-numeric:tabular-nums;min-width:86px;text-align:center}
+
+  #dots{display:flex;gap:5px}
+  .dot{width:9px;height:9px;border-radius:50%;background:rgba(255,255,255,.18);cursor:pointer;
+    pointer-events:auto;transition:.25s}
+  .dot:hover{transform:scale(1.35)}
+  .dot.on{background:var(--accent);box-shadow:0 0 12px var(--accent)}
+
+  /* ---------- Loader ---------- */
+  #loader{
+    position:fixed;inset:0;z-index:50;background:#04070d;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;
+    transition:opacity .8s ease;
+  }
+  #loader.hide{opacity:0;pointer-events:none}
+  #loader h1{font-size:clamp(20px,3vw,34px);font-weight:800;
+    background:linear-gradient(90deg,#4fc3f7,#ff6b35);
+    -webkit-background-clip:text;background-clip:text;color:transparent;text-align:center}
+  #loader p{color:#7f97b0;font-size:14px}
+  .ring{width:56px;height:56px;border:3px solid rgba(79,195,247,.18);
+    border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* ---------- Vignette ---------- */
+  #vig{position:fixed;inset:0;pointer-events:none;z-index:5;
+    background:radial-gradient(ellipse at center,transparent 45%,rgba(0,0,0,.75) 100%)}
+
+  @media(max-width:820px){
+    .card{width:260px;font-size:12px}
+    .card.r0{top:12%}.card.r1{top:33%}.card.r2{top:54%}.card.r3{top:72%}
+    #hud{flex-wrap:wrap;gap:8px;padding:10px 14px 12px}
+    #timecode{display:none}
+  }
+</style>
+</head>
+<body>
+
+<canvas id="c"></canvas>
+<div id="vig"></div>
+
+<div id="ui">
+  <div id="sceneTitle"></div>
+  <div id="sceneSub"></div>
+  <div id="cards"></div>
+  <div id="subtitle"></div>
+
+  <div id="hud">
+    <button class="btn" id="btnPlay">⏸ إيقاف</button>
+    <button class="btn" id="btnPrev">⏮ السابق</button>
+    <button class="btn" id="btnNext">التالي ⏭</button>
+    <div id="bar"><div id="barFill"></div><div id="barSegs"></div></div>
+    <div id="timecode">00:00 / 00:00</div>
+    <div id="dots"></div>
+  </div>
+</div>
+
+<div id="loader">
+  <div class="ring"></div>
+  <h1>الحفرة التي انتظرت 50 عاماً</h1>
+  <p>جارٍ بناء المشاهد ثلاثية الأبعاد…</p>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ============================================================
+   0.  CORE SETUP
+   ============================================================ */
+const canvas   = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, powerPreference:'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping        = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure= 1.05;
+renderer.shadowMap.enabled  = true;
+renderer.shadowMap.type     = THREE.PCFSoftShadowMap;
+renderer.outputColorSpace   = THREE.SRGBColorSpace;
+
+const scene  = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(52, innerWidth/innerHeight, 0.1, 8000);
+
+/* PBR environment (IBL) */
+const pmrem = new THREE.PMREMGenerator(renderer);
+pmrem.compileEquirectangularShader();
+const envRT = pmrem.fromScene(new RoomEnvironment(), 0.04);
+scene.environment = envRT.texture;
+
+/* ---------- Gradient sky dome ---------- */
+const skyMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide, depthWrite:false, toneMapped:false,
+  uniforms:{
+    cTop:{value:new THREE.Color(0x0a1a2f)},
+    cBot:{value:new THREE.Color(0x1b3b5a)},
+    cMid:{value:new THREE.Color(0x0e2438)},
+    expo:{value:0.85}
+  },
+  vertexShader:`
+    varying vec3 vP;
+    void main(){ vP = position; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+  fragmentShader:`
+    uniform vec3 cTop,cBot,cMid; uniform float expo; varying vec3 vP;
+    void main(){
+      float h = normalize(vP).y;
+      float t = pow(clamp(h,0.0,1.0), expo);
+      float b = pow(clamp(-h,0.0,1.0), 0.6);
+      vec3 col = mix(cMid, cTop, t);
+      col = mix(col, cBot, b);
+      gl_FragColor = vec4(col,1.0);
+    }`
+});
+const sky = new THREE.Mesh(new THREE.SphereGeometry(4000, 32, 20), skyMat);
+scene.add(sky);
+
+/* ---------- Global lights (re-tuned per scene) ---------- */
+const hemi = new THREE.HemisphereLight(0x9dc4ff, 0x0a0f18, 0.55);
+scene.add(hemi);
+const keyLight = new THREE.DirectionalLight(0xfff0dd, 2.2);
+keyLight.position.set(120, 160, 90);
+keyLight.castShadow = true;
+keyLight.shadow.mapSize.set(2048,2048);
+keyLight.shadow.camera.near = 10;
+keyLight.shadow.camera.far  = 900;
+keyLight.shadow.camera.left = -260;
+keyLight.shadow.camera.right=  260;
+keyLight.shadow.camera.top  =  260;
+keyLight.shadow.camera.bottom=-260;
+keyLight.shadow.bias = -0.0006;
+scene.add(keyLight);
+const rimLight = new THREE.DirectionalLight(0x66aaff, 0.7);
+rimLight.position.set(-140, 70, -120);
+scene.add(rimLight);
+
+/* Root that holds all scene groups */
+const root = new THREE.Group();
+scene.add(root);
+
+/* ============================================================
+   1.  HELPERS
+   ============================================================ */
+const clamp01 = v => Math.min(1, Math.max(0, v));
+const smooth  = v => { v = clamp01(v); return v*v*(3-2*v); };
+const lerp    = (a,b,t) => a + (b-a)*t;
+
+function noiseTexture(size=256, contrast=0.55, base=128){
+  const cv = document.createElement('canvas'); cv.width = cv.height = size;
+  const ctx = cv.getContext('2d');
+  const img = ctx.createImageData(size,size);
+  for(let i=0;i<img.data.length;i+=4){
+    const v = Math.max(0,Math.min(255, base + (Math.random()-0.5)*255*contrast));
+    img.data[i]=img.data[i+1]=img.data[i+2]=v; img.data[i+3]=255;
+  }
+  ctx.putImageData(img,0,0);
+  const t = new THREE.CanvasTexture(cv);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+
+function softCircleTexture(){
+  const s = 128, cv = document.createElement('canvas'); cv.width=cv.height=s;
+  const ctx = cv.getContext('2d');
+  const grd = ctx.createRadialGradient(s/2,s/2,0,s/2,s/2,s/2);
+  grd.addColorStop(0,'rgba(255,255,255,1)');
+  grd.addColorStop(0.35,'rgba(255,255,255,0.55)');
+  grd.addColorStop(1,'rgba(255,255,255,0)');
+  ctx.fillStyle = grd; ctx.fillRect(0,0,s,s);
+  const t = new THREE.CanvasTexture(cv);
+  return t;
+}
+const SOFT_TEX = softCircleTexture();
+
+/* PBR material factory */
+const M = (o) => new THREE.MeshStandardMaterial(o);
+
+const MAT = {
+  steel:    M({color:0x9aa8b6, metalness:1.0, roughness:0.34, envMapIntensity:1.2}),
+  darkSteel:M({color:0x46525f, metalness:0.95, roughness:0.52}),
+  hullRed:  M({color:0x7d1c12, metalness:0.55, roughness:0.52}),
+  white:    M({color:0xe3ebf2, metalness:0.25, roughness:0.48}),
+  copper:   M({color:0xc47a3a, metalness:1.0, roughness:0.22, envMapIntensity:1.6}),
+  gold:     M({color:0xd9a441, metalness:1.0, roughness:0.18, envMapIntensity:1.8}),
+  rock:     M({color:0x6b6257, metalness:0.02, roughness:0.94}),
+  rockDark: M({color:0x3c3830, metalness:0.02, roughness:0.96}),
+  granite:  M({color:0x8a8377, metalness:0.05, roughness:0.82}),
+  wood:     M({color:0x8a5a32, metalness:0.02, roughness:0.72}),
+  woodDark: M({color:0x5a3a20, metalness:0.02, roughness:0.8}),
+  glass:    M({color:0x9fd8ff, metalness:0.85, roughness:0.08,
+               transparent:true, opacity:0.55, envMapIntensity:2.0}),
+  glowBlue: M({color:0x0a2a3a, emissive:0x4fc3f7, emissiveIntensity:2.4, roughness:0.4}),
+  glowHot:  M({color:0x2a0a00, emissive:0xff5a1e, emissiveIntensity:2.6, roughness:0.6}),
+  glowGold: M({color:0x2a1c00, emissive:0xffc94d, emissiveIntensity:2.0, roughness:0.5}),
+  glowGreen:M({color:0x052a12, emissive:0x4ade80, emissiveIntensity:1.8, roughness:0.5}),
+  concrete: M({color:0x8e8e88, metalness:0.0, roughness:0.92}),
+};
+
+function box(w,h,d,mat,x=0,y=0,z=0){
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat);
+  m.position.set(x,y,z); m.castShadow = true; m.receiveShadow = true;
+  return m;
+}
+function cyl(rt,rb,h,seg,mat,x=0,y=0,z=0){
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(rt,rb,h,seg), mat);
+  m.position.set(x,y,z); m.castShadow = true; m.receiveShadow = true;
+  return m;
+}
+
+/* Keyframe camera interpolation */
+function kfCam(p, keys, cam, shake=0, time=0){
+  p = clamp01(p);
+  let i = 0;
+  while(i < keys.length-2 && p > keys[i+1].t) i++;
+  const a = keys[i], b = keys[i+1];
+  const k = smooth((p - a.t) / Math.max(1e-6, b.t - a.t));
+  let x = lerp(a.pos[0], b.pos[0], k);
+  let y = lerp(a.pos[1], b.pos[1], k);
+  let z = lerp(a.pos[2], b.pos[2], k);
+  const lx = lerp(a.look[0], b.look[0], k);
+  const ly = lerp(a.look[1], b.look[1], k);
+  const lz = lerp(a.look[2], b.look[2], k);
+  if(shake>0){
+    x += Math.sin(time*7.3)*shake;
+    y += Math.cos(time*5.9)*shake;
+    z += Math.sin(time*6.7)*shake;
+  }
+  cam.position.set(x,y,z);
+  cam.lookAt(lx,ly,lz);
+}
+
+/* ============================================================
+   2.  SCENE BUILDERS
+   ============================================================ */
+
+/* ---------- 2.1  OIL TANKER ---------- */
+function buildTankerMesh(){
+  const g = new THREE.Group();
+
+  // Hull
+  const hull = box(12, 5, 72, MAT.hullRed, 0, 0, 0);
+  g.add(hull);
+
+  // Red waterline stripe
+  g.add(box(12.15, 1.1, 72.1, M({color:0x2a2f36, metalness:0.4, roughness:0.7}), 0, -1.9, 0));
+
+  // Bow (pyramid)
+  const bowPivot = new THREE.Group();
+  bowPivot.position.set(0, 0, 36);
+  bowPivot.rotation.x = Math.PI/2;
+  bowPivot.scale.set(1, 1, 0.42);
+  const bowCone = new THREE.Mesh(new THREE.ConeGeometry(8.5, 16, 4), MAT.hullRed);
+  bowCone.rotation.y = Math.PI/4;
+  bowCone.position.y = 8;
+  bowCone.castShadow = true;
+  bowPivot.add(bowCone);
+  g.add(bowPivot);
+
+  // Deck
+  g.add(box(11.4, 0.35, 71, M({color:0x3d4650, metalness:0.6, roughness:0.65}), 0, 2.6, 0));
+
+  // Deck pipes / manifold
+  for(let i=0;i<3;i++){
+    const p = cyl(0.34,0.34,66,10, MAT.steel, -4 + i*4, 3.1, 0);
+    p.rotation.x = Math.PI/2;
+    g.add(p);
+  }
+  // Small valves
+  for(let i=0;i<10;i++){
+    const v = cyl(0.5,0.5,0.9,8, MAT.gold, -5 + (i%3)*4.6, 3.4, -22 + Math.floor(i/3)*11);
+    g.add(v);
+  }
+
+  // Superstructure (stern)
+  const ss = new THREE.Group();
+  ss.position.set(0, 2.8, -27);
+  ss.add(box(10, 3.2, 9, MAT.white, 0, 1.6, 0));
+  ss.add(box(10.4, 0.3, 9.4, M({color:0xb9c4ce, metalness:0.5, roughness:0.5}), 0, 3.3, 0));
+  ss.add(box(9.2, 2.6, 7.4, MAT.white, 0, 4.6, 0));
+  // Bridge windows
+  const win = box(9.3, 1.1, 7.5, MAT.glass, 0, 5.0, 0);
+  ss.add(win);
+  // Funnel
+  const funnel = cyl(1.7, 2.0, 5.2, 16, M({color:0x1c222a, metalness:0.7, roughness:0.45}), 0, 8.4, -1.5);
+  ss.add(funnel);
+  ss.add(cyl(1.75,1.75,0.5,16, MAT.hullRed, 0, 10.7, -1.5));
+  // Mast
+  const mast = cyl(0.16,0.16,9,8, MAT.steel, 0, 11, 2.2);
+  ss.add(mast);
+  ss.add(box(4.4,0.14,0.14, MAT.steel, 0, 14.6, 2.2));
+  // Antenna balls
+  const ant = new THREE.Mesh(new THREE.SphereGeometry(0.42,12,10), MAT.glowGreen);
+  ant.position.set(0, 15.8, 2.2); ss.add(ant);
+  g.add(ss);
+
+  // Funnel smoke
+  const smokeGeo = new THREE.BufferGeometry();
+  const sN = 40, sPos = new Float32Array(sN*3), sAlpha = new Float32Array(sN);
+  for(let i=0;i<sN;i++){
+    sPos[i*3]   = (Math.random()-0.5)*2;
+    sPos[i*3+1] = Math.random()*30;
+    sPos[i*3+2] = (Math.random()-0.5)*2;
+    sAlpha[i]   = 0.25 + Math.random()*0.4;
+  }
+  smokeGeo.setAttribute('position', new THREE.BufferAttribute(sPos,3));
+  const smoke = new THREE.Points(smokeGeo, new THREE.PointsMaterial({
+    size:5, map:SOFT_TEX, transparent:true, opacity:0.32, depthWrite:false,
+    color:0x9aa4ae, blending:THREE.NormalBlending
+  }));
+  smoke.position.set(0, 11, -1.5);
+  g.add(smoke);
+
+  // Navigation lights
+  const navR = new THREE.Mesh(new THREE.SphereGeometry(0.35,10,8), M({color:0x220000, emissive:0xff2222, emissiveIntensity:3}));
+  navR.position.set(-6, 3.2, 30); g.add(navR);
+  const navG = new THREE.Mesh(new THREE.SphereGeometry(0.35,10,8), M({color:0x002200, emissive:0x22ff44, emissiveIntensity:3}));
+  navG.position.set(6, 3.2, 30); g.add(navG);
+
+  return { group:g, smoke };
+}
+
+function makeOcean(){
+  const geo = new THREE.PlaneGeometry(3000, 3000, 90, 90);
+  const mat = M({color:0x05243c, metalness:0.62, roughness:0.07, envMapIntensity:2.1});
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.rotation.x = -Math.PI/2;
+  mesh.receiveShadow = true;
+  const base = Float32Array.from(geo.attributes.position.array);
+  return { mesh, geo, base };
+}
+
+function sceneTanker(){
+  const g = new THREE.Group();
+
+  const ocean = makeOcean();
+  ocean.mesh.position.y = 0;
+  g.add(ocean.mesh);
+
+  // Sun
+  const sun = new THREE.Mesh(new THREE.SphereGeometry(30,24,18),
+    M({color:0x000000, emissive:0xffd9a0, emissiveIntensity:6}));
+  sun.position.set(-420, 60, -900);
+  g.add(sun);
+
+  // Three tankers in convoy
+  const ships = [];
+  const configs = [
+    { z:0,     s:1.0, x:0 },
+    { z:-460,  s:0.98, x:-26 },
+    { z:-880,  s:0.96, x:18 },
+    { z:-1260, s:0.94, x:-12 },
+  ];
+  configs.forEach((cfg,i)=>{
+    const t = buildTankerMesh();
+    t.group.position.set(cfg.x, 2.0, cfg.z);
+    t.group.scale.setScalar(cfg.s);
+    g.add(t.group);
+    ships.push({ ...t, cfg, phase: i*1.7 });
+  });
+
+  // Wake particles around the lead ship
+  const wN = 260;
+  const wPos = new Float32Array(wN*3);
+  const wSeed = [];
+  for(let i=0;i<wN;i++){
+    wSeed.push({ x:(Math.random()-0.5)*26, z:36+Math.random()*160, y:Math.random()*1.4, sp:0.6+Math.random()*1.4 });
+  }
+  const wGeo = new THREE.BufferGeometry();
+  wGeo.setAttribute('position', new THREE.BufferAttribute(wPos,3));
+  const wake = new THREE.Points(wGeo, new THREE.PointsMaterial({
+    size:5.5, map:SOFT_TEX, transparent:true, opacity:0.45,
+    depthWrite:false, color:0xdff2ff, blending:THREE.AdditiveBlending
+  }));
+  g.add(wake);
+
+  // Distant haze plane
+  const haze = new THREE.Mesh(new THREE.PlaneGeometry(3000,3000),
+    new THREE.MeshBasicMaterial({color:0x0a1c2e, transparent:true, opacity:0.55, depthWrite:false}));
+  haze.rotation.x = -Math.PI/2;
+  haze.position.y = 0.05;
+  g.add(haze);
+
+  /* ---- update ---- */
+  let wt = 0;
+  function update(t, dt){
+    wt += dt;
+
+    // Waves
+    const arr = ocean.geo.attributes.position.array;
+    const b = ocean.base;
+    for(let i=0;i<arr.length;i+=3){
+      const x = b[i], y = b[i+1];
+      arr[i+2] =
+        Math.sin(x*0.030 + wt*1.25)*1.7 +
+        Math.sin(y*0.041 - wt*0.95)*1.25 +
+        Math.sin((x+y)*0.017 + wt*0.62)*0.85 +
+        Math.sin((x-y)*0.09 + wt*2.1)*0.32;
+    }
+    ocean.geo.attributes.position.needsUpdate = true;
+    ocean.geo.computeVertexNormals();
+
+    // Ship bobbing
+    ships.forEach((s,i)=>{
+      s.group.rotation.z = Math.sin(wt*0.62 + s.phase)*0.022;
+      s.group.rotation.x = Math.sin(wt*0.44 + s.phase*1.3)*0.014;
+      s.group.position.y = 2.0 + Math.sin(wt*0.55 + s.phase)*0.35;
+
+      // smoke
+      if(s.smoke){
+        const p = s.smoke.geometry.attributes.position.array;
+        for(let k=0;k<p.length;k+=3){
+          p[k+1] += dt*(5.5 + (k%7)*0.4);
+          p[k]   += Math.sin(wt*1.5 + k)*dt*1.6;
+          if(p[k+1] > 34){ p[k+1] = 0; p[k] = (Math.random()-0.5)*2; p[k+2]=(Math.random()-0.5)*2; }
+        }
+        s.smoke.geometry.attributes.position.needsUpdate = true;
+      }
+    });
+
+    // Wake particles
+    const wp = wake.geometry.attributes.position.array;
+    wSeed.forEach((s,i)=>{
+      s.z -= dt * 26 * s.sp;
+      if(s.z < 30){ s.z = 200; s.x = (Math.random()-0.5)*26; s.y = Math.random()*1.2; }
+      wp[i*3]   = s.x + Math.sin(wt*2 + i)*1.6;
+      wp[i*3+1] = s.y + Math.sin(wt*3 + i*0.7)*0.5;
+      wp[i*3+2] = s.z;
+    });
+    wake.geometry.attributes.position.needsUpdate = true;
+  }
+
+  const camKeys = [
+    { t:0.00, pos:[ 220,  95,  230], look:[0, 4, -30] },
+    { t:0.18, pos:[  95,  22,  110], look:[0, 4, -10] },
+    { t:0.36, pos:[  36,  10,   62], look:[0, 5,   0] },
+    { t:0.52, pos:[  -8,  18,   46], look:[0, 6, -30] },
+    { t:0.70, pos:[   0, 130,  200], look:[0, 0,-380] },
+    { t:0.86, pos:[-170,  70,  120], look:[0, 0,-520] },
+    { t:1.00, pos:[  90,  40,  200], look:[0, 6,-120] },
+  ];
+
+  return {
+    title:'المشهد الأول — ناقلة النفط العملاقة',
+    sub:'المحيط الهندي · طابور لا ينقطع منذ أكثر من نصف قرن',
+    group:g, update,
+    cam:(p,c,t)=>kfCam(p,camKeys,c,0.12,t),
+    sky:{ top:0x0a1a2f, mid:0x123049, bot:0x071523 },
+    fog:{ color:0x0a1c2e, near:400, far:2600 },
+    light:{ key:0xffe9c9, keyI:2.6, hemi:0.5 },
+    notes:[
+      { t:0.5, d:5.0, side:'r0', accent:'#4fc3f7',
+        title:'الطول: 330 متراً', body:'ناقلة نفط عملاقة تشق طريقها عبر المحيط الهندي — أطول من ثلاث ملاعب كرة قدم.' },
+      { t:2.0, d:5.0, side:'r1', accent:'#ffc94d',
+        title:'أكثر من مليوني برميل', body:'في بطنها <b>مليونا برميل</b> من النفط الخام.' },
+      { t:4.5, d:5.0, side:'r2', accent:'#4ade80',
+        title:'مسار الرحلة', body:'انطلقت قبل نحو <b>20 يوماً</b> من موانئ الخليج، عبرت <b>هرمز</b> ثم <b>ملقا</b>.' },
+      { t:7.0, d:5.0, side:'r3', accent:'#ff6b35',
+        title:'الوجهة: ميناء ياباني', body:'وخلفها ناقلة… وخلف تلك ناقلة ثالثة… في طابور لا ينقطع منذ أكثر من نصف قرن.' },
+      { t:12.5, d:6.0, side:'c0', accent:'#ff6b35',
+        title:'هذه ليست قصة ناقلة', body:'هذه قصة شيء موجود تحت أقدام اليابان منذ الأزل… ولم تُلمسه أبداً.' },
+    ],
+    subs:[
+      { t:0.0, d:5, text:'في هذه اللحظة، وأنت تشاهد هذا الفيديو… هناك ناقلة نفط عملاقة تشق طريقها عبر المحيط الهندي.' },
+      { t:5.0, d:5, text:'طولها يقارب 330 متراً، وتحمل في بطنها أكثر من مليوني برميل من النفط الخام.' },
+      { t:10.0,d:5, text:'انطلقت قبل نحو 20 يوماً من موانئ الخليج، وعبرت مضيق هرمز ثم مضيق ملقا… وهي الآن في طريقها إلى ميناء ياباني.' },
+      { t:15.0,d:6, text:'وخلفها ناقلة أخرى… وخلف تلك ناقلة ثالثة… في طابور لا ينقطع منذ أكثر من نصف قرن.' },
+    ]
+  };
+}
+
+/* ---------- 2.2  KAKKONDA BOREHOLE ---------- */
+function sceneKakkonda(){
+  const g = new THREE.Group();
+
+  // Terrain
+  const terGeo = new THREE.PlaneGeometry(900, 900, 120, 120);
+  const terMat = M({color:0x4a5a3a, roughness:0.95, metalness:0.0,
+    map:null, envMapIntensity:0.5});
+  const ter = new THREE.Mesh(terGeo, terMat);
+  ter.rotation.x = -Math.PI/2;
+  ter.receiveShadow = true;
+  const tb = Float32Array.from(terGeo.attributes.position.array);
+  for(let i=0;i<tb.length;i+=3){
+    const x=tb[i], y=tb[i+1];
+    const h = Math.sin(x*0.011)*8 + Math.cos(y*0.013)*7 +
+              Math.sin((x+y)*0.006)*14 + Math.sin(x*0.05)*1.6 + Math.cos(y*0.06)*1.4;
+    tb[i+2] = h * (1 - Math.exp(-(x*x+y*y)/90000)*0.6);
+  }
+  terGeo.attributes.position.array.set(tb);
+  terGeo.computeVertexNormals();
+  g.add(ter);
+
+  // Trees
+  const treeGeo = new THREE.ConeGeometry(2.2, 8, 7);
+  const treeMat = M({color:0x1f3a1c, roughness:0.9});
+  const trees = new THREE.InstancedMesh(treeGeo, treeMat, 420);
+  const dummy = new THREE.Object3D();
+  for(let i=0;i<420;i++){
+    const a = Math.random()*Math.PI*2, r = 40 + Math.random()*380;
+    const x = Math.cos(a)*r, z = Math.sin(a)*r;
+    const idx = Math.round(((x/900)+0.5)*120) + Math.round(((z/900)+0.5)*120)*121;
+    const y = tb[Math.min(tb.length-3, Math.max(0, idx*3+2))] || 0;
+    dummy.position.set(x, y+3, z);
+    dummy.scale.setScalar(0.7 + Math.random()*0.9);
+    dummy.rotation.y = Math.random()*Math.PI;
+    dummy.updateMatrix();
+    trees.setMatrixAt(i, dummy.matrix);
+  }
+  trees.castShadow = true;
+  g.add(trees);
+
+  // Underground rock block (cutaway)
+  const rockMat = M({color:0x4b423a, roughness:0.96, metalness:0.03,
+    map: noiseTexture(256,0.7,120)});
+  rockMat.map.repeat.set(6,6);
+  const block = box(320, 420, 320, rockMat, 0, -212, 0);
+  g.add(block);
+
+  // Rock strata
+  for(let i=1;i<=6;i++){
+    const y = -i*62;
+    const col = new THREE.Color().setHSL(0.07, 0.22, 0.22 + i*0.035);
+    const s = box(322, 2.4, 322, M({color:col, roughness:0.95}), 0, y, 0);
+    g.add(s);
+  }
+
+  // Borehole shaft
+  const shaftMat = M({color:0x0a0a0c, roughness:1, metalness:0, side:THREE.DoubleSide});
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 3.2, 400, 20, 1, true), shaftMat);
+  shaft.position.y = -200;
+  g.add(shaft);
+
+  // Glass lining at shaft walls (as described in the beam drilling)
+  const lining = new THREE.Mesh(new THREE.CylinderGeometry(3.5, 3.5, 400, 20, 1, true),
+    M({color:0x88ffee, metalness:0.3, roughness:0.15, transparent:true, opacity:0.12,
+       side:THREE.BackSide, emissive:0x0a3344, emissiveIntensity:0.5}));
+  lining.position.y = -200;
+  g.add(lining);
+
+  // Well head structure on surface
+  const head = new THREE.Group();
+  head.position.set(0, 0, 0);
+  head.add(box(14, 3, 14, MAT.concrete, 0, 1.6, 0));
+  head.add(cyl(1.4,1.4,7,12, MAT.steel, 0, 6, 0));
+  head.add(box(6,0.6,6, MAT.darkSteel, 0, 9.4, 0));
+  head.add(cyl(0.4,0.4,10,8, MAT.steel, 0, 14.5, 0));
+  const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.8,12,10), M({color:0x330000, emissive:0xff2222, emissiveIntensity:3}));
+  beacon.position.set(0, 20, 0);
+  head.add(beacon);
+  // pipes
+  for(let i=0;i<3;i++){
+    const p = cyl(0.55,0.55,16,10, MAT.gold, -6+i*3, 1.6, 9);
+    p.rotation.x = Math.PI/2;
+    head.add(p);
+  }
+  g.add(head);
+
+  // Bottom: super-hot granite
+  const graniteCore = new THREE.Mesh(new THREE.IcosahedronGeometry(26, 3),
+    M({color:0x5a1a00, emissive:0xff4a10, emissiveIntensity:2.2, roughness:0.75, flatShading:true}));
+  graniteCore.position.y = -388;
+  g.add(graniteCore);
+
+  const coreLight = new THREE.PointLight(0xff5a1e, 900, 260, 2);
+  coreLight.position.set(0,-380,0);
+  g.add(coreLight);
+
+  // Glowing cracks ring
+  for(let i=0;i<26;i++){
+    const a = (i/26)*Math.PI*2;
+    const r = 14 + Math.random()*26;
+    const crack = box(0.7, 0.7, 8+Math.random()*22,
+      M({color:0x330800, emissive:0xff6a20, emissiveIntensity:2.4}),
+      Math.cos(a)*r, -382 + Math.random()*14, Math.sin(a)*r);
+    crack.rotation.y = a + Math.random();
+    crack.rotation.z = (Math.random()-0.5)*0.5;
+    g.add(crack);
+  }
+
+  // Depth markers (glowing rings along the shaft)
+  const rings = [];
+  for(let i=1;i<=7;i++){
+    const y = -i*55;
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(4.6, 0.22, 8, 40),
+      M({color:0x001a22, emissive:0x4fc3f7, emissiveIntensity:1.8}));
+    ring.rotation.x = Math.PI/2;
+    ring.position.y = y;
+    g.add(ring);
+    rings.push(ring);
+  }
+
+  function update(t, dt){
+    const pulse = 1.9 + Math.sin(t*2.4)*0.9;
+    graniteCore.material.emissiveIntensity = pulse;
+    coreLight.intensity = 700 + Math.sin(t*2.4)*280;
+    rings.forEach((r,i)=>{
+      r.material.emissiveIntensity = 1.2 + Math.sin(t*3 + i*0.8)*0.8;
+      r.rotation.z += dt*0.35;
+    });
+    beacon.material.emissiveIntensity = (Math.sin(t*4)>0)?3.0:0.3;
+  }
+
+  const camKeys = [
+    { t:0.00, pos:[  130,  90,  150], look:[0,  10,   0] },
+    { t:0.16, pos:[   34,  26,   46], look:[0,   8,   0] },
+    { t:0.32, pos:[   16,   6,   26], look:[0,   2,   0] },
+    { t:0.48, pos:[    7,  -40,   14], look:[0, -80,   0] },
+    { t:0.68, pos:[    5, -190,    9], look:[0,-260,   0] },
+    { t:0.84, pos:[   22, -340,   30], look:[0,-386,   0] },
+    { t:1.00, pos:[   46, -360,   52], look:[0,-388,   0] },
+  ];
+
+  return {
+    title:'المشهد الثاني — بئر كاكوندا، محافظة إيواتي',
+    sub:'على عمق 3700 متر… صخر أسخن من 500 درجة مئوية',
+    group:g, update,
+    cam:(p,c,t)=>kfCam(p,camKeys,c,0.08,t),
+    sky:{ top:0x08131f, mid:0x0d1e2c, bot:0x050b12 },
+    fog:{ color:0x0a1420, near:200, far:1600 },
+    light:{ key:0xcfe2ff, keyI:1.6, hemi:0.4 },
+    notes:[
+      { t:0.4, d:5, side:'r0', accent:'#4fc3f7',
+        title:'جبال إيواتي — شمال اليابان', body:'تحت قدميك مباشرة توجد حفرة ضيقة تنزل في باطن الأرض مسافة <b>3700 متر</b>.' },
+      { t:3.0, d:5.5, side:'r1', accent:'#ff6b35',
+        title:'حرارة تتجاوز 500°م', body:'في القاع، الصخر أسخن من <em>500 درجة مئوية</em> — حرارة تكفي لصهر الرصاص.' },
+      { t:6.5, d:5, side:'r2', accent:'#ffc94d',
+        title:'طاقة لا تنام', body:'تكفي لتوليد كهرباء لا تتوقف، لا ليلاً ولا نهاراً.' },
+      { t:10.5,d:6, side:'r3', accent:'#a78bfa',
+        title:'حُفرت قبل 30 عاماً', body:'مهندسون يابانيون حفروا هذه الحفرة قبل أكثر من 30 سنة… ومع ذلك ظلت اليابان تستورد طاقتها من الجهة الأخرى من الكوكب.' },
+      { t:16.5,d:6, side:'c0', accent:'#ff6b35',
+        title:'تلك الحرارة الهائلة…', body:'كانت تحت أرضها… وكأنها لا وجود لها أصلاً.' },
+    ],
+    subs:[
+      { t:0.0, d:6, text:'والآن اسمح لي أن أنقلك إلى مكان آخر تماماً… إلى جبال محافظة إيواتي في شمال اليابان.' },
+      { t:6.0, d:6, text:'هناك، تحت أقدامك مباشرة، توجد حفرة ضيقة تنزل في باطن الأرض مسافة 3700 متر تقريباً.' },
+      { t:12.0,d:6, text:'وفي قاع تلك الحفرة، الصخر أسخن من 500 درجة مئوية… حرارة تكفي لصهر الرصاص، وتكفي لتوليد كهرباء لا تتوقف ليلاً ولا نهاراً.' },
+      { t:18.0,d:6, text:'هذه الحفرة ليست جديدة… حفرها مهندسون يابانيون قبل أكثر من 30 عاماً. ومع ذلك ظلت اليابان طوال تلك العقود الثلاثة تستورد طاقتها من الجهة الأخرى من الكوكب.' },
+    ]
+  };
+}
+
+/* ---------- 2.3  1973 OIL SHOCK ---------- */
+function sceneOilShock(){
+  const g = new THREE.Group();
+
+  const floor = box(300, 2, 300, M({color:0x14181e, roughness:0.85, metalness:0.15}), 0, -1, 0);
+  g.add(floor);
+
+  // Oil barrels
+  const barrels = [];
+  const barrelMat = M({color:0x2f4f3f, metalness:0.85, roughness:0.42});
+  const barrelMat2= M({color:0x6b2a12, metalness:0.8, roughness:0.5});
+  for(let i=0;i<70;i++){
+    const bx = (Math.random()-0.5)*170;
+    const bz = (Math.random()-0.5)*170;
+    if(Math.hypot(bx,bz) < 34) continue;
+    const b = new THREE.Group();
+    const body = cyl(3.2,3.2,9,18, i%3===0?barrelMat2:barrelMat);
+    b.add(body);
+    for(let k=-1;k<=1;k++){
+      const r = new THREE.Mesh(new THREE.TorusGeometry(3.25,0.24,8,24), MAT.steel);
+      r.rotation.x = Math.PI/2; r.position.y = k*3.0; b.add(r);
+    }
+    b.position.set(bx, 4.5, bz);
+    b.rotation.y = Math.random()*Math.PI;
+    g.add(b);
+    barrels.push({m:b, ph:Math.random()*6.28});
+  }
+
+  // Rising price graph
+  const pts = [];
+  for(let i=0;i<=40;i++){
+    const x = -70 + i*3.6;
+    let y;
+    if(i < 14) y = 2 + Math.sin(i*0.6)*0.5;
+    else y = 2 + Math.pow((i-14)/26, 1.7)*52;
+    pts.push(new THREE.Vector3(x, y, 0));
+  }
+  const curve = new THREE.CatmullRomCurve3(pts);
+  const graph = new THREE.Mesh(new THREE.TubeGeometry(curve, 160, 0.55, 10, false),
+    M({color:0x2a0000, emissive:0xff3b2f, emissiveIntensity:2.4, roughness:0.4}));
+  graph.position.set(0, 0, -60);
+  g.add(graph);
+
+  // Grid behind graph
+  const grid = new THREE.GridHelper(160, 20, 0x2a3a4a, 0x1a2530);
+  grid.position.set(0, 0, -62);
+  g.add(grid);
+
+  // Big "×4" floating bars
+  const bars = [];
+  for(let i=0;i<4;i++){
+    const h = 8 + i*12;
+    const bar = box(7, h, 7, M({color:0x3a0a00, emissive:0xff5a1e, emissiveIntensity:1.6 - i*0.18}),
+      -60 + i*22, h/2, 62);
+    g.add(bar);
+    bars.push(bar);
+  }
+
+  // Red emergency flashes
+  const flash = new THREE.PointLight(0xff2200, 0, 400, 2);
+  flash.position.set(0, 40, 0);
+  g.add(flash);
+
+  const alarmLights = [];
+  for(let i=0;i<4;i++){
+    const l = new THREE.Mesh(new THREE.SphereGeometry(1.1,12,10),
+      M({color:0x330000, emissive:0xff2200, emissiveIntensity:3}));
+    l.position.set(-90 + i*60, 34, -70);
+    g.add(l);
+    alarmLights.push(l);
+  }
+
+  // Empty shelves (toilet paper panic reference)
+  const shelves = new THREE.Group();
+  shelves.position.set(120, 0, -20);
+  for(let i=0;i<4;i++){
+    shelves.add(box(26, 0.6, 8, MAT.darkSteel, 0, 3 + i*6, 0));
+    for(let k=0;k<2;k++){
+      shelves.add(box(0.6, 6, 8, MAT.darkSteel, -13, 6 + i*6, 0));
+      shelves.add(box(0.6, 6, 8, MAT.darkSteel,  13, 6 + i*6, 0));
+    }
+  }
+  g.add(shelves);
+
+  function update(t, dt){
+    barrels.forEach((b,i)=>{
+      b.m.rotation.y += dt*0.05*(i%3+1)*0.2;
+      b.m.position.y = 4.5 + Math.sin(t*1.2 + b.ph)*0.08;
+    });
+    const f = (Math.sin(t*3.4) > 0.3) ? 1 : 0;
+    flash.intensity = f * 1400;
+    alarmLights.forEach((l,i)=>{
+      l.material.emissiveIntensity = (Math.sin(t*3.4 + i*0.6) > 0.3) ? 3.2 : 0.15;
+    });
+    graph.material.emissiveIntensity = 2.0 + Math.sin(t*2.2)*0.8;
+    bars.forEach((b,i)=>{
+      const s = 1 + Math.sin(t*2 + i*0.5)*0.06;
+      b.scale.y = s;
+      b.position.y = (8 + i*12)*s/2;
+    });
+  }
+
+  const camKeys = [
+    { t:0.00, pos:[   0,  62,  175], look:[0, 18, -20] },
+    { t:0.22, pos:[  60,  30,  120], look:[0, 14, -30] },
+    { t:0.44, pos:[  -8,  26,   46], look:[0, 22, -60] },
+    { t:0.62, pos:[ 120,  34,   46], look:[118, 12, -20] },
+    { t:0.82, pos:[   0,  46,   90], look:[0, 24, -50] },
+    { t:1.00, pos:[ -70,  70,  150], look:[0, 20,  20] },
+  ];
+
+  return {
+    title:'المشهد الثالث — صدمة 1973',
+    sub:'أكتوبر 1973 · حظر النفط · تضاعف السعر أربع مرات',
+    group:g, update,
+    cam:(p,c,t)=>kfCam(p,camKeys,c,0.22,t),
+    sky:{ top:0x1a0505, mid:0x120405, bot:0x080202 },
+    fog:{ color:0x150404, near:120, far:700 },
+    light:{ key:0xff8a5a, keyI:1.4, hemi:0.25 },
+    notes:[
+      { t:0.4, d:5, side:'r0', accent:'#ff3b2f',
+        title:'أكتوبر 1973', body:'الدول المنتجة للنفط في الشرق الأوسط تقرر خفض الإمدادات.' },
+      { t:3.0, d:5, side:'r1', accent:'#ffc94d',
+        title:'السعر يتضاعف ×4', body:'سعر النفط الخام يتضاعف <b>أربع مرات</b> خلال أشهر قليلة.' },
+      { t:6.5, d:5.5, side:'r2', accent:'#4fc3f7',
+        title:'صدمة وجودية لليابان', body:'مصانعها ومحطاتها وسياراتها وسفنها… كلها تعمل بوقود يأتي من آلاف الكيلومترات.' },
+      { t:11.0,d:5.5, side:'r3', accent:'#ff6b35',
+        title:'طوابير الخوف', body:'تشكلت الطوابير أمام المتاجر، واندفع الناس في حالة ذعر لشراء ورق الحمام… حتى فرغت الرفوف في مدن كاملة.' },
+      { t:17.0,d:5, side:'c0', accent:'#a78bfa',
+        title:'رد الحكومة', body:'في 1974 أُطلق «مشروع أشعة الشمس» — والطاقة الحرارية الأرضية كانت في قلبه.' },
+    ],
+    subs:[
+      { t:0.0, d:6, text:'في أكتوبر عام 1973، قررت الدول المنتجة للنفط في الشرق الأوسط خفض الإمدادات، فتضاعف سعر النفط الخام أربع مرات خلال أشهر قليلة.' },
+      { t:6.0, d:6, text:'بالنسبة لمعظم دول العالم كانت تلك أزمة اقتصادية خانقة. أما بالنسبة لليابان فكانت أقرب إلى صدمة وجودية.' },
+      { t:12.0,d:6, text:'لأن اليابان بنت واحداً من أضخم الاقتصادات الصناعية في التاريخ فوق أساس واحد تقريباً: نفط مستورد.' },
+      { t:18.0,d:6, text:'وفي شتاء واحد اكتشف الشعب الياباني أن رخاءه كله معلّق بناقلات لا يملكها، تبحر عبر مضائق لا يستطيع حمايتها.' },
+    ]
+  };
+}
+
+/* ---------- 2.4  KOLA SUPERDEEP BOREHOLE ---------- */
+function sceneKola(){
+  const g = new THREE.Group();
+
+  // Earth cross-section cylinder
+  const layers = [
+    { r:220, h:10,  y:0,    c:0x3d4a2e },
+    { r:200, h:30,  y:-15,  c:0x54452f },
+    { r:185, h:60,  y:-45,  c:0x6b5a3e },
+    { r:170, h:110, y:-115, c:0x6e5636 },
+    { r:155, h:150, y:-240, c:0x5c4227 },
+    { r:140, h:180, y:-400, c:0x4a2f18 },
+  ];
+  layers.forEach((L,i)=>{
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(L.r, L.r*0.98, L.h, 48, 1, false),
+      M({color:L.c, roughness:0.95, metalness:0.03}));
+    m.position.y = L.y;
+    m.receiveShadow = true;
+    g.add(m);
+  });
+
+  // Shaft
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 2.6, 520, 18, 1, true),
+    M({color:0x05070a, roughness:1, side:THREE.DoubleSide}));
+  shaft.position.y = -250;
+  g.add(shaft);
+
+  // Depth rings + markers
+  const marks = [];
+  const depths = [0, 3000, 6000, 9000, 12262];
+  depths.forEach((d,i)=>{
+    const y = -(d/12262)*500;
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(7, 0.3, 8, 40),
+      M({color:0x001a22, emissive:0x4fc3f7, emissiveIntensity:1.6}));
+    ring.rotation.x = Math.PI/2; ring.position.y = y;
+    g.add(ring);
+    // marker post
+    const post = box(0.4, 0.4, 30, M({color:0x001a22, emissive:0x4fc3f7, emissiveIntensity:1.2}), 0, y, 22);
+    g.add(post);
+    marks.push(ring);
+  });
+
+  // Bottom heat zone
+  const heat = new THREE.Mesh(new THREE.SphereGeometry(22, 24, 18),
+    M({color:0x4a1000, emissive:0xff4a10, emissiveIntensity:2.0, roughness:0.7, flatShading:true}));
+  heat.position.y = -505;
+  g.add(heat);
+  const heatLight = new THREE.PointLight(0xff4a10, 700, 220, 2);
+  heatLight.position.y = -500;
+  g.add(heatLight);
+
+  // Broken drill string
+  const drill = new THREE.Group();
+  drill.position.y = -430;
+  const drillBody = cyl(1.2,1.2,60,12, MAT.steel, 0, 0, 0);
+  drill.add(drillBody);
+  const bit = new THREE.Mesh(new THREE.ConeGeometry(2.4, 6, 10), MAT.darkSteel);
+  bit.position.y = -32; drill.add(bit);
+  // bent / broken
+  drill.rotation.z = 0.35;
+  g.add(drill);
+
+  // Red failure X
+  const xMat = M({color:0x2a0000, emissive:0xff2a2a, emissiveIntensity:2.6});
+  const x1 = box(14,1.4,1.4, xMat, 0, -470, 0); x1.rotation.z = Math.PI/4;
+  const x2 = box(14,1.4,1.4, xMat, 0, -470, 0); x2.rotation.z = -Math.PI/4;
+  g.add(x1); g.add(x2);
+
+  // Thermometer
+  const th = new THREE.Group();
+  th.position.set(95, -180, 95);
+  th.add(cyl(2.2,2.2,300,14, M({color:0x1a1a20, metalness:0.6, roughness:0.3}), 0,0,0));
+  const mercury = cyl(1.3,1.3,180,12, M({color:0x330000, emissive:0xff3b2f, emissiveIntensity:2.2}), 0,-55,0);
+  th.add(mercury);
+  th.add(new THREE.Mesh(new THREE.SphereGeometry(4,16,14), M({color:0x330000, emissive:0xff3b2f, emissiveIntensity:2.4})).translateY(-152));
+  g.add(th);
+
+  function update(t, dt){
+    heat.material.emissiveIntensity = 1.8 + Math.sin(t*2.6)*0.8;
+    heatLight.intensity = 600 + Math.sin(t*2.6)*260;
+    marks.forEach((m,i)=> m.material.emissiveIntensity = 1.2 + Math.sin(t*3 + i)*0.7);
+    mercury.scale.y = 1 + Math.sin(t*1.4)*0.05;
+    x1.material.emissiveIntensity = 2.0 + Math.sin(t*5)*1.2;
+    x2.material.emissiveIntensity = 2.0 + Math.sin(t*5)*1.2;
+    drill.rotation.z = 0.35 + Math.sin(t*0.8)*0.05;
+  }
+
+  const camKeys = [
+    { t:0.00, pos:[ 420, 220, 420], look:[0,-180,0] },
+    { t:0.20, pos:[ 200,  60, 240], look:[0, -90,0] },
+    { t:0.42, pos:[  95, -60, 130], look:[0,-230,0] },
+    { t:0.62, pos:[  60,-300,  90], look:[0,-430,0] },
+    { t:0.80, pos:[  45,-450,  70], look:[0,-490,0] },
+    { t:1.00, pos:[ 140,-330, 180], look:[0,-430,0] },
+  ];
+
+  return {
+    title:'المشهد الرابع — بئر كولا فائقة العمق',
+    sub:'الاتحاد السوفيتي · 12,262 متراً · أعمق حفرة صنعها الإنسان بمثقاب',
+    group:g, update,
+    cam:(p,c,t)=>kfCam(p,camKeys,c,0.1,t),
+    sky:{ top:0x060a10, mid:0x0a121c, bot:0x03060a },
+    fog:{ color:0x080d14, near:260, far:1800 },
+    light:{ key:0xa8c4e8, keyI:1.2, hemi:0.3 },
+    notes:[
+      { t:0.4, d:5, side:'r0', accent:'#4fc3f7',
+        title:'بئر كولا — 1970', body:'أقصى شمال روسيا. بدأ السوفيت حفر أعمق بئر في التاريخ.' },
+      { t:3.5, d:5, side:'r1', accent:'#ffc94d',
+        title:'20 عاماً من الحفر', body:'وصلوا إلى عمق يزيد قليلاً على <b>12 كيلومتراً</b> — ولا يزال الرقم قائماً حتى اليوم.' },
+      { t:7.5, d:5.5, side:'r2', accent:'#ff6b35',
+        title:'لماذا توقفوا؟', body:'الحرارة. الصخر في القاع كان أسخن بكثير مما توقعه العلماء — نحو <em>180 درجة مئوية</em>.' },
+      { t:12.0,d:5.5, side:'r3', accent:'#ff3b2f',
+        title:'المعدات انهارت', body:'أكثر محاولة حفر إصراراً في التاريخ، استمرت 20 عاماً بموارد دولة عظمى… هُزمت أمام درجة حرارة.' },
+      { t:17.5,d:6, side:'c0', accent:'#a78bfa',
+        title:'بئر كاكوندا اليابانية', body:'تجاوزت درجة حرارة كولا بأكثر من <b>300 درجة</b>… لكنها لم تتحول أبداً إلى محطة كهرباء.' },
+    ],
+    subs:[
+      { t:0.0, d:6, text:'ولا تظن أن هذا كان فشلاً يابانياً… كان فشل الجميع. وأوضح مثال جاء من الاتحاد السوفيتي.' },
+      { t:6.0, d:6, text:'ابتداءً من عام 1970 بدأ السوفيت حفر ما يُعرف ببئر كولا فائقة العمق. وبعد نحو 20 عاماً وصلوا إلى عمق يزيد قليلاً على 12 كيلومتراً.' },
+      { t:12.0,d:6, text:'لماذا توقفوا؟ الحرارة. الصخر في القاع كان أسخن بكثير مما توقعه العلماء، إذ بلغ نحو 180 درجة مئوية، ولم تعد المعدات قادرة على التحمل.' },
+      { t:18.0,d:6, text:'الحرارة لا تُبطئ المثقاب فحسب… إنها تضع سقفاً نهائياً لأي أداة تعمل بالطحن.' },
+    ]
+  };
+}
+
+/* ---------- 2.5  GYROTRON ---------- */
+function sceneGyrotron(){
+  const g = new THREE.Group();
+
+  const base = box(160, 3, 160, M({color:0x11161d, metalness:0.7, roughness:0.5}), 0, -1.5, 0);
+  g.add(base);
+
+  // Gyrotron device
+  const dev = new THREE.Group();
+  dev.position.y = 0;
+
+  // Main body (copper cavity)
+  const body = cyl(6.5, 6.5, 30, 40, MAT.copper, 0, 22, 0);
+  dev.add(body);
+
+  // Superconducting magnet coils
+  const coils = [];
+  for(let i=0;i<6;i++){
+    const c = new THREE.Mesh(new THREE.TorusGeometry(8.2, 1.5, 12, 40),
+      M({color:0x223a5a, metalness:1.0, roughness:0.22, envMapIntensity:1.8}));
+    c.rotation.x = Math.PI/2;
+    c.position.y = 10 + i*4.6;
+    dev.add(c); coils.push(c);
+  }
+
+  // Top cap
+  dev.add(cyl(5.5, 6.5, 5, 32, MAT.steel, 0, 40, 0));
+  dev.add(cyl(2.2, 2.2, 8, 20, MAT.gold, 0, 46, 0));
+
+  // Output window / launcher
+  const outCone = new THREE.Mesh(new THREE.ConeGeometry(6.5, 14, 32), MAT.steel);
+  outCone.position.y = 3; outCone.rotation.x = Math.PI;
+  dev.add(outCone);
+  dev.add(cyl(3.2,3.2,4,24, MAT.glass, 0, -5, 0));
+
+  // Cooling fins
+  for(let i=0;i<16;i++){
+    const a = (i/16)*Math.PI*2;
+    const fin = box(0.6, 22, 3.2, MAT.darkSteel, Math.cos(a)*7.4, 22, Math.sin(a)*7.4);
+    fin.rotation.y = -a;
+    dev.add(fin);
+  }
+
+  g.add(dev);
+
+  // Waveguide (going down into the hole)
+  const wgMat = M({color:0xb9c6d2, metalness:1.0, roughness:0.18, envMapIntensity:1.8});
+  const wg = new THREE.Group();
+  for(let i=0;i<9;i++){
+    const seg = cyl(2.0, 2.0, 12, 24, wgMat, 0, -14 - i*12, 0);
+    wg.add(seg);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(2.4,0.32,8,28), MAT.gold);
+    ring.rotation.x = Math.PI/2; ring.position.y = -8 - i*12;
+    wg.add(ring);
+  }
+  g.add(wg);
+
+  // Beam (glowing)
+  const beamMat = new THREE.MeshBasicMaterial({
+    color:0x66e0ff, transparent:true, opacity:0.55,
+    blending:THREE.AdditiveBlending, depthWrite:false, side:THREE.DoubleSide
+  });
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, 120, 20, 1, true), beamMat);
+  beam.position.y = -66;
+  g.add(beam);
+
+  // Beam inner core
+  const beamCore = new THREE.Mesh(new THREE.CylinderGeometry(0.7,0.7,120,16,1,true),
+    new THREE.MeshBasicMaterial({color:0xffffff, transparent:true, opacity:0.85,
+      blending:THREE.AdditiveBlending, depthWrite:false}));
+  beamCore.position.y = -66;
+  g.add(beamCore);
+
+  const beamLight = new THREE.PointLight(0x66e0ff, 400, 200, 2);
+  beamLight.position.y = -20;
+  g.add(beamLight);
+
+  // Travelling pulses along the beam
+  const pulses = [];
+  for(let i=0;i<9;i++){
+    const p = new THREE.Mesh(new THREE.TorusGeometry(2.2,0.45,8,28),
+      M({color:0x003344, emissive:0x66e0ff, emissiveIntensity:3}));
+    p.rotation.x = Math.PI/2;
+    p.position.y = -10 - i*13;
+    g.add(p); pulses.push(p);
+  }
+
+  // Plasma (left) — fusion context
+  const plasma = new THREE.Mesh(new THREE.SphereGeometry(9, 28, 20),
+    new THREE.MeshBasicMaterial({color:0xff88dd, transparent:true, opacity:0.28,
+      blending:THREE.AdditiveBlending, depthWrite:false}));
+  plasma.position.set(-72, 30, 0);
+  g.add(plasma);
+  const plasmaCore = new THREE.Mesh(new THREE.SphereGeometry(4.2, 20, 16),
+    M({color:0x220011, emissive:0xff66cc, emissiveIntensity:3.5}));
+  plasmaCore.position.copy(plasma.position);
+  g.add(plasmaCore);
+  // Magnetic cage rings around plasma
+  const cage = [];
+  for(let i=0;i<5;i++){
+    const r = new THREE.Mesh(new THREE.TorusGeometry(12,0.45,8,32),
+      M({color:0x001a2a, emissive:0x66ddff, emissiveIntensity:2}));
+    r.position.copy(plasma.position);
+    r.rotation.y = (i/5)*Math.PI;
+    g.add(r); cage.push(r);
+  }
+
+  // Granite slab being melted (right)
+  const slab = box(26, 26, 26, M({color:0x7a7268, roughness:0.88, metalness:0.05,
+    emissive:0x220800, emissiveIntensity:0}), 78, 13, 0);
+  g.add(slab);
+  const meltGlow = new THREE.PointLight(0xff6a20, 0, 120, 2);
+  meltGlow.position.set(78, 26, 0);
+  g.add(meltGlow);
+  const meltPool = new THREE.Mesh(new THREE.CylinderGeometry(6,6,2,20),
+    M({color:0x330800, emissive:0xff6a20, emissiveIntensity:2.6}));
+  meltPool.position.set(78, 26, 0);
+  g.add(meltPool);
+
+  function update(t, dt){
+    const pulse = 0.4 + Math.abs(Math.sin(t*2.2))*0.5;
+    beamMat.opacity = pulse;
+    beamCore.material.opacity = 0.5 + Math.abs(Math.sin(t*3.1))*0.5;
+    beamLight.intensity = 250 + Math.abs(Math.sin(t*2.6))*350;
+
+    pulses.forEach((p,i)=>{
+      p.position.y -= dt*55;
+      if(p.position.y < -128) p.position.y = -8;
+      p.material.emissiveIntensity = 2.2 + Math.sin(t*6 + i)*1.2;
+    });
+
+    coils.forEach((c,i)=>{ c.rotation.z += dt*(0.15 + i*0.03); });
+
+    plasmaCore.material.emissiveIntensity = 3 + Math.sin(t*4)*1.2;
+    plasma.scale.setScalar(1 + Math.sin(t*3)*0.06);
+    cage.forEach((c,i)=>{ c.rotation.x += dt*0.4; c.rotation.z += dt*0.22*(i%2?1:-1); });
+
+    slab.material.emissiveIntensity = 0.15 + Math.abs(Math.sin(t*1.5))*0.5;
+    meltGlow.intensity = 80 + Math.abs(Math.sin(t*2.4))*180;
+    meltPool.scale.setScalar(1 + Math.sin(t*3)*0.08);
+  }
+
+  const camKeys = [
+    { t:0.00, pos:[   0,  70, 190], look:[0, 20, 0] },
+    { t:0.20, pos:[  60,  46, 100], look:[0, 24, 0] },
+    { t:0.40, pos:[  22,  30,  56], look:[0, 18, 0] },
+    { t:0.60, pos:[  85,  30,  60], look:[76, 22, 0] },
+    { t:0.78, pos:[ -95,  42,  78], look:[-72, 30, 0] },
+    { t:1.00, pos:[   0,  90, 170], look:[0, 10, -30] },
+  ];
+
+  return {
+    title:'المشهد الخامس — الجيروترون',
+    sub:'من مفاعل الاندماج النووي… إلى رأس حفّار',
+    group:g, update,
+    cam:(p,c,t)=>kfCam(p,camKeys,c,0.1,t),
+    sky:{ top:0x03080f, mid:0x081420, bot:0x02060a },
+    fog:{ color:0x040a12, near:180, far:1200 },
+    light:{ key:0xbfe4ff, keyI:1.4, hemi:0.35 },
+    notes:[
+      { t:0.4, d:5, side:'r0', accent:'#4fc3f7',
+        title:'الجيروترون', body:'جهاز يُسخّن الأشياء دون أن يلمسها. صُمم أصلاً لمفاعلات الاندماج النووي.' },
+      { t:3.5, d:5, side:'r1', accent:'#ffc94d',
+        title:'170 جيجاهرتز · 1 ميجاواط', body:'فرن الميكروويف في مطبخك: 2.45 جيجاهرتز و600 واط. الجيروترون: <b>أعلى 70 مرة</b> في التردد و<b>1600 مرة</b> في القدرة.' },
+      { t:7.5, d:5.5, side:'r2', accent:'#a78bfa',
+        title:'اليابان أولاً', body:'بدأت الأبحاث عام <b>1993</b>، وفي <b>2008</b> أصبحت أول جهة في العالم تبني جيروترون يستوفي كل متطلبات مشروع ITER.' },
+      { t:12.0,d:5, side:'r3', accent:'#4ade80',
+        title:'ثلث المنظومة', body:'اليابان التزمت بتوريد <b>8 أجهزة من 24</b> — وأنهت بناءها كلها قبل روسيا وأوروبا.' },
+      { t:17.0,d:6, side:'c0', accent:'#ff6b35',
+        title:'ماذا لو وُجّه الشعاع إلى الجرانيت؟', body:'الصخر ينصهر… ثم يتبخر… وعندما يبرد ما حوله تتشكل بطانة زجاجية ناعمة. والشعاع لا يفقد حدته أبداً.' },
+    ],
+    subs:[
+      { t:0.0, d:6, text:'بينما كانت صناعة الحفر تقاتل لإبقاء الفولاذ حياً في الصخر الساخن… كان هناك مجال علمي منفصل تماماً في اليابان يقضي ثلاثة عقود في إتقان آلة تُسخّن الأشياء دون أن تلمسها.' },
+      { t:6.0, d:6, text:'هذه الآلة اسمها الجيروترون. تعمل بتردد 170 جيجاهرتز وبقدرة مليون واط.' },
+      { t:12.0,d:6, text:'في عام 2008 أصبحت اليابان أول جهة في العالم تبني جيروترون يستوفي كل متطلبات مشروع ITER، وتولت تصنيع ثلث المنظومة بالكامل.' },
+      { t:18.0,d:6, text:'والآن… ضع هذا كله بجانب فكرة الحفر. ماذا لو وجّهنا هذا الشعاع إلى لوح من الجرانيت؟' },
+    ]
+  };
+}
+
+/* ---------- 2.6  QUAISE FUNDING ---------- */
+function sceneQuaise(){
+  const g = new THREE.Group();
+
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(200, 48),
+    M({color:0x0b1219, metalness:0.8, roughness:0.28, envMapIntensity:1.4}));
+  floor.rotation.x = -Math.PI/2;
+  g.add(floor);
+
+  // Rising funding bars
+  const barData = [
+    { label:'الجولة الثانية — الإغلاق الأول', value:134, color:0x2a6ea8 },
+    { label:'إغلاق الجولة كاملة',            value:180, color:0x3aa0d8 },
+    { label:'الإجمالي حتى الآن',             value:280, color:0xff6b35 },
+  ];
+  const bars = [];
+  barData.forEach((d,i)=>{
+    const grp = new THREE.Group();
+    const b = box(16, 1, 16, M({color:d.color, metalness:0.55, roughness:0.32,
+      emissive:d.color, emissiveIntensity:0.35}), -55 + i*55, 0.5, 0);
+    grp.add(b);
+    grp.position.x = -55 + i*55;
+    g.add(grp);
+    bars.push({ mesh:b, target:d.value/280*90, cur:0, phase:i*0.4 });
+  });
+
+  // Investor panels (glowing slabs)
+  const investors = [
+    { name:'JERA',           sub:'أكبر منتج للكهرباء في اليابان',  color:0x4fc3f7, x:-70 },
+    { name:'IDEMITSU',       sub:'من كبرى شركات الطاقة المتكاملة', color:0xffc94d, x:0 },
+    { name:'NABORS',         sub:'من أكبر شركات الحفر البري',      color:0x4ade80, x:70 },
+  ];
+  const panels = [];
+  investors.forEach((inv,i)=>{
+    const p = new THREE.Group();
+    const slab = box(46, 30, 2, M({color:0x0a1420, metalness:0.7, roughness:0.28,
+      emissive:inv.color, emissiveIntensity:0.10}), 0, 0, 0);
+    p.add(slab);
+    const edge = box(46.6, 30.6, 1.6, M({color:0x000000, emissive:inv.color, emissiveIntensity:1.6}),
+      0, 0, -0.4);
+    p.add(edge);
+    p.add(slab);
+    const glow = new THREE.Mesh(new THREE.PlaneGeometry(44,28),
+      new THREE.MeshBasicMaterial({color:inv.color, transparent:true, opacity:0.10,
+        blending:THREE.AdditiveBlending, depthWrite:false}));
+    glow.position.z = 1.2;
+    p.add(glow);
+    p.position.set(inv.x, 55, -55);
+    p.rotation.x = -0.12;
+    g.add(p);
+    panels.push({ grp:p, glow, phase:i*1.1 });
+  });
+
+  // Central "beam" hologram
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 100, 16, 1, true),
+    new THREE.MeshBasicMaterial({color:0x66e0ff, transparent:true, opacity:0.4,
+      blending:THREE.AdditiveBlending, depthWrite:false}));
+  beam.position.set(0, 50, 30);
+  g.add(beam);
+
+  // Rotating ring
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(70, 0.5, 8, 80),
+    M({color:0x001a2a, emissive:0x4fc3f7, emissiveIntensity:1.6}));
+  ring.rotation.x = Math.PI/2;
+  ring.position.y = 2;
+  g.add(ring);
+
+  // Floating money particles
+  const pN = 180;
+  const pPos = new Float32Array(pN*3);
+  const pSeed = [];
+  for(let i=0;i<pN;i++){
+    pSeed.push({ a:Math.random()*6.28, r:20+Math.random()*140, y:Math.random()*100, s:0.2+Math.random()*0.6 });
+  }
+  const pGeo = new THREE.BufferGeometry();
+  pGeo.setAttribute('position', new THREE.BufferAttribute(pPos,3));
+  const parts = new THREE.Points(pGeo, new THREE.PointsMaterial({
+    size:2.4, map:SOFT_TEX, color:0xffc94d, transparent:true, opacity:0.65,
+    blending:THREE.AdditiveBlending, depthWrite:false
+  }));
+  g.add(parts);
+
+  function update(t, dt){
+    bars.forEach((b,i)=>{
+      b.cur = lerp(b.cur, b.target, dt*0.9);
+      const h = Math.max(1, b.cur * (1 + Math.sin(t*2 + b.phase)*0.012));
+      b.mesh.scale.y = h;
+      b.mesh.position.y = h/2;
+    });
+    panels.forEach((p,i)=>{
+      p.grp.position.y = 55 + Math.sin(t*0.9 + p.phase)*3.5;
+      p.grp.rotation.y = Math.sin(t*0.5 + p.phase)*0.09;
+      p.glow.material.opacity = 0.08 + Math.abs(Math.sin(t*1.6 + p.phase))*0.14;
+    });
+    ring.rotation.z += dt*0.35;
+    ring.material.emissiveIntensity = 1.2 + Math.sin(t*2)*0.6;
+    beam.material.opacity = 0.25 + Math.abs(Math.sin(t*3))*0.3;
+
+    const arr = parts.geometry.attributes.position.array;
+    pSeed.forEach((s,i)=>{
+      s.a += dt * s.s * 0.35;
+      s.y += dt * 6 * s.s;
+      if(s.y > 105) s.y = 0;
+      arr[i*3]   = Math.cos(s.a)*s.r;
+      arr[i*3+1] = s.y;
+      arr[i*3+2] = Math.sin(s.a)*s.r;
+    });
+    parts.geometry.attributes.position.needsUpdate = true;
+  }
+
+  const camKeys = [
+    { t:0.00, pos:[   0,  30, 260], look:[0, 40, 0] },
+    { t:0.22, pos:[ 120,  40, 150], look:[0, 50, -20] },
+    { t:0.45, pos:[   0,  62, 120], look:[0, 55, -40] },
+    { t:0.66, pos:[-130,  55, 130], look:[-60, 55, -50] },
+    { t:0.85, pos:[ 100,  70, 170], look:[60, 55, -50] },
+    { t:1.00, pos:[   0, 150, 240], look:[0, 30, 0] },
+  ];
+
+  return {
+    title:'المشهد السادس — كوايز إنرجي',
+    sub:'من رحم MIT · هيوستن · 280 مليون دولار',
+    group:g, update,
+    cam:(p,c,t)=>kfCam(p,camKeys,c,0.15,t),
+    sky:{ top:0x040a14, mid:0x08131f, bot:0x020508 },
+    fog:{ color:0x050b12, near:200, far:1400 },
+    light:{ key:0x9fd8ff, keyI:1.6, hemi:0.4 },
+    notes:[
+      { t:0.4, d:5, side:'r0', accent:'#4fc3f7',
+        title:'Quaise Energy', body:'خرجت من رحم <b>معهد ماساتشوستس للتكنولوجيا</b>. مقرها هيوستن، عاصمة النفط الأمريكي. تأسست 2018.' },
+      { t:3.5, d:5, side:'r1', accent:'#ffc94d',
+        title:'7 يوليو 2026 — 134 مليون دولار', body:'الإغلاق الأول للجولة الثانية، بقيادة صندوق <b>Prelude Ventures</b> المتخصص في المناخ.' },
+      { t:8.0, d:5.5, side:'r2', accent:'#4ade80',
+        title:'لكن الأهم… أسماء المستثمرين', body:'<b>JERA</b> أكبر شركة لتوليد الكهرباء في اليابان، و<b>إيديميتسو كوسان</b> إحدى كبرى شركات الطاقة المتكاملة.' },
+      { t:13.0,d:5.5, side:'r3', accent:'#a78bfa',
+        title:'لم تكن تتبرع… كانت تشتري مقعداً', body:'قالت إيديميتسو إنها تريد اكتساب الخبرة، ودراسة نموذج العمل عن قرب، والاحتفاظ بخيار المشاركة مستقبلاً.' },
+      { t:18.5,d:5, side:'c0', accent:'#ff6b35',
+        title:'180 ثم 280 مليون دولار', body:'وفي 7 أغسطس أُغلقت الجولة كاملة عند <b>180 مليوناً</b>، منها 35 مليوناً من <b>Nabors Industries</b> — ليصل الإجمالي إلى <b>280 مليون دولار</b>.' },
+    ],
+    subs:[
+      { t:0.0, d:6, text:'لكن المال دائماً يكشف لك من يأخذ الأمر بجدية ومن يتظاهر فقط.' },
+      { t:6.0, d:6, text:'الشركة اسمها كوايز إنرجي. خرجت من رحم معهد ماساتشوستس للتكنولوجيا، ويقع مقرها في هيوستن، عاصمة النفط الأمريكي.' },
+      { t:12.0,d:6, text:'وفي السابع من يوليو 2026 أعلنت عن الإغلاق الأول لجولتها الثانية بمبلغ 134 مليون دولار… لكن التفصيل المهم ليس المبلغ، بل أسماء المستثمرين الاستراتيجيين.' },
+      { t:18.0,d:6, text:'كلاهما ياباني: جيرا، أكبر شركة لتوليد الكهرباء في اليابان، وإيديميتسو كوسان، إحدى كبرى شركات الطاقة المتكاملة.' },
+    ]
+  };
+}
+
+/* ---------- 2.7  OBSIDIAN / OREGON ---------- */
+function sceneObsidian(){
+  const g = new THREE.Group();
+
+  // Ground
+  const ground = new THREE.Mesh(new THREE.CircleGeometry(400, 64),
+    M({color:0x2a2a24, roughness:0.95, metalness:0.02,
+       map:(()=>{const t=noiseTexture(256,0.6,90); t.repeat.set(8,8); return t;})()}));
+  ground.rotation.x = -Math.PI/2;
+  g.add(ground);
+
+  // Volcano cone
+  const volcGeo = new THREE.ConeGeometry(150, 95, 40, 8);
+  const vp = volcGeo.attributes.position;
+  for(let i=0;i<vp.count;i++){
+    const x = vp.getX(i), y = vp.getY(i), z = vp.getZ(i);
+    const n = Math.sin(x*0.08)*Math.cos(z*0.09)*3.2;
+    vp.setX(i, x + n); vp.setZ(i, z + n);
+    if(y > 40) vp.setY(i, y - 6);
+  }
+  volcGeo.computeVertexNormals();
+  const volcano = new THREE.Mesh(volcGeo, M({color:0x3a332c, roughness:0.94, metalness:0.03}));
+  volcano.position.set(-120, 47, -170);
+  volcano.castShadow = true; volcano.receiveShadow = true;
+  g.add(volcano);
+
+  // Crater glow
+  const crater = new THREE.Mesh(new THREE.CylinderGeometry(9, 13, 3, 24),
+    M({color:0x220600, emissive:0xff5a1e, emissiveIntensity:1.6}));
+  crater.position.set(-120, 92, -170);
+  g.add(crater);
+  const craterLight = new THREE.PointLight(0xff5a1e, 200, 200, 2);
+  craterLight.position.set(-120, 100, -170);
+  g.add(craterLight);
+
+  // Geothermal plant
+  const plant = new THREE.Group();
+  plant.position.set(70, 0, 30);
+  // Cooling towers
+  for(let i=0;i<2;i++){
+    const tower = cyl(7, 11, 30, 24, MAT.concrete, i*36 - 18, 15, 0);
+    plant.add(tower);
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(7.2, 0.6, 8, 30), MAT.concrete);
+    rim.rotation.x = Math.PI/2; rim.position.set(i*36-18, 30, 0);
+    plant.add(rim);
+  }
+  // Turbine hall
+  plant.add(box(70, 14, 34, M({color:0xc9ced3, metalness:0.35, roughness:0.55}), 0, 7, 44));
+  plant.add(box(72, 1.5, 36, MAT.steel, 0, 14.6, 44));
+  for(let i=0;i<7;i++){
+    plant.add(box(6, 4, 0.4, MAT.glass, -27 + i*9, 8.5, 61.2));
+  }
+  // Pipes
+  for(let i=0;i<4;i++){
+    const p = cyl(1.5,1.5,60,14, MAT.steel, -40 + i*8, 6, 22);
+    p.rotation.x = Math.PI/2;
+    plant.add(p);
+  }
+  g.add(plant);
+
+  // Drilling rig (beam drilling rig)
+  const rig = new THREE.Group();
+  rig.position.set(30, 0, -50);
+  rig.add(box(30, 2, 30, MAT.concrete, 0, 1, 0));
+  // Derrick tower (lattice)
+  for(let i=0;i<4;i++){
+    const a = (i/4)*Math.PI*2 + Math.PI/4;
+    const leg = cyl(0.6,0.6,70,8, MAT.steel, Math.cos(a)*7, 36, Math.sin(a)*7);
+    leg.rotation.z = -Math.cos(a)*0.09;
+    leg.rotation.x =  Math.sin(a)*0.09;
+    rig.add(leg);
+  }
+  for(let i=1;i<=7;i++){
+    const y = i*9;
+    const s = 7 - i*0.7;
+    const r = new THREE.Mesh(new THREE.TorusGeometry(s, 0.22, 6, 24), MAT.steel);
+    r.rotation.x = Math.PI/2; r.position.y = y;
+    rig.add(r);
+  }
+  rig.add(box(10, 1.4, 10, MAT.darkSteel, 0, 71, 0));
+  const rigBeacon = new THREE.Mesh(new THREE.SphereGeometry(0.9,12,10),
+    M({color:0x330000, emissive:0xff2222, emissiveIntensity:3}));
+  rigBeacon.position.set(0, 74, 0);
+  rig.add(rigBeacon);
+  g.add(rig);
+
+  // Power lines
+  const pylons = [];
+  for(let i=0;i<7;i++){
+    const x = -60 + i*46, z = 120 + Math.sin(i*0.7)*18;
+    const pyl = new THREE.Group();
+    pyl.position.set(x, 0, z);
+    pyl.add(cyl(0.7,0.9,26,8, MAT.steel, 0, 13, 0));
+    pyl.add(box(16,0.5,0.5, MAT.steel, 0, 25, 0));
+    pyl.add(box(11,0.5,0.5, MAT.steel, 0, 21, 0));
+    g.add(pyl); pylons.push(pyl);
+  }
+
+  // Steam particles
+  const sN = 200;
+  const sPos = new Float32Array(sN*3);
+  const sSeed = [];
+  for(let i=0;i<sN;i++){
+    sSeed.push({
+      x: 70 + (i%2 ? -18 : 18) + (Math.random()-0.5)*10,
+      y: 30 + Math.random()*60,
+      z: 30 + (Math.random()-0.5)*10,
+      s: 0.4 + Math.random()*0.9
+    });
+  }
+  const sGeo = new THREE.BufferGeometry();
+  sGeo.setAttribute('position', new THREE.BufferAttribute(sPos,3));
+  const steam = new THREE.Points(sGeo, new THREE.PointsMaterial({
+    size:12, map:SOFT_TEX, color:0xdfeaf5, transparent:true, opacity:0.28,
+    depthWrite:false
+  }));
+  g.add(steam);
+
+  function update(t, dt){
+    craterLight.intensity = 160 + Math.sin(t*2.2)*80;
+    crater.material.emissiveIntensity = 1.4 + Math.sin(t*2.2)*0.6;
+    rigBeacon.material.emissiveIntensity = (Math.sin(t*5)>0)?3:0.2;
+
+    const arr = steam.geometry.attributes.position.array;
+    sSeed.forEach((s,i)=>{
+      s.y += dt * 7 * s.s;
+      if(s.y > 130){ s.y = 30; s.x = 70 + (i%2? -18:18) + (Math.random()-0.5)*10; }
+      arr[i*3]   = s.x + Math.sin(t*0.8 + i)*3;
+      arr[i*3+1] = s.y;
+      arr[i*3+2] = s.z + Math.cos(t*0.7 + i)*3;
+    });
+    steam.geometry.attributes.position.needsUpdate = true;
+  }
+
+  const camKeys = [
+    { t:0.00, pos:[ 260, 160, 340], look:[-40, 30, -60] },
+    { t:0.22, pos:[ 170,  70, 200], look:[30, 20, -30] },
+    { t:0.45, pos:[  95,  40,  90], look:[30, 20, -50] },
+    { t:0.68, pos:[  20,  35,  95], look:[70, 15, 30] },
+    { t:0.86, pos:[-190, 150, 120], look:[-120, 90, -170] },
+    { t:1.00, pos:[ 200, 110, 260], look:[0, 30, 0] },
+  ];
+
+  return {
+    title:'المشهد السابع — مشروع أوبسيديان، أوريغون',
+    sub:'بركان نيوبيري · أول محطة تجارية لتوليد الكهرباء من الحرارة الأرضية فائقة السخونة',
+    group:g, update,
+    cam:(p,c,t)=>kfCam(p,camKeys,c,0.15,t),
+    sky:{ top:0x0d1a2c, mid:0x1a2c40, bot:0x0a1218 },
+    fog:{ color:0x14202c, near:280, far:1800 },
+    light:{ key:0xffd9b0, keyI:2.0, hemi:0.5 },
+    notes:[
+      { t:0.4, d:5, side:'r0', accent:'#4fc3f7',
+        title:'مشروع أوبسيديان', body:'«الزجاج البركاني» — بالقرب من بركان نيوبيري في وسط ولاية أوريغون الأمريكية.' },
+      { t:3.5, d:5, side:'r1', accent:'#4ade80',
+        title:'أول محطة تجارية', body:'تصفها الشركة بأنها <b>أول محطة تجارية في العالم</b> لتوليد الكهرباء من الحرارة الأرضية فائقة السخونة.' },
+      { t:8.0, d:5, side:'r2', accent:'#ffc94d',
+        title:'50 ميجاوات مباعة مسبقاً', body:'لديها بالفعل اتفاقية لبيع أول <b>50 ميجاوات</b> لعميل لم تُكشف عن اسمه، وتتفاوض على <b>200 ميجاوات</b> إضافية.' },
+      { t:13.0,d:5.5, side:'r3', accent:'#a78bfa',
+        title:'الأرقام الحقيقية', body:'يوليو 2025: حفر الشعاع <b>118 متراً</b> في الجرانيت في تكساس. يوليو 2026: تقترب الشركة من <b>كيلومتر كامل</b>.' },
+      { t:18.5,d:5, side:'c0', accent:'#ff6b35',
+        title:'ما تحذفه هذه التقنية', body:'تحذف المثقاب نفسه… وتحذف <em>الحظ</em>. لم يعد السؤال «هل أنا محظوظ؟» بل «إلى أي عمق أنا مستعد أن أنزل؟»' },
+    ],
+    subs:[
+      { t:0.0, d:6, text:'هذه الأموال لا تذهب إلى مختبر مغلق. إنها تذهب إلى مشروع اسمه أوبسيديان — أي الزجاج البركاني — بالقرب من بركان نيوبيري في وسط ولاية أوريغون.' },
+      { t:6.0, d:6, text:'وتصفه الشركة بأنه أول محطة تجارية في العالم لتوليد الكهرباء من الحرارة الأرضية فائقة السخونة.' },
+      { t:12.0,d:6, text:'والأهم من ذلك: لديها بالفعل اتفاقية لبيع أول 50 ميجاوات من إنتاجها لعميل لم تكشف عن اسمه، وتتفاوض على 200 ميجاوات إضافية.' },
+      { t:18.0,d:6, text:'كوايز تستخدم جهاز حفر تقليدياً لاختراق الطبقات السطحية الضحلة، ثم تتحول إلى شعاع من الموجات المليمترية يصهر الصخر أمامه ويبخّره. لا شيء صلب يلمس قاع الحفرة.' },
+    ]
+  };
+}
+
+/* ---------- 2.8  SUPERCRITICAL WATER ---------- */
+function sceneSupercritical(){
+  const g = new THREE.Group();
+
+  // Pressure vessel
+  const vesselMat = M({color:0x9fd8ff, metalness:0.2, roughness:0.08,
+    transparent:true, opacity:0.16, side:THREE.DoubleSide,
+    envMapIntensity:2.4});
+  const vessel = new THREE.Mesh(new THREE.CylinderGeometry(38, 38, 110, 40, 1, true), vesselMat);
+  vessel.position.y = 55;
+  g.add(vessel);
+  g.add(new THREE.Mesh(new THREE.TorusGeometry(38, 1.6, 10, 60), MAT.steel).translateY(110));
+  const topCap = new THREE.Mesh(new THREE.CircleGeometry(38, 40), MAT.steel);
+  topCap.rotation.x = -Math.PI/2; topCap.position.y = 110; g.add(topCap);
+  const botCap = new THREE.Mesh(new THREE.CircleGeometry(38, 40), MAT.steel);
+  botCap.rotation.x = Math.PI/2; botCap.position.y = 0; g.add(botCap);
+  g.add(new THREE.Mesh(new THREE.TorusGeometry(38, 1.6, 10, 60), MAT.steel).translateY(0));
+
+  // Piston / plunger
+  const piston = cyl(34, 34, 14, 36, M({color:0x6a7480, metalness:0.9, roughness:0.3}), 0, 100, 0);
+  g.add(piston);
+  g.add(cyl(4,4,40,12, MAT.steel, 0, 130, 0));
+
+  // Particles representing molecules
+  const N = 420;
+  const pos = new Float32Array(N*3);
+  const vel = [];
+  for(let i=0;i<N;i++){
+    const a = Math.random()*6.28, r = Math.sqrt(Math.random())*32;
+    const y = 8 + Math.random()*95;
+    pos[i*3]=Math.cos(a)*r; pos[i*3+1]=y; pos[i*3+2]=Math.sin(a)*r;
+    vel.push({ a, r, y, va:(Math.random()-0.5)*1.4, vr:(Math.random()-0.5)*6, vy:(Math.random()-0.5)*14 });
+  }
+  const pGeo = new THREE.BufferGeometry();
+  pGeo.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  const pMat = new THREE.PointsMaterial({
+    size:2.6, map:SOFT_TEX, transparent:true, opacity:0.95,
+    blending:THREE.AdditiveBlending, depthWrite:false, color:0x66ddff
+  });
+  const particles = new THREE.Points(pGeo, pMat);
+  g.add(particles);
+
+  // Gauge panel
+  const gaugePanel = new THREE.Group();
+  gaugePanel.position.set(-105, 62, 0);
+  gaugePanel.add(box(70, 62, 4, M({color:0x0c1118, metalness:0.6, roughness:0.4}), 0, 0, 0));
+
+  function makeGauge(x, y, color){
+    const grp = new THREE.Group();
+    grp.position.set(x, y, 3);
+    const face = new THREE.Mesh(new THREE.CircleGeometry(11, 32),
+      M({color:0x05090d, emissive:color, emissiveIntensity:0.12, roughness:0.5}));
+    grp.add(face);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(11, 0.7, 8, 40),
+      M({color:0x000000, emissive:color, emissiveIntensity:1.4}));
+    grp.add(ring);
+    const needle = box(0.7, 9, 0.5, M({color:0x000000, emissive:0xff4a2a, emissiveIntensity:2.4}),
+      0, 4.2, 0.8);
+    needle.geometry.translate(0, 4.5, 0);
+    grp.add(needle);
+    gaugePanel.add(grp);
+    return { needle, ring };
+  }
+
+  const g1 = makeGauge(-18, 14, 0x4fc3f7);   // temperature
+  const g2 = makeGauge( 18, 14, 0xffc94d);   // pressure
+  const g3 = makeGauge(  0,-16, 0x4ade80);   // state
+
+  g.add(gaugePanel);
+
+  // Holographic threshold rings
+  const ring374 = new THREE.Mesh(new THREE.TorusGeometry(40, 0.7, 8, 60),
+    M({color:0x001a22, emissive:0xff6b35, emissiveIntensity:1.8}));
+  ring374.rotation.x = Math.PI/2;
+  ring374.position.y = 62;
+  g.add(ring374);
+
+  function update(t, dt){
+    // Particle motion
+    const arr = particles.geometry.attributes.position.array;
+    const supercritical = t > 4.5;
+    const speed = supercritical ? 0.35 : 2.2;
+    for(let i=0;i<N;i++){
+      const v = vel[i];
+      v.a += v.va * dt * speed;
+      v.r += v.vr * dt * speed * 0.35;
+      v.y += v.vy * dt * speed * 0.4;
+      if(v.r > 32) v.r = 32;
+      if(v.r < 0)  v.r = 0;
+      if(v.y > 103) v.y = 103;
+      if(v.y < 6)   v.y = 6;
+      if(!supercritical){
+        v.vy += (Math.random()-0.5)*30*dt;
+        v.vr += (Math.random()-0.5)*30*dt;
+        v.vy = Math.max(-26, Math.min(26, v.vy));
+        v.vr = Math.max(-14, Math.min(14, v.vr));
+      }
+      arr[i*3]   = Math.cos(v.a)*v.r;
+      arr[i*3+1] = v.y;
+      arr[i*3+2] = Math.sin(v.a)*v.r;
+    }
+    particles.geometry.attributes.position.needsUpdate = true;
+    pMat.size = supercritical ? 2.0 : 2.8;
+    pMat.color.setHex(supercritical ? 0xffaa66 : 0x66ddff);
+
+    // Piston compresses
+    const cp = clamp01(t/4.5);
+    piston.position.y = 100 + cp*8;
+    g1.needle.rotation.z = lerp(2.4, -2.2, smooth(clamp01(t/5)));
+    g2.needle.rotation.z = lerp(2.4, -1.7, smooth(clamp01(t/5)));
+    g3.needle.rotation.z = supercritical ? -2.0 : 1.6;
+    g3.ring.material.emissive.setHex(supercritical ? 0x4ade80 : 0x4fc3f7);
+
+    ring374.material.emissiveIntensity = supercritical ? 2.4 + Math.sin(t*4)*0.6 : 0.6;
+    ring374.scale.setScalar(supercritical ? 1 + Math.sin(t*3)*0.02 : 1);
+    vessel.material.opacity = 0.13 + (supercritical?0.08:0) + Math.sin(t*2)*0.02;
+  }
+
+  const camKeys = [
+    { t:0.00, pos:[   0,  75, 300], look:[0, 60, 0] },
+    { t:0.22, pos:[ 130,  70, 170], look:[-30, 60, 0] },
+    { t:0.45, pos:[ -60,  75, 170], look:[-70, 62, 0] },
+    { t:0.68, pos:[   0,  68, 130], look:[0, 60, 0] },
+    { t:0.85, pos:[  90, 120, 180], look:[0, 55, 0] },
+    { t:1.00, pos:[   0,  90, 250], look:[0, 60, 0] },
+  ];
+
+  return {
+    title:'المشهد الثامن — الماء فوق الحرج',
+    sub:'374°م · 22 ميجا باسكال · طاقة أكبر بكثير من البخار العادي',
+    group:g, update,
+    cam:(p,c,t)=>kfCam(p,camKeys,c,0.08,t),
+    sky:{ top:0x02060c, mid:0x061019, bot:0x010306 },
+    fog:{ color:0x030810, near:200, far:1000 },
+    light:{ key:0x9fd8ff, keyI:1.8, hemi:0.45 },
+    notes:[
+      { t:0.4, d:5, side:'r0', accent:'#4fc3f7',
+        title:'نقطة التحول', body:'بعد تجاوز <b>374 درجة مئوية</b> وضغط يقارب <b>22 ميجا باسكال</b>… يتوقف الماء عن التصرف كماء.' },
+      { t:3.5, d:5, side:'r1', accent:'#ff6b35',
+        title:'ماء فوق حرج', body:'له كثافة السائل، وانسيابية الغاز… ويحمل طاقة في كل كيلوغرام أكثر بكثير من البخار العادي.' },
+      { t:8.0, d:5.5, side:'r2', accent:'#ffc94d',
+        title:'أرقام الإنتاج', body:'بئر واحدة فوق حرجة قد تنتج كهرباء بعشرات آلاف الكيلوواط، بينما البئر التقليدية قد لا تنتج سوى بضعة آلاف.' },
+      { t:13.0,d:5.5, side:'r3', accent:'#4ade80',
+        title:'الهدف الوطني', body:'محطات بقدرة <b>100,000 كيلوواط</b> أو أكثر، من صخور تتراوح حرارتها بين 400 و500 درجة على أعماق 3 إلى 5 كيلومترات.' },
+      { t:18.5,d:5, side:'c0', accent:'#a78bfa',
+        title:'وتذكّر حفرة كاكوندا', body:'أكثر من <b>500 درجة</b> على عمق 3700 متر… اليابان وجدت الهدف بالضبط قبل 30 عاماً، لكنها لم تكن تملك الأداة.' },
+    ],
+    subs:[
+      { t:0.0, d:6, text:'ثم هناك سبب النزول إلى الأعماق. بعد تجاوز 374 درجة مئوية وضغط يقارب 22 ميجا باسكال… يتوقف الماء عن التصرف كماء.' },
+      { t:6.0, d:6, text:'يصبح ما يسمى «الماء فوق الحرج»: له كثافة السائل، وانسيابية الغاز، ويحمل طاقة في كل كيلوغرام أكثر بكثير من البخار العادي.' },
+      { t:12.0,d:6, text:'ويقدّر الباحثون اليابانيون أن بئراً واحدة فوق حرجة قد تنتج كهرباء بعشرات الآلاف من الكيلوواط، بينما قد لا تنتج البئر التقليدية سوى بضعة آلاف.' },
+      { t:18.0,d:6, text:'والبرنامج الوطني يستهدف محطات بقدرة 100,000 كيلوواط أو أكثر، من صخور تتراوح حرارتها بين 400 و500 درجة على أعماق بين 3 و5 كيلومترات.' },
+    ]
+  };
+}
+
+/* ---------- 2.9  JAPAN RESOURCES ---------- */
+function sceneJapan(){
+  const g = new THREE.Group();
+
+  // Ocean base
+  const sea = new THREE.Mesh(new THREE.PlaneGeometry(1400, 1400, 60, 60),
+    M({color:0x04202f, metalness:0.6, roughness:0.12, envMapIntensity:1.8}));
+  sea.rotation.x = -Math.PI/2;
+  sea.position.y = -4;
+  g.add(sea);
+
+  // Stylized Japan archipelago (chain of rounded tiles along an arc)
+  const islandGroup = new THREE.Group();
+  const islandMat = M({color:0x2f4a2a, metalness:0.05, roughness:0.88});
+  const islandMat2= M({color:0x3d5a34, metalness:0.05, roughness:0.9});
+  const islands = [
+    { x:-260, z:-120, w:70, d:40, rot: 0.5 },
+    { x:-170, z:-70,  w:52, d:34, rot: 0.4 },
+    { x:-95,  z:-20,  w:90, d:46, rot: 0.25 },
+    { x: 0,   z: 20,  w:64, d:34, rot: 0.1 },
+    { x: 70,  z: 60,  w:40, d:26, rot:-0.1 },
+    { x: 118, z: 110, w:34, d:22, rot:-0.3 },
+    { x: 150, z: 170, w:24, d:18, rot:-0.5 },
+  ];
+  islands.forEach((is,i)=>{
+    const t = box(is.w, 8, is.d, i%2?islandMat2:islandMat, is.x, 0, is.z);
+    t.rotation.y = is.rot;
+    islandGroup.add(t);
+    // green top
+    const top = box(is.w*0.95, 1.2, is.d*0.95, M({color:0x4d7a3a, roughness:0.9}),
+      is.x, 4.4, is.z);
+    top.rotation.y = is.rot;
+    islandGroup.add(top);
+  });
+  g.add(islandGroup);
+
+  // 111 volcanoes (instanced cones)
+  const volcGeo = new THREE.ConeGeometry(3.2, 12, 8);
+  const volcMat = M({color:0x4a3028, roughness:0.9, emissive:0x330800, emissiveIntensity:0.35});
+  const volcs = new THREE.InstancedMesh(volcGeo, volcMat, 111);
+  const d = new THREE.Object3D();
+  for(let i=0;i<111;i++){
+    const isl = islands[i % islands.length];
+    const ax = isl.x + (Math.random()-0.5)*isl.w*0.85;
+    const az = isl.z + (Math.random()-0.5)*isl.d*0.85;
+    d.position.set(ax, 10, az);
+    d.scale.setScalar(0.5 + Math.random()*1.1);
+    d.rotation.y = Math.random()*Math.PI;
+    d.updateMatrix();
+    volcs.setMatrixAt(i, d.matrix);
+  }
+  g.add(volcs);
+
+  // Glowing geothermal markers under islands
+  const markers = [];
+  for(let i=0;i<26;i++){
+    const isl = islands[i % islands.length];
+    const m = new THREE.Mesh(new THREE.SphereGeometry(1.6, 12, 10),
+      M({color:0x330800, emissive:0xff6b35, emissiveIntensity:2.4}));
+    m.position.set(isl.x + (Math.random()-0.5)*isl.w, -6, isl.z + (Math.random()-0.5)*isl.d);
+    g.add(m); markers.push(m);
+  }
+
+  // Turbines (3 big ones)
+  const turbines = [];
+  const positions = [ [-320, 40], [300, -60], [-60, -190] ];
+  positions.forEach((p,i)=>{
+    const grp = new THREE.Group();
+    grp.position.set(p[0], 0, p[1]);
+
+    grp.add(box(24, 3, 24, MAT.concrete, 0, 1.5, 0));
+    // Tower
+    grp.add(cyl(2.2, 3.0, 26, 16, M({color:0xd8dee4, metalness:0.4, roughness:0.45}), 0, 16, 0));
+    // Nacelle
+    const nac = box(11, 6, 6, M({color:0xe6ecf2, metalness:0.45, roughness:0.4}), 0, 30, 0);
+    grp.add(nac);
+
+    // Rotor (spinning)
+    const rotor = new THREE.Group();
+    rotor.position.set(0, 30, 3.4);
+    for(let k=0;k<4;k++){
+      const blade = box(0.7, 22, 2.2, M({color:0xf0f4f8, metalness:0.3, roughness:0.4}),
+        0, 11, 0);
+      blade.geometry.translate(0, 0, 0);
+      const holder = new THREE.Group();
+      holder.rotation.z = (k/4)*Math.PI*2;
+      holder.add(blade);
+      rotor.add(holder);
+    }
+    rotor.add(new THREE.Mesh(new THREE.SphereGeometry(1.8,14,12),
+      M({color:0xc9d2da, metalness:0.6, roughness:0.3})));
+    grp.add(rotor);
+
+    // Steam plume behind turbine
+    g.add(grp);
+    turbines.push({ grp, rotor, phase:i*1.4 });
+  });
+
+  // Grid of capacity numbers as glowing bars
+  const capBars = [];
+  const caps = [
+    { v:23.5, c:0x4fc3f7, x:-90 },
+    { v:77,   c:0xff6b35, x:  0 },
+    { v:1.5,  c:0x4ade80, x:  90 },
+  ];
+  caps.forEach((c,i)=>{
+    const h = c.v/77*70;
+    const b = box(38, 1, 38, M({color:0x0a1420, metalness:0.6, roughness:0.3,
+      emissive:c.c, emissiveIntensity:0.7}), c.x, 0.5, 250);
+    g.add(b);
+    capBars.push({ mesh:b, target:h, cur:0, phase:i*0.7 });
+  });
+
+  // Orbiting rings for the "70% market share" visual
+  const marketRing = new THREE.Mesh(new THREE.TorusGeometry(160, 0.9, 8, 120),
+    M({color:0x001a22, emissive:0x4fc3f7, emissiveIntensity:1.4}));
+  marketRing.rotation.x = Math.PI/2;
+  marketRing.position.y = 4;
+  g.add(marketRing);
+
+  function update(t, dt){
+    turbines.forEach((tb,i)=>{
+      tb.rotor.rotation.z += dt*(1.4 + i*0.2);
+      tb.grp.position.y = Math.sin(t*0.8 + tb.phase)*0.4;
+    });
+    markers.forEach((m,i)=>{
+      m.material.emissiveIntensity = 1.6 + Math.sin(t*2.6 + i*0.4)*1.2;
+      m.position.y = -6 + Math.sin(t*1.4 + i)*0.8;
+    });
+    marketRing.rotation.z += dt*0.25;
+    marketRing.material.emissiveIntensity = 1.1 + Math.sin(t*1.6)*0.6;
+    capBars.forEach((b,i)=>{
+      b.cur = lerp(b.cur, b.target, dt*0.8);
+      const h = Math.max(0.5, b.cur);
+      b.mesh.scale.y = h;
+      b.mesh.position.y = h/2;
+      b.mesh.material.emissiveIntensity = 0.5 + Math.sin(t*2 + b.phase)*0.3;
+    });
+  }
+
+  const camKeys = [
+    { t:0.00, pos:[   0, 480, 620], look:[0, 0, 0] },
+    { t:0.20, pos:[ 340, 220, 380], look:[-60, 0, 0] },
+    { t:0.42, pos:[ 200, 110, 240], look:[0, 5, 20] },
+    { t:0.62, pos:[ -60,  80, 260], look:[0, 10, 0] },
+    { t:0.82, pos:[   0, 200, 400], look:[0, 0, 120] },
+    { t:1.00, pos:[ 300, 320, 500], look:[0, 0, 0] },
+  ];
+
+  return {
+    title:'المشهد التاسع — اليابان وثروتها النائمة',
+    sub:'23.5 جيجاواط · 111 بركاناً نشطاً · 70% من توربينات العالم',
+    group:g, update,
+    cam:(p,c,t)=>kfCam(p,camKeys,c,0.2,t),
+    sky:{ top:0x081420, mid:0x123048, bot:0x04101a },
+    fog:{ color:0x0c1c28, near:500, far:2600 },
+    light:{ key:0xd8ecff, keyI:2.2, hemi:0.55 },
+    notes:[
+      { t:0.4, d:5, side:'r0', accent:'#4fc3f7',
+        title:'ثالث أكبر مخزون في العالم', body:'الإمكانات الحرارية الأرضية التقليدية في اليابان مقدّرة رسمياً بنحو <b>23.5 جيجاواط</b>.' },
+      { t:3.5, d:5.5, side:'r1', accent:'#ff6b35',
+        title:'77 جيجاواط إضافية', body:'تقدر وكالة الطاقة اليابانية أن الجيل الجديد قد يضيف أكثر من <b>77 جيجاواط</b> — منها 11 من الموارد فوق الحرجة.' },
+      { t:8.5, d:5, side:'r2', accent:'#ffc94d',
+        title:'111 بركاناً نشطاً', body:'هذه هي الحرارة. وهذه هي اليابان.' },
+      { t:12.5,d:5.5, side:'r3', accent:'#4ade80',
+        title:'70% من سوق العالم', body:'ميتسوبيشي للصناعات الثقيلة، فوجي إلكتريك، وتوشيبا… تسيطر مجتمعة على نحو <b>70%</b> من معدات توليد الكهرباء من الحرارة الأرضية.' },
+      { t:17.5,d:6, side:'c0', accent:'#a78bfa',
+        title:'الهدف الرسمي: 1.5 جيجاواط', body:'بحلول 2030 — أي <em>أقل من 7%</em> من إمكاناتها التقليدية. الدولة التي تجهّز العالم كله بهذه التقنية… تخطط لاستخدام جزء صغير فقط من ثروتها.' },
+    ],
+    subs:[
+      { t:0.0, d:6, text:'الآن انظر إلى الصورة كاملة. الإمكانات الحرارية الأرضية التقليدية في اليابان مقدّرة رسمياً بنحو 23.5 جيجاواط — ثالث أكبر إمكانات في العالم.' },
+      { t:6.0, d:6, text:'وتقدّر وكالة الطاقة الحكومية اليابانية أن الجيل الجديد قد يضيف أكثر من 77 جيجاواط فوق ذلك. وفي اليابان 111 بركاناً نشطاً.' },
+      { t:12.0,d:6, text:'ثلاث شركات يابانية تسيطر مجتمعة على نحو 70% من السوق العالمية لمعدات توليد الكهرباء من الحرارة الأرضية.' },
+      { t:18.0,d:6, text:'ومع ذلك، الهدف الرسمي لليابان بحلول 2030 هو 1.5 جيجاواط فقط. الدولة التي تجهّز العالم كله بهذه التقنية… تخطط لاستخدام جزء صغير فقط من ثروتها الخاصة.' },
+    ]
+  };
+}
+
+/* ---------- 2.10  ONSEN ---------- */
+function sceneOnsen(){
+  const g = new THREE.Group();
+
+  // Wooden bath
+  const bath = new THREE.Group();
+  bath.position.set(0, 0, 0);
+
+  const W = 64, D = 46, H = 11;
+
+  // Floor
+  bath.add(box(W, 1.2, D, MAT.woodDark, 0, 0.6, 0));
+  // Walls (four)
+  bath.add(box(W, H, 1.6, MAT.wood, 0, H/2, -D/2));
+  bath.add(box(W, H, 1.6, MAT.wood, 0, H/2,  D/2));
+  bath.add(box(1.6, H, D, MAT.wood, -W/2, H/2, 0));
+  bath.add(box(1.6, H, D, MAT.wood,  W/2, H/2, 0));
+  // Rim
+  bath.add(box(W+2, 1.0, 2.6, MAT.woodDark, 0, H, -D/2));
+  bath.add(box(W+2, 1.0, 2.6, MAT.woodDark, 0, H,  D/2));
+  bath.add(box(2.6, 1.0, D+2, MAT.woodDark, -W/2, H, 0));
+  bath.add(box(2.6, 1.0, D+2, MAT.woodDark,  W/2, H, 0));
+
+  // Water
+  const waterGeo = new THREE.PlaneGeometry(W-4, D-4, 40, 30);
+  const waterMat = M({color:0x2a6a6a, metalness:0.35, roughness:0.08,
+    transparent:true, opacity:0.88, envMapIntensity:2.0});
+  const water = new THREE.Mesh(waterGeo, waterMat);
+  water.rotation.x = -Math.PI/2;
+  water.position.y = 8.4;
+  bath.add(water);
+  const wBase = Float32Array.from(waterGeo.attributes.position.array);
+
+  // Rocks around
+  const rockMat = M({color:0x555049, roughness:0.95, metalness:0.03, flatShading:true});
+  for(let i=0;i<18;i++){
+    const a = Math.random()*Math.PI*2;
+    const r = 46 + Math.random()*40;
+    const s = 3 + Math.random()*7;
+    const rock = new THREE.Mesh(new THREE.IcosahedronGeometry(s, 0), rockMat);
+    rock.position.set(Math.cos(a)*r, s*0.4, Math.sin(a)*r);
+    rock.rotation.set(Math.random()*3, Math.random()*3, Math.random()*3);
+    rock.castShadow = true; rock.receiveShadow = true;
+    g.add(rock);
+  }
+
+  // Bamboo fence
+  const fence = new THREE.Group();
+  fence.position.set(0, 0, -70);
+  for(let i=0;i<42;i++){
+    const b = cyl(0.75, 0.75, 26, 8, M({color:0x6a7a3a, roughness:0.7}),
+      -105 + i*5.2, 13, 0);
+    fence.add(b);
+  }
+  fence.add(box(220, 1.6, 1.6, M({color:0x4a5528, roughness:0.7}), 0, 22, 0));
+  fence.add(box(220, 1.6, 1.6, M({color:0x4a5528, roughness:0.7}), 0, 10, 0));
+  g.add(fence);
+
+  // Lanterns
+  const lanterns = [];
+  for(let i=0;i<6;i++){
+    const l = new THREE.Group();
+    const x = -60 + i*24, z = -40 + (i%2)*10;
+    l.position.set(x, 0, z);
+    l.add(cyl(0.5,0.5,20,8, MAT.woodDark, 0, 10, 0));
+    const lamp = new THREE.Mesh(new THREE.SphereGeometry(2.2, 16, 12),
+      M({color:0x552200, emissive:0xffb45a, emissiveIntensity:2.2}));
+    lamp.position.y = 21;
+    l.add(lamp);
+    const pl = new THREE.PointLight(0xffb45a, 90, 70, 2);
+    pl.position.y = 21;
+    l.add(pl);
+    g.add(l);
+    lanterns.push(lamp);
+  }
+
+  // Steam particles
+  const sN = 340;
+  const sPos = new Float32Array(sN*3);
+  const sSeed = [];
+  for(let i=0;i<sN;i++){
+    sSeed.push({
+      x:(Math.random()-0.5)*(W-6), y:8.6 + Math.random()*30, z:(Math.random()-0.5)*(D-6),
+      s:0.3 + Math.random()*0.9, ph: Math.random()*6.28
+    });
+  }
+  const sGeo = new THREE.BufferGeometry();
+  sGeo.setAttribute('position', new THREE.BufferAttribute(sPos,3));
+  const steam = new THREE.Points(sGeo, new THREE.PointsMaterial({
+    size:9, map:SOFT_TEX, color:0xffffff, transparent:true, opacity:0.16,
+    depthWrite:false, blending:THREE.AdditiveBlending
+  }));
+  g.add(steam);
+
+  // Warm ground plane
+  const ground = new THREE.Mesh(new THREE.CircleGeometry(400, 48),
+    M({color:0x2a241c, roughness:0.95, metalness:0.02}));
+  ground.rotation.x = -Math.PI/2;
+  ground.position.y = -0.1;
+  ground.receiveShadow = true;
+  g.add(ground);
+
+  function update(t, dt){
+    // Water ripple
+    const arr = water.geometry.attributes.position.array;
+    for(let i=0;i<arr.length;i+=3){
+      const x = wBase[i], y = wBase[i+1];
+      arr[i+2] = Math.sin(x*0.22 + t*1.6)*0.14 + Math.sin(y*0.28 - t*1.2)*0.11;
+    }
+    water.geometry.attributes.position.needsUpdate = true;
+
+    // Steam
+    const sp = steam.geometry.attributes.position.array;
+    sSeed.forEach((s,i)=>{
+      s.y += dt * 3.2 * s.s;
+      if(s.y > 46){ s.y = 8.6; s.x = (Math.random()-0.5)*(W-6); s.z = (Math.random()-0.5)*(D-6); }
+      sp[i*3]   = s.x + Math.sin(t*0.9 + s.ph)*4.5;
+      sp[i*3+1] = s.y;
+      sp[i*3+2] = s.z + Math.cos(t*0.75 + s.ph)*4.5;
+    });
+    steam.geometry.attributes.position.needsUpdate = true;
+
+    lanterns.forEach((l,i)=>{
+      l.material.emissiveIntensity = 1.8 + Math.sin(t*2.4 + i*1.1)*0.7;
+    });
+  }
+
+  const camKeys = [
+    { t:0.00, pos:[  140, 110, 180], look:[0, 10, 0] },
+    { t:0.22, pos:[   90,  46, 120], look:[0, 12, 0] },
+    { t:0.45, pos:[   30,  22,  62], look:[0, 10, 0] },
+    { t:0.68, pos:[  -18,  16,  40], look:[0, 10, -10] },
+    { t:0.86, pos:[    0,  30,  70], look:[0, 12, -20] },
+    { t:1.00, pos:[  110,  90, 160], look:[0, 10, 0] },
+  ];
+
+  return {
+    title:'المشهد العاشر — الأونسن',
+    sub:'الينابيع الحارة اليابانية… السبب الحقيقي',
+    group:g, update,
+    cam:(p,c,t)=>kfCam(p,camKeys,c,0.06,t),
+    sky:{ top:0x1a1220, mid:0x2a1e28, bot:0x0e0a10 },
+    fog:{ color:0x1a1218, near:120, far:700 },
+    light:{ key:0xffd2a0, keyI:1.8, hemi:0.5 },
+    notes:[
+      { t:0.5, d:5.5, side:'r0', accent:'#ffc94d',
+        title:'ليست مجرد معلم سياحي', body:'الينابيع الحارة في اليابان… واحدة من أقدم المؤسسات المستمرة في تاريخ البلاد.' },
+      { t:4.0, d:5.5, side:'r1', accent:'#4fc3f7',
+        title:'نُزُل تديرها العائلة نفسها منذ قرون', body:'مدن كاملة بُنيت حول ينبوع واحد… وثقافة استحمام أقدم من معظم ما تعرفه عن اليابان الحديثة.' },
+      { t:9.0, d:5.5, side:'r2', accent:'#4ade80',
+        title:'ذاكرة جماعية', body:'هناك يلتقي الناس، ويتصالحون، ويحتفلون، ويشفون أجسادهم. الينبوع ليس ماءً ساخناً فقط… إنه <b>ذاكرة</b>.' },
+      { t:14.0,d:6, side:'r3', accent:'#a78bfa',
+        title:'لماذا تأخرت اليابان 50 عاماً؟', body:'السبب لا علاقة له بالهندسة، ولا بالمال، ولا بالسياسة. سبب أقدم من كل ذلك بكثير… وهو يجلس بهدوء في قاع حوض استحمام خشبي.' },
+      { t:20.0,d:6, side:'c0', accent:'#ff6b35',
+        title:'الناقلة لن تختفي في لحظة درامية', body:'ستتلاشى ببطء… كما تلاشت مواقد الفحم من البيوت اليابانية. لا تزال موجودة… بينما يأتي كل عام جزء أكبر قليلاً من الحرارة من مكان آخر.' },
+    ],
+    subs:[
+      { t:0.0, d:6, text:'الآن لنعد إلى السؤال الذي طلبت منك أن تحتفظ به منذ البداية: لماذا لا تحصل دولة تجلس فوق كل هذه الحرارة، وتملك أفضل التوربينات في العالم، وقد حفرت فعلاً في صخر حرارته 500 درجة… إلا على جزء ضئيل من كهربائها من باطن الأرض؟' },
+      { t:6.0, d:6, text:'الجواب هو الأونسن. الينابيع الحارة اليابانية ليست مجرد معلم سياحي.' },
+      { t:12.0,d:6, text:'الصق بالمكان واحدة من أقدم المؤسسات المستمرة في تاريخ البلاد — نُزُل تديرها العائلة نفسها منذ قرون، ومدن كاملة بُنيت حول ينبوع واحد.' },
+      { t:18.0,d:6, text:'هناك يلتقي الناس، ويتصالحون، ويحتفلون، ويشفون أجسادهم. الينبوع هناك ليس ماءً ساخناً فقط… إنه ذاكرة.' },
+    ]
+  };
+}
+
+/* ============================================================
+   3.  SCENE REGISTRY
+   ============================================================ */
+const FACTORIES = [
+  sceneTanker, sceneKakkonda, sceneOilShock, sceneKola, sceneGyrotron,
+  sceneQuaise, sceneObsidian, sceneSupercritical, sceneJapan, sceneOnsen,
+];
+
+/* ============================================================
+   4.  TIMELINE / PLAYER
+   ============================================================ */
+const cardsEl    = document.getElementById('cards');
+const subEl      = document.getElementById('subtitle');
+const titleEl    = document.getElementById('sceneTitle');
+const subTitleEl = document.getElementById('sceneSub');
+const barFill    = document.getElementById('barFill');
+const barSegs    = document.getElementById('barSegs');
+const timecode   = document.getElementById('timecode');
+const dotsEl     = document.getElementById('dots');
+const btnPlay    = document.getElementById('btnPlay');
+const btnPrev    = document.getElementById('btnPrev');
+const btnNext    = document.getElementById('btnNext');
+const loader     = document.getElementById('loader');
+
+let scenes = [];
+let current = 0;
+let sceneTime = 0;
+let playing = true;
+let globalClock = 0;
+
+function fmt(s){
+  s = Math.max(0, Math.floor(s));
+  return String(Math.floor(s/60)).padStart(2,'0') + ':' + String(s%60).padStart(2,'0');
+}
+
+function buildAll(){
+  const frag = document.createDocumentFragment();
+  FACTORIES.forEach((fn, idx)=>{
+    const sc = fn();
+    sc.group.visible = false;
+    root.add(sc.group);
+    scenes.push(sc);
+
+    // build cards
+    sc._cards = (sc.notes || []).map(n=>{
+      const el = document.createElement('div');
+      el.className = 'card ' + (n.side || 'r0');
+      el.innerHTML =
+        `<div class="bar" style="background:${n.accent||'#4fc3f7'};color:${n.accent||'#4fc3f7'}"></div>
+         <div class="ttl">${n.title||''}</div>
+         <div class="bdy">${n.body||''}</div>`;
+      frag.appendChild(el);
+      return el;
+    });
+
+    // segment in progress bar
+    const seg = document.createElement('div');
+    barSegs.appendChild(seg);
+
+    // dot
+    const dot = document.createElement('div');
+    dot.className = 'dot';
+    dot.dataset.i = idx;
+    dot.title = sc.title;
+    dotsEl.appendChild(dot);
+  });
+  cardsEl.appendChild(frag);
+
+  dotsEl.querySelectorAll('.dot').forEach(d=>{
+    d.addEventListener('click', ()=> gotoScene(parseInt(d.dataset.i,10)));
+  });
+}
+
+function totalDuration(){
+  return scenes.reduce((a,s)=>a+s.duration, 0);
+}
+function elapsedBefore(i){
+  let t = 0;
+  for(let k=0;k<i;k++) t += scenes[k].duration;
+  return t;
+}
+
+function applyEnv(sc){
+  // sky colors
+  const s = sc.sky || {};
+  skyMat.uniforms.cTop.value.setHex(s.top ?? 0x0a1a2f);
+  skyMat.uniforms.cMid.value.setHex(s.mid ?? 0x123049);
+  skyMat.uniforms.cBot.value.setHex(s.bot ?? 0x071523);
+  // fog
+  if(sc.fog){
+    scene.fog = new THREE.Fog(sc.fog.color, sc.fog.near, sc.fog.far);
+    scene.background = new THREE.Color(sc.fog.color);
+  } else {
+    scene.fog = null;
+    scene.background = null;
+  }
+  // lights
+  const L = sc.light || {};
+  keyLight.color.setHex(L.key ?? 0xffffff);
+  keyLight.intensity = L.keyI ?? 2.0;
+  hemi.intensity = L.hemi ?? 0.5;
+}
+
+function enterScene(i, keepTime){
+  if(i < 0 || i >= scenes.length) return;
+  // hide old
+  if(scenes[current]) {
+    scenes[current].group.visible = false;
+    scenes[current]._cards.forEach(c=>c.classList.remove('show'));
+  }
+  current = i;
+  sceneTime = keepTime || 0;
+  const sc = scenes[current];
+  sc.group.visible = true;
+
+  // cards container rebuild ordering
+  sc._cards.forEach(el=>{ el.classList.remove('show'); });
+
+  titleEl.textContent = sc.title || '';
+  subTitleEl.textContent = sc.sub || '';
+  titleEl.classList.add('show');
+  subTitleEl.classList.add('show');
+  setTimeout(()=>{ titleEl.classList.remove('show'); subTitleEl.classList.remove('show'); }, 4200);
+
+  applyEnv(sc);
+
+  // dots
+  dotsEl.querySelectorAll('.dot').forEach((d,k)=> d.classList.toggle('on', k===i));
+
+  // reset dynamic values where needed
+  if(sc.onEnter) sc.onEnter();
+}
+
+function gotoScene(i){
+  enterScene(Math.max(0, Math.min(scenes.length-1, i)), 0);
+}
+
+function nextScene(){
+  if(current < scenes.length-1) enterScene(current+1, 0);
+  else enterScene(0, 0);
+}
+function prevScene(){
+  if(current > 0) enterScene(current-1, 0);
+  else enterScene(scenes.length-1, 0);
+}
+
+btnPlay.addEventListener('click', ()=>{
+  playing = !playing;
+  btnPlay.textContent = playing ? '⏸ إيقاف' : '▶ تشغيل';
+});
+btnNext.addEventListener('click', nextScene);
+btnPrev.addEventListener('click', prevScene);
+
+/* ============================================================
+   5.  ANIMATION LOOP
+   ============================================================ */
+const clock = new THREE.Clock();
+let lastFrame = performance.now();
+
+function tick(){
+  requestAnimationFrame(tick);
+  const dt = Math.min(0.05, clock.getDelta());
+  globalClock += dt;
+
+  const sc = scenes[current];
+  if(!sc) return;
+
+  if(playing){
+    sceneTime += dt;
+    if(sceneTime >= sc.duration){
+      nextScene();
+      return;
+    }
+  }
+
+  // 3D update
+  sc.update(sceneTime, playing ? dt : 0);
+  sc.cam(sceneTime / sc.duration, camera, globalClock);
+
+  // Cards visibility
+  (sc.notes||[]).forEach((n,i)=>{
+    const on = sceneTime >= n.t && sceneTime <= (n.t + n.d);
+    sc._cards[i].classList.toggle('show', on);
+  });
+
+  // Subtitles
+  let activeSub = null;
+  (sc.subs||[]).forEach(s=>{
+    if(sceneTime >= s.t && sceneTime <= s.t + s.d) activeSub = s.text;
+  });
+  if(activeSub){
+    if(subEl.textContent !== activeSub){ subEl.textContent = activeSub; }
+    subEl.classList.add('show');
+  } else {
+    subEl.classList.remove('show');
+  }
+
+  // Progress bar
+  const before = elapsedBefore(current);
+  const total  = totalDuration();
+  const pct    = ((before + sceneTime) / total) * 100;
+  barFill.style.width = pct.toFixed(2) + '%';
+  timecode.textContent = fmt(before + sceneTime) + ' / ' + fmt(total);
+
+  // Sky follows camera loosely
+  sky.position.copy(camera.position);
+
+  renderer.render(scene, camera);
+}
+
+/* ============================================================
+   6.  RESIZE
+   ============================================================ */
+addEventListener('resize', ()=>{
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+});
+
+/* ============================================================
+   7.  BOOT
+   ============================================================ */
+function boot(){
+  buildAll();
+  enterScene(0, 0);
+  tick();
+
+  setTimeout(()=>{
+    loader.classList.add('hide');
+    setTimeout(()=>loader.remove(), 900);
+  }, 1400);
+}
+
+// wait a frame so the loader renders first
+requestAnimationFrame(()=> requestAnimationFrame(boot));
+
+/* ============================================================
+   8.  KEYBOARD SHORTCUTS
+   ============================================================ */
+addEventListener('keydown', e=>{
+  if(e.code === 'Space'){ e.preventDefault(); btnPlay.click(); }
+  if(e.code === 'ArrowLeft'){ e.preventDefault(); nextScene(); }   // RTL: left = next
+  if(e.code === 'ArrowRight'){ e.preventDefault(); prevScene(); }
+  if(e.code === 'ArrowUp'){ e.preventDefault(); gotoScene(0); }
+});
+</script>
+</body>
+</html>

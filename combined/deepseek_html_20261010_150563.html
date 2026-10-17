@@ -1,0 +1,2163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Night Sky — PBR Planetarium + Free-Flight Space Camera</title>
+<style>
+  html,body{margin:0;padding:0;height:100%;background:#000;overflow:hidden;
+            font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#9fb3c8}
+  canvas{display:block;width:100vw;height:100vh;cursor:grab}
+  canvas.drag{cursor:grabbing}
+  #hud{position:fixed;left:14px;top:12px;font-size:11.5px;line-height:1.55;
+       pointer-events:none;text-shadow:0 0 8px #000;letter-spacing:.02em}
+  #hud b{color:#dce8f5}
+  #hud .dim{color:#5b7089}
+  #hud .sep{color:#2c3a4a}
+  #hint{position:fixed;right:14px;bottom:12px;font-size:11px;text-align:right;
+        line-height:1.6;pointer-events:none;text-shadow:0 0 8px #000;color:#5b7089}
+  #hint k{color:#a8bdd4;background:rgba(255,255,255,.06);padding:1px 5px;border-radius:3px}
+
+  /* ---- control panel ---- */
+  #panel{position:fixed;right:12px;top:12px;width:262px;max-height:calc(100vh - 24px);
+         overflow-y:auto;background:rgba(6,10,18,.82);backdrop-filter:blur(6px);
+         border:1px solid rgba(120,160,220,.16);border-radius:8px;padding:10px 12px 14px;
+         font-size:11px;color:#b6c8de;z-index:20;display:none;box-shadow:0 8px 34px rgba(0,0,0,.6)}
+  #panel.open{display:block}
+  #panel h3{margin:10px 0 6px;font-size:10px;letter-spacing:.18em;color:#5f7characters;color:#5f7f9e;
+            text-transform:uppercase;border-bottom:1px solid rgba(120,160,220,.14);padding-bottom:4px}
+  #panel h3:first-child{margin-top:0}
+  #panel label{display:flex;align-items:center;justify-content:space-between;
+               gap:8px;padding:2px 0;cursor:pointer}
+  #panel label:hover{color:#e2eefb}
+  #panel input[type=checkbox]{accent-color:#6aa7ff;cursor:pointer}
+  #panel input[type=range]{width:110px;accent-color:#6aa7ff;cursor:pointer}
+  #panel .val{display:inline-block;min-width:34px;text-align:right;color:#7f9dc0;font-variant-numeric:tabular-nums}
+  #panel .row{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+  #panel button{flex:1;background:rgba(106,167,255,.12);border:1px solid rgba(106,167,255,.35);
+                color:#c9dcf4;padding:4px 6px;border-radius:4px;font:inherit;cursor:pointer;
+                transition:background .15s}
+  #panel button:hover{background:rgba(106,167,255,.28)}
+  #panel button.on{background:rgba(106,167,255,.44);color:#fff}
+  #docsBtn{position:fixed;right:12px;top:12px;z-index:21;background:rgba(6,10,18,.85);
+           border:1px solid rgba(120,160,220,.3);color:#c9dcf4;padding:6px 12px;
+           border-radius:6px;font:inherit;font-size:11px;cursor:pointer;
+           box-shadow:0 4px 20px rgba(0,0,0,.5)}
+  #docsBtn:hover{background:rgba(106,167,255,.2)}
+  #docs{position:fixed;left:12px;top:12px;width:min(560px,calc(100vw - 300px));
+        max-height:calc(100vh - 24px);overflow-y:auto;background:rgba(6,10,18,.92);
+        backdrop-filter:blur(8px);border:1px solid rgba(120,160,220,.2);border-radius:8px;
+        padding:14px 18px 18px;font-size:11.5px;line-height:1.62;color:#a9bfd8;
+        z-index:25;display:none;box-shadow:0 8px 40px rgba(0,0,0,.7)}
+  #docs.open{display:block}
+  #docs h2{margin:0 0 4px;font-size:13px;color:#dce8f5;letter-spacing:.05em}
+  #docs h3{margin:14px 0 5px;font-size:10.5px;letter-spacing:.16em;color:#6c8fb4;text-transform:uppercase}
+  #docs code{background:rgba(106,167,255,.13);color:#a9d0ff;padding:1px 5px;border-radius:3px;
+             font-family:inherit;font-size:11px}
+  #docs pre{background:rgba(0,0,0,.4);border-left:2px solid #2d4a6b;padding:8px 12px;
+            margin:6px 0;border-radius:3px;overflow-x:auto;font-size:11px;color:#b8d4f0;line-height:1.55}
+  #docs .cm{color:#5c7a99}
+  #docs .k{color:#c9a0ff}
+  #docs .s{color:#8fd6a0}
+  #docs .close{position:sticky;top:0;float:right;background:rgba(106,167,255,.15);
+               border:1px solid rgba(106,167,255,.3);color:#c9dcf4;padding:2px 8px;
+               border-radius:4px;font:inherit;font-size:11px;cursor:pointer}
+  #toast{position:fixed;left:50%;bottom:40px;transform:translateX(-50%);
+         background:rgba(6,10,18,.9);border:1px solid rgba(106,167,255,.3);
+         color:#c9dcf4;padding:6px 16px;border-radius:20px;font-size:11.5px;
+         opacity:0;transition:opacity .3s;pointer-events:none;z-index:30}
+  #toast.on{opacity:1}
+  #load{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+        background:#000;color:#89a;font-size:13px;letter-spacing:.2em;z-index:50;transition:opacity .8s}
+  #load.gone{opacity:0;pointer-events:none}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="hud"></div>
+<div id="hint">
+  <div><k>H</k> panel &nbsp; <k>J</k> docs &nbsp; <k>G</k> space/ground</div>
+  <div><k>WASD</k> fly &nbsp; <k>Q/E</k> up/down &nbsp; <k>⇧</k> boost</div>
+  <div><k>drag</k> look &nbsp; <k>wheel</k> FOV &nbsp; <k>Space</k> pause</div>
+</div>
+
+<button id="docsBtn">◈ API / HELP (J)</button>
+
+<div id="panel">
+  <h3>Bodies</h3>
+  <label><span>Sun</span>       <input type="checkbox" data-body="Sun" checked></label>
+  <label><span>Moon</span>      <input type="checkbox" data-body="Moon" checked></label>
+  <label><span>Mercury</span>   <input type="checkbox" data-body="Mercury" checked></label>
+  <label><span>Venus</span>     <input type="checkbox" data-body="Venus" checked></label>
+  <label><span>Mars</span>      <input type="checkbox" data-body="Mars" checked></label>
+  <label><span>Jupiter</span>   <input type="checkbox" data-body="Jupiter" checked></label>
+  <label><span>Saturn</span>    <input type="checkbox" data-body="Saturn" checked></label>
+  <label><span>Uranus</span>    <input type="checkbox" data-body="Uranus" checked></label>
+  <label><span>Neptune</span>   <input type="checkbox" data-body="Neptune" checked></label>
+  <div class="row"><button data-toggle="all-on">All on</button><button data-toggle="all-off">All off</button></div>
+
+  <h3>Sky Layers</h3>
+  <label><span>Stars</span>      <input type="checkbox" data-layer="stars" checked></label>
+  <label><span>Milky Way</span>  <input type="checkbox" data-layer="milkyway" checked></label>
+  <label><span>Ground</span>     <input type="checkbox" data-layer="ground" checked></label>
+  <label><span>Airglow</span>    <input type="checkbox" data-layer="airglow" checked></label>
+  <label><span>Zodiacal</span>   <input type="checkbox" data-layer="zodiacal" checked></label>
+  <label><span>Bloom</span>      <input type="checkbox" data-layer="bloom" checked></label>
+
+  <h3>Lighting</h3>
+  <label><span>Exposure</span>   <input type="range" data-light="exposure" min="0.1" max="4" step="0.05" value="1"><span class="val" data-val="exposure">1.00</span></label>
+  <label><span>Moonlight</span>  <input type="range" data-light="moonlight" min="0" max="4" step="0.05" value="1"><span class="val" data-val="moonlight">1.00</span></label>
+  <label><span>Starlight</span>  <input type="range" data-light="starlight" min="0" max="3" step="0.05" value="1"><span class="val" data-val="starlight">1.00</span></label>
+  <label><span>Sky glow</span>   <input type="range" data-light="skyglow" min="0" max="3" step="0.05" value="1"><span class="val" data-val="skyglow">1.00</span></label>
+  <label><span>Milky Way</span>  <input type="range" data-light="milkyway" min="0" max="4" step="0.05" value="1"><span class="val" data-val="milkyway">1.00</span></label>
+  <label><span>Bloom</span>      <input type="range" data-light="bloom" min="0" max="2" step="0.05" value="0.55"><span class="val" data-val="bloom">0.55</span></label>
+  <label><span>Ambient</span>    <input type="range" data-light="ambient" min="0" max="2" step="0.05" value="1"><span class="val" data-val="ambient">1.00</span></label>
+
+  <h3>Time</h3>
+  <label><span>Speed ×</span>    <input type="range" data-time="speed" min="-6" max="6" step="0.05" value="0"><span class="val" data-val="speed">×1</span></label>
+  <div class="row">
+    <button data-time-btn="pause">⏸ Pause</button>
+    <button data-time-btn="now">⏵ Real now</button>
+  </div>
+
+  <h3>Camera</h3>
+  <div class="row">
+    <button data-cam="ground" class="on">🌍 Ground</button>
+    <button data-cam="space">🛰 Space</button>
+  </div>
+  <div class="row">
+    <button data-cam-btn="reset">↺ Reset</button>
+    <button data-cam-btn="follow-moon">Follow Moon</button>
+  </div>
+</div>
+
+<div id="docs">
+  <button class="close" id="docsClose">✕ close</button>
+  <h2>NIGHT SKY — JavaScript API</h2>
+  <p style="color:#7e96b2;margin:2px 0 0">Everything in the scene is scriptable from the console or your own JS.
+     The public object is <code>window.NightSky</code>.</p>
+
+  <h3>Getting started</h3>
+  <pre><span class="cm">// The API is auto-initialised. Open the browser console and try:</span>
+NightSky.setBodyVisible(<span class="s">'Saturn'</span>, <span class="k">false</span>);
+NightSky.setCameraMode(<span class="s">'space'</span>);
+NightSky.flyTo(<span class="s">'Jupiter'</span>, { distance: 40, duration: 2 });
+NightSky.light.exposure = 1.8;</pre>
+
+  <h3>Bodies</h3>
+  <p><code>NightSky.bodies</code> → array of <code>{ name, position, distance, radius, illuminated, altitude, visible }</code>.</p>
+  <pre>NightSky.listBodies();              <span class="cm">// ['Sun','Moon','Mercury', ...]</span>
+NightSky.setBodyVisible(<span class="s">'Mars'</span>, <span class="k">false</span>);
+NightSky.setAllBodiesVisible(<span class="k">false</span>);
+NightSky.getBody(<span class="s">'Moon'</span>);
+NightSky.getPosition(<span class="s">'Moon'</span>);     <span class="cm">// world-space [x,y,z]</span>
+NightSky.getAltitude(<span class="s">'Venus'</span>);   <span class="cm">// radians above horizon</span></pre>
+
+  <h3>Sky Layers</h3>
+  <pre>NightSky.setStarsVisible(<span class="k">false</span>);
+NightSky.setMilkyWayVisible(<span class="k">true</span>);
+NightSky.setGroundVisible(<span class="k">false</span>);
+NightSky.setBloomEnabled(<span class="k">true</span>);</pre>
+
+  <h3>Lighting</h3>
+  <p>All properties are plain numbers; setters clamp automatically.</p>
+  <pre>NightSky.light.exposure    = 2.4;   <span class="cm">// 0.1 – 6</span>
+NightSky.light.moonlight   = 1.6;   <span class="cm">// 0 – 4</span>
+NightSky.light.starlight   = 1.2;   <span class="cm">// 0 – 3</span>
+NightSky.light.skyglow     = 0.8;   <span class="cm">// 0 – 3</span>
+NightSky.light.milkyway    = 2.0;   <span class="cm">// 0 – 4</span>
+NightSky.light.ambient     = 0.6;   <span class="cm">// 0 – 2</span>
+NightSky.light.bloom       = 0.75;  <span class="cm">// 0 – 2</span></pre>
+
+  <h3>Time &amp; Motion</h3>
+  <pre>NightSky.setTimeScale(3600);        <span class="cm">// 1 hour of sky per real second</span>
+NightSky.pause();
+NightSky.play();
+NightSky.isPaused;                  <span class="cm">// true / false</span>
+NightSky.setDate(<span class="k">new</span> Date(<span class="s">'2030-07-04T22:00:00Z'</span>));
+NightSky.setLatitude(51.5 * Math.PI/180);
+NightSky.getSimTime();              <span class="cm">// Date object</span></pre>
+
+  <h3>Camera</h3>
+  <pre>NightSky.setCameraMode(<span class="s">'space'</span>);      <span class="cm">// 'ground' | 'space'</span>
+NightSky.setFieldOfView(35 * Math.PI/180);
+NightSky.lookAt(<span class="s">'Mars'</span>);
+NightSky.flyTo(<span class="s">'Moon'</span>, {
+  distance: 25,       <span class="cm">// world units from target</span>
+  duration: 1.5       <span class="cm">// seconds of ease-in-out</span>
+});
+NightSky.unfollow();
+NightSky.camera.position;            <span class="cm">// [x,y,z] world units</span>
+NightSky.camera.forward;             <span class="cm">// unit vector</span></pre>
+
+  <h3>Events</h3>
+  <pre>NightSky.on(<span class="s">'tick'</span>, ({ time, camera, bodies }) =&gt; {
+  <span class="cm">// called every frame — do your own HUD here</span>
+});
+NightSky.on(<span class="s">'bodyVisibility'</span>, ({ name, visible }) =&gt; { ... });
+NightSky.off(<span class="s">'tick'</span>, myHandler);</pre>
+
+  <h3>Keyboard</h3>
+  <pre>H           toggle control panel
+J           toggle this documentation
+G           switch ground ⇄ space camera
+W A S D     fly forward / left / back / right
+Q / E       fly down / up
+Shift       boost speed ×6
+1 – 8       lock camera on Mercury → Neptune
+9           lock on Moon
+0           lock on Sun
+F           free look (unfollow)
+Space       pause / resume time
++ / −       double / halve time speed
+Drag        look around
+Wheel       zoom (field of view)</pre>
+</div>
+
+<div id="toast"></div>
+<div id="load">BUILDING SKY…</div>
+
+<script>
+"use strict";
+/* ============================================================================
+   NIGHT SKY — a from-scratch physically based renderer + free-flight camera
+   ----------------------------------------------------------------------------
+   Zero external libraries. Everything hand-written:
+     · WebGL2 + hand-rolled mat4 / vec3 math
+     · Procedural star catalogue (power-law magnitudes, blackbody colours)
+     · Procedural Moon height + albedo maps (maria, 1800 craters)
+     · Keplerian ephemeris for Mercury→Neptune, plus a lunar theory
+     · Cook-Torrance GGX + Smith + Schlick, HDR RGBA16F, bloom, ACES
+     · Public API: window.NightSky
+   ========================================================================== */
+
+/* ───────────────────────────── math ───────────────────────────── */
+const DEG = Math.PI / 180, TAU = Math.PI * 2;
+
+function m4(){ return new Float32Array(16); }
+function m4mul(o,a,b){
+  for(let c=0;c<4;c++){
+    const b0=b[c*4],b1=b[c*4+1],b2=b[c*4+2],b3=b[c*4+3];
+    o[c*4  ]=a[0]*b0+a[4]*b1+a[8 ]*b2+a[12]*b3;
+    o[c*4+1]=a[1]*b0+a[5]*b1+a[9 ]*b2+a[13]*b3;
+    o[c*4+2]=a[2]*b0+a[6]*b1+a[10]*b2+a[14]*b3;
+    o[c*4+3]=a[3]*b0+a[7]*b1+a[11]*b2+a[15]*b3;
+  }
+  return o;
+}
+function m4persp(o,fovy,asp,n,f){
+  const t = 1/Math.tan(fovy*0.5);
+  o.fill(0);
+  o[0]=t/asp; o[5]=t; o[10]=(f+n)/(n-f); o[11]=-1; o[14]=2*f*n/(n-f);
+  return o;
+}
+function m4lookAt(o,eye,right,up,fwd){
+  o[0]=right[0]; o[4]=right[1]; o[8] =right[2]; o[12]=-dot3(right,eye);
+  o[1]=up[0];    o[5]=up[1];    o[9] =up[2];    o[13]=-dot3(up,eye);
+  o[2]=-fwd[0];  o[6]=-fwd[1];  o[10]=-fwd[2];  o[14]= dot3(fwd,eye);
+  o[3]=0; o[7]=0; o[11]=0; o[15]=1;
+  return o;
+}
+function m4basis(o,cx,cy,cz,p,s){
+  o[0]=cx[0]*s; o[1]=cx[1]*s; o[2]=cx[2]*s; o[3]=0;
+  o[4]=cy[0]*s; o[5]=cy[1]*s; o[6]=cy[2]*s; o[7]=0;
+  o[8]=cz[0]*s; o[9]=cz[1]*s; o[10]=cz[2]*s; o[11]=0;
+  o[12]=p[0]; o[13]=p[1]; o[14]=p[2]; o[15]=1;
+  return o;
+}
+const dot3=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+function cross3(a,b){ return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]; }
+function norm3(a){ const l=Math.hypot(a[0],a[1],a[2])||1; return [a[0]/l,a[1]/l,a[2]/l]; }
+function scale3(a,s){ return [a[0]*s,a[1]*s,a[2]*s]; }
+function add3(a,b){ return [a[0]+b[0],a[1]+b[1],a[2]+b[2]]; }
+function sub3(a,b){ return [a[0]-b[0],a[1]-b[1],a[2]-b[2]]; }
+function len3(a){ return Math.hypot(a[0],a[1],a[2]); }
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+const smooth=(a,b,t)=>{ const x=clamp((t-a)/(b-a),0,1); return x*x*(3-2*x); };
+
+/* ───────────────────────────── GL boot ───────────────────────────── */
+const canvas = document.getElementById('gl');
+const gl = canvas.getContext('webgl2', {antialias:false, alpha:false, depth:false,
+                                        premultipliedAlpha:false, powerPreference:'high-performance'});
+if(!gl){ document.getElementById('load').textContent = 'WebGL 2 not available.'; throw new Error('no webgl2'); }
+const hasFloat = !!gl.getExtension('EXT_color_buffer_float');
+
+function compile(type, src){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s, gl.COMPILE_STATUS))
+    console.error(gl.getShaderInfoLog(s), '\n', src.split('\n').map((l,i)=>(i+1)+': '+l).join('\n'));
+  return s;
+}
+function makeProg(vsSrc, fsSrc){
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, vsSrc));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fsSrc));
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p, gl.LINK_STATUS)) console.error(gl.getProgramInfoLog(p));
+  const u = {};
+  const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for(let i=0;i<n;i++){
+    const info = gl.getActiveUniform(p, i);
+    u[info.name.replace('[0]','')] = gl.getUniformLocation(p, info.name);
+  }
+  return {prog:p, u};
+}
+
+/* ─────────────────── shared GLSL prelude ─────────────────── */
+const GLSL_HEAD = `#version 300 es
+precision highp float;
+precision highp int;
+#define PI  3.141592653589793
+#define TAU 6.283185307179586
+
+float hash13(vec3 p3){
+  p3 = fract(p3 * 0.1031);
+  p3 += dot(p3, p3.zyx + 31.32);
+  return fract((p3.x + p3.y) * p3.z);
+}
+float vnoise(vec3 x){
+  vec3 p = floor(x), f = fract(x);
+  f = f*f*(3.0 - 2.0*f);
+  float a = hash13(p + vec3(0,0,0)), b = hash13(p + vec3(1,0,0));
+  float c = hash13(p + vec3(0,1,0)), d = hash13(p + vec3(1,1,0));
+  float e = hash13(p + vec3(0,0,1)), g = hash13(p + vec3(1,0,1));
+  float h = hash13(p + vec3(0,1,1)), i = hash13(p + vec3(1,1,1));
+  return mix(mix(mix(a,b,f.x), mix(c,d,f.x), f.y),
+             mix(mix(e,g,f.x), mix(h,i,f.x), f.y), f.z);
+}
+float fbm(vec3 p, int oct){
+  float s = 0.0, amp = 0.5, nrm = 0.0;
+  for(int i = 0; i < 8; i++){
+    if(i >= oct) break;
+    s += amp * vnoise(p); nrm += amp; amp *= 0.5;
+    p = p * 2.03 + vec3(1.7, 9.2, 4.3);
+  }
+  return s / max(nrm, 1e-5);
+}
+float ridged(vec3 p, int oct){
+  float s = 0.0, amp = 0.5, nrm = 0.0;
+  for(int i = 0; i < 8; i++){
+    if(i >= oct) break;
+    float n = 1.0 - abs(vnoise(p) * 2.0 - 1.0);
+    s += amp * n * n; nrm += amp; amp *= 0.5;
+    p = p * 2.07 + vec3(3.1, 1.3, 8.8);
+  }
+  return s / max(nrm, 1e-5);
+}
+
+/* ---- Cook-Torrance microfacet BRDF (GGX / Smith / Schlick) ---- */
+float D_GGX(float NoH, float a){
+  float a2 = a*a;
+  float d = NoH*NoH*(a2 - 1.0) + 1.0;
+  return a2 / (PI*d*d + 1e-9);
+}
+float V_SmithGGX(float NoV, float NoL, float a){
+  float a2 = a*a;
+  float lv = NoL * sqrt(NoV*NoV*(1.0 - a2) + a2);
+  float ll = NoV * sqrt(NoL*NoL*(1.0 - a2) + a2);
+  return 0.5 / max(lv + ll, 1e-6);
+}
+vec3 F_Schlick(vec3 f0, float u){
+  return f0 + (1.0 - f0) * pow(1.0 - u, 5.0);
+}
+vec3 brdf(vec3 N, vec3 V, vec3 L, vec3 albedo, float rough, float metal){
+  vec3 H = normalize(V + L);
+  float NoV = max(dot(N,V), 1e-4);
+  float NoL = max(dot(N,L), 0.0);
+  float NoH = max(dot(N,H), 0.0);
+  float VoH = max(dot(V,H), 0.0);
+  float a  = max(rough*rough, 1e-3);
+  vec3  f0 = mix(vec3(0.04), albedo, metal);
+  vec3  F  = F_Schlick(f0, VoH);
+  float D  = D_GGX(NoH, a);
+  float Vs = V_SmithGGX(NoV, NoL, a);
+  vec3  spec = vec3(D * Vs) * F;
+  vec3  diff = (1.0 - F) * (1.0 - metal) * albedo / PI;
+  return (diff + spec) * NoL;
+}
+`;
+
+/* ─────────────────── fullscreen quad ─────────────────── */
+const quadVAO = gl.createVertexArray();
+gl.bindVertexArray(quadVAO);
+const quadBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+gl.bindVertexArray(null);
+
+/* ───────────────────────────── astronomy ───────────────────────────── */
+const OBLIQ = 23.4392911 * DEG;
+
+function julian(date){ return date.getTime()/86400000 + 2440587.5; }
+function gmst(jd){
+  const T = (jd - 2451545.0)/36525.0;
+  let g = 280.46061837 + 360.98564736629*(jd - 2451545.0)
+        + 0.000387933*T*T - T*T*T/38710000.0;
+  return ((g % 360) + 360) % 360 * DEG;
+}
+function eclToEq(lon, lat){
+  const x = Math.cos(lat)*Math.cos(lon);
+  const y = Math.cos(lat)*Math.sin(lon);
+  const z = Math.sin(lat);
+  const ce = Math.cos(OBLIQ), se = Math.sin(OBLIQ);
+  return [x, y*ce - z*se, y*se + z*ce];
+}
+const GAL_POLE = eclToEq(192.85948*DEG, 27.12825*DEG);
+const GAL_CEN  = eclToEq(266.40500*DEG, -28.93600*DEG);
+
+const PLANETS = [
+  { key:'Mercury', a:0.38709927, e:0.20563593, I: 7.00497902, L:252.25032350, w: 77.45779628, O: 48.33076593,
+    da:0.00000037, de:0.00001906, dI:-0.00594749, dL:149472.67411175, dw:0.16047689, dO:-0.12534081,
+    rad:2439.7,  color:[0.62,0.60,0.57] },
+  { key:'Venus',   a:0.72333566, e:0.00677672, I: 3.39467605, L:181.97909950, w:131.60246718, O: 76.67984255,
+    da:0.00000390, de:-0.00004107, dI:-0.00078890, dL:58517.81538729, dw:0.00268329, dO:-0.27769418,
+    rad:6051.8,  color:[1.00,0.95,0.78] },
+  { key:'Mars',    a:1.52371034, e:0.09339410, I: 1.84969142, L: -4.55343205, w:-23.94362959, O: 49.55953891,
+    da:0.00001847, de:0.00007882, dI:-0.00813131, dL:19140.30268499, dw:0.44441088, dO:-0.29257343,
+    rad:3389.5,  color:[0.75,0.42,0.28] },
+  { key:'Jupiter', a:5.20288700, e:0.04838624, I: 1.30439695, L: 34.39644051, w: 14.72847983, O:100.47390909,
+    da:-0.00011607, de:-0.00013253, dI:-0.00183714, dL:3034.74612775, dw:0.21252668, dO:0.20469106,
+    rad:71492,   color:[0.90,0.82,0.68] },
+  { key:'Saturn',  a:9.53667594, e:0.05386179, I: 2.48599187, L: 49.95424423, w: 92.59887831, O:113.66242448,
+    da:-0.00125060, de:-0.00050991, dI:0.00193609, dL:1222.49362201, dw:-0.41897216, dO:-0.28867794,
+    rad:60268,   color:[0.92,0.86,0.70], rings:true },
+  { key:'Uranus',  a:19.18916464, e:0.04725744, I: 0.77263783, L:313.23810451, w:170.95427630, O: 74.01692503,
+    da:-0.00196176, de:-0.00004397, dI:-0.00242939, dL:428.48202785, dw:0.40805281, dO:0.04240589,
+    rad:25559,   color:[0.62,0.85,0.90] },
+  { key:'Neptune', a:30.06992276, e:0.00859048, I: 1.77004347, L:-55.12002969, w: 44.96476227, O:131.78422574,
+    da:0.00026291, de:0.00005105, dI:0.00035372, dL:218.45945325, dw:-0.32241464, dO:-0.00508664,
+    rad:24764,   color:[0.38,0.52,0.88] },
+];
+// index of Earth in the JPL list is 2 (Mercury=0 Venus=1 Earth=2 Mars=3 ...)
+// We omit Earth from PLANETS because we stand on it; we still need its heliocentric state.
+const EARTH = { a:1.00000261, e:0.01671123, I:-0.00001531, L:100.46457166, w:102.93768193, O:0.0,
+                da:0.00000562, de:-0.00004392, dI:-0.01294668, dL:35999.37244981, dw:0.32327364, dO:0.0 };
+
+function keplerHelio(p, T){
+  const a = p.a + p.da*T;
+  const e = p.e + p.de*T;
+  const I = (p.I + p.dI*T)*DEG;
+  const L = (p.L + p.dL*T)*DEG;
+  const w = (p.w + p.dw*T)*DEG;
+  const O = (p.O + p.dO*T)*DEG;
+  let M = L - w;
+  M = ((M + Math.PI) % TAU + TAU) % TAU - Math.PI;
+  let E = M;
+  for(let i=0;i<7;i++) E -= (E - e*Math.sin(E) - M)/(1 - e*Math.cos(E));
+  const xp = a*(Math.cos(E) - e);
+  const yp = a*Math.sqrt(1 - e*e)*Math.sin(E);
+  const wp = w - O;
+  const cw=Math.cos(wp), sw=Math.sin(wp), cO=Math.cos(O), sO=Math.sin(O),
+        cI=Math.cos(I),  sI=Math.sin(I);
+  return [
+    (cw*cO - sw*sO*cI)*xp + (-sw*cO - cw*sO*cI)*yp,
+    (cw*sO + sw*cO*cI)*xp + (-sw*sO + cw*cO*cI)*yp,
+    (sw*sI)*xp + (cw*sI)*yp
+  ];
+}
+function moonEcliptic(d){
+  const L = (218.316 + 13.176396*d)*DEG;
+  const M = (134.963 + 13.064993*d)*DEG;
+  const F = (93.272 + 13.229350*d)*DEG;
+  const lon = L + 6.289*DEG*Math.sin(M);
+  const lat = 5.128*DEG*Math.sin(F);
+  const dist = 385001 - 20905*Math.cos(M);
+  return { lon, lat, dist };
+}
+function blackbodyRGB(K){
+  const t = Math.max(1000, Math.min(40000, K)) / 100;
+  let r, g, b;
+  if(t <= 66){ r = 255; g = 99.4708025861*Math.log(t) - 161.1195681661; }
+  else { r = 329.698727446*Math.pow(t - 60, -0.1332047592);
+         g = 288.1221695283*Math.pow(t - 60, -0.0755148492); }
+  if(t >= 66) b = 255;
+  else if(t <= 19) b = 0;
+  else b = 138.5177312231*Math.log(t - 10) - 305.0447927307;
+  r = clamp(r/255,0,1); g = clamp(g/255,0,1); b = clamp(b/255,0,1);
+  const lin = c => c <= 0.04045 ? c/12.92 : Math.pow((c+0.055)/1.055, 2.4);
+  return [lin(r), lin(g), lin(b)];
+}
+
+/* ─────────────────── star catalogue ─────────────────── */
+function gauss(){
+  let u = 0, v = 0;
+  while(u === 0) u = Math.random();
+  while(v === 0) v = Math.random();
+  return Math.sqrt(-2*Math.log(u)) * Math.cos(TAU*v);
+}
+function buildStarCatalogue(count){
+  const gx = GAL_CEN;
+  const gz = GAL_POLE;
+  const gy = cross3(gz, gx);
+  const pos = new Float32Array(count*3);
+  const col = new Float32Array(count*3);
+  const mag = new Float32Array(count);
+  for(let i=0;i<count;i++){
+    let d;
+    const pop = Math.random();
+    if(pop < 0.50){
+      const b = gauss()*0.10, l = Math.random()*TAU, cb = Math.cos(b);
+      d = add3(add3(scale3(gx, cb*Math.cos(l)), scale3(gy, cb*Math.sin(l))), scale3(gz, Math.sin(b)));
+    } else if(pop < 0.78){
+      const b = gauss()*0.30, l = Math.random()*TAU, cb = Math.cos(b);
+      d = add3(add3(scale3(gx, cb*Math.cos(l)), scale3(gy, cb*Math.sin(l))), scale3(gz, Math.sin(b)));
+    } else {
+      const z = Math.random()*2 - 1, ph = Math.random()*TAU, s = Math.sqrt(1 - z*z);
+      d = [s*Math.cos(ph), s*Math.sin(ph), z];
+    }
+    d = norm3(d);
+    pos[i*3] = d[0]; pos[i*3+1] = d[1]; pos[i*3+2] = d[2];
+    const u = Math.random();
+    const m = 6.6 - 8.6 * Math.pow(u, 2.6);
+    mag[i] = m;
+    let T;
+    const s = Math.random();
+    if(s < 0.42)      T = 3000 + Math.random()*1800;
+    else if(s < 0.72) T = 4800 + Math.random()*1600;
+    else if(s < 0.90) T = 6400 + Math.random()*2400;
+    else              T = 9000 + Math.random()*16000;
+    const c = blackbodyRGB(T);
+    const flux = Math.pow(10, -0.4*(m + 1.4));
+    col[i*3]   = c[0]*flux;
+    col[i*3+1] = c[1]*flux;
+    col[i*3+2] = c[2]*flux;
+  }
+  return {pos, col, mag, count};
+}
+
+/* ─────────────────── procedural Moon maps ─────────────────── */
+function imul(a,b){ return Math.imul(a,b); }
+function hash3i(x,y,z){
+  let h = imul(x, 374761393) ^ imul(y, 668265263) ^ imul(z, 1274126177);
+  h = imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
+}
+function vnoise3(x,y,z){
+  const xi=Math.floor(x), yi=Math.floor(y), zi=Math.floor(z);
+  const xf=x-xi, yf=y-yi, zf=z-zi;
+  const u=xf*xf*(3-2*xf), v=yf*yf*(3-2*yf), w=zf*zf*(3-2*zf);
+  const n000=hash3i(xi,yi,zi), n100=hash3i(xi+1,yi,zi);
+  const n010=hash3i(xi,yi+1,zi), n110=hash3i(xi+1,yi+1,zi);
+  const n001=hash3i(xi,yi,zi+1), n101=hash3i(xi+1,yi,zi+1);
+  const n011=hash3i(xi,yi+1,zi+1), n111=hash3i(xi+1,yi+1,zi+1);
+  const a=n000+(n100-n000)*u, b=n010+(n110-n010)*u;
+  const c=n001+(n101-n001)*u, d=n011+(n111-n011)*u;
+  return (a+(b-a)*v) + ((c+(d-c)*v) - (a+(b-a)*v))*w;
+}
+function fbm3(x,y,z,oct){
+  let s=0,amp=0.5,nrm=0;
+  for(let i=0;i<oct;i++){ s+=amp*vnoise3(x,y,z); nrm+=amp; amp*=0.5; x=x*2.03+11.7; y=y*2.01+3.4; z=z*2.05+7.9; }
+  return s/nrm;
+}
+
+function generateMoonMaps(W, H){
+  const N = W*H;
+  const hgt  = new Float32Array(N);
+  const alb  = new Float32Array(N);
+  const cosLat = new Float32Array(H), sinLat = new Float32Array(H);
+  for(let y=0;y<H;y++){
+    const lat = ((y+0.5)/H - 0.5)*Math.PI;
+    cosLat[y]=Math.cos(lat); sinLat[y]=Math.sin(lat);
+  }
+  const cosLon = new Float32Array(W), sinLon = new Float32Array(W);
+  for(let x=0;x<W;x++){
+    const lon = ((x+0.5)/W - 0.5)*TAU;
+    cosLon[x]=Math.cos(lon); sinLon[x]=Math.sin(lon);
+  }
+  for(let y=0;y<H;y++){
+    const cl = cosLat[y], sl = sinLat[y];
+    for(let x=0;x<W;x++){
+      const i = y*W + x;
+      const dx = cl*cosLon[x], dy = cl*sinLon[x], dz = sl;
+      const n  = fbm3(dx*6.0+31.0, dy*6.0+17.0, dz*6.0+53.0, 4);
+      const n2 = fbm3(dx*22.0, dy*22.0, dz*22.0, 3);
+      hgt[i] = (n - 0.5)*0.010 + (n2 - 0.5)*0.0025;
+      alb[i] = 0.125 + (n - 0.5)*0.045;
+    }
+  }
+  // maria
+  for(let m=0;m<16;m++){
+    const lonC = (Math.random()*2 - 1)*1.35;
+    const latC = (Math.random()*2 - 1)*0.85;
+    const rad  = 0.12 + Math.random()*0.30;
+    const cx = Math.cos(latC)*Math.cos(lonC);
+    const cy = Math.cos(latC)*Math.sin(lonC);
+    const cz = Math.sin(latC);
+    const y0 = Math.max(0, Math.floor(((latC - rad)/Math.PI + 0.5)*H));
+    const y1 = Math.min(H-1, Math.ceil(((latC + rad)/Math.PI + 0.5)*H));
+    for(let y=y0;y<=y1;y++){
+      const cl = cosLat[y], sl = sinLat[y];
+      const rowOff = y*W;
+      for(let x=0;x<W;x++){
+        const dx = cl*cosLon[x] - cx;
+        const dy = cl*sinLon[x] - cy;
+        const dz = sl - cz;
+        const dd = Math.sqrt(dx*dx+dy*dy+dz*dz);
+        if(dd > rad) continue;
+        const k = 1.0 - (dd/rad)*(dd/rad);
+        const i = rowOff + x;
+        alb[i] = alb[i]*(1.0-k*0.55) + 0.062*k*0.55;
+        hgt[i] -= k*0.010;
+      }
+    }
+  }
+  // craters
+  const NC = 1800;
+  for(let c=0;c<NC;c++){
+    const u = Math.random();
+    let rad = Math.min(0.0035 / Math.sqrt(Math.max(u, 1e-4)), 0.20);
+    if(c < 25) rad = 0.06 + Math.random()*0.16;
+    const zz = Math.random()*2 - 1, ph = Math.random()*TAU, sr = Math.sqrt(1-zz*zz);
+    const cx = sr*Math.cos(ph), cy = sr*Math.sin(ph), cz = zz;
+    const latC = Math.asin(cz), lonC = Math.atan2(cy,cx);
+    const depth = 0.32*rad, rimH = 0.085*rad;
+    const fresh = Math.pow(Math.random(), 2.0);
+    const pad = rad*2.0;
+    const y0 = Math.max(0, Math.floor(((latC - pad)/Math.PI + 0.5)*H));
+    const y1 = Math.min(H-1, Math.ceil(((latC + pad)/Math.PI + 0.5)*H));
+    if(y1 < y0) continue;
+    let halfLon = pad / Math.max(Math.cos(latC), 0.08);
+    let cols = [];
+    if(halfLon >= Math.PI){ for(let x=0;x<W;x++) cols.push(x); }
+    else {
+      const x0 = Math.floor(((lonC - halfLon)/TAU + 0.5)*W);
+      const x1 = Math.ceil (((lonC + halfLon)/TAU + 0.5)*W);
+      if(x1 - x0 > W){ for(let x=0;x<W;x++) cols.push(x); }
+      else for(let x=x0;x<=x1;x++) cols.push(((x % W) + W) % W);
+    }
+    for(let y=y0;y<=y1;y++){
+      const cl = cosLat[y], sl = sinLat[y];
+      const rowOff = y*W;
+      for(let k=0;k<cols.length;k++){
+        const x = cols[k];
+        const dx = cl*cosLon[x] - cx;
+        const dy = cl*sinLon[x] - cy;
+        const dz = sl - cz;
+        const d2 = dx*dx+dy*dy+dz*dz;
+        if(d2 > pad*pad) continue;
+        const t  = Math.sqrt(d2)/rad;
+        const i  = rowOff + x;
+        let h, a;
+        if(t < 0.78){
+          const q = t/0.78;
+          h = -depth*(1.0 - 0.45*q*q);
+          a =  0.0;
+        } else if(t < 1.0){
+          const q = (t - 0.78)/0.22;
+          h = -depth*0.55 + (rimH + depth*0.55)*(q*q*(3.0-2.0*q));
+          a =  0.030*fresh*(1.0 - q*0.4);
+        } else {
+          const e = Math.exp(-(t - 1.0)*3.6);
+          h =  rimH*e;
+          a =  0.045*fresh*e*(1.0 - Math.min(1.0, t - 1.0));
+        }
+        hgt[i] += h;
+        alb[i] += a;
+        if(t < 0.78) alb[i] -= 0.012*(1.0 - t/0.78);
+      }
+    }
+  }
+  const H8 = new Uint8Array(N);
+  const A8 = new Uint8Array(N*3);
+  for(let i=0;i<N;i++){
+    const h = clamp(hgt[i], -0.05, 0.05);
+    H8[i] = Math.round((h/0.1 + 0.5)*255);
+    const a = clamp(alb[i], 0.03, 0.30);
+    A8[i*3]   = Math.round(Math.min(1, a*1.02)*255);
+    A8[i*3+1] = Math.round(Math.min(1, a*0.97)*255);
+    A8[i*3+2] = Math.round(Math.min(1, a*0.90)*255);
+  }
+  return {H8, A8, W, H};
+}
+
+/* ─────────────────── geometry ─────────────────── */
+function makeSphere(segW, segH){
+  const verts = (segW+1)*(segH+1);
+  const pos = new Float32Array(verts*3);
+  const uv  = new Float32Array(verts*2);
+  const idx = new Uint32Array(segW*segH*6);
+  let p=0, t=0;
+  for(let y=0;y<=segH;y++){
+    const v   = y/segH;
+    const lat = (v - 0.5)*Math.PI;
+    const cl = Math.cos(lat), sl = Math.sin(lat);
+    for(let x=0;x<=segW;x++){
+      const u   = x/segW;
+      const lon = (u - 0.5)*TAU;
+      pos[p++] = cl*Math.cos(lon);
+      pos[p++] = cl*Math.sin(lon);
+      pos[p++] = sl;
+      uv[t++] = u; uv[t++] = v;
+    }
+  }
+  let k=0;
+  for(let y=0;y<segH;y++){
+    for(let x=0;x<segW;x++){
+      const a = y*(segW+1)+x, b = a+1, c = a+segW+1, d = c+1;
+      idx[k++]=a; idx[k++]=c; idx[k++]=b;
+      idx[k++]=b; idx[k++]=c; idx[k++]=d;
+    }
+  }
+  return {pos, uv, idx, count: idx.length};
+}
+function makeRing(rIn, rOut, seg, rad){
+  const pos = new Float32Array((seg+1)*(rad+1)*3);
+  const uv  = new Float32Array((seg+1)*(rad+1)*2);
+  const idx = new Uint32Array(seg*rad*6);
+  let p=0,t=0;
+  for(let j=0;j<=rad;j++){
+    const r = rIn + (rOut-rIn)*(j/rad);
+    for(let i=0;i<=seg;i++){
+      const a = (i/seg)*TAU;
+      pos[p++] = Math.cos(a)*r;
+      pos[p++] = 0;
+      pos[p++] = Math.sin(a)*r;
+      uv[t++] = j/rad; uv[t++] = i/seg;
+    }
+  }
+  let k=0;
+  for(let j=0;j<rad;j++){
+    for(let i=0;i<seg;i++){
+      const a = j*(seg+1)+i, b=a+1, c=a+seg+1, d=c+1;
+      idx[k++]=a; idx[k++]=b; idx[k++]=c;
+      idx[k++]=b; idx[k++]=d; idx[k++]=c;
+    }
+  }
+  return {pos, uv, idx, count: idx.length};
+}
+function makeGround(size, n){
+  const verts = (n+1)*(n+1);
+  const pos = new Float32Array(verts*3);
+  let p=0;
+  for(let j=0;j<=n;j++)
+    for(let i=0;i<=n;i++){
+      pos[p++] = (i/n - 0.5)*size;
+      pos[p++] = 0;
+      pos[p++] = (j/n - 0.5)*size;
+    }
+  const idx = new Uint32Array(n*n*6);
+  let k=0;
+  for(let j=0;j<n;j++)
+    for(let i=0;i<n;i++){
+      const a = j*(n+1)+i, b=a+1, c=a+n+1, d=c+1;
+      idx[k++]=a; idx[k++]=c; idx[k++]=b;
+      idx[k++]=b; idx[k++]=c; idx[k++]=d;
+    }
+  return {pos, idx, count: idx.length};
+}
+
+/* ─────────────────── GPU buffers ─────────────────── */
+const SPHERE_HI = makeSphere(160, 80);
+const SPHERE_LO = makeSphere(72, 36);
+const RING      = makeRing(1.22, 2.30, 128, 24);
+const GROUND    = makeGround(12000, 128);
+
+function bufferGeom(g){
+  const vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+  const pb = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, pb);
+  gl.bufferData(gl.ARRAY_BUFFER, g.pos, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+  if(g.uv){
+    const ub = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, ub);
+    gl.bufferData(gl.ARRAY_BUFFER, g.uv, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(1);
+    gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 0, 0);
+  }
+  const ib = gl.createBuffer();
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, g.idx, gl.STATIC_DRAW);
+  gl.bindVertexArray(null);
+  return {vao, count: g.count};
+}
+const vaoMoon   = bufferGeom(SPHERE_HI);
+const vaoPlanet = bufferGeom(SPHERE_LO);
+const vaoRing   = bufferGeom(RING);
+const vaoGround = bufferGeom(GROUND);
+
+/* ─────────────────── shaders ─────────────────── */
+const SKY_VS = `#version 300 es
+layout(location=0) in vec2 aPos;
+out vec2 vDir;
+void main(){ vDir = aPos; gl_Position = vec4(aPos,0.0,1.0); }`;
+
+const SKY_FS = GLSL_HEAD + `
+in vec2 vDir;
+out vec4 outColor;
+
+uniform vec3  uRight, uUp, uFwd;
+uniform float uTanHalf, uAspect;
+uniform vec3  uGalPole, uGalCenter;
+uniform vec3  uSunDir, uMoonDir;
+uniform float uMoonIllum;
+uniform float uSkyGlow, uMilkyWay, uAirglow, uZodiacal, uExposureMul;
+
+void main(){
+  vec3 dir = normalize(uFwd
+                     + uRight * (vDir.x * uTanHalf * uAspect)
+                     + uUp    * (vDir.y * uTanHalf));
+  float alt = dir.y;
+  vec3 col = vec3(0.0);
+
+  /* Milky Way */
+  {
+    vec3 gz = normalize(uGalPole);
+    vec3 gx = normalize(uGalCenter - gz*dot(uGalCenter, gz));
+    vec3 gy = cross(gz, gx);
+    float gLat = asin(clamp(dot(dir, gz), -1.0, 1.0));
+    float gLon = atan(dot(dir, gy), dot(dir, gx));
+    float thin = exp(-0.5*pow(gLat/0.075, 2.0));
+    float wide = exp(-0.5*pow(gLat/0.26,  2.0));
+    float n1 = fbm(dir*3.2 + 7.0,  4);
+    float n2 = fbm(dir*9.5 + 23.0, 4);
+    float dust = fbm(dir*6.0 + 41.0, 4);
+    float clouds = 0.45 + 0.85*n1 + 0.35*(n2 - 0.5);
+    float lanes  = 1.0 - 0.72*smoothstep(0.34, 0.72, dust);
+    float glow = (wide*clouds*lanes*0.55 + thin*clouds*lanes*0.85) * uMilkyWay;
+    float centerW = smoothstep(-0.9, 1.0, cos(gLon));
+    vec3 mwCol = mix(vec3(0.42,0.52,0.86), vec3(1.0,0.86,0.63), centerW);
+    col += mwCol * glow * 0.030;
+    col += vec3(0.36,0.42,0.62) * wide * 0.0045 * uMilkyWay;
+  }
+
+  /* Airglow */
+  float ag = exp(-max(alt, 0.0)/0.095) * uAirglow;
+  col += vec3(0.020, 0.062, 0.030) * ag * 0.55 * uSkyGlow;
+  col += vec3(0.018, 0.028, 0.048) * exp(-max(alt,0.0)/0.42) * 0.16 * uSkyGlow * uAirglow;
+
+  /* Zodiacal light */
+  float zl = pow(max(dot(dir, uSunDir), 0.0), 10.0) * uZodiacal;
+  col += vec3(0.42, 0.44, 0.52) * zl * 0.010 * uSkyGlow;
+
+  /* Twilight */
+  float sunAlt = uSunDir.y;
+  float tw = exp(-max(sunAlt, 0.0)/0.13) * smoothstep(-0.42, 0.06, sunAlt);
+  col += vec3(0.75, 0.38, 0.16) * tw * 0.030;
+
+  /* Moon halo */
+  float md = max(dot(dir, uMoonDir), 0.0);
+  float halo = pow(md, 700.0)*0.30 + pow(md, 60.0)*0.012 + pow(md, 8.0)*0.0012;
+  col += vec3(0.62, 0.68, 0.86) * halo * (0.25 + 0.75*uMoonIllum);
+
+  /* Horizon haze */
+  float hz = exp(-max(alt, 0.0)/0.055);
+  col += vec3(0.020, 0.030, 0.048) * hz * 0.55 * uSkyGlow;
+
+  outColor = vec4(col * uExposureMul, 1.0);
+}`;
+
+const STAR_VS = `#version 300 es
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec3 aCol;
+layout(location=2) in float aMag;
+uniform mat4  uViewProj;
+uniform mat4  uModel;
+uniform float uPixPerRad;
+uniform float uTime;
+uniform float uExposureMul;
+uniform float uStarBright;
+out vec3  vCol;
+out float vAltSin;
+out float vTwinkle;
+void main(){
+  vec3 wp = (uModel * vec4(aPos, 1.0)).xyz;
+  vAltSin = wp.y;
+  gl_Position = uViewProj * vec4(wp, 1.0);
+  float seed = fract(sin(dot(aPos, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+  float alt = clamp(wp.y, -1.0, 1.0);
+  float scint = sin(uTime*11.0 + seed*54.0) * 0.5
+              + sin(uTime*19.7 + seed*127.0) * 0.3
+              + sin(uTime*31.3 + seed*211.0) * 0.2;
+  vTwinkle = 1.0 + 0.40 * scint * smoothstep(0.75, 0.0, alt);
+  float bright = clamp((6.6 - aMag) / 8.2, 0.0, 1.0);
+  float angR   = mix(1.4e-4, 6.5e-4, pow(bright, 0.65));
+  float px     = max(angR * uPixPerRad, 1.15);
+  gl_PointSize = clamp(px, 1.0, 56.0);
+  vCol = aCol * uExposureMul * uStarBright;
+}`;
+
+const STAR_FS = `#version 300 es
+precision highp float;
+in vec3  vCol;
+in float vAltSin;
+in float vTwinkle;
+out vec4 outColor;
+uniform float uGroundCut;   // 1 = cull below horizon, 0 = show everywhere
+void main(){
+  if(uGroundCut > 0.5 && vAltSin < -0.004) discard;
+  float s = max(vAltSin, 0.02);
+  float altDeg = degrees(asin(s));
+  float am = 1.0 / (s + 0.15*pow(altDeg + 3.885, -1.253));
+  float ext = pow(10.0, -0.4 * 0.22 * am);
+  ext = mix(1.0, ext, uGroundCut);
+  vec2 d = gl_PointCoord*2.0 - 1.0;
+  float r2 = dot(d,d);
+  if(r2 > 1.0) discard;
+  float a = exp(-r2*11.0) + exp(-r2*2.4)*0.16;
+  outColor = vec4(vCol * a * vTwinkle * ext, 1.0);
+}`;
+
+const MOON_VS = `#version 300 es
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec2 aUV;
+uniform mat4 uModel;
+uniform mat4 uViewProj;
+out vec3 vN;
+out vec3 vP;
+out vec2 vUV;
+void main(){
+  vec4 wp = uModel * vec4(aPos,1.0);
+  vP  = wp.xyz;
+  vN  = normalize(mat3(uModel) * aPos);
+  vUV = aUV;
+  gl_Position = uViewProj * wp;
+}`;
+
+const MOON_FS = GLSL_HEAD + `
+in vec3 vN;
+in vec3 vP;
+in vec2 vUV;
+out vec4 outColor;
+uniform sampler2D uAlbedo;
+uniform sampler2D uHeight;
+uniform vec2  uTexSize;
+uniform vec3  uSunDir;
+uniform vec3  uCamPos;
+uniform float uBump;
+uniform float uExposureMul;
+uniform float uMoonBright;
+uniform float uGroundCut;
+void main(){
+  if(uGroundCut > 0.5 && vP.y < 0.0) discard;
+  vec3 Ng = normalize(vN);
+  vec3 V  = normalize(uCamPos - vP);
+  float lon = (vUV.x - 0.5)*TAU;
+  float lat = (vUV.y - 0.5)*PI;
+  float cl = cos(lat), sl = sin(lat);
+  vec3 T = vec3(-sin(lon), cos(lon), 0.0);
+  vec3 B = vec3(-sl*cos(lon), -sl*sin(lon), cl);
+  vec2 tx = 1.0 / uTexSize;
+  float hL = texture(uHeight, vUV - vec2(tx.x,0.0)).r;
+  float hR = texture(uHeight, vUV + vec2(tx.x,0.0)).r;
+  float hD = texture(uHeight, vUV - vec2(0.0,tx.y)).r;
+  float hU = texture(uHeight, vUV + vec2(0.0,tx.y)).r;
+  float dxWorld = TAU * tx.x * max(cl, 0.08);
+  float dyWorld = PI  * tx.y;
+  float sx = (hR - hL) / (2.0*dxWorld) * uBump;
+  float sy = (hU - hD) / (2.0*dyWorld) * uBump;
+  vec3 N = normalize(T*(-sx) + B*(-sy) + Ng);
+  vec3 albedo = texture(uAlbedo, vUV).rgb;
+  vec3 L = uSunDir;
+  float NoL = dot(N, L);
+  float mu0 = max(NoL, 0.0);
+  float mu  = max(dot(N, V), 1e-4);
+  float ls = mu0 / max(mu0 + mu, 1e-4);
+  float cosPhase = clamp(dot(L, V), -1.0, 1.0);
+  float phase = acos(cosPhase);
+  float B0 = 1.35, hh = 0.055;
+  float surge = 1.0 + B0 / (1.0 + tan(phase*0.5)/hh);
+  vec3 direct = albedo * ls * surge * 0.55 * vec3(1.0, 0.965, 0.92) * 2.35;
+  float es = max(-dot(N, L), 0.0) * 0.010;
+  vec3 earthshine = albedo * es * vec3(0.45, 0.60, 0.95);
+  vec3 col = (direct + earthshine) * (mu0 > 0.0 ? 1.0 : 0.0) + earthshine;
+  outColor = vec4(col * uExposureMul * uMoonBright, 1.0);
+}`;
+
+const PLANET_VS = `#version 300 es
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec2 aUV;
+uniform mat4 uModel;
+uniform mat4 uViewProj;
+out vec3 vN;
+out vec3 vP;
+out vec3 vLocal;
+void main(){
+  vec4 wp = uModel * vec4(aPos,1.0);
+  vP = wp.xyz;
+  vN = normalize(mat3(uModel) * aPos);
+  vLocal = aPos;
+  gl_Position = uViewProj * wp;
+}`;
+
+const PLANET_FS = GLSL_HEAD + `
+in vec3 vN;
+in vec3 vP;
+in vec3 vLocal;
+out vec4 outColor;
+uniform vec3  uSunDir;
+uniform vec3  uCamPos;
+uniform int   uBody;
+uniform float uTime;
+uniform float uExposureMul;
+uniform float uGroundCut;
+
+vec3 bodyAlbedo(vec3 p){
+  float lat = asin(clamp(p.y, -1.0, 1.0));
+  float lon = atan(p.z, p.x);
+  if(uBody == 0){
+    float n = fbm(p*12.0, 4);
+    float cr = ridged(p*26.0, 3);
+    return mix(vec3(0.20,0.19,0.18), vec3(0.38,0.36,0.34), n) * (0.75 + 0.5*cr);
+  }
+  if(uBody == 1){
+    float n = fbm(p*2.4 + vec3(0.0,0.0,uTime*0.01), 4);
+    return mix(vec3(0.86,0.80,0.60), vec3(0.98,0.94,0.78), n);
+  }
+  if(uBody == 2){
+    float n  = fbm(p*4.0, 5);
+    float n2 = fbm(p*14.0, 4);
+    vec3 c = mix(vec3(0.44,0.20,0.11), vec3(0.78,0.45,0.26), n*0.7 + n2*0.3);
+    float cap = smoothstep(0.86, 0.97, abs(p.y));
+    return mix(c, vec3(0.92,0.93,0.95), cap);
+  }
+  if(uBody == 3){
+    float turb = fbm(vec3(p.x*3.0, p.y*14.0, p.z*3.0), 5);
+    float band = sin(lat*17.0 + turb*2.6);
+    vec3 c = mix(vec3(0.62,0.44,0.31), vec3(0.90,0.85,0.74), smoothstep(-0.55, 0.55, band));
+    c = mix(c, vec3(0.95,0.93,0.86), smoothstep(0.6,1.0,abs(band))*0.3);
+    vec2 uv = vec2(lon - 1.05, lat + 0.36);
+    float grs = exp(-dot(uv,uv)*24.0);
+    return mix(c, vec3(0.72,0.32,0.22), grs);
+  }
+  if(uBody == 4){
+    float turb = fbm(vec3(p.x*3.0, p.y*11.0, p.z*3.0), 4);
+    float band = sin(lat*13.0 + turb*2.0);
+    return mix(vec3(0.76,0.68,0.50), vec3(0.95,0.90,0.74), smoothstep(-0.6,0.6,band));
+  }
+  if(uBody == 5){
+    float n = fbm(p*3.0, 3);
+    return mix(vec3(0.55,0.80,0.86), vec3(0.68,0.90,0.94), n);
+  }
+  float n = fbm(vec3(p.x*3.5, p.y*9.0, p.z*3.5), 4);
+  return mix(vec3(0.24,0.38,0.80), vec3(0.48,0.62,0.94), n);
+}
+
+void main(){
+  if(uGroundCut > 0.5 && vP.y < 0.0) discard;
+  vec3 N = normalize(vN);
+  vec3 V = normalize(uCamPos - vP);
+  vec3 L = uSunDir;
+  vec3 albedo = bodyAlbedo(normalize(vLocal));
+  float rough = (uBody == 0 || uBody == 2) ? 0.88 : 0.97;
+  vec3 col = brdf(N, V, L, albedo, rough, 0.0) * 2.6;
+  col += albedo * 0.00035;
+  outColor = vec4(col * uExposureMul, 1.0);
+}`;
+
+const RING_VS = `#version 300 es
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec2 aUV;
+uniform mat4 uModel;
+uniform mat4 uViewProj;
+out vec3 vP;
+out vec3 vN;
+out float vR;
+void main(){
+  vec4 wp = uModel * vec4(aPos,1.0);
+  vP = wp.xyz;
+  vN = normalize(mat3(uModel) * vec3(0.0,1.0,0.0));
+  vR = aUV.x;
+  gl_Position = uViewProj * wp;
+}`;
+
+const RING_FS = GLSL_HEAD + `
+in vec3 vP;
+in vec3 vN;
+in float vR;
+out vec4 outColor;
+uniform vec3  uSunDir;
+uniform vec3  uCamPos;
+uniform float uExposureMul;
+uniform float uGroundCut;
+void main(){
+  if(uGroundCut > 0.5 && vP.y < 0.0) discard;
+  float r = vR;
+  float a = 0.0;
+  a += smoothstep(0.00, 0.06, r) * smoothstep(0.34, 0.28, r) * 0.35;
+  a += smoothstep(0.28, 0.34, r) * smoothstep(0.72, 0.66, r) * 0.92;
+  a += smoothstep(0.72, 0.76, r) * smoothstep(1.00, 0.94, r) * 0.62;
+  float ripple = 0.5 + 0.5*sin(r*160.0) * sin(r*57.0 + 1.3);
+  a *= 0.72 + 0.28*ripple;
+  a *= 1.0 - 0.92*exp(-pow((r-0.72)/0.022, 2.0));
+  a *= 1.0 - 0.55*exp(-pow((r-0.44)/0.012, 2.0));
+  if(a < 0.004) discard;
+  vec3 N = normalize(vN);
+  vec3 V = normalize(uCamPos - vP);
+  vec3 L = uSunDir;
+  vec3 tint = mix(vec3(0.72,0.66,0.55), vec3(0.95,0.92,0.84), r);
+  float NoL = abs(dot(N, L));
+  vec3 col = tint * NoL * 2.1 + tint * 0.02;
+  outColor = vec4(col * uExposureMul, a);
+}`;
+
+const GROUND_VS = GLSL_HEAD + `
+layout(location=0) in vec3 aPos;
+uniform mat4 uViewProj;
+out vec3 vP;
+void main(){
+  vec3 p = aPos;
+  float d = length(p.xz);
+  float h = 0.0;
+  h += (fbm(vec3(p.xz*0.35, 0.0), 3) - 0.5) * 0.030;
+  h += (fbm(vec3(p.xz*1.7, 9.0), 3) - 0.5) * 0.006;
+  p.y += h * smoothstep(2.0, 60.0, d);
+  vP = p;
+  gl_Position = uViewProj * vec4(p, 1.0);
+}`;
+
+const GROUND_FS = GLSL_HEAD + `
+in vec3 vP;
+out vec4 outColor;
+uniform vec3  uMoonDir;
+uniform vec3  uSunDir;
+uniform vec3  uCamPos;
+uniform float uMoonBright;
+uniform float uSkyAmbient;
+uniform float uExposureMul;
+void main(){
+  vec3 N = vec3(0.0, 1.0, 0.0);
+  float e = 0.35;
+  float h0 = fbm(vec3(vP.xz*0.7, 0.0), 4);
+  float hx = fbm(vec3((vP.xz + vec2(e,0.0))*0.7, 0.0), 4);
+  float hz = fbm(vec3((vP.xz + vec2(0.0,e))*0.7, 0.0), 4);
+  N = normalize(N + vec3(-(hx-h0), 0.0, -(hz-h0)) * 1.5);
+  float n  = fbm(vec3(vP.xz*0.45, 3.0), 5);
+  float n2 = fbm(vec3(vP.xz*4.0, 11.0), 3);
+  vec3 albedo = mix(vec3(0.030,0.042,0.021), vec3(0.055,0.048,0.036), smoothstep(0.35, 0.65, n));
+  albedo = mix(albedo, vec3(0.062,0.060,0.056), smoothstep(0.62, 0.82, n2)*0.55);
+  vec3 V = normalize(uCamPos - vP);
+  vec3 direct = brdf(N, V, uMoonDir, albedo, 0.88, 0.0) * uMoonBright * 2.2;
+  vec3 ambient = albedo * uSkyAmbient * 0.16;
+  vec3 col = direct + ambient;
+  float dist = length(vP.xz);
+  float fog = 1.0 - exp(-dist*0.0035);
+  vec3 horizonCol = vec3(0.008, 0.012, 0.022) * uSkyAmbient * 6.0;
+  col = mix(col, horizonCol, fog*0.85);
+  outColor = vec4(col * uExposureMul, 1.0);
+}`;
+
+const POST_VS = `#version 300 es
+layout(location=0) in vec2 aPos;
+out vec2 vUV;
+void main(){ vUV = aPos*0.5 + 0.5; gl_Position = vec4(aPos,0.0,1.0); }`;
+
+const BRIGHT_FS = `#version 300 es
+precision highp float;
+in vec2 vUV;
+out vec4 outColor;
+uniform sampler2D uTex;
+uniform float uThreshold;
+void main(){
+  vec3 c = texture(uTex, vUV).rgb;
+  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  float k = max(l - uThreshold, 0.0) / max(l, 1e-4);
+  outColor = vec4(c * k, 1.0);
+}`;
+
+const BLUR_FS = `#version 300 es
+precision highp float;
+in vec2 vUV;
+out vec4 outColor;
+uniform sampler2D uTex;
+uniform vec2 uDir;
+void main(){
+  float w[5];
+  w[0]=0.227027; w[1]=0.1945946; w[2]=0.1216216; w[3]=0.054054; w[4]=0.016216;
+  vec3 c = texture(uTex, vUV).rgb * w[0];
+  for(int i=1;i<5;i++){
+    c += texture(uTex, vUV + uDir*float(i)).rgb * w[i];
+    c += texture(uTex, vUV - uDir*float(i)).rgb * w[i];
+  }
+  outColor = vec4(c, 1.0);
+}`;
+
+const COMPOSITE_FS = `#version 300 es
+precision highp float;
+in vec2 vUV;
+out vec4 outColor;
+uniform sampler2D uScene;
+uniform sampler2D uBloom;
+uniform float uBloomAmount;
+uniform float uExposure;
+uniform vec2  uResolution;
+vec3 aces(vec3 x){
+  const float a=2.51, b=0.03, c=2.43, d=0.59, e=0.14;
+  return clamp((x*(a*x+b))/(x*(c*x+d)+e), 0.0, 1.0);
+}
+void main(){
+  vec3 c = texture(uScene, vUV).rgb;
+  c += texture(uBloom, vUV).rgb * uBloomAmount;
+  c *= uExposure;
+  c = aces(c);
+  c = pow(c, vec3(1.0/2.2));
+  vec2 q = vUV - 0.5;
+  c *= 1.0 - dot(q,q)*0.55;
+  float d = fract(sin(dot(vUV*uResolution, vec2(12.9898,78.233)))*43758.5453);
+  c += (d - 0.5)/255.0;
+  outColor = vec4(c, 1.0);
+}`;
+
+const progSky    = makeProg(SKY_VS, SKY_FS);
+const progStar   = makeProg(STAR_VS, STAR_FS);
+const progMoon   = makeProg(MOON_VS, MOON_FS);
+const progPlanet = makeProg(PLANET_VS, PLANET_FS);
+const progRing   = makeProg(RING_VS, RING_FS);
+const progGround = makeProg(GROUND_VS, GROUND_FS);
+const progBright = makeProg(POST_VS, BRIGHT_FS);
+const progBlur   = makeProg(POST_VS, BLUR_FS);
+const progComp   = makeProg(POST_VS, COMPOSITE_FS);
+
+/* ─────────────────── HDR targets ─────────────────── */
+let fboScene, texScene, fboA, texA, fboB, texB, W=1, H=1;
+function makeTarget(w, h, internal){
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, internal, w, h, 0,
+                gl.RGBA, internal === gl.RGBA16F ? gl.HALF_FLOAT : gl.UNSIGNED_BYTE, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const fbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  return {fbo, tex};
+}
+function resizeTargets(w, h){
+  W = w; H = h;
+  const fmt = hasFloat ? gl.RGBA16F : gl.RGBA8;
+  if(texScene) { gl.deleteTexture(texScene); gl.deleteFramebuffer(fboScene); }
+  if(texA)     { gl.deleteTexture(texA);     gl.deleteFramebuffer(fboA); }
+  if(texB)     { gl.deleteTexture(texB);     gl.deleteFramebuffer(fboB); }
+  let s = makeTarget(w, h, fmt);  fboScene = s.fbo; texScene = s.tex;
+  const hw = Math.max(1, w>>1), hh = Math.max(1, h>>1);
+  s = makeTarget(hw, hh, fmt);    fboA = s.fbo; texA = s.tex;
+  s = makeTarget(hw, hh, fmt);    fboB = s.fbo; texB = s.tex;
+}
+
+/* ─────────────────── moon textures ─────────────────── */
+console.time('moon maps');
+const moonMaps = generateMoonMaps(1024, 512);
+console.timeEnd('moon maps');
+
+const moonTexH = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, moonTexH);
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, moonMaps.W, moonMaps.H, 0,
+              gl.RED, gl.UNSIGNED_BYTE, moonMaps.H8);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+const moonTexA = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, moonTexA);
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB8, moonMaps.W, moonMaps.H, 0,
+              gl.RGB, gl.UNSIGNED_BYTE, moonMaps.A8);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+gl.generateMipmap(gl.TEXTURE_2D);
+
+/* ─────────────────── star buffer ─────────────────── */
+const CAT = buildStarCatalogue(9000);
+const starVAO = gl.createVertexArray();
+gl.bindVertexArray(starVAO);
+{
+  const sb1 = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, sb1);
+  gl.bufferData(gl.ARRAY_BUFFER, CAT.pos, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+  const sb2 = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, sb2);
+  gl.bufferData(gl.ARRAY_BUFFER, CAT.col, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(1);
+  gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0);
+  const sb3 = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, sb3);
+  gl.bufferData(gl.ARRAY_BUFFER, CAT.mag, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(2);
+  gl.vertexAttribPointer(2, 1, gl.FLOAT, false, 0, 0);
+}
+gl.bindVertexArray(null);
+
+/* ============================================================================
+   STATE  (everything user-tweakable lives here)
+   ========================================================================== */
+const state = {
+  yaw: 0, pitch: 0.5, fov: 70*DEG,
+  lat: 45*DEG,
+  paused: false,
+  timeScale: 1,
+  simTime: Date.now(),
+
+  cameraMode: 'ground',          // 'ground' | 'space'
+  cameraPos: [0, 0.002, 0],
+  follow: null,                  // { name, distance } or null
+  flyTween: null,                // active flyTo animation
+
+  visibility: {                  // per-body toggles
+    Sun:true, Moon:true, Mercury:true, Venus:true, Mars:true,
+    Jupiter:true, Saturn:true, Uranus:true, Neptune:true
+  },
+  layers: { stars:true, milkyway:true, ground:true, airglow:true, zodiacal:true, bloom:true },
+
+  light: {
+    exposure: 1.0, moonlight: 1.0, starlight: 1.0,
+    skyglow: 1.0, milkyway: 1.0, bloom: 0.55, ambient: 1.0
+  }
+};
+
+/* ---- input ---- */
+const keys = Object.create(null);
+let dragging = false, lastX = 0, lastY = 0;
+
+canvas.addEventListener('pointerdown', e => {
+  dragging = true; lastX = e.clientX; lastY = e.clientY;
+  canvas.classList.add('drag');
+  canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener('pointerup', () => { dragging = false; canvas.classList.remove('drag'); });
+canvas.addEventListener('pointermove', e => {
+  if(!dragging) return;
+  const dx = e.clientX - lastX, dy = e.clientY - lastY;
+  lastX = e.clientX; lastY = e.clientY;
+  const k = state.fov / Math.max(canvas.clientHeight, 1);
+  state.yaw   -= dx * k;
+  state.pitch -= dy * k;
+  state.pitch = clamp(state.pitch, -1.55, 1.55);
+  state.follow = null;
+});
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const f = Math.exp(e.deltaY * 0.0012);
+  state.fov = clamp(state.fov * f, 0.03*DEG, 140*DEG);
+}, {passive:false});
+
+window.addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if(e.target.tagName === 'INPUT') return;
+  if(e.code === 'Space'){ state.paused = !state.paused; e.preventDefault(); }
+  if(e.key === '+' || e.key === '=') state.timeScale = Math.min(200000, state.timeScale*2);
+  if(e.key === '-' || e.key === '_') state.timeScale = Math.max(0.001, state.timeScale/2);
+  if(e.key === 'h' || e.key === 'H') togglePanel();
+  if(e.key === 'j' || e.key === 'J') toggleDocs();
+  if(e.key === 'g' || e.key === 'G') api.setCameraMode(state.cameraMode === 'ground' ? 'space' : 'ground');
+  if(e.key === 'f' || e.key === 'F') state.follow = null;
+  const n = parseInt(e.key, 10);
+  if(n >= 1 && n <= 7) api.lookAt(PLANETS[n-1].key);
+  if(n === 8) api.lookAt('Moon');
+  if(n === 0) api.lookAt('Sun');
+});
+window.addEventListener('keyup', e => { keys[e.code] = false; });
+
+/* ============================================================================
+   PER-FRAME ASTRONOMY
+   ========================================================================== */
+const viewM = m4(), projM = m4(), vpM = m4(), modelM = m4();
+const skyM = m4(), Tmat = m4(), RzM = m4();
+let camRight = [1,0,0], camUp = [0,1,0], camFwd = [0,0,-1];
+
+const bodies = [];   // populated each frame
+
+function updateAstro(dt, now){
+  const date = new Date(state.simTime);
+  const jd = julian(date);
+  const T  = (jd - 2451545.0)/36525.0;
+  const d  = jd - 2451545.0;
+
+  const lst = gmst(jd);
+
+  // sky rotation:  world = T' · Rz(-LST) · eq
+  const cl = Math.cos(state.lat), sl = Math.sin(state.lat);
+  Tmat.set([ 0, cl, sl, 0,
+             1,  0,  0, 0,
+             0, sl, -cl, 0,
+             0,  0,  0, 1]);
+  const ca = Math.cos(lst), sa = Math.sin(lst);
+  RzM.set([ ca, sa, 0, 0,
+           -sa, ca, 0, 0,
+             0,  0, 1, 0,
+             0,  0, 0, 1]);
+  m4mul(skyM, Tmat, RzM);
+
+  const toWorld = v => [
+    skyM[0]*v[0] + skyM[4]*v[1] + skyM[8]*v[2],
+    skyM[1]*v[0] + skyM[5]*v[1] + skyM[9]*v[2],
+    skyM[2]*v[0] + skyM[6]*v[1] + skyM[10]*v[2]
+  ];
+
+  // Sun (geocentric)
+  const earthH = keplerHelio(EARTH, T);
+  const sunEcl = [-earthH[0], -earthH[1], -earthH[2]];
+  const sunR = len3(sunEcl);
+  const sunEq = (() => {
+    const x = sunEcl[0]/sunR, y = sunEcl[1]/sunR, z = sunEcl[2]/sunR;
+    const ce = Math.cos(OBLIQ), se = Math.sin(OBLIQ);
+    return [x, y*ce - z*se, y*se + z*ce];
+  })();
+  const sunWorld = toWorld(sunEq);
+
+  // Moon
+  const me = moonEcliptic(d);
+  const mEq = eclToEq(me.lon, me.lat);
+  const moonWorld = toWorld(mEq);
+  const moonDist  = me.dist / 1000;         // 1 world unit = 1000 km
+  const moonAngR  = Math.asin(1737.4 / me.dist);
+  const moonRadius = moonDist * Math.tan(moonAngR);
+  const cosPhase = -dot3(moonWorld, sunWorld);
+  const moonIllum = (1 + cosPhase) * 0.5;
+
+  // Planets
+  bodies.length = 0;
+  const PLANET_DIST = 620;
+  for(let i=0;i<PLANETS.length;i++){
+    const p = PLANETS[i];
+    const h = keplerHelio(p, T);
+    const g = [h[0]-earthH[0], h[1]-earthH[1], h[2]-earthH[2]];
+    const distAU = len3(g);
+    const ge = (() => {
+      const x = g[0]/distAU, y = g[1]/distAU, z = g[2]/distAU;
+      const ce = Math.cos(OBLIQ), se = Math.sin(OBLIQ);
+      return [x, y*ce - z*se, y*se + z*ce];
+    })();
+    const w = toWorld(ge);
+    const angR = Math.asin(Math.min(0.5, p.rad / (distAU * 1.495978707e8)));
+    const illum = (1 - dot3(w, sunWorld)) * 0.5;
+    bodies.push({
+      idx:i, name:p.key, dirWorld:w, distAU,
+      worldDist:PLANET_DIST,
+      radius:PLANET_DIST * Math.tan(angR),
+      physAngR: angR, illuminated: illum,
+      color:p.color, rings:!!p.rings,
+      visible: state.visibility[p.key] !== false,
+      position: scale3(w, PLANET_DIST)
+    });
+  }
+
+  // store ephemeris
+  state._sunWorld    = sunWorld;
+  state._moonWorld   = moonWorld;
+  state._moonDist    = moonDist;
+  state._moonRadius  = moonRadius;
+  state._moonIllum   = moonIllum;
+  state._moonPos     = scale3(moonWorld, moonDist);
+  state._skyM        = skyM;
+  state._bodies      = bodies;
+
+  /* ---- camera ---- */
+  if(state.cameraMode === 'ground'){
+    state.cameraPos = [0, 0.002, 0];
+  }
+  // free-flight movement
+  if(state.cameraMode === 'space'){
+    const spd = (keys.ShiftLeft || keys.ShiftRight ? 6 : 1) * 60 * dt;
+    const f = camFwd, r = camRight;
+    const p = state.cameraPos;
+    if(keys.KeyW) p[0]+=f[0]*spd, p[1]+=f[1]*spd, p[2]+=f[2]*spd;
+    if(keys.KeyS) p[0]-=f[0]*spd, p[1]-=f[1]*spd, p[2]-=f[2]*spd;
+    if(keys.KeyA) p[0]-=r[0]*spd, p[1]-=r[1]*spd, p[2]-=r[2]*spd;
+    if(keys.KeyD) p[0]+=r[0]*spd, p[1]+=r[1]*spd, p[2]+=r[2]*spd;
+    if(keys.KeyQ) p[1]-=spd;
+    if(keys.KeyE) p[1]+=spd;
+  }
+
+  // follow / flyTo
+  if(state.flyTween){
+    const t = clamp((now - state.flyTween.t0) / state.flyTween.dur, 0, 1);
+    const e = t<0.5 ? 2*t*t : 1-Math.pow(-2*t+2,2)/2;
+    const target = state.flyTween.targetPos;
+    const back = scale3(state.flyTween.dir, state.flyTween.distance);
+    state.cameraPos = [
+      target[0] + back[0] + (state.flyTween.startPos[0] - target[0] - back[0])*(1-e),
+      target[1] + back[1] + (state.flyTween.startPos[1] - target[1] - back[1])*(1-e),
+      target[2] + back[2] + (state.flyTween.startPos[2] - target[2] - back[2])*(1-e)
+    ];
+    // smooth yaw/pitch
+    state.yaw   += (state.flyTween.yaw   - state.yaw)  * (1-e)*0.18 + (state.flyTween.yaw   - state.yaw)*0.06;
+    state.pitch += (state.flyTween.pitch - state.pitch) * (1-e)*0.18 + (state.flyTween.pitch - state.pitch)*0.06;
+    if(t >= 1){
+      state.follow = { name: state.flyTween.name, distance: state.flyTween.distance };
+      state.flyTween = null;
+    }
+  }
+  if(state.follow){
+    let target = null;
+    const nm = state.follow.name;
+    if(nm === 'Sun') target = sunWorld;
+    else if(nm === 'Moon') target = moonWorld;
+    else { const b = bodies.find(x => x.name === nm); if(b) target = b.dirWorld; }
+    if(target){
+      const desiredYaw   = Math.atan2(target[0], -target[2]);
+      const desiredPitch = Math.asin(clamp(target[1], -1, 1));
+      let dy = desiredYaw - state.yaw;
+      dy = ((dy + Math.PI) % TAU + TAU) % TAU - Math.PI;
+      state.yaw += dy * 0.14;
+      state.pitch += (desiredPitch - state.pitch) * 0.14;
+    }
+  }
+
+  /* ---- camera basis ---- */
+  const cp2 = Math.cos(state.pitch), sp2 = Math.sin(state.pitch);
+  const cy2 = Math.cos(state.yaw),   sy2 = Math.sin(state.yaw);
+  camFwd   = [ sy2*cp2, sp2, -cy2*cp2 ];
+  camRight = [ cy2, 0, sy2 ];
+  camUp    = cross3(camRight, camFwd);
+}
+
+/* ============================================================================
+   RENDER
+   ========================================================================== */
+function render(now){
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.75);
+  const cw = Math.floor(canvas.clientWidth * dpr);
+  const ch = Math.floor(canvas.clientHeight * dpr);
+  if(canvas.width !== cw || canvas.height !== ch){
+    canvas.width = cw; canvas.height = ch;
+    resizeTargets(cw, ch);
+  }
+  const asp = cw / ch;
+  const tanHalf = Math.tan(state.fov * 0.5);
+  const pixPerRad = (ch * 0.5) / tanHalf;
+
+  m4persp(projM, state.fov, asp, 0.02, 20000);
+  m4lookAt(viewM, state.cameraPos, camRight, camUp, camFwd);
+  m4mul(vpM, projM, viewM);
+
+  const sunWorld  = state._sunWorld;
+  const moonWorld = state._moonWorld;
+  const moonDist  = state._moonDist;
+  const moonRad   = state._moonRadius;
+  const moonIllum = state._moonIllum;
+  const skyM_     = state._skyM;
+  const groundCut = state.cameraMode === 'ground' ? 1.0 : 0.0;
+  const exp       = state.light.exposure;
+  const L         = state.light;
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fboScene);
+  gl.viewport(0, 0, W, H);
+  gl.disable(gl.DEPTH_TEST);
+  gl.disable(gl.BLEND);
+  gl.disable(gl.CULL_FACE);
+  gl.clearColor(0, 0, 0, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+
+  /* ---------- 1. SKY ---------- */
+  if(L.milkyway > 0 || L.skyglow > 0){
+    gl.useProgram(progSky.prog);
+    gl.bindVertexArray(quadVAO);
+    const u = progSky.u;
+    gl.uniform3fv(u.uRight, camRight);
+    gl.uniform3fv(u.uUp,    camUp);
+    gl.uniform3fv(u.uFwd,   camFwd);
+    gl.uniform1f(u.uTanHalf, tanHalf);
+    gl.uniform1f(u.uAspect, asp);
+    const gp = [
+      skyM_[0]*GAL_POLE[0] + skyM_[4]*GAL_POLE[1] + skyM_[8]*GAL_POLE[2],
+      skyM_[1]*GAL_POLE[0] + skyM_[5]*GAL_POLE[1] + skyM_[9]*GAL_POLE[2],
+      skyM_[2]*GAL_POLE[0] + skyM_[6]*GAL_POLE[1] + skyM_[10]*GAL_POLE[2]
+    ];
+    const gc = [
+      skyM_[0]*GAL_CEN[0] + skyM_[4]*GAL_CEN[1] + skyM_[8]*GAL_CEN[2],
+      skyM_[1]*GAL_CEN[0] + skyM_[5]*GAL_CEN[1] + skyM_[9]*GAL_CEN[2],
+      skyM_[2]*GAL_CEN[0] + skyM_[6]*GAL_CEN[1] + skyM_[10]*GAL_CEN[2]
+    ];
+    gl.uniform3fv(u.uGalPole, gp);
+    gl.uniform3fv(u.uGalCenter, gc);
+    gl.uniform3fv(u.uSunDir, sunWorld);
+    gl.uniform3fv(u.uMoonDir, moonWorld);
+    gl.uniform1f(u.uMoonIllum, moonIllum);
+    gl.uniform1f(u.uSkyGlow, L.skyglow);
+    gl.uniform1f(u.uMilkyWay, state.layers.milkyway ? L.milkyway : 0);
+    gl.uniform1f(u.uAirglow, state.layers.airglow ? 1 : 0);
+    gl.uniform1f(u.uZodiacal, state.layers.zodiacal ? 1 : 0);
+    gl.uniform1f(u.uExposureMul, exp);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  /* ---------- 2. GROUND ---------- */
+  if(state.layers.ground && state.cameraMode === 'ground'){
+    gl.useProgram(progGround.prog);
+    gl.bindVertexArray(vaoGround.vao);
+    const u = progGround.u;
+    gl.uniformMatrix4fv(u.uViewProj, false, vpM);
+    gl.uniform3fv(u.uMoonDir, moonWorld);
+    gl.uniform3fv(u.uSunDir, sunWorld);
+    gl.uniform3fv(u.uCamPos, state.cameraPos);
+    const invSq = Math.pow(384.4 / moonDist, 2);
+    gl.uniform1f(u.uMoonBright, moonIllum * invSq * 0.85 * Math.max(0, moonWorld[1]) * L.moonlight);
+    gl.uniform1f(u.uSkyAmbient, 0.16 * L.ambient * (0.4 + 0.6*L.starlight));
+    gl.uniform1f(u.uExposureMul, exp);
+    gl.drawElements(gl.TRIANGLES, vaoGround.count, gl.UNSIGNED_INT, 0);
+  }
+
+  /* ---------- 3. MOON ---------- */
+  if(state.visibility.Moon){
+    const pos = state._moonPos;
+    const poleW = [skyM_[8], skyM_[9], skyM_[10]];
+    let ex = norm3(scale3(pos, -1));
+    let ey = norm3(add3(poleW, scale3(ex, -dot3(poleW, ex))));
+    let ez = cross3(ex, ey);
+    m4basis(modelM, ex, ey, ez, pos, moonRad);
+
+    gl.useProgram(progMoon.prog);
+    gl.bindVertexArray(vaoMoon.vao);
+    const u = progMoon.u;
+    gl.uniformMatrix4fv(u.uModel, false, modelM);
+    gl.uniformMatrix4fv(u.uViewProj, false, vpM);
+    gl.uniform3fv(u.uSunDir, sunWorld);
+    gl.uniform3fv(u.uCamPos, state.cameraPos);
+    gl.uniform2f(u.uTexSize, moonMaps.W, moonMaps.H);
+    gl.uniform1f(u.uBump, 3.2);
+    gl.uniform1f(u.uExposureMul, exp);
+    gl.uniform1f(u.uMoonBright, L.moonlight);
+    gl.uniform1f(u.uGroundCut, groundCut);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, moonTexA);
+    gl.uniform1i(u.uAlbedo, 0);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, moonTexH);
+    gl.uniform1i(u.uHeight, 1);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ZERO);
+    gl.drawElements(gl.TRIANGLES, vaoMoon.count, gl.UNSIGNED_INT, 0);
+  }
+
+  /* ---------- 4. PLANETS ---------- */
+  gl.useProgram(progPlanet.prog);
+  gl.bindVertexArray(vaoPlanet.vao);
+  {
+    const u = progPlanet.u;
+    gl.uniformMatrix4fv(u.uViewProj, false, vpM);
+    gl.uniform3fv(u.uSunDir, sunWorld);
+    gl.uniform3fv(u.uCamPos, state.cameraPos);
+    gl.uniform1f(u.uTime, now*0.001);
+    gl.uniform1f(u.uExposureMul, exp);
+    gl.uniform1f(u.uGroundCut, groundCut);
+
+    const minAng = 1.8 / pixPerRad;
+    for(const b of bodies){
+      if(!b.visible) continue;
+      const angR = Math.max(b.physAngR, minAng);
+      const r = b.worldDist * Math.tan(angR);
+      const pos = b.position;
+
+      const poleW = [skyM_[8], skyM_[9], skyM_[10]];
+      let ey = norm3(add3(poleW, scale3(b.dirWorld, -dot3(poleW, b.dirWorld))));
+      let ez = cross3(b.dirWorld, ey);
+      let ex = b.dirWorld;
+      m4basis(modelM, ex, ey, ez, pos, r);
+
+      gl.uniformMatrix4fv(u.uModel, false, modelM);
+      gl.uniform1i(u.uBody, b.idx);
+      gl.drawElements(gl.TRIANGLES, vaoPlanet.count, gl.UNSIGNED_INT, 0);
+
+      if(b.rings && state.visibility.Saturn){
+        gl.useProgram(progRing.prog);
+        gl.bindVertexArray(vaoRing.vao);
+        const ru = progRing.u;
+        gl.uniformMatrix4fv(ru.uModel, false, modelM);
+        gl.uniformMatrix4fv(ru.uViewProj, false, vpM);
+        gl.uniform3fv(ru.uSunDir, sunWorld);
+        gl.uniform3fv(ru.uCamPos, state.cameraPos);
+        gl.uniform1f(ru.uExposureMul, exp);
+        gl.uniform1f(ru.uGroundCut, groundCut);
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+        gl.drawElements(gl.TRIANGLES, vaoRing.count, gl.UNSIGNED_INT, 0);
+        gl.useProgram(progPlanet.prog);
+        gl.bindVertexArray(vaoPlanet.vao);
+      }
+    }
+  }
+
+  /* ---------- 5. SUN (as a bright billboard) ---------- */
+  if(state.visibility.Sun){
+    // The sun is drawn as a small bloomed disc so it acts as a light source
+    // when you're in space. In ground mode it's below the horizon at night
+    // and won't be visible anyway.
+    const sunPos = scale3(sunWorld, 900);
+    const poleW = [skyM_[8], skyM_[9], skyM_[10]];
+    let ex = norm3(scale3(sunPos, -1));
+    let ey = norm3(add3(poleW, scale3(ex, -dot3(poleW, ex))));
+    let ez = cross3(ex, ey);
+    const r = 12;
+    m4basis(modelM, ex, ey, ez, sunPos, r);
+    gl.useProgram(progPlanet.prog);
+    gl.bindVertexArray(vaoPlanet.vao);
+    const u = progPlanet.u;
+    gl.uniformMatrix4fv(u.uModel, false, modelM);
+    gl.uniform1i(u.uBody, 6);
+    gl.drawElements(gl.TRIANGLES, vaoPlanet.count, gl.UNSIGNED_INT, 0);
+  }
+
+  /* ---------- 6. STARS ---------- */
+  if(state.layers.stars){
+    gl.useProgram(progStar.prog);
+    gl.bindVertexArray(starVAO);
+    const u = progStar.u;
+    const m = m4();
+    for(let i=0;i<16;i++) m[i] = skyM_[i];
+    m[12]=m[13]=m[14]=0; m[15]=1;
+    gl.uniformMatrix4fv(u.uModel, false, m);
+    gl.uniformMatrix4fv(u.uViewProj, false, vpM);
+    gl.uniform1f(u.uPixPerRad, pixPerRad);
+    gl.uniform1f(u.uTime, now*0.001);
+    gl.uniform1f(u.uExposureMul, exp);
+    gl.uniform1f(u.uStarBright, L.starlight);
+    gl.uniform1f(u.uGroundCut, groundCut);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE);
+    gl.drawArrays(gl.POINTS, 0, CAT.count);
+    gl.disable(gl.BLEND);
+  }
+
+  /* ---------- POST ---------- */
+  gl.bindVertexArray(quadVAO);
+
+  if(state.layers.bloom){
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fboA);
+    gl.viewport(0, 0, W>>1, H>>1);
+    gl.useProgram(progBright.prog);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, texScene);
+    gl.uniform1i(progBright.u.uTex, 0);
+    gl.uniform1f(progBright.u.uThreshold, 0.85);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fboB);
+    gl.useProgram(progBlur.prog);
+    gl.bindTexture(gl.TEXTURE_2D, texA);
+    gl.uniform1i(progBlur.u.uTex, 0);
+    gl.uniform2f(progBlur.u.uDir, 1.0/(W>>1), 0.0);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fboA);
+    gl.bindTexture(gl.TEXTURE_2D, texB);
+    gl.uniform2f(progBlur.u.uDir, 0.0, 1.0/(H>>1));
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fboB);
+    gl.bindTexture(gl.TEXTURE_2D, texA);
+    gl.uniform2f(progBlur.u.uDir, 2.2/(W>>1), 0.0);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fboA);
+    gl.bindTexture(gl.TEXTURE_2D, texB);
+    gl.uniform2f(progBlur.u.uDir, 0.0, 2.2/(H>>1));
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, W, H);
+  gl.useProgram(progComp.prog);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, texScene);
+  gl.uniform1i(progComp.u.uScene, 0);
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, state.layers.bloom ? texA : texScene);
+  gl.uniform1i(progComp.u.uBloom, 1);
+  gl.uniform1f(progComp.u.uBloomAmount, state.layers.bloom ? L.bloom : 0);
+  gl.uniform1f(progComp.u.uExposure, 1.0);
+  gl.uniform2f(progComp.u.uResolution, W, H);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.bindVertexArray(null);
+}
+
+/* ============================================================================
+   HUD
+   ========================================================================== */
+const hudEl = document.getElementById('hud');
+let lastHud = 0;
+function updateHUD(now){
+  if(now - lastHud < 120) return;
+  lastHud = now;
+  const date = new Date(state.simTime);
+  const iso = date.toISOString().replace('T',' ').slice(0,19) + ' UTC';
+  const fovDeg = state.fov / DEG;
+  const fovStr = fovDeg > 1 ? fovDeg.toFixed(2) + '°' : (fovDeg*60).toFixed(2) + '′';
+  const moonAlt = Math.asin(clamp(state._moonWorld[1], -1, 1)) / DEG;
+
+  const p = state.cameraPos;
+  const camStr = state.cameraMode === 'space'
+    ? `POS ${p[0].toFixed(0)}, ${p[1].toFixed(0)}, ${p[2].toFixed(0)}`
+    : 'GROUND';
+
+  hudEl.innerHTML =
+    `<div><b>${iso}</b></div>` +
+    `<div class="dim">LST ${(gmst(julian(date))/DEG/15).toFixed(2)}h` +
+      ` <span class="sep">·</span> lat ${(state.lat/DEG).toFixed(1)}°` +
+      ` <span class="sep">·</span> FOV ${fovStr}` +
+      ` <span class="sep">·</span> ${state.paused?'PAUSED':'×'+state.timeScale.toFixed(2)}</div>` +
+    `<div class="dim">${camStr}` +
+      ` <span class="sep">·</span> Moon alt ${moonAlt.toFixed(1)}°` +
+      ` <span class="sep">·</span> ${(state._moonIllum*100).toFixed(0)}% lit</div>`;
+}
+
+/* ============================================================================
+   PUBLIC API — window.NightSky
+   ========================================================================== */
+const listeners = { tick: [], bodyVisibility: [], cameraMode: [] };
+
+function emit(ev, payload){
+  const arr = listeners[ev];
+  if(arr) for(const fn of arr) try{ fn(payload); }catch(e){ console.error(e); }
+}
+
+const api = {
+  /* ---- bodies ---- */
+  listBodies(){ return ['Sun','Moon', ...PLANETS.map(p=>p.key)]; },
+
+  get bodies(){
+    const list = [];
+    if(state._bodies) for(const b of state._bodies){
+      list.push({
+        name: b.name, position: b.position.slice(),
+        direction: b.dirWorld.slice(),
+        distance: b.worldDist, radius: b.radius,
+        illuminated: b.illuminated,
+        altitude: Math.asin(clamp(b.dirWorld[1],-1,1)),
+        visible: !!state.visibility[b.name],
+        hasRings: !!b.rings
+      });
+    }
+    // Moon + Sun
+    if(state._moonWorld){
+      list.push({
+        name:'Moon', position: state._moonPos.slice(),
+        direction: state._moonWorld.slice(),
+        distance: state._moonDist, radius: state._moonRadius,
+        illuminated: state._moonIllum,
+        altitude: Math.asin(clamp(state._moonWorld[1],-1,1)),
+        visible: !!state.visibility.Moon, hasRings:false
+      });
+      list.push({
+        name:'Sun', position: scale3(state._sunWorld, 900),
+        direction: state._sunWorld.slice(),
+        distance: 900, radius: 12, illuminated: 1,
+        altitude: Math.asin(clamp(state._sunWorld[1],-1,1)),
+        visible: !!state.visibility.Sun, hasRings:false
+      });
+    }
+    return list;
+  },
+
+  getBody(name){ return api.bodies.find(b => b.name === name) || null; },
+  getPosition(name){ const b = api.getBody(name); return b ? b.position : null; },
+  getAltitude(name){ const b = api.getBody(name); return b ? b.altitude : null; },
+
+  setBodyVisible(name, visible){
+    if(name === 'Sun' || name === 'Moon' || PLANETS.some(p=>p.key===name)){
+      state.visibility[name] = !!visible;
+      emit('bodyVisibility', { name, visible: !!visible });
+    }
+    syncPanel();
+  },
+  getBodyVisible(name){ return !!state.visibility[name]; },
+  setAllBodiesVisible(visible){
+    for(const n of api.listBodies()) state.visibility[n] = !!visible;
+    syncPanel();
+  },
+
+  /* ---- sky layers ---- */
+  setStarsVisible(v){ state.layers.stars = !!v; syncPanel(); },
+  setMilkyWayVisible(v){ state.layers.milkyway = !!v; syncPanel(); },
+  setGroundVisible(v){ state.layers.ground = !!v; syncPanel(); },
+  setAirglowVisible(v){ state.layers.airglow = !!v; syncPanel(); },
+  setZodiacalVisible(v){ state.layers.zodiacal = !!v; syncPanel(); },
+  setBloomEnabled(v){ state.layers.bloom = !!v; syncPanel(); },
+
+  /* ---- lighting ---- */
+  light: new Proxy({}, {
+    get(_, k){ return state.light[k]; },
+    set(_, k, v){
+      if(k in state.light){
+        const clamps = {
+          exposure:[0.05,8], moonlight:[0,6], starlight:[0,4],
+          skyglow:[0,4], milkyway:[0,6], bloom:[0,3], ambient:[0,4]
+        };
+        const c = clamps[k] || [0,10];
+        state.light[k] = clamp(+v, c[0], c[1]);
+        syncPanel();
+      }
+      return true;
+    }
+  }),
+
+  /* ---- time ---- */
+  setTimeScale(v){ state.timeScale = clamp(+v || 0.001, 0.0001, 5e6); syncPanel(); },
+  getTimeScale(){ return state.timeScale; },
+  pause(){ state.paused = true; syncPanel(); },
+  play(){ state.paused = false; syncPanel(); },
+  get isPaused(){ return state.paused; },
+  setDate(d){ state.simTime = (d instanceof Date ? d : new Date(d)).getTime(); },
+  getSimTime(){ return new Date(state.simTime); },
+  setLatitude(rad){ state.lat = clamp(+rad, -Math.PI/2*0.999, Math.PI/2*0.999); },
+
+  /* ---- camera ---- */
+  get camera(){
+    return {
+      position: state.cameraPos.slice(),
+      forward: camFwd.slice(),
+      right: camRight.slice(),
+      up: camUp.slice(),
+      yaw: state.yaw, pitch: state.pitch,
+      fov: state.fov, mode: state.cameraMode,
+      following: state.follow ? state.follow.name : null
+    };
+  },
+  setCameraMode(mode){
+    state.cameraMode = mode === 'space' ? 'space' : 'ground';
+    if(state.cameraMode === 'ground'){ state.cameraPos = [0, 0.002, 0]; }
+    else if(len3(state.cameraPos) < 1){ state.cameraPos = [0, 200, 0]; }
+    emit('cameraMode', { mode: state.cameraMode });
+    syncPanel();
+  },
+  setFieldOfView(rad){ state.fov = clamp(+rad, 0.02*DEG, 140*DEG); },
+  setCameraPosition(x, y, z){ state.cameraPos = [+x, +y, +z]; },
+  lookAt(name){
+    const b = api.getBody(name);
+    if(!b) return;
+    const d = b.direction;
+    let dy = Math.atan2(d[0], -d[2]) - state.yaw;
+    dy = ((dy + Math.PI) % TAU + TAU) % TAU - Math.PI;
+    state.yaw += dy;
+    state.pitch = clamp(Math.asin(clamp(d[1], -1, 1)), -1.55, 1.55);
+    state.follow = { name, distance: state.follow ? state.follow.distance : 0 };
+  },
+  follow(name, distance = 40){
+    api.setCameraMode('space');
+    const b = api.getBody(name);
+    if(!b) return;
+    state.flyTween = {
+      name, distance,
+      t0: performance.now(), dur: 900,
+      startPos: state.cameraPos.slice(),
+      targetPos: b.position.slice(),
+      dir: b.direction.slice(),
+      yaw: Math.atan2(b.direction[0], -b.direction[2]),
+      pitch: Math.asin(clamp(b.direction[1], -1, 1))
+    };
+  },
+  flyTo(name, opts = {}){
+    const dist = opts.distance != null ? opts.distance : 40;
+    const dur  = (opts.duration != null ? opts.duration : 1.5) * 1000;
+    api.setCameraMode('space');
+    const b = api.getBody(name);
+    if(!b) return;
+    state.flyTween = {
+      name, distance: dist,
+      t0: performance.now(), dur,
+      startPos: state.cameraPos.slice(),
+      targetPos: b.position.slice(),
+      dir: b.direction.slice(),
+      yaw: Math.atan2(b.direction[0], -b.direction[2]),
+      pitch: Math.asin(clamp(b.direction[1], -1, 1))
+    };
+  },
+  unfollow(){ state.follow = null; state.flyTween = null; },
+
+  /* ---- events ---- */
+  on(ev, fn){ if(listeners[ev]) listeners[ev].push(fn); return api; },
+  off(ev, fn){
+    const a = listeners[ev]; if(!a) return api;
+    const i = a.indexOf(fn); if(i >= 0) a.splice(i, 1);
+    return api;
+  },
+
+  /* ---- misc ---- */
+  get version(){ return '1.0'; }
+};
+window.NightSky = api;
+
+/* ============================================================================
+   UI WIRING
+   ========================================================================== */
+const panelEl = document.getElementById('panel');
+const docsEl  = document.getElementById('docs');
+const toastEl = document.getElementById('toast');
+let toastTimer = null;
+function toast(msg){
+  toastEl.textContent = msg;
+  toastEl.classList.add('on');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>toastEl.classList.remove('on'), 1400);
+}
+function togglePanel(){ panelEl.classList.toggle('open'); }
+function toggleDocs(){ docsEl.classList.toggle('open'); }
+
+document.getElementById('docsBtn').addEventListener('click', toggleDocs);
+document.getElementById('docsClose').addEventListener('click', toggleDocs);
+
+/* body checkboxes */
+panelEl.querySelectorAll('input[data-body]').forEach(cb => {
+  cb.addEventListener('change', () => {
+    api.setBodyVisible(cb.dataset.body, cb.checked);
+    toast(`${cb.dataset.body}: ${cb.checked ? 'visible' : 'hidden'}`);
+  });
+});
+panelEl.querySelectorAll('button[data-toggle]').forEach(b => {
+  b.addEventListener('click', () => {
+    const on = b.dataset.toggle === 'all-on';
+    api.setAllBodiesVisible(on);
+    toast(on ? 'All bodies visible' : 'All bodies hidden');
+  });
+});
+
+/* layer checkboxes */
+panelEl.querySelectorAll('input[data-layer]').forEach(cb => {
+  cb.addEventListener('change', () => {
+    const k = cb.dataset.layer;
+    ({ stars:api.setStarsVisible, milkyway:api.setMilkyWayVisible,
+       ground:api.setGroundVisible, airglow:api.setAirglowVisible,
+       zodiacal:api.setZodiacalVisible, bloom:api.setBloomEnabled })[k](cb.checked);
+    toast(`${k}: ${cb.checked ? 'on' : 'off'}`);
+  });
+});
+
+/* lighting sliders */
+panelEl.querySelectorAll('input[data-light]').forEach(sl => {
+  const key = sl.dataset.light;
+  const val = panelEl.querySelector(`[data-val="${key}"]`);
+  const update = () => {
+    api.light[key] = +sl.value;
+    val.textContent = (+sl.value).toFixed(2);
+  };
+  sl.addEventListener('input', update);
+  update();
+});
+
+/* time controls */
+{
+  const sl = panelEl.querySelector('input[data-time="speed"]');
+  const val = panelEl.querySelector('[data-val="speed"]');
+  const setFromSlider = () => {
+    const v = +sl.value;
+    const scale = Math.pow(2, v);
+    api.setTimeScale(scale);
+    val.textContent = scale >= 1 ? '×'+scale.toFixed(scale>=10?0:2)
+                                 : '×'+scale.toFixed(3);
+  };
+  sl.addEventListener('input', setFromSlider);
+  setFromSlider();
+  panelEl.querySelector('[data-time-btn="pause"]').addEventListener('click', e => {
+    if(state.paused){ api.play(); e.target.textContent = '⏸ Pause'; }
+    else            { api.pause(); e.target.textContent = '⏵ Play'; }
+  });
+  panelEl.querySelector('[data-time-btn="now"]').addEventListener('click', () => {
+    api.setDate(new Date());
+    toast('Time set to now');
+  });
+}
+
+/* camera buttons */
+panelEl.querySelectorAll('button[data-cam]').forEach(b => {
+  b.addEventListener('click', () => {
+    api.setCameraMode(b.dataset.cam);
+    toast(`Camera: ${b.dataset.cam}`);
+  });
+});
+panelEl.querySelector('[data-cam-btn="reset"]').addEventListener('click', () => {
+  api.setCameraMode('ground');
+  state.cameraPos = [0, 0.002, 0];
+  state.yaw = 0; state.pitch = 0.62; state.fov = 78*DEG;
+  state.follow = null; state.flyTween = null;
+  toast('Camera reset');
+});
+panelEl.querySelector('[data-cam-btn="follow-moon"]').addEventListener('click', () => {
+  api.flyTo('Moon', { distance: 60, duration: 1.6 });
+  toast('Flying to the Moon…');
+});
+
+/* sync UI from state */
+function syncPanel(){
+  panelEl.querySelectorAll('input[data-body]').forEach(cb => {
+    cb.checked = !!state.visibility[cb.dataset.body];
+  });
+  panelEl.querySelectorAll('input[data-layer]').forEach(cb => {
+    cb.checked = !!state.layers[cb.dataset.layer];
+  });
+  panelEl.querySelectorAll('input[data-light]').forEach(sl => {
+    const k = sl.dataset.light;
+    sl.value = state.light[k];
+    const v = panelEl.querySelector(`[data-val="${k}"]`);
+    if(v) v.textContent = (+state.light[k]).toFixed(2);
+  });
+  panelEl.querySelectorAll('button[data-cam]').forEach(b => {
+    b.classList.toggle('on', b.dataset.cam === state.cameraMode);
+  });
+  const pauseBtn = panelEl.querySelector('[data-time-btn="pause"]');
+  if(pauseBtn) pauseBtn.textContent = state.paused ? '⏵ Play' : '⏸ Pause';
+}
+
+/* ============================================================================
+   MAIN LOOP
+   ========================================================================== */
+let prevT = performance.now();
+function frame(now){
+  const dt = Math.min(0.1, (now - prevT)/1000);
+  prevT = now;
+
+  if(!state.paused) state.simTime += dt * 1000 * state.timeScale;
+
+  updateAstro(dt, now);
+  render(now);
+  updateHUD(now);
+
+  emit('tick', {
+    time: new Date(state.simTime),
+    camera: api.camera,
+    bodies: api.bodies
+  });
+
+  requestAnimationFrame(frame);
+}
+
+/* ============================================================================
+   START
+   ========================================================================== */
+(function initView(){
+  const d = new Date();
+  d.setUTCHours(22, 0, 0, 0);
+  state.simTime = d.getTime();
+  updateAstro(0, performance.now());
+  const mAlt = state._moonWorld[1];
+  if(mAlt > 0.15){
+    state.yaw = Math.atan2(state._moonWorld[0], -state._moonWorld[2]);
+    state.pitch = Math.asin(clamp(state._moonWorld[1], -1, 1));
+    state.fov = 12*DEG;
+  } else {
+    state.yaw = 0; state.pitch = 0.62; state.fov = 78*DEG;
+  }
+})();
+
+resizeTargets(canvas.clientWidth, canvas.clientHeight);
+syncPanel();
+requestAnimationFrame(frame);
+
+setTimeout(()=>document.getElementById('load').classList.add('gone'), 120);
+
+/* welcome console message */
+console.log(
+  '%c◈ NIGHT SKY — JavaScript API ready',
+  'color:#7fb3ff;font-weight:bold;font-size:13px'
+);
+console.log(
+  '%cTry:  NightSky.setCameraMode("space")\n' +
+  '      NightSky.flyTo("Jupiter", { distance: 40 })\n' +
+  '      NightSky.setBodyVisible("Saturn", false)\n' +
+  '      NightSky.light.exposure = 1.8\n' +
+  '      NightSky.setTimeScale(3600)\n' +
+  'Type  NightSky  to inspect the whole API.',
+  'color:#9fb3c8;font-family:monospace'
+);
+</script>
+</body>
+</html>

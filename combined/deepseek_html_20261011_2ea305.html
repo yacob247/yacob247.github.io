@@ -1,0 +1,949 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Procedural PBR — The Titan</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: #05060a; overflow: hidden;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  canvas { display: block; }
+  #hud {
+    position: fixed; left: 22px; bottom: 20px; color: #6f7a8c;
+    font-size: 11px; letter-spacing: .18em; text-transform: uppercase;
+    pointer-events: none; line-height: 1.8;
+  }
+  #hud b {
+    color: #e9eef8; font-weight: 600; display: block;
+    font-size: 15px; letter-spacing: .28em; margin-bottom: 6px;
+  }
+  #hud span { color: #465061; }
+  #loader {
+    position: fixed; inset: 0; display: flex; align-items: center;
+    justify-content: center; flex-direction: column; gap: 16px;
+    background: #05060a; color: #6f7a8c; z-index: 10;
+    font-size: 11px; letter-spacing: .22em; text-transform: uppercase;
+    transition: opacity .8s ease;
+  }
+  #loader.hide { opacity: 0; pointer-events: none; }
+  #bar { width: 220px; height: 2px; background: #141922; overflow: hidden; }
+  #barFill {
+    height: 100%; width: 0%;
+    background: linear-gradient(90deg, #3d5c8a, #c8d8f0);
+    transition: width .25s ease;
+  }
+</style>
+</head>
+<body>
+<div id="hud"><b>THE TITAN</b>drag · orbit &nbsp;<span>|</span>&nbsp; scroll · zoom</div>
+<div id="loader"><div id="loadTxt">Forging PBR skin…</div><div id="bar"><div id="barFill"></div></div></div>
+
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* ============================================================
+   0 · UTILITIES
+   ============================================================ */
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+const nextFrame = () => new Promise(r => requestAnimationFrame(() => r()));
+const setProgress = (p, txt) => {
+  document.getElementById('barFill').style.width = (p * 100) + '%';
+  if (txt) document.getElementById('loadTxt').textContent = txt;
+};
+
+/* ============================================================
+   1 · PROCEDURAL NOISE  (tileable value-noise + fBm)
+   ============================================================ */
+const PERM = (() => {
+  let s = 0x9E3779B9 >>> 0;
+  const rnd = () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
+  const p = new Uint8Array(256);
+  for (let i = 0; i < 256; i++) p[i] = i;
+  for (let i = 255; i > 0; i--) {
+    const j = (rnd() * (i + 1)) | 0;
+    const t = p[i]; p[i] = p[j]; p[j] = t;
+  }
+  const P = new Uint8Array(512);
+  for (let i = 0; i < 512; i++) P[i] = p[i & 255];
+  return P;
+})();
+
+// periodic hash — px/py keep the noise seamless across the tile
+function hash2(x, y, px, py) {
+  x = ((x % px) + px) % px;
+  y = ((y % py) + py) % py;
+  return PERM[(PERM[x & 255] + (y & 255)) & 255] / 255;
+}
+
+function vnoise2(x, y, px, py) {
+  const xi = Math.floor(x), yi = Math.floor(y);
+  const xf = x - xi, yf = y - yi;
+  const u = xf * xf * (3 - 2 * xf);
+  const v = yf * yf * (3 - 2 * yf);
+  const a = hash2(xi,     yi,     px, py);
+  const b = hash2(xi + 1, yi,     px, py);
+  const c = hash2(xi,     yi + 1, px, py);
+  const d = hash2(xi + 1, yi + 1, px, py);
+  return (a + (b - a) * u) * (1 - v) + (c + (d - c) * u) * v;
+}
+
+// anisotropic fBm — fx/fy let us stretch the noise (great for wrinkles)
+function fbm2(u, v, fx, fy, oct, gain = 0.5) {
+  let amp = 1, sum = 0, norm = 0, ax = fx, ay = fy;
+  for (let i = 0; i < oct; i++) {
+    sum += amp * vnoise2(u * ax, v * ay, ax, ay);
+    norm += amp;
+    amp *= gain;
+    ax *= 2; ay *= 2;
+  }
+  return sum / norm;
+}
+
+/* ============================================================
+   2 · PBR TEXTURE FACTORY
+   ============================================================ */
+const TEX_SIZE = 1024;
+
+function makeSkinMaps() {
+  const N = TEX_SIZE;
+  const albedo = new Uint8Array(N * N * 4);
+  const rough  = new Uint8Array(N * N * 4);
+  const ao     = new Uint8Array(N * N * 4);
+  const height = new Float32Array(N * N);
+  return { N, albedo, rough, ao, height };
+}
+
+function passHeight(m) {
+  const { N, height } = m;
+  for (let j = 0; j < N; j++) {
+    const v = j / N;
+    for (let i = 0; i < N; i++) {
+      const u = i / N;
+      const pores  = fbm2(u, v, 190, 190, 2);   // sweat pores
+      const bumps  = fbm2(u, v,  38,  38, 3);   // medium dermis
+      const macro  = fbm2(u, v,   6,   6, 3);   // large undulation
+      let   w      = fbm2(u, v,   3,  34, 2);   // stretched → creases
+      w = 1 - Math.abs(w * 2 - 1);              // ridge transform
+
+      let h = 0.5
+        + (pores - 0.5) * 0.50
+        + (bumps - 0.5) * 0.34
+        + (macro - 0.5) * 0.58
+        + (w     - 0.5) * 0.14;
+
+      height[j * N + i] = clamp(h, 0, 1);
+    }
+  }
+}
+
+function passAlbedo(m) {
+  const { N, height, albedo, rough, ao } = m;
+  for (let j = 0; j < N; j++) {
+    const v = j / N;
+    for (let i = 0; i < N; i++) {
+      const u = i / N;
+      const idx = j * N + i;
+      const h = height[idx];
+
+      const mott   = fbm2(u, v, 9, 9, 4);
+      const blotch = fbm2(u, v, 4, 4, 2);
+      const fine   = fbm2(u, v, 96, 96, 2);
+
+      // ---- base melanin tone -------------------------------------
+      let r = 214, g = 170, b = 143;
+
+      const mm = mott - 0.5;
+      r += mm * 28; g += mm * 36; b += mm * 36;
+
+      // vascular flush blotches (redder, less green/blue)
+      const bl = Math.max(0, blotch - 0.56) * 2.4;
+      r += bl * 36; g -= bl * 7; b -= bl * 7;
+
+      // micro pigment grain
+      const fv = (fine - 0.5) * 13;
+      r += fv; g += fv * 0.82; b += fv * 0.78;
+
+      // crevice occlusion baked into albedo
+      const shade = 0.76 + h * 0.38;
+      r *= shade; g *= shade; b *= shade;
+
+      albedo[idx * 4 + 0] = clamp(r, 0, 255);
+      albedo[idx * 4 + 1] = clamp(g, 0, 255);
+      albedo[idx * 4 + 2] = clamp(b, 0, 255);
+      albedo[idx * 4 + 3] = 255;
+
+      // ---- roughness (oily peaks, matte valleys) -----------------
+      let ro = 0.56 - (h - 0.5) * 0.56 + (mott - 0.5) * 0.14;
+      ro = clamp(ro, 0.22, 0.96);
+      const rv = ro * 255;
+      rough[idx * 4 + 0] = rv; rough[idx * 4 + 1] = rv;
+      rough[idx * 4 + 2] = rv; rough[idx * 4 + 3] = 255;
+
+      // ---- micro ambient occlusion --------------------------------
+      const a = clamp(0.70 + h * 0.36, 0, 1) * 255;
+      ao[idx * 4 + 0] = a; ao[idx * 4 + 1] = a;
+      ao[idx * 4 + 2] = a; ao[idx * 4 + 3] = 255;
+    }
+  }
+}
+
+function passNormal(m) {
+  const { N, height } = m;
+  const out = new Uint8Array(N * N * 4);
+  const S = 6.0; // normal strength
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      const l = height[j * N + ((i - 1 + N) % N)];
+      const r = height[j * N + ((i + 1) % N)];
+      const d = height[((j - 1 + N) % N) * N + i];
+      const t = height[((j + 1) % N) * N + i];
+
+      let nx = (l - r) * S;
+      let ny = (d - t) * S;
+      let nz = 1;
+      const len = Math.hypot(nx, ny, nz);
+      nx /= len; ny /= len; nz /= len;
+
+      const o = (j * N + i) * 4;
+      out[o + 0] = (nx * 0.5 + 0.5) * 255;
+      out[o + 1] = (ny * 0.5 + 0.5) * 255;
+      out[o + 2] = (nz * 0.5 + 0.5) * 255;
+      out[o + 3] = 255;
+    }
+  }
+  return out;
+}
+
+/* ============================================================
+   3 · GEOMETRY KERNEL  (spline-resampled super-ellipse stack)
+   ============================================================ */
+function catmullRom(p0, p1, p2, p3, t) {
+  const t2 = t * t, t3 = t2 * t;
+  return 0.5 * (
+    (2 * p1) +
+    (-p0 + p2) * t +
+    (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 +
+    (-p0 + 3 * p1 - 3 * p2 + p3) * t3
+  );
+}
+
+function resampleSeries(values, count) {
+  const m = values.length;
+  if (m === 1) return new Array(count).fill(values[0]);
+  const out = new Array(count);
+  for (let i = 0; i < count; i++) {
+    const f = (i / (count - 1)) * (m - 1);
+    const i1 = Math.floor(f);
+    const t = f - i1;
+    const i0 = Math.max(0, i1 - 1);
+    const i2 = Math.min(m - 1, i1 + 1);
+    const i3 = Math.min(m - 1, i1 + 2);
+    out[i] = catmullRom(values[i0], values[i1], values[i2], values[i3], t);
+  }
+  return out;
+}
+
+/**
+ * Builds an organic tube from a stack of cross-sections.
+ * Each section: { y, cx, cz, rx, rz, e }
+ *   cx/cz = centre offset,  rx/rz = half-radii,  e = super-ellipse exponent
+ */
+function buildTube(sectionsIn, radialSegments = 32, rows = 96) {
+  const sections = sectionsIn.slice().sort((a, b) => a.y - b.y);
+  const def = { y: 0, cx: 0, cz: 0, rx: 0.01, rz: 0.01, e: 2.2 };
+  const S = {};
+  for (const k of ['y', 'cx', 'cz', 'rx', 'rz', 'e']) {
+    S[k] = resampleSeries(sections.map(s => (s[k] !== undefined ? s[k] : def[k])), rows);
+  }
+
+  const stride    = radialSegments + 1;
+  const ringVerts = rows * stride;
+  const vCount    = ringVerts + 2;                 // <-- +2 cap centres
+
+  const positions = new Float32Array(vCount * 3);
+  const uvs       = new Float32Array(vCount * 2);
+  const indices   = [];
+
+  // ---------- tube body ----------
+  let p = 0, q = 0;
+  for (let i = 0; i < rows; i++) {
+    const y  = S.y[i],  cx = S.cx[i], cz = S.cz[i];
+    const rx = Math.max(0.002, S.rx[i]);
+    const rz = Math.max(0.002, S.rz[i]);
+    const e  = Math.max(1.2, S.e[i]);
+    const inv = 2 / e;
+
+    for (let j = 0; j <= radialSegments; j++) {
+      const t  = (j / radialSegments) * Math.PI * 2;
+      const ct = Math.cos(t), st = Math.sin(t);
+      const px = Math.sign(ct) * Math.pow(Math.abs(ct), inv) * rx;
+      const pz = Math.sign(st) * Math.pow(Math.abs(st), inv) * rz;
+
+      positions[p++] = cx + px;
+      positions[p++] = y;
+      positions[p++] = cz + pz;
+
+      uvs[q++] = j / radialSegments;
+      uvs[q++] = i / (rows - 1);
+    }
+  }
+
+  // ---------- side quads (outward winding) ----------
+  for (let i = 0; i < rows - 1; i++) {
+    for (let j = 0; j < radialSegments; j++) {
+      const a = i * stride + j;
+      const b = a + 1;
+      const c = a + stride;
+      const d = c + 1;
+      indices.push(a, c, b, b, c, d);
+    }
+  }
+
+  // ---------- end caps ----------
+  const centre = (i) => [S.cx[i], S.y[i], S.cz[i]];
+  const base = ringVerts;
+
+  // bottom (-Y)
+  const c0 = centre(0);
+  positions[base * 3 + 0] = c0[0];
+  positions[base * 3 + 1] = c0[1];
+  positions[base * 3 + 2] = c0[2];
+  uvs[base * 2 + 0] = 0.5;
+  uvs[base * 2 + 1] = 0.0;
+  for (let j = 0; j < radialSegments; j++) {
+    indices.push(base, j, j + 1);
+  }
+
+  // top (+Y)
+  const topIdx = base + 1;
+  const c1 = centre(rows - 1);
+  positions[topIdx * 3 + 0] = c1[0];
+  positions[topIdx * 3 + 1] = c1[1];
+  positions[topIdx * 3 + 2] = c1[2];
+  uvs[topIdx * 2 + 0] = 0.5;
+  uvs[topIdx * 2 + 1] = 1.0;
+  const ring = (rows - 1) * stride;
+  for (let j = 0; j < radialSegments; j++) {
+    indices.push(topIdx, ring + j + 1, ring + j);
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('uv',       new THREE.BufferAttribute(uvs, 2));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  return geo;
+}
+/* ============================================================
+   4 · MUSCLE SCULPTING  (gaussian displacement field)
+   ============================================================ */
+function mirrorBlobs(list) {
+  const out = [];
+  for (const b of list) {
+    out.push(b);
+    if (Math.abs(b.x) > 1e-4) {
+      out.push({
+        x: -b.x, y: b.y, z: b.z, r: b.r, s: b.s,
+        n: b.n ? [-b.n[0], b.n[1], b.n[2]] : null
+      });
+    }
+  }
+  return out;
+}
+
+function sculpt(geo, blobs) {
+  geo.computeVertexNormals();
+  const pos = geo.attributes.position;
+  const nrm = geo.attributes.normal;
+  const count = pos.count;
+  const disp = new Float32Array(count);
+
+  for (let i = 0; i < count; i++) {
+    const px = pos.getX(i), py = pos.getY(i), pz = pos.getZ(i);
+    const nx = nrm.getX(i), ny = nrm.getY(i), nz = nrm.getZ(i);
+    let d = 0;
+
+    for (let k = 0; k < blobs.length; k++) {
+      const b = blobs[k];
+      const dx = px - b.x, dy = py - b.y, dz = pz - b.z;
+      const dist2 = dx * dx + dy * dy + dz * dz;
+      const r2 = b.r * b.r;
+      const w = Math.exp(-dist2 / r2);
+      if (w < 0.002) continue;
+
+      let mask = 1;
+      if (b.n) {
+        const dot = nx * b.n[0] + ny * b.n[1] + nz * b.n[2];
+        if (dot <= 0) continue;
+        mask = dot * dot;
+      }
+      d += w * mask * b.s;
+    }
+    disp[i] = d;
+  }
+
+  for (let i = 0; i < count; i++) {
+    const nx = nrm.getX(i), ny = nrm.getY(i), nz = nrm.getZ(i);
+    const d = disp[i];
+    pos.setXYZ(i,
+      pos.getX(i) + nx * d,
+      pos.getY(i) + ny * d,
+      pos.getZ(i) + nz * d
+    );
+  }
+  pos.needsUpdate = true;
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/* ============================================================
+   5 · THE FIGURE — anatomical section tables
+   ============================================================ */
+
+// ---------- TORSO (pelvis → neck) ----------
+const TORSO_SECTIONS = [
+  { y: 0.880, rx: 0.152, rz: 0.126, cz:  0.014, e: 2.9 },
+  { y: 0.970, rx: 0.176, rz: 0.140, cz:  0.008, e: 2.7 },
+  { y: 1.060, rx: 0.170, rz: 0.130, cz:  0.004, e: 2.5 },
+  { y: 1.150, rx: 0.158, rz: 0.118, cz:  0.002, e: 2.4 },
+  { y: 1.240, rx: 0.168, rz: 0.126, cz:  0.005, e: 2.3 },
+  { y: 1.320, rx: 0.186, rz: 0.140, cz:  0.011, e: 2.3 },
+  { y: 1.400, rx: 0.198, rz: 0.150, cz:  0.015, e: 2.3 },
+  { y: 1.470, rx: 0.203, rz: 0.146, cz:  0.008, e: 2.4 },
+  { y: 1.530, rx: 0.176, rz: 0.128, cz: -0.004, e: 2.5 },
+  { y: 1.580, rx: 0.114, rz: 0.102, cz: -0.012, e: 2.3 },
+  { y: 1.630, rx: 0.078, rz: 0.084, cz: -0.006, e: 2.1 },
+  { y: 1.690, rx: 0.074, rz: 0.080, cz:  0.000, e: 2.0 }
+];
+
+const TORSO_BLOBS = mirrorBlobs([
+  // pectorals
+  { x: 0.088, y: 1.400, z: 0.128, r: 0.105, s: 0.030, n: [0, 0.12, 1] },
+  { x: 0.058, y: 1.355, z: 0.128, r: 0.078, s: 0.018, n: [0, 0.12, 1] },
+  // deltoid caps
+  { x: 0.206, y: 1.492, z: 0.000, r: 0.092, s: 0.026, n: [1, 0.25, 0] },
+  // latissimus
+  { x: 0.166, y: 1.290, z: -0.050, r: 0.115, s: 0.026, n: [1, 0, -0.3] },
+  { x: 0.152, y: 1.200, z: -0.060, r: 0.100, s: 0.016, n: [1, 0, -0.3] },
+  // trapezius
+  { x: 0.072, y: 1.532, z: -0.058, r: 0.096, s: 0.030, n: [0.25, 0.55, -0.8] },
+  // obliques
+  { x: 0.146, y: 1.192, z: 0.032, r: 0.078, s: 0.012, n: [1, 0, 0.3] },
+  // rectus abdominis rows
+  { x: 0.035, y: 1.302, z: 0.116, r: 0.048, s: 0.013, n: [0, 0, 1] },
+  { x: 0.036, y: 1.246, z: 0.110, r: 0.046, s: 0.013, n: [0, 0, 1] },
+  { x: 0.036, y: 1.190, z: 0.104, r: 0.044, s: 0.012, n: [0, 0, 1] },
+  // glutes
+  { x: 0.084, y: 0.958, z: -0.126, r: 0.108, s: 0.034, n: [0, -0.2, -1] },
+  // erector spinae
+  { x: 0.046, y: 1.235, z: -0.118, r: 0.092, s: 0.014, n: [0, 0, -1] }
+]);
+
+const TORSO_CARVE = [
+  // linea alba
+  { x: 0.000, y: 1.170, z: 0.112, r: 0.030, s: -0.006, n: [0, 0, 1] },
+  { x: 0.000, y: 1.225, z: 0.118, r: 0.030, s: -0.006, n: [0, 0, 1] },
+  { x: 0.000, y: 1.278, z: 0.122, r: 0.030, s: -0.006, n: [0, 0, 1] },
+  { x: 0.000, y: 1.330, z: 0.126, r: 0.030, s: -0.005, n: [0, 0, 1] },
+  // spinal furrow
+  { x: 0.000, y: 1.150, z: -0.120, r: 0.032, s: -0.010, n: [0, 0, -1] },
+  { x: 0.000, y: 1.270, z: -0.132, r: 0.032, s: -0.011, n: [0, 0, -1] },
+  { x: 0.000, y: 1.390, z: -0.142, r: 0.032, s: -0.011, n: [0, 0, -1] },
+  { x: 0.000, y: 1.490, z: -0.132, r: 0.032, s: -0.009, n: [0, 0, -1] }
+];
+
+// ---------- HEAD ----------
+const HEAD_SECTIONS = [
+  { y: 1.655, rx: 0.070, rz: 0.076, cz:  0.000, e: 2.1 },
+  { y: 1.685, rx: 0.078, rz: 0.090, cz:  0.008, e: 2.2 },
+  { y: 1.715, rx: 0.090, rz: 0.106, cz:  0.012, e: 2.2 },
+  { y: 1.750, rx: 0.099, rz: 0.118, cz:  0.010, e: 2.1 },
+  { y: 1.782, rx: 0.103, rz: 0.124, cz:  0.006, e: 2.0 },
+  { y: 1.815, rx: 0.101, rz: 0.120, cz:  0.002, e: 2.0 },
+  { y: 1.848, rx: 0.093, rz: 0.108, cz: -0.002, e: 2.0 },
+  { y: 1.876, rx: 0.078, rz: 0.090, cz: -0.006, e: 2.0 },
+  { y: 1.896, rx: 0.048, rz: 0.056, cz: -0.008, e: 2.0 },
+  { y: 1.905, rx: 0.014, rz: 0.016, cz: -0.008, e: 2.0 }
+];
+
+const HEAD_BLOBS = mirrorBlobs([
+  { x: 0.052, y: 1.812, z: 0.106, r: 0.044, s: 0.012, n: [0.25, 0.10, 1] },  // brow ridge
+  { x: 0.082, y: 1.766, z: 0.068, r: 0.045, s: 0.011, n: [0.8, 0, 0.5] },   // cheekbone
+  { x: 0.078, y: 1.712, z: 0.028, r: 0.050, s: 0.014, n: [0.7, 0, 0.3] },   // masseter / jaw
+  { x: 0.088, y: 1.816, z: 0.044, r: 0.040, s: -0.008, n: [1, 0, 0.2] },    // temple hollow
+  { x: 0.038, y: 1.780, z: 0.108, r: 0.034, s: -0.013, n: [0, 0, 1] },      // eye socket
+  { x: 0.000, y: 1.842, z: -0.078, r: 0.092, s: 0.010, n: [0, 0, -1] }      // occiput
+]);
+
+HEAD_BLOBS.push(
+  { x: 0.000, y: 1.766, z: 0.114, r: 0.030, s: 0.019, n: [0, 0, 1] },  // nasal bridge
+  { x: 0.000, y: 1.742, z: 0.108, r: 0.026, s: 0.022, n: [0, 0, 1] },  // nasal tip
+  { x: 0.000, y: 1.722, z: 0.098, r: 0.022, s: 0.009, n: [0, 0, 1] },  // philtrum
+  { x: 0.000, y: 1.692, z: 0.096, r: 0.032, s: 0.013, n: [0, 0, 1] }   // chin
+);
+
+// ---------- ARMS ----------
+const ARM_SECTIONS = [
+  { y: 0.930, cx: 0.256, rx: 0.031, rz: 0.033, cz: 0.003, e: 2.1 },
+  { y: 0.970, cx: 0.253, rx: 0.038, rz: 0.039, cz: 0.004, e: 2.0 },
+  { y: 1.040, cx: 0.247, rx: 0.048, rz: 0.049, cz: 0.006, e: 2.0 },
+  { y: 1.120, cx: 0.240, rx: 0.052, rz: 0.054, cz: 0.006, e: 2.0 },
+  { y: 1.200, cx: 0.232, rx: 0.052, rz: 0.054, cz: 0.004, e: 2.0 },
+  { y: 1.280, cx: 0.224, rx: 0.058, rz: 0.060, cz: 0.004, e: 2.0 },
+  { y: 1.360, cx: 0.216, rx: 0.064, rz: 0.066, cz: 0.002, e: 2.0 },
+  { y: 1.440, cx: 0.208, rx: 0.070, rz: 0.072, cz: 0.000, e: 2.1 },
+  { y: 1.500, cx: 0.200, rx: 0.082, rz: 0.082, cz: 0.000, e: 2.2 },
+  { y: 1.550, cx: 0.190, rx: 0.078, rz: 0.078, cz: 0.000, e: 2.2 }
+];
+
+const ARM_BLOBS = [
+  { x: 0.222, y: 1.318, z: 0.018, r: 0.062, s: 0.014, n: [0.3, 0, 1] },   // biceps
+  { x: 0.240, y: 1.310, z: -0.020, r: 0.065, s: 0.012, n: [-0.3, 0, -1] },// triceps
+  { x: 0.246, y: 1.100, z: 0.014, r: 0.055, s: 0.010, n: [0.3, 0, 1] },   // brachioradialis
+  { x: 0.252, y: 1.070, z: -0.014, r: 0.050, s: 0.008, n: [-0.3, 0, -1] },
+  { x: 0.200, y: 1.512, z: 0.000, r: 0.085, s: 0.020, n: [1, 0, 0] }      // deltoid
+];
+
+// ---------- HANDS ----------
+const HAND_SECTIONS = [
+  { y: 0.730, cx: 0.256, rx: 0.011, rz: 0.028, cz: 0.010, e: 2.2 },
+  { y: 0.745, cx: 0.257, rx: 0.019, rz: 0.042, cz: 0.010, e: 2.4 },
+  { y: 0.770, cx: 0.258, rx: 0.024, rz: 0.050, cz: 0.010, e: 2.6 },
+  { y: 0.800, cx: 0.259, rx: 0.028, rz: 0.054, cz: 0.010, e: 2.8 },
+  { y: 0.840, cx: 0.260, rx: 0.030, rz: 0.056, cz: 0.010, e: 2.8 },
+  { y: 0.870, cx: 0.260, rx: 0.032, rz: 0.054, cz: 0.008, e: 2.8 },
+  { y: 0.900, cx: 0.259, rx: 0.032, rz: 0.044, cz: 0.006, e: 2.6 },
+  { y: 0.930, cx: 0.257, rx: 0.030, rz: 0.032, cz: 0.004, e: 2.2 }
+];
+
+const HAND_BLOBS = [
+  { x: 0.252, y: 0.845, z: 0.060, r: 0.026, s: 0.008, n: [0, 0, 1] },
+  { x: 0.268, y: 0.845, z: -0.048, r: 0.026, s: 0.006, n: [0, 0, -1] }
+];
+
+const THUMB_SECTIONS = [
+  { y: 0.835, cx: 0.248, cz: 0.072, rx: 0.011, rz: 0.011, e: 2.0 },
+  { y: 0.855, cx: 0.247, cz: 0.062, rx: 0.016, rz: 0.016, e: 2.0 },
+  { y: 0.880, cx: 0.246, cz: 0.050, rx: 0.019, rz: 0.019, e: 2.0 },
+  { y: 0.905, cx: 0.248, cz: 0.036, rx: 0.020, rz: 0.020, e: 2.0 }
+];
+
+// ---------- LEGS ----------
+const LEG_SECTIONS = [
+  { y: 0.100, cx: 0.112, rx: 0.034, rz: 0.037, cz:  0.004, e: 2.2 },
+  { y: 0.140, cx: 0.112, rx: 0.036, rz: 0.038, cz:  0.003, e: 2.1 },
+  { y: 0.200, cx: 0.111, rx: 0.044, rz: 0.046, cz:  0.002, e: 2.0 },
+  { y: 0.260, cx: 0.110, rx: 0.053, rz: 0.056, cz: -0.001, e: 2.0 },
+  { y: 0.320, cx: 0.109, rx: 0.060, rz: 0.063, cz: -0.006, e: 2.0 },
+  { y: 0.380, cx: 0.107, rx: 0.061, rz: 0.066, cz: -0.010, e: 2.0 },
+  { y: 0.440, cx: 0.105, rx: 0.059, rz: 0.064, cz: -0.008, e: 2.0 },
+  { y: 0.490, cx: 0.103, rx: 0.060, rz: 0.064, cz: -0.002, e: 2.0 },
+  { y: 0.530, cx: 0.101, rx: 0.064, rz: 0.068, cz:  0.002, e: 2.0 },
+  { y: 0.590, cx: 0.098, rx: 0.072, rz: 0.078, cz:  0.004, e: 2.0 },
+  { y: 0.680, cx: 0.094, rx: 0.081, rz: 0.088, cz:  0.004, e: 2.1 },
+  { y: 0.780, cx: 0.090, rx: 0.090, rz: 0.098, cz:  0.002, e: 2.2 },
+  { y: 0.880, cx: 0.086, rx: 0.098, rz: 0.108, cz:  0.000, e: 2.3 },
+  { y: 0.960, cx: 0.082, rx: 0.100, rz: 0.114, cz: -0.002, e: 2.4 },
+  { y: 1.020, cx: 0.078, rx: 0.090, rz: 0.104, cz: -0.004, e: 2.4 }
+];
+
+const LEG_BLOBS = [
+  { x: 0.096, y: 0.760, z: 0.070, r: 0.075, s: 0.016, n: [0, 0, 1] },   // rectus femoris
+  { x: 0.120, y: 0.700, z: 0.050, r: 0.070, s: 0.012, n: [0.7, 0, 0.5] },// vastus lateralis
+  { x: 0.075, y: 0.700, z: -0.070, r: 0.080, s: 0.012, n: [0, 0, -1] }, // hamstring
+  { x: 0.108, y: 0.385, z: -0.055, r: 0.070, s: 0.016, n: [0, 0, -1] }, // gastrocnemius
+  { x: 0.100, y: 0.330, z: 0.045, r: 0.055, s: 0.010, n: [0, 0, 1] },   // tibialis
+  { x: 0.090, y: 0.930, z: -0.100, r: 0.090, s: 0.018, n: [0, 0, -1] }  // gluteus
+];
+
+// ---------- FEET ----------
+const FOOT_SECTIONS = [
+  { y: 0.000, cx: 0.113, rx: 0.044, rz: 0.102, cz: 0.055, e: 3.2 },
+  { y: 0.012, cx: 0.113, rx: 0.047, rz: 0.105, cz: 0.050, e: 3.0 },
+  { y: 0.035, cx: 0.113, rx: 0.045, rz: 0.086, cz: 0.032, e: 2.8 },
+  { y: 0.065, cx: 0.112, rx: 0.040, rz: 0.060, cz: 0.014, e: 2.5 },
+  { y: 0.100, cx: 0.112, rx: 0.034, rz: 0.040, cz: 0.004, e: 2.2 }
+];
+
+/* ============================================================
+   6 · ENVIRONMENT MAP  (studio built from emissive cards)
+   ============================================================ */
+function buildEnvironment(renderer) {
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const envScene = new THREE.Scene();
+
+  // dark gradient dome
+  const domeMat = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    uniforms: {
+      cTop: { value: new THREE.Color(0x1b2331) },
+      cBot: { value: new THREE.Color(0x04050a) }
+    },
+    vertexShader: `
+      varying vec3 vP;
+      void main() {
+        vP = position;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }`,
+    fragmentShader: `
+      uniform vec3 cTop; uniform vec3 cBot;
+      varying vec3 vP;
+      void main() {
+        float h = normalize(vP).y * 0.5 + 0.5;
+        gl_FragColor = vec4(mix(cBot, cTop, pow(h, 0.85)), 1.0);
+      }`
+  });
+  envScene.add(new THREE.Mesh(new THREE.SphereGeometry(40, 32, 24), domeMat));
+
+  // HDR light cards
+  const card = (rgb, intensity, w, h, pos, target) => {
+    const mat = new THREE.MeshBasicMaterial({
+      side: THREE.DoubleSide,
+      color: new THREE.Color(rgb[0] * intensity, rgb[1] * intensity, rgb[2] * intensity)
+    });
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+    m.position.set(pos[0], pos[1], pos[2]);
+    m.lookAt(target[0], target[1], target[2]);
+    envScene.add(m);
+    return m;
+  };
+
+  card([1.00, 0.94, 0.86], 9.0, 7, 9, [6.5, 7.5, 6.0], [0, 1.2, 0]);   // key
+  card([0.66, 0.78, 1.00], 2.2, 9, 7, [-8.0, 2.5, 4.5], [0, 1.2, 0]);  // fill
+  card([0.72, 0.84, 1.10], 8.0, 6, 6, [-3.0, 5.0, -9.0], [0, 1.2, 0]); // rim
+  card([0.90, 0.86, 0.82], 1.1, 14, 14, [0, -3.5, 0], [0, 2, 0]);      // bounce
+
+  const rt = pmrem.fromScene(envScene, 0.02, 0.1, 100);
+  pmrem.dispose();
+  envScene.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+  return rt.texture;
+}
+
+/* ============================================================
+   7 · MAIN
+   ============================================================ */
+async function main() {
+  setProgress(0.05, 'Seeding noise fields…');
+  await nextFrame();
+
+  // ---------- textures ----------
+  const maps = makeSkinMaps();
+  setProgress(0.15, 'Sculpting dermis height…');
+  await nextFrame();
+  passHeight(maps);
+
+  setProgress(0.42, 'Synthesising melanin & sebum…');
+  await nextFrame();
+  passAlbedo(maps);
+
+  setProgress(0.68, 'Deriving tangent-space normals…');
+  await nextFrame();
+  const normalData = passNormal(maps);
+
+  const { N } = maps;
+  const mkTex = (data, srgb) => {
+    const t = new THREE.DataTexture(data, N, N, THREE.RGBAFormat);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.minFilter = THREE.LinearMipmapLinearFilter;
+    t.magFilter = THREE.LinearFilter;
+    t.generateMipmaps = true;
+    t.anisotropy = 8;
+    if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+    t.needsUpdate = true;
+    return t;
+  };
+
+  const albedoTex  = mkTex(maps.albedo, true);
+  const roughTex   = mkTex(maps.rough, false);
+  const aoTex      = mkTex(maps.ao, false);
+  const normalTex  = mkTex(normalData, false);
+
+  setProgress(0.78, 'Assembling anatomy…');
+  await nextFrame();
+
+  // ---------- renderer ----------
+  const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.05;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  document.body.appendChild(renderer.domElement);
+
+  const maxAniso = renderer.capabilities.getMaxAnisotropy();
+  [albedoTex, roughTex, aoTex, normalTex].forEach(t => (t.anisotropy = maxAniso));
+
+  // ---------- scene ----------
+  const scene = new THREE.Scene();
+
+  // background gradient sphere (vertex coloured, tone-map bypassed)
+  {
+    const geo = new THREE.SphereGeometry(60, 32, 24);
+    const pos = geo.attributes.position;
+    const cols = new Float32Array(pos.count * 3);
+    const top = new THREE.Color(0x141b27);
+    const bot = new THREE.Color(0x04050a);
+    const c = new THREE.Color();
+    for (let i = 0; i < pos.count; i++) {
+      const t = Math.pow(clamp(pos.getY(i) / 60 * 0.5 + 0.5, 0, 1), 0.9);
+      c.copy(bot).lerp(top, t);
+      cols[i * 3] = c.r; cols[i * 3 + 1] = c.g; cols[i * 3 + 2] = c.b;
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(cols, 3));
+    const bg = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+      vertexColors: true, side: THREE.BackSide,
+      depthWrite: false, toneMapped: false
+    }));
+    bg.renderOrder = -1;
+    scene.add(bg);
+  }
+
+  // ---------- camera ----------
+  const camera = new THREE.PerspectiveCamera(38, window.innerWidth / window.innerHeight, 0.05, 200);
+
+  // ---------- environment ----------
+  const envTex = buildEnvironment(renderer);
+  scene.environment = envTex;
+
+  // ---------- lights ----------
+  const key = new THREE.DirectionalLight(0xfff0dd, 2.6);
+  key.position.set(3.2, 4.6, 3.0);
+  key.target.position.set(0, 1.05, 0);
+  key.castShadow = true;
+  key.shadow.mapSize.set(2048, 2048);
+  key.shadow.camera.left = -1.6;
+  key.shadow.camera.right = 1.6;
+  key.shadow.camera.top = 2.6;
+  key.shadow.camera.bottom = -0.6;
+  key.shadow.camera.near = 1.0;
+  key.shadow.camera.far = 14;
+  key.shadow.bias = -0.0006;
+  key.shadow.normalBias = 0.022;
+  scene.add(key, key.target);
+
+  const fill = new THREE.DirectionalLight(0x8fb4ff, 0.55);
+  fill.position.set(-4.0, 2.2, 2.6);
+  scene.add(fill);
+
+  const rim = new THREE.DirectionalLight(0xa8c6ff, 2.1);
+  rim.position.set(-1.8, 3.2, -4.0);
+  scene.add(rim);
+
+  const hemi = new THREE.HemisphereLight(0x2a3446, 0x08080c, 0.35);
+  scene.add(hemi);
+
+  // ---------- floor ----------
+  {
+    const size = 320;
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = size;
+    const ctx = cv.getContext('2d');
+    const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+    g.addColorStop(0.0, '#ffffff');
+    g.addColorStop(0.35, '#8a8a8a');
+    g.addColorStop(0.75, '#1a1a1a');
+    g.addColorStop(1.0, '#000000');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, size, size);
+    const alphaTex = new THREE.CanvasTexture(cv);
+    alphaTex.colorSpace = THREE.NoColorSpace;
+
+    const floor = new THREE.Mesh(
+      new THREE.CircleGeometry(6.5, 64),
+      new THREE.MeshStandardMaterial({
+        color: 0x0d1015,
+        roughness: 0.62,
+        metalness: 0.15,
+        alphaMap: alphaTex,
+        transparent: true,
+        envMapIntensity: 0.5
+      })
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.receiveShadow = true;
+    scene.add(floor);
+  }
+
+  setProgress(0.86, 'Applying PBR shader…');
+  await nextFrame();
+
+  // ---------- skin material ----------
+  const skinMat = new THREE.MeshPhysicalMaterial({
+    map: albedoTex,
+    normalMap: normalTex,
+    normalScale: new THREE.Vector2(0.85, 0.85),
+    roughnessMap: roughTex,
+    roughness: 1.0,
+    aoMap: aoTex,
+    aoMapIntensity: 0.55,
+    metalness: 0.0,
+    ior: 1.4,
+    clearcoat: 0.14,
+    clearcoatRoughness: 0.55,
+    sheen: 0.85,
+    sheenRoughness: 0.85,
+    sheenColor: new THREE.Color(0xffb08a),
+    envMapIntensity: 1.0
+  });
+
+  // ---------- build the figure ----------
+  const body = new THREE.Group();
+  const ROOT_Y = 0;
+  body.position.y = ROOT_Y;
+
+  const attach = (geo) => {
+    // duplicate UV set for aoMap channel compatibility
+    geo.setAttribute('uv1', new THREE.BufferAttribute(
+      Float32Array.from(geo.attributes.uv.array), 2
+    ));
+    const mesh = new THREE.Mesh(geo, skinMat);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    body.add(mesh);
+    return mesh;
+  };
+
+  // torso
+  attach(sculpt(buildTube(TORSO_SECTIONS, 48, 130),
+    TORSO_BLOBS.concat(TORSO_CARVE)));
+
+  // head
+  attach(sculpt(buildTube(HEAD_SECTIONS, 40, 96), HEAD_BLOBS));
+
+  // arms / hands / thumbs (mirrored)
+  for (const side of [1, -1]) {
+    const flip = (sections) => sections.map(s => ({
+      ...s,
+      cx: s.cx !== undefined ? s.cx * side : 0,
+      cz: s.cz !== undefined ? s.cz : 0
+    }));
+
+    const armGeo = buildTube(flip(ARM_SECTIONS), 32, 110);
+    const armBlobs = ARM_BLOBS.map(b => ({ ...b, x: b.x * side, n: b.n ? [b.n[0] * side, b.n[1], b.n[2]] : null }));
+    attach(sculpt(armGeo, armBlobs));
+
+    const handGeo = buildTube(flip(HAND_SECTIONS), 24, 56);
+    const handBlobs = HAND_BLOBS.map(b => ({ ...b, x: b.x * side, n: b.n ? [b.n[0] * side, b.n[1], b.n[2]] : null }));
+    attach(sculpt(handGeo, handBlobs));
+
+    attach(buildTube(flip(THUMB_SECTIONS), 16, 24));
+  }
+
+  // legs
+  for (const side of [1, -1]) {
+    const legSections = LEG_SECTIONS.map(s => ({ ...s, cx: s.cx * side }));
+    const legGeo = buildTube(legSections, 36, 130);
+    const legBlobs = LEG_BLOBS.map(b => ({ ...b, x: b.x * side, n: b.n ? [b.n[0] * side, b.n[1], b.n[2]] : null }));
+    attach(sculpt(legGeo, legBlobs));
+
+    const footSections = FOOT_SECTIONS.map(s => ({ ...s, cx: s.cx * side }));
+    attach(buildTube(footSections, 28, 40));
+  }
+
+  // ---------- eyes ----------
+  const eyeMat = new THREE.MeshPhysicalMaterial({
+    color: 0x120d0a,
+    roughness: 0.07,
+    metalness: 0.0,
+    clearcoat: 1.0,
+    clearcoatRoughness: 0.02,
+    envMapIntensity: 1.8
+  });
+  for (const side of [1, -1]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.0122, 24, 16), eyeMat);
+    eye.position.set(0.038 * side, 1.780, 0.1045);
+    body.add(eye);
+  }
+
+  scene.add(body);
+
+  // ---------- camera rig ----------
+  const cam = {
+    theta: 0.55,
+    phi: 1.30,
+    dist: 4.1,
+    target: new THREE.Vector3(0, 1.02, 0)
+  };
+
+  function updateCamera() {
+    cam.phi = clamp(cam.phi, 0.42, 1.78);
+    cam.dist = clamp(cam.dist, 1.5, 9.0);
+    const sp = Math.sin(cam.phi), cp = Math.cos(cam.phi);
+    camera.position.set(
+      cam.target.x + cam.dist * sp * Math.sin(cam.theta),
+      cam.target.y + cam.dist * cp,
+      cam.target.z + cam.dist * sp * Math.cos(cam.theta)
+    );
+    camera.lookAt(cam.target);
+  }
+
+  // ---------- interaction ----------
+  let dragging = false;
+  let lastX = 0, lastY = 0;
+  const el = renderer.domElement;
+
+  el.addEventListener('pointerdown', e => {
+    dragging = true;
+    lastX = e.clientX; lastY = e.clientY;
+    el.setPointerCapture(e.pointerId);
+  });
+  el.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    cam.theta -= (e.clientX - lastX) * 0.0065;
+    cam.phi   -= (e.clientY - lastY) * 0.0065;
+    lastX = e.clientX; lastY = e.clientY;
+  });
+  const endDrag = e => {
+    dragging = false;
+    if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
+  };
+  el.addEventListener('pointerup', endDrag);
+  el.addEventListener('pointercancel', endDrag);
+
+  el.addEventListener('wheel', e => {
+    e.preventDefault();
+    cam.dist *= Math.exp(e.deltaY * 0.0011);
+  }, { passive: false });
+
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  // ---------- loop ----------
+  let prev = performance.now();
+  function tick(now) {
+    requestAnimationFrame(tick);
+    const dt = Math.min(0.05, (now - prev) / 1000);
+    prev = now;
+
+    if (!dragging) cam.theta += dt * 0.10;
+
+    updateCamera();
+    renderer.render(scene, camera);
+  }
+  updateCamera();
+  requestAnimationFrame(tick);
+
+  setProgress(1.0, 'Ready.');
+  await nextFrame();
+  document.getElementById('loader').classList.add('hide');
+}
+
+main().catch(err => {
+  console.error(err);
+  document.getElementById('loadTxt').textContent = 'Error: ' + err.message;
+});
+</script>
+</body>
+</html>

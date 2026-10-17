@@ -1,0 +1,1032 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover" />
+<title>Evolution of the Wheel — 3D PBR Short</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --accent:#5b8cff;
+    --bg0:#05060a;
+    --bg1:#101422;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{
+    height:100%;
+    background:#000;
+    color:#fff;
+    overflow:hidden;
+    font-family:'Inter',system-ui,sans-serif;
+  }
+  body{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:
+      radial-gradient(120% 90% at 50% 0%, #16203a 0%, #070910 55%, #000 100%);
+  }
+
+  /* ---------- the 9:16 "Short" frame ---------- */
+  #stage{
+    position:relative;
+    aspect-ratio:9/16;
+    height:min(100dvh, 177.78vw);
+    max-height:100dvh;
+    background:
+      radial-gradient(90% 60% at 50% 42%, #1b2338 0%, #0a0d16 55%, #04050a 100%);
+    overflow:hidden;
+    container-type:size;
+    box-shadow:0 0 80px rgba(0,0,0,.9);
+    isolation:isolate;
+  }
+  #c{
+    position:absolute; inset:0;
+    width:100%; height:100%;
+    display:block;
+  }
+
+  /* soft vignette on top of the canvas */
+  #vignette{
+    position:absolute; inset:0;
+    pointer-events:none;
+    background:
+      radial-gradient(70% 45% at 50% 46%, rgba(0,0,0,0) 40%, rgba(0,0,0,.55) 100%),
+      linear-gradient(to bottom, rgba(0,0,0,.55) 0%, rgba(0,0,0,0) 22%, rgba(0,0,0,0) 62%, rgba(0,0,0,.75) 100%);
+    mix-blend-mode:multiply;
+  }
+
+  /* ---------- overlay text ---------- */
+  #overlay{
+    position:absolute; inset:0;
+    display:flex;
+    flex-direction:column;
+    justify-content:space-between;
+    padding:7cqw 8cqw 7cqw;
+    pointer-events:none;
+    text-align:center;
+  }
+  .top{display:flex; flex-direction:column; align-items:center; gap:1.6cqw;}
+  .kicker{
+    font-family:'Inter',sans-serif;
+    font-weight:800;
+    font-size:2.5cqw;
+    letter-spacing:.42em;
+    text-indent:.42em;
+    color:rgba(255,255,255,.5);
+    text-transform:uppercase;
+  }
+  #year{
+    font-family:'Archivo Black', Impact, 'Arial Black', sans-serif;
+    font-size:17cqw;
+    line-height:.92;
+    letter-spacing:-.02em;
+    color:#fff;
+    text-shadow:
+      0 0 6cqw rgba(0,0,0,.9),
+      0 0 2cqw var(--accent),
+      0 .6cqw 1.4cqw rgba(0,0,0,.8);
+    -webkit-text-stroke:.25cqw rgba(0,0,0,.35);
+  }
+  #name{
+    font-family:'Inter',sans-serif;
+    font-weight:800;
+    font-size:4.1cqw;
+    letter-spacing:.02em;
+    color:var(--accent);
+    text-transform:uppercase;
+    text-shadow:0 0 4cqw rgba(0,0,0,.95);
+    transition:color .5s;
+  }
+
+  .bottom{display:flex; flex-direction:column; gap:2.4cqw;}
+
+  #segs{display:flex; gap:1.1cqw;}
+  #segs i{
+    flex:1;
+    height:1cqw;
+    border-radius:99px;
+    background:rgba(255,255,255,.14);
+    transition:background .35s ease, box-shadow .35s ease, transform .35s ease;
+  }
+  #segs i.done{background:rgba(255,255,255,.42);}
+  #segs i.on{
+    background:var(--accent);
+    box-shadow:0 0 3cqw var(--accent);
+    transform:scaleY(1.55);
+  }
+
+  #counter{
+    font-family:'Inter',sans-serif;
+    font-weight:600;
+    font-size:2.6cqw;
+    letter-spacing:.28em;
+    text-indent:.28em;
+    color:rgba(255,255,255,.42);
+  }
+
+  /* ---------- text pop animation ---------- */
+  @keyframes pop{
+    0%   {opacity:0; transform:translateY(3cqw) scale(.86); filter:blur(1.6cqw);}
+    55%  {opacity:1; transform:translateY(0) scale(1.05); filter:blur(0);}
+    100% {opacity:1; transform:translateY(0) scale(1);}
+  }
+  .pop{animation:pop .62s cubic-bezier(.18,.92,.28,1) both;}
+
+  /* subtle scanline / grain so it feels like a video */
+  #grain{
+    position:absolute; inset:-50%;
+    pointer-events:none;
+    opacity:.035;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3'/></filter><rect width='120' height='120' filter='url(%23n)'/></svg>");
+    animation:grain .7s steps(3) infinite;
+    mix-blend-mode:overlay;
+  }
+  @keyframes grain{
+    0%{transform:translate(0,0)}
+    33%{transform:translate(-3%,2%)}
+    66%{transform:translate(2%,-3%)}
+    100%{transform:translate(0,0)}
+  }
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <canvas id="c"></canvas>
+  <div id="vignette"></div>
+  <div id="grain"></div>
+
+  <div id="overlay">
+    <div class="top">
+      <div class="kicker">Evolution of the Wheel</div>
+      <div id="year">3500 BC</div>
+      <div id="name">The Log Roller</div>
+    </div>
+    <div class="bottom">
+      <div id="segs"></div>
+      <div id="counter">1 / 12</div>
+    </div>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ============================================================
+   0.  CONSTANTS
+   ============================================================ */
+const STAGE_DURATION = 3.6;   // seconds per era
+const TRANSITION     = 0.62;  // cross-over seconds
+const SPIN_SPEED     = 0.85;  // rad/s around the axle
+
+/* ============================================================
+   1.  RENDERER / SCENE / CAMERA
+   ============================================================ */
+const stageEl = document.getElementById('stage');
+const canvas  = document.getElementById('c');
+
+const renderer = new THREE.WebGLRenderer({
+  canvas,
+  antialias: true,
+  alpha: true,
+  powerPreference: 'high-performance'
+});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.outputColorSpace   = THREE.SRGBColorSpace;
+renderer.toneMapping        = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.12;
+renderer.shadowMap.enabled  = true;
+renderer.shadowMap.type     = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+
+const camera = new THREE.PerspectiveCamera(45, 9/16, 0.1, 100);
+camera.position.set(0, 0.18, 5.1);
+camera.lookAt(0, 0, 0);
+
+/* ---- image based lighting (PBR environment) ---- */
+const pmrem = new THREE.PMREMGenerator(renderer);
+pmrem.compileEquirectangularShader();
+const envRT = pmrem.fromScene(new RoomEnvironment(), 0.045);
+scene.environment = envRT.texture;
+
+/* ============================================================
+   2.  LIGHTS
+   ============================================================ */
+const hemi = new THREE.HemisphereLight(0x9dc0ff, 0x1a1410, 0.45);
+scene.add(hemi);
+
+const key = new THREE.DirectionalLight(0xffffff, 2.4);
+key.position.set(3.2, 5.4, 4.2);
+key.castShadow = true;
+key.shadow.mapSize.set(1024, 1024);
+key.shadow.camera.near   = 1;
+key.shadow.camera.far    = 18;
+key.shadow.camera.left   = -2.6;
+key.shadow.camera.right  =  2.6;
+key.shadow.camera.top    =  2.6;
+key.shadow.camera.bottom = -2.6;
+key.shadow.bias   = -0.0012;
+key.shadow.radius = 3;
+scene.add(key);
+
+const rimLight = new THREE.PointLight(0x5b8cff, 26, 16, 2);
+rimLight.position.set(-3.4, 2.2, -2.8);
+scene.add(rimLight);
+
+const fillLight = new THREE.PointLight(0xff7bb0, 14, 14, 2);
+fillLight.position.set(3.0, -1.6, 2.6);
+scene.add(fillLight);
+
+/* ============================================================
+   3.  SHADOW CATCHER + FLOOR GLOW
+   ============================================================ */
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(40, 40),
+  new THREE.ShadowMaterial({ opacity: 0.5 })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.position.y = -1.32;
+ground.receiveShadow = true;
+scene.add(ground);
+
+/* radial glow sprite behind the wheel */
+function radialTex(size = 256) {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const x = c.getContext('2d');
+  const g = x.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+  g.addColorStop(0.00, 'rgba(255,255,255,1)');
+  g.addColorStop(0.28, 'rgba(255,255,255,0.55)');
+  g.addColorStop(0.62, 'rgba(255,255,255,0.14)');
+  g.addColorStop(1.00, 'rgba(255,255,255,0)');
+  x.fillStyle = g;
+  x.fillRect(0, 0, size, size);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+const glowMat = new THREE.SpriteMaterial({
+  map: radialTex(),
+  color: 0x5b8cff,
+  transparent: true,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+  opacity: 0.75
+});
+const glowSprite = new THREE.Sprite(glowMat);
+glowSprite.scale.set(9.5, 9.5, 1);
+glowSprite.position.set(0, 0.1, -3.2);
+scene.add(glowSprite);
+
+/* ============================================================
+   4.  PROCEDURAL TEXTURES
+   ============================================================ */
+function makeCanvas(s) {
+  const c = document.createElement('canvas');
+  c.width = c.height = s;
+  return c;
+}
+function texFrom(canvas, rx = 1, ry = 1, srgb = true) {
+  const t = new THREE.CanvasTexture(canvas);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(rx, ry);
+  t.anisotropy = 8;
+  if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+/* ---- wood grain ---- */
+const woodCanvas = (() => {
+  const c = makeCanvas(512), x = c.getContext('2d');
+  x.fillStyle = '#8b5a2b'; x.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 320; i++) {
+    const y0 = Math.random() * 512;
+    x.strokeStyle = `rgba(${50 + Math.random()*70},${25 + Math.random()*45},${8 + Math.random()*25},${0.04 + Math.random()*0.22})`;
+    x.lineWidth = 0.5 + Math.random() * 3;
+    x.beginPath();
+    x.moveTo(0, y0);
+    for (let xx = 0; xx <= 512; xx += 24) {
+      x.lineTo(xx, y0 + Math.sin(xx * 0.012 + i) * 7 + (Math.random() - 0.5) * 3);
+    }
+    x.stroke();
+  }
+  for (let k = 0; k < 4; k++) {
+    const kx = Math.random() * 512, ky = Math.random() * 512;
+    for (let r = 2; r < 26; r += 2) {
+      x.strokeStyle = `rgba(70,40,18,${Math.max(0, 0.35 - r * 0.011)})`;
+      x.lineWidth = 1.5;
+      x.beginPath();
+      x.ellipse(kx, ky, r * 1.6, r, 0, 0, Math.PI * 2);
+      x.stroke();
+    }
+  }
+  return c;
+})();
+
+/* ---- end grain (concentric rings) ---- */
+const woodCutCanvas = (() => {
+  const c = makeCanvas(512), x = c.getContext('2d');
+  x.fillStyle = '#b07a3f'; x.fillRect(0, 0, 512, 512);
+  for (let r = 5; r < 400; r += 3 + Math.random() * 7) {
+    x.strokeStyle = `rgba(${80 + Math.random()*50},${50 + Math.random()*30},${20 + Math.random()*20},${0.12 + Math.random()*0.33})`;
+    x.lineWidth = 0.8 + Math.random() * 2.6;
+    x.beginPath();
+    x.ellipse(256, 256, r, r * (0.92 + Math.random() * 0.12), Math.random() * 0.2, 0, Math.PI * 2);
+    x.stroke();
+  }
+  for (let i = 0; i < 7; i++) {
+    const a = Math.random() * Math.PI * 2;
+    x.strokeStyle = 'rgba(60,34,14,.45)';
+    x.lineWidth = 1 + Math.random() * 3;
+    x.beginPath();
+    x.moveTo(256, 256);
+    x.lineTo(256 + Math.cos(a) * 250, 256 + Math.sin(a) * 250);
+    x.stroke();
+  }
+  return c;
+})();
+
+/* ---- bark ---- */
+const barkCanvas = (() => {
+  const c = makeCanvas(512), x = c.getContext('2d');
+  x.fillStyle = '#4a3624'; x.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 420; i++) {
+    const x0 = Math.random() * 512;
+    x.strokeStyle = `rgba(${30 + Math.random()*60},${20 + Math.random()*40},${10 + Math.random()*25},${0.1 + Math.random()*0.5})`;
+    x.lineWidth = 1 + Math.random() * 6;
+    x.beginPath();
+    x.moveTo(x0, 0);
+    for (let y = 0; y <= 512; y += 32) {
+      x.lineTo(x0 + Math.sin(y * 0.02 + i) * 9 + (Math.random() - 0.5) * 4, y);
+    }
+    x.stroke();
+  }
+  return c;
+})();
+
+/* ---- carbon fibre weave ---- */
+const carbonCanvas = (() => {
+  const c = makeCanvas(256), x = c.getContext('2d');
+  x.fillStyle = '#15171c'; x.fillRect(0, 0, 256, 256);
+  const s = 16;
+  for (let i = 0; i < 256 / s; i++) {
+    for (let j = 0; j < 256 / s; j++) {
+      const on = (i + j) % 2 === 0;
+      const g = x.createLinearGradient(i*s, j*s, i*s + s, j*s + s);
+      if (on) { g.addColorStop(0, '#33383f'); g.addColorStop(1, '#0b0d10'); }
+      else    { g.addColorStop(0, '#0b0d10'); g.addColorStop(1, '#33383f'); }
+      x.fillStyle = g;
+      x.fillRect(i * s, j * s, s, s);
+    }
+  }
+  return c;
+})();
+
+/* ============================================================
+   5.  MATERIALS  (PBR)
+   ============================================================ */
+const MAT = {
+  bark:      new THREE.MeshStandardMaterial({ map: texFrom(barkCanvas, 3, 1), roughness: 0.96, metalness: 0.0 }),
+  wood:      new THREE.MeshStandardMaterial({ map: texFrom(woodCanvas, 2, 2), roughness: 0.72, metalness: 0.0 }),
+  woodCut:   new THREE.MeshStandardMaterial({ map: texFrom(woodCutCanvas), roughness: 0.66, metalness: 0.0 }),
+  darkWood:  new THREE.MeshStandardMaterial({ map: texFrom(woodCanvas, 2, 2), color: 0x6b4526, roughness: 0.82, metalness: 0.0 }),
+  iron:      new THREE.MeshStandardMaterial({ color: 0x3f444a, roughness: 0.52, metalness: 1.0 }),
+  steel:     new THREE.MeshStandardMaterial({ color: 0x9ba2ac, roughness: 0.28, metalness: 1.0 }),
+  steelDark: new THREE.MeshStandardMaterial({ color: 0x4c525a, roughness: 0.44, metalness: 1.0 }),
+  chrome:    new THREE.MeshStandardMaterial({ color: 0xf2f6fa, roughness: 0.045, metalness: 1.0 }),
+  rubber:    new THREE.MeshStandardMaterial({ color: 0x141416, roughness: 0.93, metalness: 0.0 }),
+  whitewall: new THREE.MeshStandardMaterial({ color: 0xf2f0e6, roughness: 0.78, metalness: 0.0 }),
+  alloy:     new THREE.MeshStandardMaterial({ color: 0xc6ccd4, roughness: 0.23, metalness: 0.96 }),
+  alloyDark: new THREE.MeshStandardMaterial({ color: 0x5a6068, roughness: 0.34, metalness: 0.95 }),
+  carbon:    new THREE.MeshStandardMaterial({ map: texFrom(carbonCanvas, 6, 6), roughness: 0.28, metalness: 0.55 }),
+  carbonDark:new THREE.MeshStandardMaterial({ color: 0x101216, roughness: 0.4, metalness: 0.55 }),
+  brake:     new THREE.MeshStandardMaterial({ color: 0x6b7078, roughness: 0.55, metalness: 0.9 }),
+  caliper:   new THREE.MeshStandardMaterial({ color: 0xd8291f, roughness: 0.33, metalness: 0.55 }),
+  dark:      new THREE.MeshStandardMaterial({ color: 0x0a0b0e, roughness: 0.8, metalness: 0.1 }),
+  gold:      new THREE.MeshStandardMaterial({ color: 0xffc857, roughness: 0.16, metalness: 1.0 }),
+  glow:      new THREE.MeshStandardMaterial({ color: 0x00d8ff, emissive: 0x00d8ff, emissiveIntensity: 4.0, roughness: 0.3, metalness: 0.0 })
+};
+/* double-sided variants for open barrels */
+MAT.alloyDouble     = MAT.alloy.clone();     MAT.alloyDouble.side     = THREE.DoubleSide;
+MAT.alloyDarkDouble = MAT.alloyDark.clone(); MAT.alloyDarkDouble.side = THREE.DoubleSide;
+MAT.steelDarkDouble = MAT.steelDark.clone(); MAT.steelDarkDouble.side = THREE.DoubleSide;
+MAT.woodDouble      = MAT.wood.clone();      MAT.woodDouble.side      = THREE.DoubleSide;
+
+/* ============================================================
+   6.  GEOMETRY HELPERS
+   ============================================================ */
+/* cylinder whose axis points along +Z */
+function CYL(rt, rb, h, seg = 32, open = false) {
+  const g = new THREE.CylinderGeometry(rt, rb, h, seg, 1, open);
+  g.rotateX(Math.PI / 2);
+  return g;
+}
+
+/* radial spoke: starts at radius r0, ends at r1, rotated by `angle` around Z */
+function makeSpoke(r0, r1, w0, w1, mat, angle, seg = 8) {
+  const len = r1 - r0;
+  const geo = new THREE.CylinderGeometry(w1, w0, len, seg);
+  geo.translate(0, r0 + len / 2, 0);
+  const mesh = new THREE.Mesh(geo, mat);
+  const pivot = new THREE.Group();
+  pivot.rotation.z = angle;
+  pivot.add(mesh);
+  return pivot;
+}
+
+/* ============================================================
+   7.  WHEEL BUILDERS  (one per era)
+   ============================================================ */
+
+/* --- 3500 BC — Log Roller --- */
+function buildLog() {
+  const g = new THREE.Group();
+  const geo = new THREE.CylinderGeometry(0.74, 0.70, 1.5, 20, 12);
+  geo.rotateX(Math.PI / 2);
+  const p = geo.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    if (Math.hypot(x, y) > 0.2) {
+      const n = Math.sin(z * 3.7 + x * 2.1) * 0.5 + Math.sin(z * 9.3 + y * 1.7) * 0.5;
+      const s = 1 + n * 0.05;
+      p.setX(i, x * s); p.setY(i, y * s);
+    }
+  }
+  geo.computeVertexNormals();
+  g.add(new THREE.Mesh(geo, MAT.bark));
+
+  const capGeo = new THREE.CircleGeometry(0.685, 28);
+  const c1 = new THREE.Mesh(capGeo, MAT.woodCut);
+  c1.position.z = 0.752; g.add(c1);
+  const c2 = new THREE.Mesh(capGeo, MAT.woodCut);
+  c2.position.z = -0.752; c2.rotation.y = Math.PI; g.add(c2);
+  return g;
+}
+
+/* --- 2000 BC — Solid Wooden Disc --- */
+function buildDisc() {
+  const g = new THREE.Group();
+  const th = 0.22;
+
+  const shape = new THREE.Shape();
+  shape.absarc(0, 0, 0.88, 0, Math.PI * 2, false);
+  const hole = new THREE.Path();
+  hole.absarc(0, 0, 0.075, 0, Math.PI * 2, true);
+  shape.holes.push(hole);
+
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: th, bevelEnabled: true, bevelSize: 0.03,
+    bevelThickness: 0.03, bevelSegments: 3, curveSegments: 56
+  });
+  geo.translate(0, 0, -th / 2);
+  g.add(new THREE.Mesh(geo, MAT.wood));
+
+  /* rounded rim */
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.855, 0.105, 14, 64), MAT.wood);
+  g.add(rim);
+  return g;
+}
+
+/* --- 1500 BC — The Spoked Wheel --- */
+function buildSpoked() {
+  const g = new THREE.Group();
+  const R = 0.86;
+
+  g.add(new THREE.Mesh(new THREE.TorusGeometry(R, 0.078, 14, 64), MAT.wood));
+
+  const N = 8;
+  for (let i = 0; i < N; i++) {
+    g.add(makeSpoke(0.11, R - 0.04, 0.05, 0.032, MAT.wood, (i / N) * Math.PI * 2, 6));
+  }
+
+  const hub = new THREE.Mesh(CYL(0.14, 0.14, 0.32, 28), MAT.darkWood);
+  g.add(hub);
+  const hubRing = new THREE.Mesh(new THREE.TorusGeometry(0.14, 0.038, 10, 28), MAT.darkWood);
+  g.add(hubRing);
+  const axle = new THREE.Mesh(CYL(0.05, 0.05, 0.44, 16), MAT.darkWood);
+  g.add(axle);
+  return g;
+}
+
+/* --- 1000 BC — Iron-Rimmed Chariot Wheel --- */
+function buildChariot() {
+  const g = new THREE.Group();
+  const R = 0.92;
+
+  /* iron tyre */
+  g.add(new THREE.Mesh(new THREE.TorusGeometry(R, 0.042, 12, 72), MAT.iron));
+  /* wooden felloe just inside */
+  g.add(new THREE.Mesh(new THREE.TorusGeometry(R - 0.048, 0.034, 10, 72), MAT.wood));
+
+  const N = 12;
+  for (let i = 0; i < N; i++) {
+    g.add(makeSpoke(0.09, R - 0.06, 0.024, 0.017, MAT.wood, (i / N) * Math.PI * 2, 6));
+  }
+
+  const hub = new THREE.Mesh(CYL(0.105, 0.105, 0.36, 24), MAT.iron);
+  g.add(hub);
+  const hubCap1 = new THREE.Mesh(CYL(0.075, 0.105, 0.06, 24), MAT.iron);
+  hubCap1.position.z = 0.21; g.add(hubCap1);
+  const hubCap2 = new THREE.Mesh(CYL(0.105, 0.075, 0.06, 24), MAT.iron);
+  hubCap2.position.z = -0.21; g.add(hubCap2);
+  return g;
+}
+
+/* --- 1800 AD — The Wagon Wheel --- */
+function buildWagon() {
+  const g = new THREE.Group();
+  const R = 0.88;
+
+  /* felloe (thick wooden rim) */
+  g.add(new THREE.Mesh(new THREE.TorusGeometry(R, 0.088, 16, 56), MAT.wood));
+  /* iron band outside */
+  g.add(new THREE.Mesh(new THREE.TorusGeometry(R + 0.078, 0.028, 10, 56), MAT.iron));
+
+  const N = 12;
+  for (let i = 0; i < N; i++) {
+    g.add(makeSpoke(0.16, R - 0.05, 0.052, 0.036, MAT.wood, (i / N) * Math.PI * 2, 6));
+  }
+
+  /* hub */
+  const hub = new THREE.Mesh(CYL(0.165, 0.165, 0.46, 24), MAT.darkWood);
+  g.add(hub);
+  const band1 = new THREE.Mesh(new THREE.TorusGeometry(0.166, 0.03, 10, 28), MAT.iron);
+  band1.position.z = 0.22; g.add(band1);
+  const band2 = band1.clone(); band2.position.z = -0.22; g.add(band2);
+  const axle = new THREE.Mesh(CYL(0.06, 0.06, 0.6, 16), MAT.iron);
+  g.add(axle);
+  return g;
+}
+
+/* --- 1888 AD — Pneumatic Bicycle Wheel --- */
+function buildBicycle() {
+  const g = new THREE.Group();
+  const R = 0.9;
+
+  /* tyre */
+  g.add(new THREE.Mesh(new THREE.TorusGeometry(R, 0.042, 14, 72), MAT.rubber));
+  /* steel rim */
+  g.add(new THREE.Mesh(new THREE.TorusGeometry(R - 0.046, 0.026, 10, 72), MAT.steel));
+
+  /* crossed wire spokes */
+  const N = 32;
+  for (let i = 0; i < N; i++) {
+    const a = (i / N) * Math.PI * 2;
+    const dir = (i % 2) ? 1 : -1;
+    const spoke = makeSpoke(0.055, R - 0.075, 0.0075, 0.0075, MAT.steel, a, 5);
+    spoke.children[0].rotation.x = -dir * 0.068;
+    spoke.position.z = dir * 0.05;
+    g.add(spoke);
+  }
+
+  /* hub */
+  const hub = new THREE.Mesh(CYL(0.05, 0.05, 0.14, 20), MAT.steel);
+  g.add(hub);
+  const fl1 = new THREE.Mesh(CYL(0.072, 0.072, 0.014, 24), MAT.steel);
+  fl1.position.z = 0.055; g.add(fl1);
+  const fl2 = fl1.clone(); fl2.position.z = -0.055; g.add(fl2);
+  const axle = new THREE.Mesh(CYL(0.018, 0.018, 0.28, 12), MAT.steel);
+  g.add(axle);
+  return g;
+}
+
+/* --- 1900 AD — The Automobile Wheel --- */
+function buildCarWheel() {
+  const g = new THREE.Group();
+  const Rm = 0.78, Rt = 0.18;
+
+  g.add(new THREE.Mesh(new THREE.TorusGeometry(Rm, Rt, 22, 72), MAT.rubber));
+
+  /* steel disc */
+  const disc = new THREE.Mesh(CYL(0.70, 0.70, 0.26, 56), MAT.steelDark);
+  g.add(disc);
+  /* subtle pressed ring detail */
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.58, 0.02, 8, 56), MAT.steel);
+  ring.position.z = 0.14; g.add(ring);
+
+  /* hub + lug nuts */
+  const hub = new THREE.Mesh(CYL(0.14, 0.14, 0.38, 28), MAT.steel);
+  g.add(hub);
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2;
+    const nut = new THREE.Mesh(CYL(0.032, 0.032, 0.42, 10), MAT.steel);
+    nut.position.set(Math.cos(a) * 0.25, Math.sin(a) * 0.25, 0);
+    g.add(nut);
+  }
+  return g;
+}
+
+/* --- 1955 AD — The Chrome Hubcap --- */
+function buildHubcap() {
+  const g = new THREE.Group();
+  const Rm = 0.76, Rt = 0.2;
+
+  g.add(new THREE.Mesh(new THREE.TorusGeometry(Rm, Rt, 22, 72), MAT.rubber));
+
+  /* whitewalls */
+  const wwGeo = new THREE.RingGeometry(Rm - 0.135, Rm + 0.045, 56);
+  const ww1 = new THREE.Mesh(wwGeo, MAT.whitewall);
+  ww1.position.z = 0.135; g.add(ww1);
+  const ww2 = new THREE.Mesh(wwGeo, MAT.whitewall);
+  ww2.position.z = -0.135; ww2.rotation.y = Math.PI; g.add(ww2);
+
+  /* steel rim */
+  const rim = new THREE.Mesh(CYL(0.70, 0.70, 0.26, 56), MAT.steelDark);
+  g.add(rim);
+
+  /* chrome dome */
+  const domeGeo = new THREE.SphereGeometry(0.62, 44, 22, 0, Math.PI * 2, 0, Math.PI * 0.4);
+  domeGeo.rotateX(Math.PI / 2);
+  domeGeo.scale(1, 1, 0.58);
+  const dome = new THREE.Mesh(domeGeo, MAT.chrome);
+  dome.position.z = 0.13;
+  g.add(dome);
+
+  /* chrome base ring */
+  const baseRing = new THREE.Mesh(new THREE.TorusGeometry(0.575, 0.022, 10, 56), MAT.chrome);
+  baseRing.position.z = 0.235; g.add(baseRing);
+
+  /* spinner */
+  const spinner = new THREE.Mesh(new THREE.ConeGeometry(0.075, 0.2, 3), MAT.chrome);
+  spinner.rotation.x = Math.PI / 2;
+  spinner.position.z = 0.5;
+  g.add(spinner);
+  const badge = new THREE.Mesh(new THREE.SphereGeometry(0.045, 20, 14), MAT.gold);
+  badge.position.z = 0.48; g.add(badge);
+  return g;
+}
+
+/* --- 1985 AD — The Alloy Wheel --- */
+function buildAlloy() {
+  const g = new THREE.Group();
+  const Rm = 0.74, Rt = 0.24;
+
+  g.add(new THREE.Mesh(new THREE.TorusGeometry(Rm, Rt, 24, 72), MAT.rubber));
+
+  /* barrel */
+  const barrel = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.56, 0.56, 0.46, 56, 1, true).rotateX(Math.PI / 2),
+    MAT.alloyDouble
+  );
+  g.add(barrel);
+
+  /* 5 chunky spokes */
+  const N = 5;
+  for (let i = 0; i < N; i++) {
+    const sp = makeSpoke(0.1, 0.565, 0.145, 0.10, MAT.alloy, (i / N) * Math.PI * 2, 12);
+    sp.children[0].scale.z = 0.46;
+    g.add(sp);
+  }
+
+  /* hub cap */
+  const cap = new THREE.Mesh(CYL(0.185, 0.185, 0.4, 36), MAT.alloy);
+  g.add(cap);
+  const capFace = new THREE.Mesh(CYL(0.135, 0.135, 0.44, 32), MAT.dark);
+  g.add(capFace);
+
+  /* brake disc behind */
+  const brake = new THREE.Mesh(CYL(0.45, 0.45, 0.05, 56), MAT.brake);
+  brake.position.z = -0.15; g.add(brake);
+  return g;
+}
+
+/* --- 2005 AD — Performance Multi-Spoke --- */
+function buildPerformance() {
+  const g = new THREE.Group();
+  const Rm = 0.72, Rt = 0.26;
+
+  g.add(new THREE.Mesh(new THREE.TorusGeometry(Rm, Rt, 26, 72), MAT.rubber));
+
+  const barrel = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.52, 0.52, 0.5, 56, 1, true).rotateX(Math.PI / 2),
+    MAT.alloyDarkDouble
+  );
+  g.add(barrel);
+
+  /* 10 slim spokes */
+  const N = 10;
+  for (let i = 0; i < N; i++) {
+    const sp = makeSpoke(0.09, 0.525, 0.055, 0.028, MAT.alloyDark, (i / N) * Math.PI * 2, 10);
+    sp.children[0].scale.z = 0.36;
+    g.add(sp);
+  }
+
+  const cap = new THREE.Mesh(CYL(0.155, 0.155, 0.44, 36), MAT.alloyDark);
+  g.add(cap);
+
+  /* brake disc with drilled holes */
+  const disc = new THREE.Mesh(CYL(0.43, 0.43, 0.05, 56), MAT.brake);
+  disc.position.z = -0.16; g.add(disc);
+  for (let i = 0; i < 20; i++) {
+    const a = (i / 20) * Math.PI * 2;
+    const h = new THREE.Mesh(CYL(0.021, 0.021, 0.075, 8), MAT.dark);
+    h.position.set(Math.cos(a) * 0.33, Math.sin(a) * 0.33, -0.16);
+    g.add(h);
+  }
+  /* red caliper */
+  const cal = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.24, 0.13), MAT.caliper);
+  cal.position.set(0.34, 0.2, -0.16);
+  cal.rotation.z = -0.5;
+  g.add(cal);
+  return g;
+}
+
+/* --- 2024 AD — Carbon Aero EV --- */
+function buildCarbon() {
+  const g = new THREE.Group();
+  const Rm = 0.72, Rt = 0.24;
+
+  g.add(new THREE.Mesh(new THREE.TorusGeometry(Rm, Rt, 26, 72), MAT.rubber));
+
+  /* carbon rim lip */
+  const lip = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.032, 12, 72), MAT.carbon);
+  lip.position.z = 0.13; g.add(lip);
+
+  /* aero cover */
+  const cover = new THREE.Mesh(CYL(0.545, 0.545, 0.075, 72), MAT.carbon);
+  cover.position.z = 0.125; g.add(cover);
+
+  /* turbine blades */
+  const N = 10;
+  for (let i = 0; i < N; i++) {
+    const a = (i / N) * Math.PI * 2;
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.38, 0.055), MAT.carbonDark);
+    blade.position.set(Math.cos(a) * 0.28, Math.sin(a) * 0.28, 0.175);
+    blade.rotation.z = a + 0.42;
+    blade.rotation.y = 0.32;
+    g.add(blade);
+  }
+
+  /* centre cap */
+  const cap = new THREE.Mesh(CYL(0.1, 0.1, 0.18, 36), MAT.carbonDark);
+  cap.position.z = 0.17; g.add(cap);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.012, 8, 36), MAT.glow);
+  ring.position.z = 0.255; g.add(ring);
+
+  /* barrel */
+  const barrel = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.55, 0.55, 0.44, 56, 1, true).rotateX(Math.PI / 2),
+    MAT.carbonDark
+  );
+  barrel.position.z = -0.1;
+  g.add(barrel);
+  return g;
+}
+
+/* --- 2050 AD — The Hubless Wheel --- */
+function buildHubless() {
+  const g = new THREE.Group();
+  const R = 0.8;
+
+  /* tyre */
+  g.add(new THREE.Mesh(new THREE.TorusGeometry(R, 0.135, 26, 80), MAT.rubber));
+
+  /* chrome inner race */
+  const inner = new THREE.Mesh(new THREE.TorusGeometry(R - 0.155, 0.058, 18, 80), MAT.chrome);
+  g.add(inner);
+
+  /* glowing guide ring */
+  const glowRing = new THREE.Mesh(new THREE.TorusGeometry(R - 0.255, 0.019, 10, 80), MAT.glow);
+  g.add(glowRing);
+
+  /* magnetic pads */
+  const N = 8;
+  for (let i = 0; i < N; i++) {
+    const a = (i / N) * Math.PI * 2;
+    const px = Math.cos(a) * (R - 0.245);
+    const py = Math.sin(a) * (R - 0.245);
+
+    const pad = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.07, 0.24), MAT.chrome);
+    pad.position.set(px, py, 0);
+    pad.rotation.z = a;
+    g.add(pad);
+
+    const led = new THREE.Mesh(CYL(0.024, 0.024, 0.28, 12), MAT.glow);
+    led.position.set(px, py, 0);
+    g.add(led);
+  }
+
+  /* floating energy core */
+  const core = new THREE.Mesh(new THREE.IcosahedronGeometry(0.115, 1), MAT.chrome);
+  g.add(core);
+  const coreGlow = new THREE.Mesh(new THREE.IcosahedronGeometry(0.155, 1), MAT.glow);
+  coreGlow.material = MAT.glow.clone();
+  coreGlow.material.transparent = true;
+  coreGlow.material.opacity = 0.32;
+  g.add(coreGlow);
+  return g;
+}
+
+/* ============================================================
+   8.  STAGE LIST
+   ============================================================ */
+const STAGES = [
+  { year: '3500 BC', name: 'The Log Roller',        accent: '#c08a4e', build: buildLog },
+  { year: '2000 BC', name: 'Solid Wooden Disc',     accent: '#d09a56', build: buildDisc },
+  { year: '1500 BC', name: 'The Spoked Wheel',      accent: '#e0b070', build: buildSpoked },
+  { year: '1000 BC', name: 'Iron-Rimmed Chariot',   accent: '#95a2b3', build: buildChariot },
+  { year: '1800 AD', name: 'The Wagon Wheel',       accent: '#c08a4e', build: buildWagon },
+  { year: '1888 AD', name: 'The Pneumatic Tyre',    accent: '#8fa0b5', build: buildBicycle },
+  { year: '1900 AD', name: 'The Automobile Wheel',  accent: '#78838f', build: buildCarWheel },
+  { year: '1955 AD', name: 'The Chrome Hubcap',     accent: '#e8eef7', build: buildHubcap },
+  { year: '1985 AD', name: 'The Alloy Wheel',       accent: '#c3cbd5', build: buildAlloy },
+  { year: '2005 AD', name: 'Performance Multi-Spoke', accent: '#9aa6b3', build: buildPerformance },
+  { year: '2024 AD', name: 'Carbon Aero EV',        accent: '#5b6b80', build: buildCarbon },
+  { year: '2050 AD', name: 'The Hubless Wheel',     accent: '#00e5ff', build: buildHubless }
+];
+
+/* ============================================================
+   9.  UI
+   ============================================================ */
+const yearEl    = document.getElementById('year');
+const nameEl    = document.getElementById('name');
+const counterEl = document.getElementById('counter');
+const segsEl    = document.getElementById('segs');
+
+STAGES.forEach(() => segsEl.appendChild(document.createElement('i')));
+const segEls = [...segsEl.children];
+
+function retrigger(el, cls) {
+  el.classList.remove(cls);
+  void el.offsetWidth;
+  el.classList.add(cls);
+}
+
+function updateLabels() {
+  const s = STAGES[stageIdx];
+  yearEl.textContent = s.year;
+  nameEl.textContent = s.name;
+  counterEl.textContent = `${stageIdx + 1} / ${STAGES.length}`;
+
+  retrigger(yearEl, 'pop');
+  retrigger(nameEl, 'pop');
+
+  segEls.forEach((el, i) => {
+    el.classList.toggle('on', i === stageIdx);
+    el.classList.toggle('done', i < stageIdx);
+  });
+}
+
+/* ============================================================
+   10.  SCENE GRAPH
+   ============================================================ */
+const holder = new THREE.Group();
+scene.add(holder);
+
+const wheelCache = new Array(STAGES.length).fill(null);
+
+function getWheel(i) {
+  if (!wheelCache[i]) {
+    const w = STAGES[i].build();
+    w.traverse(o => {
+      if (o.isMesh) {
+        o.castShadow = true;
+        o.receiveShadow = true;
+      }
+    });
+    wheelCache[i] = w;
+  }
+  return wheelCache[i];
+}
+
+let stageIdx = 0;
+let stageT   = 0;
+let trans    = 1;
+let curWheel = null;
+let oldWheel = null;
+let spin     = 0;
+
+const easeOutBack = t => {
+  const c1 = 1.70158, c3 = c1 + 1;
+  return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+};
+
+function startStage(i) {
+  /* clean up */
+  if (oldWheel) { holder.remove(oldWheel); oldWheel = null; }
+  if (curWheel) oldWheel = curWheel;
+
+  stageIdx = i;
+  stageT = 0;
+  trans = 0;
+
+  curWheel = getWheel(i);
+  curWheel.rotation.set(0, 0, spin);
+  curWheel.position.set(0, 0, 0);
+  curWheel.scale.setScalar(0.001);
+  holder.add(curWheel);
+
+  /* accent colour everywhere */
+  const c = new THREE.Color(STAGES[i].accent);
+  glowMat.color.copy(c);
+  rimLight.color.copy(c);
+  document.documentElement.style.setProperty('--accent', STAGES[i].accent);
+
+  updateLabels();
+}
+
+/* ============================================================
+   11.  RESIZE
+   ============================================================ */
+function resize() {
+  const r = stageEl.getBoundingClientRect();
+  const w = Math.max(1, Math.round(r.width));
+  const h = Math.max(1, Math.round(r.height));
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stageEl);
+window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', () => setTimeout(resize, 120));
+
+/* ============================================================
+   12.  ANIMATION LOOP
+   ============================================================ */
+let last = performance.now();
+let elapsed = 0;
+
+function tick(now) {
+  requestAnimationFrame(tick);
+
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  elapsed += dt;
+  stageT += dt;
+
+  /* advance the era */
+  if (stageT >= STAGE_DURATION) {
+    startStage((stageIdx + 1) % STAGES.length);
+  }
+
+  /* spin + turntable */
+  spin += dt * SPIN_SPEED;
+
+  holder.rotation.y = Math.sin(elapsed * 0.55) * 0.72;
+  holder.rotation.x = -0.10 + Math.sin(elapsed * 0.31) * 0.045;
+  holder.position.y = Math.sin(elapsed * 1.15) * 0.028;
+
+  /* transition in / out */
+  if (trans < 1) {
+    trans = Math.min(1, trans + dt / TRANSITION);
+    const e = easeOutBack(trans);
+
+    if (curWheel) {
+      const s = Math.max(0.001, e);
+      curWheel.scale.setScalar(s);
+      curWheel.rotation.z = spin;
+    }
+    if (oldWheel) {
+      const o = Math.max(0.001, 1 - trans);
+      oldWheel.scale.setScalar(o);
+      oldWheel.rotation.z += dt * 14;
+      oldWheel.position.y = -trans * 1.35;
+      oldWheel.position.z = -trans * 0.6;
+      if (trans >= 1) {
+        holder.remove(oldWheel);
+        oldWheel = null;
+      }
+    }
+  } else if (curWheel) {
+    curWheel.rotation.z = spin;
+  }
+
+  /* breathing glow */
+  const pulse = 0.66 + Math.sin(elapsed * 2.1) * 0.09;
+  glowMat.opacity = pulse;
+  glowSprite.scale.setScalar(9.4 + Math.sin(elapsed * 1.4) * 0.25);
+
+  /* rim light orbit */
+  rimLight.position.x = Math.cos(elapsed * 0.5) * 3.6;
+  rimLight.position.z = Math.sin(elapsed * 0.5) * 3.6 - 1.2;
+  rimLight.position.y = 1.6 + Math.sin(elapsed * 0.8) * 1.2;
+
+  fillLight.position.x = Math.cos(elapsed * 0.5 + Math.PI) * 3.2;
+  fillLight.position.z = Math.sin(elapsed * 0.5 + Math.PI) * 3.2;
+
+  renderer.render(scene, camera);
+}
+
+/* ============================================================
+   13.  GO
+   ============================================================ */
+resize();
+startStage(0);
+requestAnimationFrame(t => { last = t; tick(t); });
+</script>
+</body>
+</html>

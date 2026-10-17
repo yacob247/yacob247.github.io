@@ -1,0 +1,1155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Modular PBR Police Uniform</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html,body { margin:0; height:100%; background:#0b0e13; overflow:hidden;
+    font:13px/1.4 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif; color:#cfd8e3; }
+  canvas { display:block; }
+
+  #panel {
+    position:fixed; top:14px; right:14px; width:284px; max-height:calc(100vh - 28px);
+    overflow-y:auto; padding:14px; border-radius:14px;
+    background:rgba(14,18,25,.82); backdrop-filter:blur(14px);
+    border:1px solid rgba(120,160,220,.16);
+    box-shadow:0 12px 40px rgba(0,0,0,.55);
+  }
+  #panel h1 { margin:0 0 2px; font-size:13px; letter-spacing:.14em; text-transform:uppercase; color:#7fa8e0; }
+  #panel .sub { font-size:11px; color:#5d6b7d; margin-bottom:12px; }
+  .sect { margin-top:14px; padding-top:12px; border-top:1px solid rgba(120,160,220,.13); }
+  .sect-t { font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:#5d6b7d; margin-bottom:8px; }
+
+  .part { display:grid; grid-template-columns:16px 1fr; align-items:center;
+          gap:8px; padding:5px 6px; border-radius:8px; cursor:pointer; }
+  .part:hover { background:rgba(120,160,220,.07); }
+  .part input[type=checkbox] { accent-color:#4f8fe0; width:14px; height:14px; cursor:pointer; }
+  .part .nm { font-size:12px; }
+  .part .wr { grid-column:1 / -1; display:flex; align-items:center; gap:6px; padding-left:2px; }
+  .part .wr input { flex:1; }
+
+  input[type=range] { -webkit-appearance:none; appearance:none; height:3px; border-radius:2px;
+    background:rgba(120,160,220,.2); outline:none; cursor:pointer; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:12px; height:12px;
+    border-radius:50%; background:#4f8fe0; border:2px solid #0e1219; cursor:pointer; }
+  input[type=range]::-moz-range-thumb { width:12px; height:12px; border-radius:50%;
+    background:#4f8fe0; border:2px solid #0e1219; cursor:pointer; }
+
+  .row { display:flex; gap:6px; margin-top:10px; }
+  button { flex:1; padding:7px 8px; font-size:11px; font-weight:600; letter-spacing:.04em;
+    border-radius:8px; border:1px solid rgba(120,160,220,.22);
+    background:rgba(120,160,220,.08); color:#b9cde6; cursor:pointer; transition:.15s; }
+  button:hover { background:rgba(120,160,220,.18); border-color:rgba(120,160,220,.4); }
+  button:active { transform:translateY(1px); }
+
+  .hint { margin-top:12px; font-size:11px; line-height:1.5; color:#5d6b7d; }
+  .hint b { color:#8fb4e0; font-weight:600; }
+</style>
+</head>
+<body>
+
+<div id="panel">
+  <h1>Uniform Rig</h1>
+  <div class="sub">Modular PBR · per-part physics</div>
+
+  <div class="sect-t">Parts</div>
+  <div id="partList"></div>
+
+  <div class="sect">
+    <div class="sect-t">Global</div>
+    <label class="part" style="grid-template-columns:1fr">
+      <span class="wr"><span class="nm" style="min-width:78px">Dressed</span>
+        <input type="range" id="wearAll" min="0" max="1" step="0.01" value="1"></span>
+    </label>
+    <label class="part" style="grid-template-columns:1fr">
+      <span class="wr"><span class="nm" style="min-width:78px">Hit power</span>
+        <input type="range" id="power" min="0.4" max="7" step="0.1" value="2.6"></span>
+    </label>
+  </div>
+
+  <div class="row">
+    <button id="btnCombine">Combine all</button>
+    <button id="btnSeparate">Separate all</button>
+  </div>
+  <div class="row"><button id="btnReset">Reset</button></div>
+
+  <div class="hint">
+    <b>Drag</b> to orbit · <b>Click</b> the officer to strike.<br>
+    The hit vector decides impulse, spin and which way the head snaps. Hit the head and the cap comes off with it.
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ═══════════════════════════════════════════════════════════
+   1 · RENDERER / SCENE / CAMERA / LIGHTS
+   ═══════════════════════════════════════════════════════════ */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b0e13);
+scene.fog = new THREE.Fog(0x0b0e13, 7, 16);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(34, innerWidth / innerHeight, 0.1, 100);
+camera.position.set(1.9, 1.5, 3.4);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.02, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.07;
+controls.minDistance = 1.4;
+controls.maxDistance = 7;
+controls.maxPolarAngle = Math.PI * 0.52;
+
+const key = new THREE.DirectionalLight(0xfff4e6, 3.1);
+key.position.set(2.6, 4.4, 3.2);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.near = 0.5;
+key.shadow.camera.far = 14;
+key.shadow.camera.left = -2.6; key.shadow.camera.right = 2.6;
+key.shadow.camera.top = 3.2;   key.shadow.camera.bottom = -0.6;
+key.shadow.bias = -0.0006;
+key.shadow.normalBias = 0.022;
+scene.add(key);
+
+const rim = new THREE.DirectionalLight(0x6f9dff, 1.5);
+rim.position.set(-3.2, 2.6, -3.4);
+scene.add(rim);
+
+scene.add(new THREE.HemisphereLight(0x9fb8d8, 0x14171c, 0.55));
+
+/* ── floor ─────────────────────────────────────────────── */
+const floor = new THREE.Mesh(
+  new THREE.CircleGeometry(7, 72),
+  new THREE.MeshStandardMaterial({ color: 0x171c24, roughness: 0.78, metalness: 0.04 })
+);
+floor.rotation.x = -Math.PI / 2;
+floor.receiveShadow = true;
+scene.add(floor);
+
+const grid = new THREE.GridHelper(14, 56, 0x25303e, 0x1a212a);
+grid.position.y = 0.002;
+grid.material.transparent = true;
+grid.material.opacity = 0.5;
+scene.add(grid);
+
+/* ═══════════════════════════════════════════════════════════
+   2 · PROCEDURAL PBR TEXTURES  (value-noise height → normal)
+   ═══════════════════════════════════════════════════════════ */
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function valueNoise(size, cell, seed) {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  const n = Math.ceil(size / cell) + 2;
+  const rnd = mulberry32(seed);
+  const g = new Float32Array(n * n);
+  for (let i = 0; i < g.length; i++) g[i] = rnd();
+
+  const img = ctx.createImageData(size, size);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const gx = x / cell, gy = y / cell;
+      const x0 = Math.floor(gx), y0 = Math.floor(gy);
+      const fx = gx - x0, fy = gy - y0;
+      const sx = fx * fx * (3 - 2 * fx);
+      const sy = fy * fy * (3 - 2 * fy);
+      const a = g[y0 * n + x0], b = g[y0 * n + x0 + 1];
+      const d = g[(y0 + 1) * n + x0], e = g[(y0 + 1) * n + x0 + 1];
+      const v = (a * (1 - sx) + b * sx) * (1 - sy) + (d * (1 - sx) + e * sx) * sy;
+      const p = (y * size + x) * 4;
+      const val = v * 255;
+      img.data[p] = img.data[p + 1] = img.data[p + 2] = val;
+      img.data[p + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  return c;
+}
+
+function fbmCanvas(size, baseCell, seed) {
+  const a = valueNoise(size, baseCell, seed);
+  const b = valueNoise(size, Math.max(2, baseCell * 0.5), seed + 977);
+  const ctx = a.getContext('2d');
+  const da = ctx.getImageData(0, 0, size, size);
+  const db = b.getContext('2d').getImageData(0, 0, size, size);
+  for (let i = 0; i < da.data.length; i += 4) {
+    const v = da.data[i] * 0.68 + db.data[i] * 0.32;
+    da.data[i] = da.data[i + 1] = da.data[i + 2] = v;
+  }
+  ctx.putImageData(da, 0, 0);
+  return a;
+}
+
+/** Height canvas → tangent-space normal map texture */
+function normalFromHeight(canvas, strength = 2.4, repeat = 3) {
+  const S = canvas.width;
+  const src = canvas.getContext('2d').getImageData(0, 0, S, S).data;
+  const out = document.createElement('canvas');
+  out.width = out.height = S;
+  const octx = out.getContext('2d');
+  const img = octx.createImageData(S, S);
+
+  const h = (x, y) => src[(((y + S) % S) * S + ((x + S) % S)) * 4] / 255;
+
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      const dx = (h(x + 1, y) - h(x - 1, y)) * strength;
+      const dy = (h(x, y + 1) - h(x, y - 1)) * strength;
+      let nx = -dx, ny = -dy, nz = 1;
+      const l = Math.hypot(nx, ny, nz);
+      nx /= l; ny /= l; nz /= l;
+      const p = (y * S + x) * 4;
+      img.data[p] = (nx * 0.5 + 0.5) * 255;
+      img.data[p + 1] = (ny * 0.5 + 0.5) * 255;
+      img.data[p + 2] = (nz * 0.5 + 0.5) * 255;
+      img.data[p + 3] = 255;
+    }
+  }
+  octx.putImageData(img, 0, 0);
+
+  const tex = new THREE.CanvasTexture(out);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(repeat, repeat);
+  tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  return tex;
+}
+
+// fabric weave · leather grain · fine metal
+const TEX_FABRIC  = normalFromHeight(fbmCanvas(256, 5, 11), 3.0, 4);
+const TEX_LEATHER = normalFromHeight(fbmCanvas(256, 8, 29), 3.6, 3);
+const TEX_METAL   = normalFromHeight(fbmCanvas(256, 3, 53), 1.1, 2);
+
+/* ═══════════════════════════════════════════════════════════
+   3 · MATERIALS  (all MeshPhysicalMaterial = PBR)
+   ═══════════════════════════════════════════════════════════ */
+const MAT = {
+  skin: new THREE.MeshPhysicalMaterial({
+    color: 0xd8a184, roughness: 0.62, metalness: 0.0,
+    clearcoat: 0.10, clearcoatRoughness: 0.7,
+    sheen: 0.35, sheenColor: new THREE.Color(0xff9d7d), sheenRoughness: 0.8
+  }),
+  navy: new THREE.MeshPhysicalMaterial({
+    color: 0x1c2740, roughness: 0.88, metalness: 0.0,
+    normalMap: TEX_FABRIC, normalScale: new THREE.Vector2(0.34, 0.34),
+    sheen: 0.28, sheenColor: new THREE.Color(0x6f8ec4), sheenRoughness: 0.9
+  }),
+  navyDark: new THREE.MeshPhysicalMaterial({
+    color: 0x141c2e, roughness: 0.9, metalness: 0.0,
+    normalMap: TEX_FABRIC, normalScale: new THREE.Vector2(0.4, 0.4)
+  }),
+  shirt: new THREE.MeshPhysicalMaterial({
+    color: 0x232f4d, roughness: 0.84, metalness: 0.0,
+    normalMap: TEX_FABRIC, normalScale: new THREE.Vector2(0.3, 0.3),
+    sheen: 0.35, sheenColor: new THREE.Color(0x7c9ad0)
+  }),
+  leather: new THREE.MeshPhysicalMaterial({
+    color: 0x0a0b0f, roughness: 0.46, metalness: 0.0,
+    normalMap: TEX_LEATHER, normalScale: new THREE.Vector2(0.6, 0.6),
+    clearcoat: 0.45, clearcoatRoughness: 0.35
+  }),
+  shoe: new THREE.MeshPhysicalMaterial({
+    color: 0x07080b, roughness: 0.28, metalness: 0.0,
+    normalMap: TEX_LEATHER, normalScale: new THREE.Vector2(0.4, 0.4),
+    clearcoat: 0.75, clearcoatRoughness: 0.16
+  }),
+  gold: new THREE.MeshPhysicalMaterial({
+    color: 0xc9a227, roughness: 0.22, metalness: 1.0,
+    normalMap: TEX_METAL, normalScale: new THREE.Vector2(0.08, 0.08)
+  }),
+  silver: new THREE.MeshPhysicalMaterial({
+    color: 0xb9bfc9, roughness: 0.32, metalness: 1.0
+  }),
+  plastic: new THREE.MeshPhysicalMaterial({
+    color: 0x0d0f13, roughness: 0.42, metalness: 0.05,
+    clearcoat: 0.5, clearcoatRoughness: 0.3
+  }),
+  glass: new THREE.MeshPhysicalMaterial({
+    color: 0x0a0c10, roughness: 0.1, metalness: 0.1,
+    transmission: 0.0, clearcoat: 1.0, clearcoatRoughness: 0.05
+  })
+};
+
+/* helpers */
+const m = (geo, mat) => {
+  const o = new THREE.Mesh(geo, mat);
+  o.castShadow = true; o.receiveShadow = true;
+  return o;
+};
+
+/* ═══════════════════════════════════════════════════════════
+   4 · SKELETON / RIG
+   ═══════════════════════════════════════════════════════════ */
+const rig = {};
+const G = (name, parent, x = 0, y = 0, z = 0) => {
+  const g = new THREE.Group();
+  g.position.set(x, y, z);
+  (parent || rig.root).add(g);
+  rig[name] = g;
+  return g;
+};
+
+rig.root  = new THREE.Group();
+scene.add(rig.root);
+
+G('pelvis',    'root',      0,    0.92, 0);
+G('torso',     'pelvis',    0,    0.14, 0);   // 1.06
+G('chest',     'torso',     0,    0.24, 0);   // 1.30
+G('neck',      'chest',     0,    0.18, 0);   // 1.48
+G('head',      'neck',      0,    0.14, 0);   // 1.62
+
+G('shoulderL', 'chest',     0.20, 0.14, 0);   // 1.44
+G('elbowL',    'shoulderL', 0,   -0.28, 0);
+G('shoulderR', 'chest',    -0.20, 0.14, 0);
+G('elbowR',    'shoulderR', 0,   -0.28, 0);
+
+G('hipL',      'pelvis',    0.10, 0, 0);
+G('kneeL',     'hipL',      0,   -0.45, 0);
+G('ankleL',    'kneeL',     0,   -0.40, 0);
+G('hipR',      'pelvis',   -0.10, 0, 0);
+G('kneeR',     'hipR',      0,   -0.45, 0);
+G('ankleR',    'kneeR',     0,   -0.40, 0);
+
+/* slight A-pose so the silhouette reads */
+rig.shoulderL.rotation.z = -0.10;
+rig.shoulderR.rotation.z =  0.10;
+rig.elbowL.rotation.x = 0.10;
+rig.elbowR.rotation.x = 0.10;
+
+/* ═══════════════════════════════════════════════════════════
+   5 · BODY
+   ═══════════════════════════════════════════════════════════ */
+const body = {};
+
+// head
+body.head = m(new THREE.SphereGeometry(0.115, 40, 28), MAT.skin);
+body.head.scale.set(0.93, 1.14, 1.0);
+body.head.userData.body = 'head';
+rig.head.add(body.head);
+
+// eyes
+const eyeGeo = new THREE.SphereGeometry(0.0135, 14, 10);
+for (const sx of [-1, 1]) {
+  const e = m(eyeGeo, MAT.plastic);
+  e.position.set(sx * 0.042, 0.012, 0.098);
+  e.castShadow = false;
+  rig.head.add(e);
+}
+// jaw hint
+const jaw = m(new THREE.SphereGeometry(0.082, 24, 18), MAT.skin);
+jaw.scale.set(1.0, 0.72, 0.9);
+jaw.position.set(0, -0.055, 0.012);
+rig.head.add(jaw);
+
+// neck
+const neckM = m(new THREE.CylinderGeometry(0.049, 0.058, 0.115, 22), MAT.skin);
+neckM.position.y = 0.022;
+rig.neck.add(neckM);
+
+// torso
+const torsoM = m(new THREE.CylinderGeometry(0.176, 0.134, 0.47, 30, 1), MAT.skin);
+torsoM.position.y = 0.172;
+torsoM.scale.z = 0.68;
+rig.torso.add(torsoM);
+
+// deltoids
+for (const s of [1, -1]) {
+  const d = m(new THREE.SphereGeometry(0.076, 22, 18), MAT.skin);
+  d.position.set(s * 0.155, 0.365, 0);
+  rig.torso.add(d);
+}
+
+// arms
+const upperGeo = new THREE.CapsuleGeometry(0.055, 0.20, 10, 18);
+const foreGeo  = new THREE.CapsuleGeometry(0.047, 0.18, 10, 18);
+const handGeo  = new THREE.SphereGeometry(0.053, 18, 14);
+
+for (const [sh, el, s] of [[rig.shoulderL, rig.elbowL, 1], [rig.shoulderR, rig.elbowR, -1]]) {
+  const u = m(upperGeo, MAT.skin); u.position.y = -0.14; sh.add(u);
+  const f = m(foreGeo, MAT.skin);  f.position.y = -0.13; el.add(f);
+  const h = m(handGeo, MAT.skin);  h.position.y = -0.29; h.scale.set(0.82, 1.15, 1.0); el.add(h);
+}
+
+// hips
+const hipsM = m(new THREE.CylinderGeometry(0.146, 0.128, 0.19, 26), MAT.skin);
+hipsM.scale.z = 0.76;
+rig.pelvis.add(hipsM);
+
+// legs
+const thighGeo = new THREE.CapsuleGeometry(0.086, 0.30, 10, 18);
+const shinGeo  = new THREE.CapsuleGeometry(0.065, 0.28, 10, 18);
+
+for (const [hip, knee, ankle] of [
+  [rig.hipL, rig.kneeL, rig.ankleL],
+  [rig.hipR, rig.kneeR, rig.ankleR]
+]) {
+  const t = m(thighGeo, MAT.skin); t.position.y = -0.22; hip.add(t);
+  const s2 = m(shinGeo, MAT.skin); s2.position.y = -0.20; knee.add(s2);
+  const ft = m(new THREE.BoxGeometry(0.105, 0.068, 0.22), MAT.skin);
+  ft.position.set(0, -0.038, 0.052); ankle.add(ft);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   6 · MODULAR PARTS
+   Each = { id, label, parent, pos, dressFrom, mass, build() }
+   ═══════════════════════════════════════════════════════════ */
+const PARTS = [];
+const V = (x, y, z) => new THREE.Vector3(x, y, z);
+
+function definePart(cfg) { PARTS.push(cfg); }
+
+/* ── CAP ────────────────────────────────────────────────── */
+definePart({
+  id: 'cap', label: 'Service Cap', parent: 'head',
+  pos: V(0, 0.058, 0), dressFrom: V(0, 0.52, 0), mass: 0.34,
+  build() {
+    const g = new THREE.Group();
+
+    const crown = m(new THREE.SphereGeometry(0.128, 36, 20, 0, Math.PI * 2, 0, Math.PI * 0.56), MAT.navyDark);
+    crown.scale.set(1.0, 0.86, 1.06);
+    crown.position.y = 0.028;
+    g.add(crown);
+
+    const band = m(new THREE.CylinderGeometry(0.129, 0.129, 0.046, 36, 1, true), MAT.leather);
+    band.position.y = 0.002;
+    band.material.side = THREE.DoubleSide;
+    g.add(band);
+
+    // brim — half-ellipse, extruded, rotated into the XZ plane
+    const sh = new THREE.Shape();
+    sh.ellipse(0, 0, 0.136, 0.205, 0, Math.PI, false, 0);
+    const brimGeo = new THREE.ExtrudeGeometry(sh, {
+      depth: 0.013, bevelEnabled: true, bevelThickness: 0.004,
+      bevelSize: 0.004, bevelSegments: 2, curveSegments: 40
+    });
+    brimGeo.rotateX(Math.PI / 2);
+    const brim = m(brimGeo, MAT.leather);
+    brim.position.set(0, -0.012, 0.012);
+    g.add(brim);
+
+    // cap badge
+    const bs = new THREE.Shape();
+    bs.moveTo(0, 0.042);
+    bs.lineTo(0.030, 0.028);
+    bs.lineTo(0.030, -0.008);
+    bs.quadraticCurveTo(0.030, -0.040, 0, -0.053);
+    bs.quadraticCurveTo(-0.030, -0.040, -0.030, -0.008);
+    bs.lineTo(-0.030, 0.028);
+    bs.closePath();
+    const badgeGeo = new THREE.ExtrudeGeometry(bs, {
+      depth: 0.006, bevelEnabled: true, bevelThickness: 0.002,
+      bevelSize: 0.002, bevelSegments: 2, curveSegments: 20
+    });
+    const badge = m(badgeGeo, MAT.gold);
+    badge.position.set(0, 0.036, 0.112);
+    badge.rotation.x = -0.16;
+    g.add(badge);
+
+    // chin strap
+    const strap = m(new THREE.TorusGeometry(0.118, 0.0055, 8, 40, Math.PI * 0.9), MAT.gold);
+    strap.rotation.set(Math.PI / 2, 0, Math.PI * 0.55);
+    strap.position.y = -0.008;
+    g.add(strap);
+
+    return g;
+  }
+});
+
+/* ── SHIRT ──────────────────────────────────────────────── */
+definePart({
+  id: 'shirt', label: 'Duty Shirt', parent: 'torso',
+  pos: V(0, 0, 0), dressFrom: V(0, -0.40, 0), mass: 0.55,
+  build() {
+    const g = new THREE.Group();
+
+    const body = m(new THREE.CylinderGeometry(0.186, 0.146, 0.44, 32, 1), MAT.shirt);
+    body.position.y = 0.165;
+    body.scale.z = 0.69;
+    g.add(body);
+
+    // collar
+    const collar = m(new THREE.CylinderGeometry(0.075, 0.062, 0.05, 24, 1, true), MAT.shirt);
+    collar.position.y = 0.40;
+    collar.material.side = THREE.DoubleSide;
+    g.add(collar);
+
+    // placket + buttons
+    const placket = m(new THREE.BoxGeometry(0.028, 0.40, 0.012), MAT.navyDark);
+    placket.position.set(0, 0.17, 0.126);
+    g.add(placket);
+
+    const bGeo = new THREE.SphereGeometry(0.0092, 12, 8);
+    for (let i = 0; i < 5; i++) {
+      const b = m(bGeo, MAT.plastic);
+      b.position.set(0, 0.345 - i * 0.085, 0.134);
+      b.castShadow = false;
+      g.add(b);
+    }
+
+    // epaulettes
+    for (const s of [1, -1]) {
+      const ep = m(new THREE.BoxGeometry(0.085, 0.012, 0.09), MAT.navyDark);
+      ep.position.set(s * 0.15, 0.385, 0.0);
+      ep.rotation.z = s * 0.10;
+      g.add(ep);
+    }
+
+    // sleeves (arms are static, so sleeves ride on the torso)
+    for (const s of [1, -1]) {
+      const sleeve = m(new THREE.CapsuleGeometry(0.068, 0.17, 10, 20), MAT.shirt);
+      sleeve.position.set(s * 0.208, 0.24, 0);
+      sleeve.rotation.z = s * 0.10;
+      g.add(sleeve);
+
+      // cuff
+      const cuff = m(new THREE.CylinderGeometry(0.055, 0.055, 0.03, 20), MAT.navyDark);
+      cuff.position.set(s * 0.235, 0.075, 0);
+      cuff.rotation.z = s * 0.10;
+      g.add(cuff);
+    }
+
+    return g;
+  }
+});
+
+/* ── TIE ────────────────────────────────────────────────── */
+definePart({
+  id: 'tie', label: 'Neck Tie', parent: 'chest',
+  pos: V(0, 0, 0), dressFrom: V(0, -0.30, 0.22), mass: 0.13,
+  build() {
+    const g = new THREE.Group();
+
+    const knot = m(new THREE.BoxGeometry(0.042, 0.036, 0.024), MAT.navyDark);
+    knot.position.set(0, 0.128, 0.118);
+    knot.rotation.x = 0.08;
+    g.add(knot);
+
+    const blade = m(new THREE.BoxGeometry(0.048, 0.26, 0.014), MAT.navyDark);
+    blade.position.set(0, -0.015, 0.116);
+    blade.rotation.x = -0.02;
+    g.add(blade);
+
+    const tip = m(new THREE.ConeGeometry(0.034, 0.05, 4), MAT.navyDark);
+    tip.position.set(0, -0.168, 0.116);
+    tip.rotation.set(Math.PI, Math.PI / 4, 0);
+    g.add(tip);
+
+    return g;
+  }
+});
+
+/* ── BADGE ──────────────────────────────────────────────── */
+definePart({
+  id: 'badge', label: 'Chest Badge', parent: 'chest',
+  pos: V(0, 0, 0), dressFrom: V(0, 0, 0.30), mass: 0.07,
+  build() {
+    const g = new THREE.Group();
+    const sh = new THREE.Shape();
+    sh.moveTo(0, 0.040);
+    sh.lineTo(0.029, 0.026);
+    sh.lineTo(0.029, -0.006);
+    sh.quadraticCurveTo(0.029, -0.038, 0, -0.050);
+    sh.quadraticCurveTo(-0.029, -0.038, -0.029, -0.006);
+    sh.lineTo(-0.029, 0.026);
+    sh.closePath();
+    const geo = new THREE.ExtrudeGeometry(sh, {
+      depth: 0.005, bevelEnabled: true, bevelThickness: 0.0016,
+      bevelSize: 0.0016, bevelSegments: 2, curveSegments: 18
+    });
+    const b = m(geo, MAT.gold);
+    b.position.set(0.092, 0.108, 0.114);
+    b.rotation.x = -0.10;
+    b.rotation.y = 0.16;
+    g.add(b);
+
+    // name bar
+    const bar = m(new THREE.BoxGeometry(0.062, 0.016, 0.006), MAT.silver);
+    bar.position.set(-0.092, 0.108, 0.114);
+    bar.rotation.y = -0.16;
+    g.add(bar);
+
+    return g;
+  }
+});
+
+/* ── BELT ───────────────────────────────────────────────── */
+definePart({
+  id: 'belt', label: 'Duty Belt', parent: 'pelvis',
+  pos: V(0, 0, 0), dressFrom: V(0, -0.42, 0), mass: 0.95,
+  build() {
+    const g = new THREE.Group();
+
+    const band = m(new THREE.CylinderGeometry(0.168, 0.168, 0.058, 36, 1, true), MAT.leather);
+    band.position.y = 0.098;
+    band.scale.z = 0.80;
+    band.material.side = THREE.DoubleSide;
+    g.add(band);
+
+    const buckle = m(new THREE.BoxGeometry(0.062, 0.05, 0.014), MAT.gold);
+    buckle.position.set(0, 0.098, 0.139);
+    g.add(buckle);
+
+    // pouches around the belt
+    const pouchGeo = new THREE.BoxGeometry(0.062, 0.075, 0.042);
+    const pouchPos = [
+      [0.145, 0.075, 0.06], [-0.145, 0.075, 0.06],
+      [0.155, 0.075, -0.055], [-0.155, 0.075, -0.055]
+    ];
+    for (const [x, y, z] of pouchPos) {
+      const p = m(pouchGeo, MAT.leather);
+      p.position.set(x, y, z);
+      p.rotation.y = Math.atan2(x, z) * 0.55;
+      g.add(p);
+    }
+
+    return g;
+  }
+});
+
+/* ── HOLSTER ────────────────────────────────────────────── */
+definePart({
+  id: 'holster', label: 'Holster', parent: 'pelvis',
+  pos: V(0, 0, 0), dressFrom: V(-0.25, -0.45, 0), mass: 0.62,
+  build() {
+    const g = new THREE.Group();
+
+    const shell = m(new THREE.BoxGeometry(0.062, 0.155, 0.088), MAT.leather);
+    shell.position.set(-0.185, 0.005, 0.018);
+    shell.rotation.z = 0.10;
+    g.add(shell);
+
+    const grip = m(new THREE.BoxGeometry(0.032, 0.075, 0.038), MAT.plastic);
+    grip.position.set(-0.188, 0.108, 0.005);
+    grip.rotation.set(0.30, 0, 0.10);
+    g.add(grip);
+
+    const strap = m(new THREE.BoxGeometry(0.012, 0.09, 0.014), MAT.leather);
+    strap.position.set(-0.170, 0.06, 0.03);
+    strap.rotation.z = 0.4;
+    g.add(strap);
+
+    return g;
+  }
+});
+
+/* ── RADIO ──────────────────────────────────────────────── */
+definePart({
+  id: 'radio', label: 'Shoulder Radio', parent: 'chest',
+  pos: V(0, 0, 0), dressFrom: V(-0.22, 0.02, 0.28), mass: 0.44,
+  build() {
+    const g = new THREE.Group();
+
+    const box = m(new THREE.BoxGeometry(0.048, 0.088, 0.028), MAT.plastic);
+    box.position.set(-0.135, 0.088, 0.100);
+    box.rotation.y = -0.30;
+    g.add(box);
+
+    const ant = m(new THREE.CylinderGeometry(0.0042, 0.0042, 0.095, 10), MAT.plastic);
+    ant.position.set(-0.148, 0.175, 0.092);
+    ant.rotation.z = 0.10;
+    g.add(ant);
+
+    const clip = m(new THREE.BoxGeometry(0.014, 0.05, 0.010), MAT.silver);
+    clip.position.set(-0.112, 0.088, 0.108);
+    g.add(clip);
+
+    return g;
+  }
+});
+
+/* ── PANTS ──────────────────────────────────────────────── */
+definePart({
+  id: 'pants', label: 'Trousers', parent: 'pelvis',
+  pos: V(0, 0, 0), dressFrom: V(0, -0.80, 0), mass: 0.85,
+  build() {
+    const g = new THREE.Group();
+
+    // seat / hips
+    const seat = m(new THREE.CylinderGeometry(0.162, 0.150, 0.24, 30, 1), MAT.navy);
+    seat.position.y = 0.005;
+    seat.scale.z = 0.80;
+    g.add(seat);
+
+    // legs
+    for (const s of [1, -1]) {
+      const leg = m(new THREE.CylinderGeometry(0.105, 0.078, 0.83, 22, 1), MAT.navy);
+      leg.position.set(s * 0.100, -0.435, 0);
+      leg.scale.z = 0.94;
+      g.add(leg);
+
+      // hem
+      const hem = m(new THREE.CylinderGeometry(0.080, 0.080, 0.028, 22), MAT.navyDark);
+      hem.position.set(s * 0.100, -0.838, 0);
+      hem.scale.z = 0.94;
+      g.add(hem);
+    }
+
+    // creases
+    for (const s of [1, -1]) {
+      const crease = m(new THREE.BoxGeometry(0.006, 0.72, 0.006), MAT.navyDark);
+      crease.position.set(s * 0.100, -0.42, 0.072);
+      g.add(crease);
+    }
+
+    return g;
+  }
+});
+
+/* ── SHOES (separate L/R) ───────────────────────────────── */
+for (const [id, label, parentKey] of [['shoeL', 'Shoe — L', 'ankleL'], ['shoeR', 'Shoe — R', 'ankleR']]) {
+  definePart({
+    id, label, parent: parentKey,
+    pos: V(0, 0, 0), dressFrom: V(0, -0.34, 0), mass: 0.48,
+    build() {
+      const g = new THREE.Group();
+
+      const sole = m(new THREE.BoxGeometry(0.108, 0.022, 0.245), MAT.plastic);
+      sole.position.set(0, -0.062, 0.048);
+      g.add(sole);
+
+      const upper = m(new THREE.BoxGeometry(0.100, 0.070, 0.215), MAT.shoe);
+      upper.position.set(0, -0.018, 0.042);
+      g.add(upper);
+
+      const toe = m(new THREE.SphereGeometry(0.050, 20, 16), MAT.shoe);
+      toe.scale.set(1.0, 0.72, 1.35);
+      toe.position.set(0, -0.030, 0.132);
+      g.add(toe);
+
+      const heel = m(new THREE.BoxGeometry(0.094, 0.048, 0.058), MAT.shoe);
+      heel.position.set(0, -0.042, -0.050);
+      g.add(heel);
+
+      return g;
+    }
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════
+   7 · INSTANTIATE PARTS  (holder chain)
+   ═══════════════════════════════════════════════════════════ */
+const partsById = new Map();
+const tmpV = new THREE.Vector3();
+const tmpQ = new THREE.Quaternion();
+const tmpS = new THREE.Vector3();
+const IDENTITY = new THREE.Quaternion();
+
+for (const cfg of PARTS) {
+  const parentNode = rig[cfg.parent];
+  const holder = new THREE.Object3D();
+  holder.position.copy(cfg.pos);
+  parentNode.add(holder);
+
+  const group = cfg.build();
+
+  // register part on every mesh
+  const part = {
+    ...cfg,
+    holder,
+    group,
+    state: 'attached',       // 'attached' | 'free' | 'returning'
+    vel: new THREE.Vector3(),
+    angVel: new THREE.Vector3(),
+    combined: true,
+    wearTarget: 1,
+    wearCurrent: 1,
+    sleeping: false
+  };
+
+  group.traverse(o => { if (o.isMesh) o.userData.part = part; });
+
+  holder.add(group);
+
+  // bounds in group-local space
+  const box = new THREE.Box3().setFromObject(group);
+  const sphere = box.getBoundingSphere(new THREE.Sphere());
+  part.bounds = { center: sphere.center.clone(), radius: Math.max(sphere.radius, 0.04) };
+  part.inertia = 0.4 * part.mass * part.bounds.radius * part.bounds.radius;
+
+  partsById.set(cfg.id, part);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   8 · PICKABLES
+   ═══════════════════════════════════════════════════════════ */
+const pickables = [];
+scene.traverse(o => { if (o.isMesh && (o.userData.part || o.userData.body)) pickables.push(o); });
+
+/* ═══════════════════════════════════════════════════════════
+   9 · PART STATE TRANSITIONS
+   ═══════════════════════════════════════════════════════════ */
+function detachPart(part) {
+  if (part.state === 'free') return;
+  if (part.group.parent !== scene) {
+    part.group.updateWorldMatrix(true, false);
+    scene.attach(part.group);
+  }
+  part.state = 'free';
+  part.vel.set(0, 0, 0);
+  part.angVel.set(0, 0, 0);
+  part.sleeping = false;
+}
+
+function returnPart(part) {
+  if (part.state === 'attached') return;
+  if (part.group.parent !== scene) {
+    part.group.updateWorldMatrix(true, false);
+    scene.attach(part.group);
+  }
+  part.state = 'returning';
+  part.sleeping = false;
+}
+
+/** Apply an impulse (kg·m/s) at a world-space point → linear + angular response */
+function applyImpulse(part, worldPoint, impulse) {
+  detachPart(part);
+
+  part.group.updateWorldMatrix(true, false);
+  const center = part.group.localToWorld(part.bounds.center.clone());
+
+  // linear
+  part.vel.addScaledVector(impulse, 1 / part.mass);
+
+  // angular: L = r × p
+  const r = worldPoint.clone().sub(center);
+  const L = r.clone().cross(impulse);
+  part.angVel.addScaledVector(L, 1 / part.inertia);
+
+  // clamp so nothing spins absurdly
+  const maxW = 26;
+  if (part.angVel.length() > maxW) part.angVel.setLength(maxW);
+  if (part.vel.length() > 9) part.vel.setLength(9);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   10 · HEAD SPRING
+   ═══════════════════════════════════════════════════════════ */
+const headRot = new THREE.Vector3();
+const headVel = new THREE.Vector3();
+
+function headImpulse(worldPoint, impulse) {
+  const headCenter = rig.head.getWorldPosition(tmpV.clone());
+  const r = worldPoint.clone().sub(headCenter);
+  const L = r.clone().cross(impulse);
+  headVel.addScaledVector(L, 26);
+
+  const maxV = 9;
+  if (headVel.length() > maxV) headVel.setLength(maxV);
+}
+
+function updateHead(dt) {
+  const kx = 26, ky = 26, kz = 15;   // restoring stiffness per axis
+  headVel.x += -kx * headRot.x * dt;
+  headVel.y += -ky * headRot.y * dt;
+  headVel.z += -kz * headRot.z * dt;
+  headVel.multiplyScalar(Math.max(0, 1 - 4.2 * dt));
+
+  headRot.addScaledVector(headVel, dt);
+  headRot.x = THREE.MathUtils.clamp(headRot.x, -0.55, 0.55);
+  headRot.y = THREE.MathUtils.clamp(headRot.y, -0.75, 0.75);
+  headRot.z = THREE.MathUtils.clamp(headRot.z, -0.50, 0.50);
+
+  rig.head.rotation.set(headRot.x, headRot.y, headRot.z);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   11 · FREE-PART PHYSICS
+   ═══════════════════════════════════════════════════════════ */
+const GRAV = 9.81;
+const _c = new THREE.Vector3();
+const _axis = new THREE.Vector3();
+const _q = new THREE.Quaternion();
+
+function stepFree(part, dt) {
+  const g = part.group;
+  if (part.sleeping) return;
+
+  // gravity
+  part.vel.y -= GRAV * dt;
+
+  // integrate position
+  g.position.addScaledVector(part.vel, dt);
+
+  // integrate rotation
+  const w = part.angVel;
+  const wl = w.length();
+  if (wl > 1e-5) {
+    _axis.copy(w).multiplyScalar(1 / wl);
+    _q.setFromAxisAngle(_axis, wl * dt);
+    g.quaternion.premultiply(_q).normalize();
+  }
+
+  // ground collision using bounding sphere
+  g.updateWorldMatrix(true, false);
+  _c.copy(part.bounds.center).applyMatrix4(g.matrixWorld);
+
+  const pen = part.bounds.radius - _c.y;
+  if (pen > 0) {
+    g.position.y += pen;
+
+    if (part.vel.y < 0) {
+      part.vel.y = -part.vel.y * 0.30;
+      part.vel.x *= 0.62;
+      part.vel.z *= 0.62;
+      part.angVel.multiplyScalar(0.58);
+
+      // friction: convert some spin into a nudge
+      part.vel.x += part.angVel.z * 0.014;
+      part.vel.z -= part.angVel.x * 0.014;
+
+      if (Math.abs(part.vel.y) < 0.22) part.vel.y = 0;
+    }
+  }
+
+  // damping
+  part.vel.multiplyScalar(Math.max(0, 1 - 1.6 * dt));
+  part.angVel.multiplyScalar(Math.max(0, 1 - 2.8 * dt));
+
+  // sleep
+  g.updateWorldMatrix(true, false);
+  _c.copy(part.bounds.center).applyMatrix4(g.matrixWorld);
+  const resting = _c.y - part.bounds.radius < 0.012;
+  if (resting && part.vel.lengthSq() < 0.0025 && part.angVel.lengthSq() < 0.02) {
+    part.vel.set(0, 0, 0);
+    part.angVel.multiplyScalar(0.85);
+    if (part.angVel.lengthSq() < 0.001) {
+      part.angVel.set(0, 0, 0);
+      part.sleeping = true;
+    }
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   12 · STRIKE (raycast)
+   ═══════════════════════════════════════════════════════════ */
+const raycaster = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+const downPos = new THREE.Vector2();
+let power = 2.6;
+
+function strike(clientX, clientY) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  ndc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+  ndc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+
+  raycaster.setFromCamera(ndc, camera);
+  const hits = raycaster.intersectObjects(pickables, false);
+  if (!hits.length) return;
+
+  const hit = hits[0];
+  const obj = hit.object;
+
+  const dir = raycaster.ray.direction.clone().normalize();
+  const P = power * 0.55;
+  const impulse = dir.multiplyScalar(P).add(new THREE.Vector3(0, P * 0.42, 0));
+
+  if (obj.userData.part) {
+    applyImpulse(obj.userData.part, hit.point, impulse);
+    return;
+  }
+
+  if (obj.userData.body === 'head') {
+    headImpulse(hit.point, impulse);
+
+    // the cap rides the head — knock it loose with the same blow
+    const cap = partsById.get('cap');
+    if (cap) applyImpulse(cap, hit.point, impulse.clone().multiplyScalar(1.9));
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   13 · UI
+   ═══════════════════════════════════════════════════════════ */
+const partList = document.getElementById('partList');
+const wearAllEl = document.getElementById('wearAll');
+const powerEl = document.getElementById('power');
+
+for (const part of partsById.values()) {
+  const row = document.createElement('label');
+  row.className = 'part';
+
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.checked = true;
+  cb.addEventListener('change', () => {
+    part.combined = cb.checked;
+    if (cb.checked) returnPart(part);
+    else detachPart(part);
+  });
+
+  const nm = document.createElement('span');
+  nm.className = 'nm';
+  nm.textContent = part.label;
+
+  const wr = document.createElement('span');
+  wr.className = 'wr';
+  const wrLabel = document.createElement('span');
+  wrLabel.textContent = 'wear';
+  wrLabel.style.cssText = 'font-size:10px;color:#4d5b6c;letter-spacing:.08em';
+  const wrIn = document.createElement('input');
+  wrIn.type = 'range';
+  wrIn.min = 0; wrIn.max = 1; wrIn.step = 0.01; wrIn.value = 1;
+  wrIn.addEventListener('input', () => { part.wearTarget = parseFloat(wrIn.value); });
+
+  wr.append(wrLabel, wrIn);
+  row.append(cb, nm, wr);
+  partList.appendChild(row);
+
+  part._cb = cb;
+  part._wr = wrIn;
+}
+
+wearAllEl.addEventListener('input', () => {
+  const v = parseFloat(wearAllEl.value);
+  for (const p of partsById.values()) {
+    p.wearTarget = v;
+    p._wr.value = v;
+  }
+});
+
+powerEl.addEventListener('input', () => { power = parseFloat(powerEl.value); });
+
+document.getElementById('btnCombine').addEventListener('click', () => {
+  for (const p of partsById.values()) { p.combined = true; p._cb.checked = true; returnPart(p); }
+});
+
+document.getElementById('btnSeparate').addEventListener('click', () => {
+  for (const p of partsById.values()) {
+    p.combined = false; p._cb.checked = false;
+    detachPart(p);
+    p.vel.set((Math.random() - 0.5) * 1.1, 0.6 + Math.random() * 0.6, (Math.random() - 0.5) * 1.1);
+    p.angVel.set((Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6);
+  }
+});
+
+document.getElementById('btnReset').addEventListener('click', () => {
+  headRot.set(0, 0, 0);
+  headVel.set(0, 0, 0);
+  wearAllEl.value = 1;
+  for (const p of partsById.values()) {
+    p.combined = true; p._cb.checked = true;
+    p.wearTarget = 1; p.wearCurrent = 1; p._wr.value = 1;
+    p.vel.set(0, 0, 0); p.angVel.set(0, 0, 0);
+    p.sleeping = false;
+
+    if (p.group.parent !== p.holder) {
+      p.holder.attach(p.group);
+    }
+    p.group.position.set(0, 0, 0);
+    p.group.quaternion.identity();
+    p.group.scale.set(1, 1, 1);
+    p.holder.position.copy(p.pos);
+    p.state = 'attached';
+  }
+});
+
+/* pointer handling — distinguish click from orbit drag */
+renderer.domElement.addEventListener('pointerdown', e => {
+  downPos.set(e.clientX, e.clientY);
+});
+
+renderer.domElement.addEventListener('pointerup', e => {
+  const moved = Math.hypot(e.clientX - downPos.x, e.clientY - downPos.y);
+  if (moved < 5 && e.button === 0) strike(e.clientX, e.clientY);
+});
+
+/* ═══════════════════════════════════════════════════════════
+   14 · LOOP
+   ═══════════════════════════════════════════════════════════ */
+const clock = new THREE.Clock();
+
+function animate() {
+  const dt = Math.min(clock.getDelta(), 0.033);
+  const t = clock.elapsedTime;
+
+  /* ── idle life: breathing + micro-sway ── */
+  rig.root.rotation.y = Math.sin(t * 0.32) * 0.018;
+  rig.root.position.y = Math.sin(t * 0.9) * 0.004;
+  rig.chest.scale.setScalar(1 + Math.sin(t * 1.55) * 0.008);
+
+  /* ── head spring ── */
+  updateHead(dt);
+
+  /* ── wear easing + holder placement ── */
+  for (const part of partsById.values()) {
+    part.wearCurrent += (part.wearTarget - part.wearCurrent) * (1 - Math.exp(-7 * dt));
+    part.holder.position.lerpVectors(part.dressFrom, part.pos, part.wearCurrent);
+  }
+
+  /* ── part state machine ── */
+  for (const part of partsById.values()) {
+    if (part.state === 'free') {
+      stepFree(part, dt);
+
+    } else if (part.state === 'returning') {
+      part.holder.updateWorldMatrix(true, false);
+      part.holder.matrixWorld.decompose(tmpV, tmpQ, tmpS);
+
+      const a = 1 - Math.exp(-11 * dt);
+      part.group.position.lerp(tmpV, a);
+      part.group.quaternion.slerp(tmpQ, a);
+
+      if (part.group.position.distanceToSquared(tmpV) < 6e-5) {
+        part.holder.attach(part.group);
+        part.group.position.set(0, 0, 0);
+        part.group.quaternion.identity();
+        part.group.scale.set(1, 1, 1);
+        part.state = 'attached';
+        part.vel.set(0, 0, 0);
+        part.angVel.set(0, 0, 0);
+      }
+    }
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+renderer.setAnimationLoop(animate);
+
+/* ═══════════════════════════════════════════════════════════
+   15 · RESIZE
+   ═══════════════════════════════════════════════════════════ */
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>

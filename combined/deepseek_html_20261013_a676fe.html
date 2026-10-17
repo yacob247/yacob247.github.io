@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>IGI 3 — Deterministic PBR Range</title>
+<style>
+  html,body{margin:0;height:100%;background:#000;overflow:hidden;
+    font-family:ui-monospace,Menlo,Consolas,monospace;color:#cfe}
+  canvas{display:block}
+  #hud{position:fixed;left:12px;bottom:12px;font-size:12px;line-height:1.55;
+    text-shadow:0 0 6px #000;pointer-events:none;opacity:.9}
+  #hud b{color:#8fe08f;font-weight:600}
+  #cross{position:fixed;left:50%;top:50%;width:18px;height:18px;margin:-9px 0 0 -9px;
+    pointer-events:none;opacity:.8}
+  #cross:before,#cross:after{content:"";position:absolute;background:#a8f0a8;
+    box-shadow:0 0 4px #000}
+  #cross:before{left:8px;top:0;width:2px;height:18px}
+  #cross:after{top:8px;left:0;height:2px;width:18px}
+  #overlay{position:fixed;inset:0;z-index:10;display:grid;place-items:center;
+    background:radial-gradient(circle at 50% 40%,#12202c 0%,#05090c 70%);
+    cursor:pointer;text-align:center}
+  #overlay h1{margin:0 0 6px;font-size:34px;letter-spacing:.22em;color:#d8f5d8;
+    text-shadow:0 0 18px #2f6}
+  #overlay p{margin:4px 0;font-size:13px;color:#8fb0a8}
+  #overlay .k{color:#cfe9a8}
+  #overlay .go{margin-top:18px;font-size:14px;color:#9fe89f;letter-spacing:.15em}
+</style>
+</head>
+<body>
+
+<div id="cross"></div>
+
+<div id="hud">
+  <div>SEED <b id="hSeed"></b> &nbsp;|&nbsp; CHUNK <b id="hChunk"></b></div>
+  <div>POS <b id="hPos"></b> &nbsp;|&nbsp; FPS <b id="hFps"></b></div>
+</div>
+
+<div id="overlay">
+  <div>
+    <h1>I G I &nbsp;3</h1>
+    <p>PROCEDURAL PBR TRAINING RANGE — DETERMINISTIC BUILD</p>
+    <p><span class="k">WASD</span> move &nbsp;·&nbsp; <span class="k">SHIFT</span> sprint &nbsp;·&nbsp;
+       <span class="k">SPACE</span> jump &nbsp;·&nbsp; <span class="k">MOUSE</span> look</p>
+    <p style="opacity:.6">Every reload produces the exact same map.</p>
+    <div class="go">CLICK TO DEPLOY</div>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+
+/* ============================================================
+   0.  WORLD CONSTANTS
+   ============================================================ */
+const WORLD_SEED = 20260413;   // ← change once, and the whole world changes — but always identically
+const CHUNK      = 40;         // metres per chunk
+const VIEW       = 3;          // chunk radius kept loaded  (7x7 = 49 chunks)
+const EYE        = 1.68;
+const P_RADIUS   = 0.38;
+const P_HEIGHT   = 1.80;
+
+/* ============================================================
+   1.  DETERMINISTIC RANDOM  (the whole point)
+   ============================================================ */
+function hash2(x, y, seed) {
+  let h = Math.imul(x | 0, 0x27d4eb2d) ^ Math.imul(y | 0, 0x165667b1) ^ Math.imul(seed | 0, 0x9e3779b1);
+  h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
+  h ^= h >>> 13;
+  h = Math.imul(h, 0xc2b2ae35);
+  h ^= h >>> 16;
+  return h >>> 0;
+}
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/* ============================================================
+   2.  PROCEDURAL PBR TEXTURE FACTORY  (no external images)
+   ============================================================ */
+function tileValueNoise(seed, freq) {
+  const r = mulberry32(seed);
+  const g = new Float32Array(freq * freq);
+  for (let i = 0; i < g.length; i++) g[i] = r();
+  return (u, v) => {
+    const fx = u * freq, fy = v * freq;
+    const ix = Math.floor(fx), iy = Math.floor(fy);
+    const x0 = ((ix % freq) + freq) % freq, y0 = ((iy % freq) + freq) % freq;
+    const x1 = (x0 + 1) % freq,               y1 = (y0 + 1) % freq;
+    const tx = fx - ix, ty = fy - iy;
+    const sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty);
+    const a = g[y0 * freq + x0], b = g[y0 * freq + x1];
+    const c = g[y1 * freq + x0], d = g[y1 * freq + x1];
+    return (a * (1 - sx) + b * sx) * (1 - sy) + (c * (1 - sx) + d * sx) * sy;
+  };
+}
+function makeNoiseField(size, seed, octaves = 5, baseFreq = 4) {
+  const field = new Float32Array(size * size);
+  let amp = 1, freq = baseFreq, total = 0;
+  for (let o = 0; o < octaves; o++) {
+    const n = tileValueNoise(seed + o * 7919, freq);
+    const inv = 1 / size;
+    for (let y = 0; y < size; y++)
+      for (let x = 0; x < size; x++)
+        field[y * size + x] += n(x * inv, y * inv) * amp;
+    total += amp; amp *= 0.5; freq *= 2;
+  }
+  for (let i = 0; i < field.length; i++) field[i] /= total;
+  return field;
+}
+
+let MAX_ANISO = 8; // refined after renderer creation
+
+function canvasTexture(canvas, srgb) {
+  const t = new THREE.CanvasTexture(canvas);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = MAX_ANISO;
+  if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+function normalFromField(field, size, strength) {
+  const c = document.createElement('canvas'); c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  const img = ctx.createImageData(size, size);
+  const at = (x, y) => field[(((y % size) + size) % size) * size + (((x % size) + size) % size)];
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = (at(x + 1, y) - at(x - 1, y)) * strength;
+      const dy = (at(x, y + 1) - at(x, y - 1)) * strength;
+      let nx = -dx, ny = dy, nz = 1;              // green-up convention
+      const l = Math.hypot(nx, ny, nz);
+      nx /= l; ny /= l; nz /= l;
+      const i = (y * size + x) * 4;
+      img.data[i]     = (nx * 0.5 + 0.5) * 255;
+      img.data[i + 1] = (ny * 0.5 + 0.5) * 255;
+      img.data[i + 2] = (nz * 0.5 + 0.5) * 255;
+      img.data[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  return canvasTexture(c, false);
+}
+
+/**
+ * Builds a full PBR material set: albedo (sRGB) + roughness (linear)
+ * + tangent-space normal map. Everything derives from seeded noise.
+ */
+function makePBR(seed, opts) {
+  const S = 256;
+  const height = makeNoiseField(S, seed,        5, 4);
+  const rough  = makeNoiseField(S, seed + 911,  4, 6);
+  const tint   = makeNoiseField(S, seed + 313,  4, 5);
+
+  const ac = document.createElement('canvas'); ac.width = ac.height = S;
+  const rc = document.createElement('canvas'); rc.width = rc.height = S;
+  const actx = ac.getContext('2d'), rctx = rc.getContext('2d');
+  const aimg = actx.createImageData(S, S), rimg = rctx.createImageData(S, S);
+
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      const i = y * S + x, j = i * 4;
+      const c = opts.color(height[i], tint[i], rough[i]);
+      aimg.data[j]     = Math.min(255, c[0] * 255);
+      aimg.data[j + 1] = Math.min(255, c[1] * 255);
+      aimg.data[j + 2] = Math.min(255, c[2] * 255);
+      aimg.data[j + 3] = 255;
+
+      const r = opts.rough(height[i], rough[i]) * 255;
+      rimg.data[j] = rimg.data[j + 1] = rimg.data[j + 2] = r;
+      rimg.data[j + 3] = 255;
+    }
+  }
+  actx.putImageData(aimg, 0, 0);
+  rctx.putImageData(rimg, 0, 0);
+
+  return new THREE.MeshStandardMaterial({
+    map:          canvasTexture(ac, true),
+    roughnessMap: canvasTexture(rc, false),
+    normalMap:    normalFromField(height, S, opts.normalStrength ?? 2.0),
+    metalness:    opts.metalness ?? 0.0,
+    roughness:    1.0,                       // roughnessMap supplies the value
+    envMapIntensity: opts.env ?? 1.0
+  });
+}
+
+/* ============================================================
+   3.  RENDERER / SCENE / CAMERA
+   ============================================================ */
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0xc8bda4, 55, 140);
+
+const camera = new THREE.PerspectiveCamera(74, innerWidth / innerHeight, 0.05, 900);
+camera.rotation.order = 'YXZ';
+
+/* ============================================================
+   4.  PROCEDURAL SKY  →  used BOTH as skybox AND as the IBL source
+   ============================================================ */
+const SUN_DIR = new THREE.Vector3(0.42, 0.55, 0.24).normalize();
+
+const skyUniforms = {
+  topColor:     { value: new THREE.Color(0x2f4f88) },
+  horizonColor: { value: new THREE.Color(0xd9cbaa) },
+  sunColor:     { value: new THREE.Color(0xfff3d6) },
+  sunDir:       { value: SUN_DIR.clone() }
+};
+const skyMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide, depthWrite: false, fog: false,
+  uniforms: skyUniforms,
+  vertexShader: /* glsl */`
+    varying vec3 vDir;
+    void main(){
+      vDir = normalize(position);
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }`,
+  fragmentShader: /* glsl */`
+    varying vec3 vDir;
+    uniform vec3 topColor, horizonColor, sunColor, sunDir;
+    void main(){
+      vec3 d = normalize(vDir);
+      float h = clamp(d.y, 0.0, 1.0);
+      vec3 col = mix(horizonColor, topColor, pow(h, 0.62));
+      col = mix(col, horizonColor * 0.72, clamp(-d.y * 3.0, 0.0, 1.0));
+      float s = max(dot(d, normalize(sunDir)), 0.0);
+      col += sunColor * pow(s, 420.0) * 7.0;
+      col += sunColor * pow(s, 9.0) * 0.16;
+      gl_FragColor = vec4(col, 1.0);
+    }`
+});
+
+const skyDome = new THREE.Mesh(new THREE.SphereGeometry(420, 40, 20), skyMat);
+skyDome.frustumCulled = false;
+scene.add(skyDome);
+
+// Prefilter the sky into a PMREM cube → this is the PBR image-based lighting.
+{
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const skyScene = new THREE.Scene();
+  skyScene.add(new THREE.Mesh(new THREE.SphereGeometry(1, 32, 16), skyMat));
+  const envRT = pmrem.fromScene(skyScene, 0.02, 0.1, 100);
+  scene.environment = envRT.texture;
+  pmrem.dispose();
+}
+
+/* ============================================================
+   5.  LIGHTS
+   ============================================================ */
+const sun = new THREE.DirectionalLight(0xfff0d2, 2.7);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -75, right: 75, top: 75, bottom: -75, near: 1, far: 320 });
+sun.shadow.bias = -0.0006;
+sun.shadow.normalBias = 0.045;
+scene.add(sun, sun.target);
+
+scene.add(new THREE.HemisphereLight(0x9dc4ff, 0x6b5a3c, 0.30));
+
+/* ============================================================
+   6.  MATERIAL LIBRARY  (four fully-PBR surfaces)
+   ============================================================ */
+MAX_ANISO = renderer.capabilities.getMaxAnisotropy();
+
+const MAT = {
+  /* Weathered concrete / plaster */
+  concrete: makePBR(101, {
+    color: (h, t) => { const v = 0.50 + h * 0.22 + t * 0.07; return [v, v * 0.985, v * 0.93]; },
+    rough: (h, r) => 0.70 + r * 0.27,
+    normalStrength: 1.7, metalness: 0.0, env: 0.85
+  }),
+
+  /* Painted steel that has started to rust through */
+  metal: makePBR(202, {
+    color: (h, t, r) => {
+      const rust = Math.max(0, t - 0.44) * 2.1;
+      const s = 0.28 + h * 0.13;
+      const sr = 0.44 + r * 0.20, sg = 0.21 + r * 0.11, sb = 0.095 + r * 0.06;
+      return [ s * (1 - rust) + sr * rust, s * (1 - rust) + sg * rust, s * 1.05 * (1 - rust) + sb * rust ];
+    },
+    rough: (h, r) => 0.30 + r * 0.55,
+    normalStrength: 2.3, metalness: 0.82, env: 1.15
+  }),
+
+  /* Olive-drab supply crates */
+  crate: makePBR(303, {
+    color: (h, t) => { const v = 0.15 + h * 0.12 + t * 0.05; return [v * 0.82, v * 1.02, v * 0.50]; },
+    rough: (h, r) => 0.66 + r * 0.30,
+    normalStrength: 1.5, metalness: 0.18, env: 0.95
+  }),
+
+  /* Dry packed earth / sand */
+  sand: makePBR(404, {
+    color: (h, t) => { const v = 0.50 + h * 0.24 + t * 0.06; return [v, v * 0.86, v * 0.62]; },
+    rough: (h, r) => 0.88 + r * 0.11,
+    normalStrength: 1.0, metalness: 0.0, env: 0.75
+  })
+};
+
+/* ============================================================
+   7.  GEOMETRY HELPERS  (uniform texel density on every face)
+   ============================================================ */
+function scaleUV(g, su, sv) {
+  const uv = g.attributes.uv;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * su, uv.getY(i) * sv);
+  uv.needsUpdate = true;
+  return g;
+}
+function uvBox(w, h, d, s = 0.4) {
+  const g = new THREE.BoxGeometry(w, h, d);
+  const nor = g.attributes.normal, uv = g.attributes.uv;
+  for (let i = 0; i < uv.count; i++) {
+    const nx = Math.abs(nor.getX(i)), ny = Math.abs(nor.getY(i));
+    let su, sv;
+    if (nx > 0.5)      { su = d; sv = h; }
+    else if (ny > 0.5) { su = w; sv = d; }
+    else               { su = w; sv = h; }
+    uv.setXY(i, uv.getX(i) * su * s, uv.getY(i) * sv * s);
+  }
+  uv.needsUpdate = true;
+  return g;
+}
+
+/* ============================================================
+   8.  CHUNK GENERATOR  —  pure function of (cx, cz, WORLD_SEED)
+   ============================================================ */
+const chunks = new Map();   // "cx,cz" → { group, colliders }
+const ckey = (cx, cz) => cx + ',' + cz;
+
+function buildChunk(cx, cz) {
+  const rng = mulberry32(hash2(cx, cz, WORLD_SEED));
+  const ox = cx * CHUNK, oz = cz * CHUNK;
+  const buckets   = { sand: [], concrete: [], metal: [], crate: [] };
+  const colliders = [];
+
+  const add = (m, g) => buckets[m].push(g);
+
+  const box = (mat, w, h, d, x, y, z, ry = 0, uvS = 0.4, solid = true) => {
+    const g = uvBox(w, h, d, uvS);
+    if (ry) g.rotateY(ry);
+    g.translate(x, y, z);
+    add(mat, g);
+    if (!solid) return;
+    const c = Math.abs(Math.cos(ry)), s = Math.abs(Math.sin(ry));
+    const hw = (c * w + s * d) / 2, hd = (s * w + c * d) / 2;
+    colliders.push({
+      min: { x: x - hw, y: y - h / 2, z: z - hd },
+      max: { x: x + hw, y: y + h / 2, z: z + hd }
+    });
+  };
+
+  const cyl = (mat, r, h, x, y, z, uvS = 0.8) => {
+    const g = new THREE.CylinderGeometry(r, r, h, 12, 1);
+    scaleUV(g, r * 2 * uvS, h * uvS);
+    g.translate(x, y, z);
+    add(mat, g);
+    colliders.push({ min: { x: x - r, y: y - h / 2, z: z - r },
+                     max: { x: x + r, y: y + h / 2, z: z + r } });
+  };
+
+  /* ---- terrain slab (keeps the grid seamless) ---- */
+  {
+    const g = new THREE.PlaneGeometry(CHUNK, CHUNK);
+    g.rotateX(-Math.PI / 2);
+    scaleUV(g, CHUNK / 8, CHUNK / 8);
+    g.translate(ox + CHUNK / 2, 0, oz + CHUNK / 2);
+    add('sand', g);
+  }
+
+  /* ---- block buildings ---- */
+  const nearSpawn = (cx === 0 && cz === 0);
+  const nB = 1 + Math.floor(rng() * 3);
+  for (let i = 0; i < nB; i++) {
+    const w = 6 + rng() * 11, d = 6 + rng() * 11, h = 3.5 + rng() * 5.5;
+    const x = ox + 3 + rng() * (CHUNK - 6 - w);
+    const z = oz + 3 + rng() * (CHUNK - 6 - d);
+    const px = x + w / 2, pz = z + d / 2;
+    if (nearSpawn && Math.hypot(px, pz) < 11) continue;
+
+    box('concrete', w, h, d, px, h / 2, pz, 0, 0.22);
+    box('concrete', w + 0.55, 0.42, d + 0.55, px, h + 0.21, pz, 0, 0.30);   // roof cap
+    if (rng() > 0.5)
+      box('metal', 1.7, 1.0, 1.7, px + (rng() - 0.5) * w * 0.5, h + 0.92,
+          pz + (rng() - 0.5) * d * 0.5, rng() * 0.6, 0.75);
+  }
+
+  /* ---- low blast barriers ---- */
+  const nW = Math.floor(rng() * 3);
+  for (let i = 0; i < nW; i++) {
+    const len = 4 + rng() * 8;
+    const x = ox + 3 + rng() * (CHUNK - 6);
+    const z = oz + 3 + rng() * (CHUNK - 6);
+    if (rng() > 0.5) box('concrete', len, 1.15, 0.55, x, 0.575, z, 0, 0.55);
+    else             box('concrete', 0.55, 1.15, len, x, 0.575, z, 0, 0.55);
+  }
+
+  /* ---- crate stacks ---- */
+  const nC = Math.floor(rng() * 6);
+  for (let i = 0; i < nC; i++) {
+    const s = 1.05 + rng() * 0.7;
+    const x = ox + 2.5 + rng() * (CHUNK - 5);
+    const z = oz + 2.5 + rng() * (CHUNK - 5);
+    box('crate', s, s * 0.8, s, x, s * 0.4, z, rng() * 1.5, 0.85);
+    if (rng() > 0.62)
+      box('crate', s * 0.88, s * 0.66, s * 0.88,
+          x + (rng() - 0.5) * 0.3, s * 0.8 + s * 0.33, z + (rng() - 0.5) * 0.3, rng() * 1.5, 0.85);
+  }
+
+  /* ---- fuel drums ---- */
+  const nD = Math.floor(rng() * 5);
+  for (let i = 0; i < nD; i++) {
+    cyl('metal', 0.42, 1.10,
+        ox + 2.5 + rng() * (CHUNK - 5), 0.55,
+        oz + 2.5 + rng() * (CHUNK - 5), 0.85);
+  }
+
+  /* ---- watchtower ---- */
+  if (rng() > 0.66) {
+    const x = ox + 7 + rng() * (CHUNK - 14);
+    const z = oz + 7 + rng() * (CHUNK - 14);
+    const h = 5.5 + rng() * 2.5;
+    const o = 1.5;
+    for (const [dx, dz] of [[-1,-1],[1,-1],[-1,1],[1,1]])
+      box('metal', 0.30, h, 0.30, x + dx * o, h / 2, z + dz * o, 0, 1.0);
+
+    box('metal', 4.2, 0.30, 4.2, x, h + 0.15, z, 0, 0.55);                 // deck
+    box('metal', 4.2, 0.90, 0.14, x, h + 0.75, z + 2.05, 0, 1.0, false);   // rails
+    box('metal', 4.2, 0.90, 0.14, x, h + 0.75, z - 2.05, 0, 1.0, false);
+    box('metal', 0.14, 0.90, 4.2, x + 2.05, h + 0.75, z, 0, 1.0, false);
+    box('metal', 0.14, 0.90, 4.2, x - 2.05, h + 0.75, z, 0, 1.0, false);
+
+    for (const [dx, dz] of [[-1,-1],[1,-1],[-1,1],[1,1]])
+      box('metal', 0.14, 2.2, 0.14, x + dx * 2.0, h + 2.0, z + dz * 2.0, 0, 1.4, false);
+    box('crate', 4.7, 0.22, 4.7, x, h + 3.15, z, 0, 0.55, false);          // canopy
+  }
+
+  /* ---- merge into one mesh per material ---- */
+  const group = new THREE.Group();
+  for (const k in buckets) {
+    const list = buckets[k];
+    if (!list.length) continue;
+    const merged = mergeGeometries(list, false);
+    list.forEach(g => g.dispose());
+    const mesh = new THREE.Mesh(merged, MAT[k]);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.matrixAutoUpdate = false;
+    group.add(mesh);
+  }
+  return { group, colliders };
+}
+
+/* ============================================================
+   9.  STREAMING  (deterministic ⇒ revisits look identical)
+   ============================================================ */
+function updateChunks(px, pz) {
+  const ccx = Math.floor(px / CHUNK), ccz = Math.floor(pz / CHUNK);
+  const wanted = new Set();
+
+  for (let dz = -VIEW; dz <= VIEW; dz++) {
+    for (let dx = -VIEW; dx <= VIEW; dx++) {
+      const cx = ccx + dx, cz = ccz + dz, k = ckey(cx, cz);
+      wanted.add(k);
+      if (!chunks.has(k)) {
+        const rec = buildChunk(cx, cz);
+        chunks.set(k, rec);
+        scene.add(rec.group);
+      }
+    }
+  }
+  for (const [k, rec] of chunks) {
+    if (wanted.has(k)) continue;
+    scene.remove(rec.group);
+    rec.group.traverse(o => { if (o.isMesh) o.geometry.dispose(); });
+    chunks.delete(k);
+  }
+  return { ccx, ccz };
+}
+
+function nearbyColliders(px, pz) {
+  const out = [];
+  const ccx = Math.floor(px / CHUNK), ccz = Math.floor(pz / CHUNK);
+  for (let dz = -1; dz <= 1; dz++)
+    for (let dx = -1; dx <= 1; dx++) {
+      const rec = chunks.get(ckey(ccx + dx, ccz + dz));
+      if (rec) for (let i = 0; i < rec.colliders.length; i++) out.push(rec.colliders[i]);
+    }
+  return out;
+}
+
+/* ============================================================
+   10.  FIRST-PERSON CONTROLLER  (no body mesh is ever created)
+   ============================================================ */
+const player = {
+  pos: new THREE.Vector3(0, 0.2, 0),   // feet position
+  vel: new THREE.Vector3(),
+  yaw: 0, pitch: 0,
+  onGround: false
+};
+const keys = Object.create(null);
+
+addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (e.code === 'Space') e.preventDefault();
+});
+addEventListener('keyup', e => { keys[e.code] = false; });
+
+const overlay = document.getElementById('overlay');
+overlay.addEventListener('click', () => renderer.domElement.requestPointerLock());
+document.addEventListener('pointerlockchange', () => {
+  overlay.style.display = (document.pointerLockElement === renderer.domElement) ? 'none' : 'grid';
+});
+document.addEventListener('mousemove', e => {
+  if (document.pointerLockElement !== renderer.domElement) return;
+  player.yaw   -= e.movementX * 0.0022;
+  player.pitch -= e.movementY * 0.0022;
+  player.pitch = Math.max(-1.50, Math.min(1.50, player.pitch));
+});
+
+function overlaps(p, b) {
+  return !(p.x + P_RADIUS <= b.min.x || p.x - P_RADIUS >= b.max.x ||
+           p.z + P_RADIUS <= b.min.z || p.z - P_RADIUS >= b.max.z ||
+           p.y + P_HEIGHT <= b.min.y || p.y >= b.max.y);
+}
+function moveAxis(axis, delta, cols) {
+  if (delta === 0) return;
+  const p = player.pos;
+  p[axis] += delta;
+  for (let i = 0; i < cols.length; i++) {
+    const b = cols[i];
+    if (!overlaps(p, b)) continue;
+    if (axis === 'y') {
+      if (delta > 0) { p.y = b.min.y - P_HEIGHT - 0.001; }
+      else           { p.y = b.max.y + 0.001; player.onGround = true; }
+      player.vel.y = 0;
+    } else if (axis === 'x') {
+      p.x = delta > 0 ? b.min.x - P_RADIUS - 0.001 : b.max.x + P_RADIUS + 0.001;
+      player.vel.x = 0;
+    } else {
+      p.z = delta > 0 ? b.min.z - P_RADIUS - 0.001 : b.max.z + P_RADIUS + 0.001;
+      player.vel.z = 0;
+    }
+  }
+}
+
+function step(dt) {
+  const sprint = keys['ShiftLeft'] || keys['ShiftRight'];
+  const speed  = sprint ? 8.6 : 5.1;
+
+  const sy = Math.sin(player.yaw), cy = Math.cos(player.yaw);
+  let fx = 0, fz = 0;
+  if (keys['KeyW']) { fx -= sy; fz -= cy; }
+  if (keys['KeyS']) { fx += sy; fz += cy; }
+  if (keys['KeyA']) { fx -= cy; fz += sy; }
+  if (keys['KeyD']) { fx += cy; fz -= sy; }
+  const len = Math.hypot(fx, fz);
+  if (len > 0) { fx /= len; fz /= len; }
+
+  const accel = player.onGround ? 14 : 3.5;
+  const t = Math.min(1, accel * dt);
+  player.vel.x += (fx * speed - player.vel.x) * t;
+  player.vel.z += (fz * speed - player.vel.z) * t;
+
+  if (keys['Space'] && player.onGround) player.vel.y = 8.1;
+  player.vel.y -= 22 * dt;
+  player.onGround = false;
+
+  const cols = nearbyColliders(player.pos.x, player.pos.z);
+  moveAxis('x', player.vel.x * dt, cols);
+  moveAxis('z', player.vel.z * dt, cols);
+  moveAxis('y', player.vel.y * dt, cols);
+
+  if (player.pos.y <= 0) { player.pos.y = 0; player.vel.y = 0; player.onGround = true; }
+
+  camera.position.set(player.pos.x, player.pos.y + EYE, player.pos.z);
+  camera.rotation.set(player.pitch, player.yaw, 0);
+}
+
+/* ============================================================
+   11.  BOOT + LOOP
+   ============================================================ */
+updateChunks(player.pos.x, player.pos.z);
+
+const clock = new THREE.Clock();
+const hSeed = document.getElementById('hSeed');
+const hChunk = document.getElementById('hChunk');
+const hPos  = document.getElementById('hPos');
+const hFps  = document.getElementById('hFps');
+hSeed.textContent = WORLD_SEED.toString(16).toUpperCase();
+
+let fpsAcc = 0, fpsFrames = 0, hudTimer = 0;
+
+function frame() {
+  requestAnimationFrame(frame);
+  const dt = Math.min(clock.getDelta(), 0.05);
+
+  step(dt);
+  const { ccx, ccz } = updateChunks(player.pos.x, player.pos.z);
+
+  // sun + shadow frustum follow the player
+  sun.position.set(
+    player.pos.x + SUN_DIR.x * 130,
+    SUN_DIR.y * 130,
+    player.pos.z + SUN_DIR.z * 130
+  );
+  sun.target.position.set(player.pos.x, 0, player.pos.z);
+  sun.target.updateMatrixWorld();
+
+  skyDome.position.copy(camera.position);
+
+  renderer.render(scene, camera);
+
+  // HUD
+  fpsAcc += dt; fpsFrames++; hudTimer += dt;
+  if (hudTimer > 0.35) {
+    hFps.textContent   = Math.round(fpsFrames / fpsAcc);
+    hChunk.textContent = ccx + ',' + ccz;
+    hPos.textContent   = player.pos.x.toFixed(1) + ' ' +
+                         player.pos.y.toFixed(1) + ' ' +
+                         player.pos.z.toFixed(1);
+    fpsAcc = 0; fpsFrames = 0; hudTimer = 0;
+  }
+}
+frame();
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,1381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>IRONVEIL — Factory Building</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#0b0f14;font-family:'Segoe UI',system-ui,sans-serif;color:#e8e6e1}
+  #hud{position:fixed;top:16px;left:16px;font-size:12px;line-height:1.8;color:#c8d2dc;
+       text-shadow:0 1px 3px #000;z-index:10;pointer-events:none;background:rgba(0,0,0,.55);
+       padding:12px 16px;border-radius:6px;border:1px solid rgba(255,255,255,.12);backdrop-filter:blur(8px)}
+  #hud b{color:#fff}
+  #zone{position:fixed;top:16px;right:16px;text-align:right;z-index:10;
+        background:rgba(0,0,0,.55);padding:10px 16px;border-radius:6px;
+        border:1px solid rgba(255,255,255,.12);backdrop-filter:blur(8px);text-shadow:0 1px 3px #000}
+  #zone .name{font-size:17px;font-weight:700;letter-spacing:3px;color:#7fd4ff}
+  #zone .coord{color:#8fa8c8;font-size:11px;margin-top:3px}
+  #crosshair{position:fixed;left:50%;top:50%;width:6px;height:6px;margin:-3px 0 0 -3px;
+             border-radius:50%;background:rgba(255,255,255,.55);box-shadow:0 0 6px rgba(255,255,255,.5);
+             pointer-events:none;z-index:10}
+  #mic{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);width:280px;z-index:10;pointer-events:none}
+  #miclabel{text-align:center;font-size:11px;letter-spacing:3px;color:#8fa8c8;
+            margin-bottom:6px;text-shadow:0 1px 3px #000}
+  #micbar{height:10px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);
+          border-radius:5px;overflow:hidden}
+  #micfill{height:100%;width:0%;background:linear-gradient(90deg,#3aa0ff,#7fd4ff,#fff);transition:width .05s}
+  #overlay{position:fixed;inset:0;background:radial-gradient(circle at 50% 40%,rgba(10,20,30,.86),rgba(0,0,0,.96));
+           display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:100;cursor:pointer;
+           transition:opacity .4s}
+  #overlay h1{font-size:56px;letter-spacing:14px;margin:0 0 8px;font-weight:800;
+              color:#e8e6e1;text-shadow:0 0 40px rgba(120,200,255,.5)}
+  #overlay .sub{font-size:12px;letter-spacing:6px;color:#7fd4ff;margin-bottom:32px}
+  #overlay .info{font-size:13px;color:#8fa8c8;line-height:2;text-align:center}
+  #overlay .cta{margin-top:32px;font-size:12px;letter-spacing:4px;color:#ffd77a;
+                animation:pulse 1.6s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:.4}50%{opacity:1}}
+</style>
+</head>
+<body>
+
+<div id="hud">
+  <div><b>WASD</b> move &nbsp;·&nbsp; <b>SHIFT</b> sprint &nbsp;·&nbsp; <b>CTRL</b> crouch</div>
+  <div><b>MOUSE</b> look &nbsp;·&nbsp; <b>F</b> toggle exterior lights</div>
+  <div><b>Y</b> hold as mic fallback &nbsp;·&nbsp; <b>ESC</b> release cursor</div>
+</div>
+
+<div id="zone">
+  <div class="name" id="zonename">EXTERIOR · SOUTH</div>
+  <div class="coord" id="zonecoord">X 0 · Z 0</div>
+</div>
+
+<div id="crosshair"></div>
+
+<div id="mic">
+  <div id="miclabel">VOICE LAMP</div>
+  <div id="micbar"><div id="micfill"></div></div>
+</div>
+
+<div id="overlay">
+  <h1>IRONVEIL</h1>
+  <div class="sub">BUILDING 50 · ENTERPRISE PARK</div>
+  <div class="info">
+    <b>WASD</b> walk &nbsp;·&nbsp; <b>SHIFT</b> sprint &nbsp;·&nbsp; <b>F</b> lights<br>
+    Walk to the south entrance. The doors are open.
+  </div>
+  <div class="cta">CLICK TO ENTER</div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ══════════════════════════════════════════════════════════════
+   SECTION 1 — RENDERER · SCENE · CAMERA
+   ══════════════════════════════════════════════════════════════ */
+const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x8fb8d8);   // hazy blue sky
+scene.fog = new THREE.Fog(0x9ab8d0, 120, 400);
+
+const camera = new THREE.PerspectiveCamera(72, innerWidth/innerHeight, 0.05, 800);
+
+// Realistic IBL from RoomEnvironment — gives metal and glass their reflections
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+/* ══════════════════════════════════════════════════════════════
+   SECTION 2 — PROCEDURAL PBR TEXTURE GENERATION
+   Every texture is painted on a canvas and turned into a
+   THREE.CanvasTexture with a matching normal map derived from a
+   height map (Sobel filter) and a roughness map.
+   ══════════════════════════════════════════════════════════════ */
+
+const TEX_SIZE = 512;
+
+function makeCanvas(size = TEX_SIZE){
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  return c;
+}
+
+// Sobel-derive a normal map from any grayscale canvas (real normal mapping)
+function heightToNormal(hCanvas, strength = 2.0){
+  const w = hCanvas.width, h = hCanvas.height;
+  const src = hCanvas.getContext('2d').getImageData(0,0,w,h).data;
+  const out = new ImageData(w,h);
+  const dst = out.data;
+  for (let y = 0; y < h; y++){
+    for (let x = 0; x < w; x++){
+      const i  = (y*w + x)*4;
+      const xl = (y*w + Math.max(0,x-1))*4;
+      const xr = (y*w + Math.min(w-1,x+1))*4;
+      const yu = (Math.max(0,y-1)*w + x)*4;
+      const yd = (Math.min(h-1,y+1)*w + x)*4;
+      const dx = (src[xr] - src[xl]) / 255;
+      const dy = (src[yd] - src[yu]) / 255;
+      let nx = -dx * strength;
+      let ny = -dy * strength;
+      let nz = 1.0;
+      const len = Math.sqrt(nx*nx + ny*ny + nz*nz);
+      nx /= len; ny /= len; nz /= len;
+      dst[i]   = (nx*0.5 + 0.5) * 255;
+      dst[i+1] = (ny*0.5 + 0.5) * 255;
+      dst[i+2] = (nz*0.5 + 0.5) * 255;
+      dst[i+3] = 255;
+    }
+  }
+  const nc = makeCanvas(hCanvas.width);
+  nc.getContext('2d').putImageData(out, 0, 0);
+  return nc;
+}
+
+function toTex(canvas, repeat = 1, isSRGB = true){
+  const t = new THREE.CanvasTexture(canvas);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(repeat, repeat);
+  t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  t.colorSpace = isSRGB ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+  return t;
+}
+
+// ——————————————— METAL PANEL CLADDING ———————————————
+// This is the star material: the white/grey/blue panels on the
+// exterior in the reference images. Horizontal seams + subtle
+// vertical joints + slight surface unevenness.
+function makeMetalPanel(baseColor, seamColor, opts = {}){
+  const size = TEX_SIZE;
+  const albedo = makeCanvas(size);
+  const height = makeCanvas(size);
+  const rough  = makeCanvas(size);
+  const ac = albedo.getContext('2d');
+  const hc = height.getContext('2d');
+  const rc = rough.getContext('2d');
+
+  // Base colour
+  ac.fillStyle = baseColor;
+  ac.fillRect(0,0,size,size);
+
+  // Subtle mottling
+  const ad = ac.getImageData(0,0,size,size);
+  for (let i = 0; i < ad.data.length; i += 4){
+    const n = (Math.random() - 0.5) * 8;
+    ad.data[i]   = Math.max(0, Math.min(255, ad.data[i]   + n));
+    ad.data[i+1] = Math.max(0, Math.min(255, ad.data[i+1] + n));
+    ad.data[i+2] = Math.max(0, Math.min(255, ad.data[i+2] + n));
+  }
+  ac.putImageData(ad, 0, 0);
+
+  // Height map = flat mid-grey, then carve seams
+  hc.fillStyle = '#808080';
+  hc.fillRect(0,0,size,size);
+
+  // Horizontal seams every 128px (panel rows)
+  ac.strokeStyle = seamColor;
+  ac.lineWidth = 3;
+  hc.strokeStyle = '#202020';
+  hc.lineWidth = 4;
+  const rowH = opts.rowH || 128;
+  for (let y = rowH; y < size; y += rowH){
+    ac.beginPath(); ac.moveTo(0, y); ac.lineTo(size, y); ac.stroke();
+    hc.beginPath(); hc.moveTo(0, y); hc.lineTo(size, y); hc.stroke();
+  }
+
+  // Vertical joints every 256px (panel widths)
+  const colW = opts.colW || 256;
+  for (let x = colW; x < size; x += colW){
+    ac.strokeStyle = seamColor;
+    ac.lineWidth = 2;
+    ac.beginPath(); ac.moveTo(x, 0); ac.lineTo(x, size); ac.stroke();
+    hc.strokeStyle = '#303030';
+    hc.lineWidth = 3;
+    hc.beginPath(); hc.moveTo(x, 0); hc.lineTo(x, size); hc.stroke();
+  }
+
+  // Slight dust / weathering streaks
+  for (let i = 0; i < 12; i++){
+    ac.fillStyle = `rgba(60,60,60,${Math.random()*0.05})`;
+    const sx = Math.random()*size;
+    const sy = Math.random()*size;
+    ac.fillRect(sx, sy, 2, 30 + Math.random()*60);
+  }
+
+  // Roughness: painted steel is fairly smooth but not mirror
+  rc.fillStyle = '#a0a0a0';
+  rc.fillRect(0,0,size,size);
+  const rd = rc.getImageData(0,0,size,size);
+  for (let i = 0; i < rd.data.length; i += 4){
+    const n = 160 + (Math.random() - 0.5) * 40;
+    rd.data[i] = rd.data[i+1] = rd.data[i+2] = n;
+  }
+  rc.putImageData(rd, 0, 0);
+
+  return {
+    map:          toTex(albedo, opts.repeat || 1, true),
+    normalMap:    toTex(heightToNormal(height, 0.9), opts.repeat || 1, false),
+    roughnessMap: toTex(rough, opts.repeat || 1, false),
+  };
+}
+
+// ——————————————— INDUSTRIAL CONCRETE FLOOR ———————————————
+function makeConcreteFloor(){
+  const s = TEX_SIZE;
+  const albedo = makeCanvas(s), height = makeCanvas(s), rough = makeCanvas(s);
+  const ac = albedo.getContext('2d'), hc = height.getContext('2d'), rc = rough.getContext('2d');
+
+  // Slab-tinted grey
+  ac.fillStyle = '#9c9a94';
+  ac.fillRect(0,0,s,s);
+  const ad = ac.getImageData(0,0,s,s);
+  for (let i = 0; i < ad.data.length; i += 4){
+    const n = (Math.random() - 0.5) * 22;
+    ad.data[i]   = Math.max(0, Math.min(255, ad.data[i]   + n));
+    ad.data[i+1] = Math.max(0, Math.min(255, ad.data[i+1] + n));
+    ad.data[i+2] = Math.max(0, Math.min(255, ad.data[i+2] + n));
+  }
+  ac.putImageData(ad, 0, 0);
+
+  // Fine dust + occasional tire streak
+  for (let i = 0; i < 400; i++){
+    ac.fillStyle = `rgba(60,55,50,${Math.random()*0.15})`;
+    ac.fillRect(Math.random()*s, Math.random()*s, 1 + Math.random()*3, 1 + Math.random()*3);
+  }
+  for (let i = 0; i < 4; i++){
+    ac.fillStyle = `rgba(40,40,40,${Math.random()*0.08})`;
+    const cx = Math.random()*s, cy = Math.random()*s;
+    ac.beginPath(); ac.arc(cx, cy, 40 + Math.random()*80, 0, Math.PI*2); ac.fill();
+  }
+
+  // Control joints every 256px
+  ac.strokeStyle = 'rgba(50,50,50,0.6)';
+  ac.lineWidth = 3;
+  hc.fillStyle = '#808080'; hc.fillRect(0,0,s,s);
+  hc.strokeStyle = '#282828'; hc.lineWidth = 4;
+  for (let i = 0; i <= s; i += 256){
+    ac.beginPath(); ac.moveTo(i,0); ac.lineTo(i,s); ac.stroke();
+    ac.beginPath(); ac.moveTo(0,i); ac.lineTo(s,i); ac.stroke();
+    hc.beginPath(); hc.moveTo(i,0); hc.lineTo(i,s); hc.stroke();
+    hc.beginPath(); hc.moveTo(0,i); hc.lineTo(s,i); hc.stroke();
+  }
+
+  rc.fillStyle = '#d8d8d8';
+  rc.fillRect(0,0,s,s);
+
+  return {
+    map:          toTex(albedo, 12, true),
+    normalMap:    toTex(heightToNormal(height, 1.2), 12, false),
+    roughnessMap: toTex(rough, 12, false),
+  };
+}
+
+// ——————————————— ASPHALT (parking lot) ———————————————
+function makeAsphalt(){
+  const s = TEX_SIZE;
+  const albedo = makeCanvas(s), height = makeCanvas(s), rough = makeCanvas(s);
+  const ac = albedo.getContext('2d'), hc = height.getContext('2d'), rc = rough.getContext('2d');
+  ac.fillStyle = '#2a2a2e';
+  ac.fillRect(0,0,s,s);
+  // Aggregate speckles
+  const ad = ac.getImageData(0,0,s,s);
+  for (let i = 0; i < ad.data.length; i += 4){
+    const n = (Math.random() - 0.5) * 40;
+    ad.data[i]   = Math.max(0, Math.min(255, ad.data[i]   + n));
+    ad.data[i+1] = Math.max(0, Math.min(255, ad.data[i+1] + n));
+    ad.data[i+2] = Math.max(0, Math.min(255, ad.data[i+2] + n));
+  }
+  ac.putImageData(ad, 0, 0);
+  hc.fillStyle = '#808080'; hc.fillRect(0,0,s,s);
+  for (let i = 0; i < 3000; i++){
+    const g = 100 + Math.random()*100;
+    hc.fillStyle = `rgb(${g},${g},${g})`;
+    hc.fillRect(Math.random()*s, Math.random()*s, 2, 2);
+  }
+  rc.fillStyle = '#e8e8e8'; rc.fillRect(0,0,s,s);
+  return {
+    map:          toTex(albedo, 20, true),
+    normalMap:    toTex(heightToNormal(height, 1.0), 20, false),
+    roughnessMap: toTex(rough, 20, false),
+  };
+}
+
+// ——————————————— GRASS ———————————————
+function makeGrass(){
+  const s = TEX_SIZE;
+  const albedo = makeCanvas(s), height = makeCanvas(s), rough = makeCanvas(s);
+  const ac = albedo.getContext('2d'), hc = height.getContext('2d'), rc = rough.getContext('2d');
+  ac.fillStyle = '#3e6b2a';
+  ac.fillRect(0,0,s,s);
+  const ad = ac.getImageData(0,0,s,s);
+  for (let i = 0; i < ad.data.length; i += 4){
+    const n = (Math.random() - 0.5) * 30;
+    ad.data[i]   = Math.max(0, Math.min(255, ad.data[i]   + n * 0.6));
+    ad.data[i+1] = Math.max(0, Math.min(255, ad.data[i+1] + n));
+    ad.data[i+2] = Math.max(0, Math.min(255, ad.data[i+2] + n * 0.5));
+  }
+  ac.putImageData(ad, 0, 0);
+  // Individual blades as short strokes
+  for (let i = 0; i < 5000; i++){
+    const x = Math.random()*s, y = Math.random()*s;
+    const len = 2 + Math.random()*4;
+    const shade = 60 + Math.random()*80;
+    ac.strokeStyle = `rgb(${shade*0.5|0},${shade|0},${shade*0.4|0})`;
+    ac.lineWidth = 1;
+    ac.beginPath(); ac.moveTo(x, y); ac.lineTo(x + (Math.random()-0.5)*2, y - len); ac.stroke();
+  }
+  hc.fillStyle = '#808080'; hc.fillRect(0,0,s,s);
+  for (let i = 0; i < 3000; i++){
+    const g = 100 + Math.random()*100;
+    hc.fillStyle = `rgb(${g},${g},${g})`;
+    hc.fillRect(Math.random()*s, Math.random()*s, 1, 2);
+  }
+  rc.fillStyle = '#f0f0f0'; rc.fillRect(0,0,s,s);
+  return {
+    map:          toTex(albedo, 16, true),
+    normalMap:    toTex(heightToNormal(height, 0.8), 16, false),
+    roughnessMap: toTex(rough, 16, false),
+  };
+}
+
+// ——————————————— CURB CONCRETE ———————————————
+function makeCurbConcrete(){
+  const s = 256;
+  const albedo = makeCanvas(s), height = makeCanvas(s), rough = makeCanvas(s);
+  const ac = albedo.getContext('2d'), hc = height.getContext('2d'), rc = rough.getContext('2d');
+  ac.fillStyle = '#b8b4ac'; ac.fillRect(0,0,s,s);
+  const ad = ac.getImageData(0,0,s,s);
+  for (let i = 0; i < ad.data.length; i += 4){
+    const n = (Math.random() - 0.5) * 20;
+    ad.data[i]   += n; ad.data[i+1] += n; ad.data[i+2] += n;
+  }
+  ac.putImageData(ad, 0, 0);
+  for (let i = 0; i < 300; i++){
+    ac.fillStyle = `rgba(60,55,50,${Math.random()*0.15})`;
+    ac.fillRect(Math.random()*s, Math.random()*s, 1, 1);
+  }
+  hc.fillStyle = '#808080'; hc.fillRect(0,0,s,s);
+  rc.fillStyle = '#d0d0d0'; rc.fillRect(0,0,s,s);
+  return {
+    map:          toTex(albedo, 4, true),
+    normalMap:    toTex(heightToNormal(height, 0.7), 4, false),
+    roughnessMap: toTex(rough, 4, false),
+  };
+}
+
+// ——————————————— ROOF DECK ———————————————
+function makeRoofDeck(){
+  const s = TEX_SIZE;
+  const albedo = makeCanvas(s), height = makeCanvas(s), rough = makeCanvas(s);
+  const ac = albedo.getContext('2d'), hc = height.getContext('2d'), rc = rough.getContext('2d');
+  ac.fillStyle = '#7a7a7c'; ac.fillRect(0,0,s,s);
+  hc.fillStyle = '#808080'; hc.fillRect(0,0,s,s);
+  // Ribbed standing seams every 16px
+  for (let x = 0; x < s; x += 16){
+    ac.fillStyle = 'rgba(40,40,42,0.5)';
+    ac.fillRect(x, 0, 2, s);
+    hc.fillStyle = '#505050';
+    hc.fillRect(x, 0, 2, s);
+    hc.fillStyle = '#a0a0a0';
+    hc.fillRect(x+2, 0, 1, s);
+  }
+  // Slight stains
+  for (let i = 0; i < 20; i++){
+    ac.fillStyle = `rgba(60,50,40,${Math.random()*0.15})`;
+    ac.beginPath(); ac.arc(Math.random()*s, Math.random()*s, 20 + Math.random()*60, 0, Math.PI*2); ac.fill();
+  }
+  rc.fillStyle = '#c0c0c0'; rc.fillRect(0,0,s,s);
+  return {
+    map:          toTex(albedo, 8, true),
+    normalMap:    toTex(heightToNormal(height, 1.4), 8, false),
+    roughnessMap: toTex(rough, 8, false),
+  };
+}
+
+// ——————————————— GLASS ———————————————
+// Glass is a MeshPhysicalMaterial with transmission — no texture needed
+function makeGlassMaterial(tint = 0x1a2b3a){
+  return new THREE.MeshPhysicalMaterial({
+    color: tint,
+    metalness: 0.0,
+    roughness: 0.05,
+    transmission: 0.65,
+    thickness: 0.4,
+    ior: 1.5,
+    reflectivity: 1.0,
+    envMapIntensity: 1.6,
+    transparent: true,
+    opacity: 0.9,
+    side: THREE.DoubleSide,
+  });
+}
+
+// ——————————————— CLEAR GLASS (entrance doors) ———————————————
+function makeClearGlass(){
+  return new THREE.MeshPhysicalMaterial({
+    color: 0xc8e0ea,
+    metalness: 0.0,
+    roughness: 0.02,
+    transmission: 0.9,
+    thickness: 0.2,
+    ior: 1.5,
+    envMapIntensity: 2.0,
+    transparent: true,
+    opacity: 0.55,
+    side: THREE.DoubleSide,
+  });
+}
+
+/* ══════════════════════════════════════════════════════════════
+   SECTION 3 — MATERIAL LIBRARY
+   ══════════════════════════════════════════════════════════════ */
+const TX = {
+  floor:      makeConcreteFloor(),
+  asphalt:    makeAsphalt(),
+  grass:      makeGrass(),
+  curb:       makeCurbConcrete(),
+  roof:       makeRoofDeck(),
+
+  panelWhite: makeMetalPanel('#e4e6e8', 'rgba(120,120,120,0.55)', { repeat:1 }),
+  panelGrey:  makeMetalPanel('#8a8d92', 'rgba(60,60,60,0.55)',   { repeat:1 }),
+  panelBlue:  makeMetalPanel('#2c3a4a', 'rgba(20,20,20,0.6)',    { repeat:1 }),
+  panelDark:  makeMetalPanel('#3a3e44', 'rgba(20,20,20,0.7)',    { repeat:1 }),
+};
+
+const MAT = {
+  // EXTERIOR
+  panelWhite: new THREE.MeshStandardMaterial({ ...TX.panelWhite, metalness:0.85, roughness:0.42, envMapIntensity:1.0 }),
+  panelGrey:  new THREE.MeshStandardMaterial({ ...TX.panelGrey,  metalness:0.85, roughness:0.45, envMapIntensity:0.9 }),
+  panelBlue:  new THREE.MeshStandardMaterial({ ...TX.panelBlue,  metalness:0.80, roughness:0.50, envMapIntensity:0.9 }),
+  panelDark:  new THREE.MeshStandardMaterial({ ...TX.panelDark,  metalness:0.85, roughness:0.48, envMapIntensity:0.9 }),
+
+  roof:       new THREE.MeshStandardMaterial({ ...TX.roof, metalness:0.85, roughness:0.42, envMapIntensity:1.0 }),
+  curb:       new THREE.MeshStandardMaterial({ ...TX.curb, metalness:0.02, roughness:0.92, envMapIntensity:0.3 }),
+  grass:      new THREE.MeshStandardMaterial({ ...TX.grass, metalness:0.0, roughness:0.98, envMapIntensity:0.2 }),
+  asphalt:    new THREE.MeshStandardMaterial({ ...TX.asphalt, metalness:0.05, roughness:0.95, envMapIntensity:0.35 }),
+
+  // INTERIOR STRUCTURE
+  floor:      new THREE.MeshStandardMaterial({ ...TX.floor, metalness:0.05, roughness:0.92, envMapIntensity:0.35 }),
+  steelDark:  new THREE.MeshStandardMaterial({ color:0x2a2e34, metalness:0.92, roughness:0.40, envMapIntensity:1.2 }),
+  steelBlue:  new THREE.MeshStandardMaterial({ color:0x1a3a5a, metalness:0.85, roughness:0.45, envMapIntensity:1.1 }),
+  steelYellow:new THREE.MeshStandardMaterial({ color:0xd9a71f, metalness:0.75, roughness:0.42, envMapIntensity:1.0 }),
+  steelWhite: new THREE.MeshStandardMaterial({ color:0xd8dadc, metalness:0.80, roughness:0.38, envMapIntensity:1.2 }),
+  concrete:   new THREE.MeshStandardMaterial({ color:0x8a8a85, metalness:0.02, roughness:0.92, envMapIntensity:0.35 }),
+
+  // TRIM / DETAIL
+  trimDark:   new THREE.MeshStandardMaterial({ color:0x1a1c20, metalness:0.85, roughness:0.35, envMapIntensity:1.2 }),
+  trimBlue:   new THREE.MeshStandardMaterial({ color:0x1e4d7a, metalness:0.75, roughness:0.35, envMapIntensity:1.2 }),
+  trimAlu:    new THREE.MeshStandardMaterial({ color:0xb8babd, metalness:0.95, roughness:0.25, envMapIntensity:1.4 }),
+
+  // GLASS
+  glassTint:  makeGlassMaterial(0x1a2b3a),
+  glassClear: makeClearGlass(),
+
+  // MARKINGS
+  markYellow: new THREE.MeshStandardMaterial({ color:0xf0c020, emissive:0x6a5000, emissiveIntensity:0.15, roughness:0.7 }),
+  markWhite:  new THREE.MeshStandardMaterial({ color:0xeeeee8, roughness:0.7 }),
+
+  // FIXTURES
+  sconceGlow: new THREE.MeshStandardMaterial({ color:0xfff0d8, emissive:0xffe8c0, emissiveIntensity:2.0, roughness:0.4 }),
+  ceilLamp:   new THREE.MeshStandardMaterial({ color:0xf5f2ea, emissive:0xfff4d6, emissiveIntensity:2.2, roughness:0.4 }),
+  signBlue:   new THREE.MeshStandardMaterial({ color:0x0a1a2a, emissive:0x4a9eff, emissiveIntensity:1.5, roughness:0.3 }),
+
+  // PLANTS (simple but real geometry)
+  trunk:      new THREE.MeshStandardMaterial({ color:0x4a3826, roughness:0.9 }),
+  foliage:    new THREE.MeshStandardMaterial({ color:0x3a6b2a, roughness:0.85, metalness:0.0 }),
+};
+
+/* ══════════════════════════════════════════════════════════════
+   SECTION 4 — BUILDING DEFINITION
+   Dimensional constants. Everything downstream uses these.
+   ══════════════════════════════════════════════════════════════ */
+const B = {
+  // Main building outer footprint (rectangular)
+  x1: -45, x2: 45,      // 90 m wide
+  z1: -60, z2: 60,      // 120 m long
+  wallH: 12,            // eave height of the main hall
+
+  // Entrance tower (protrudes at the SE corner, taller)
+  tX1: 20, tX2: 45,
+  tZ1: -60, tZ2: -28,
+  tH: 15,               // tower height
+
+  wallThickness: 0.35,
+  claddingPanelW: 4.0,  // physical panel width we render as one mesh
+};
+
+/* ══════════════════════════════════════════════════════════════
+   SECTION 5 — WORLD ROOT + GEOMETRY HELPERS
+   ══════════════════════════════════════════════════════════════ */
+const world = new THREE.Group();
+scene.add(world);
+
+// Add a box with base at y (bottom sits on y)
+function box(parent, x, y, z, w, h, d, mat, opts = {}){
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  m.position.set(x, y + h/2, z);
+  m.castShadow = opts.cast !== false;
+  m.receiveShadow = opts.recv !== false;
+  if (opts.rotY) m.rotation.y = opts.rotY;
+  parent.add(m);
+  return m;
+}
+function cyl(parent, x, y, z, r, h, mat, seg=20){
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, seg), mat);
+  m.position.set(x, y + h/2, z);
+  m.castShadow = true; m.receiveShadow = true;
+  parent.add(m);
+  return m;
+}
+function plane(parent, x, y, z, w, d, mat, opts = {}){
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat);
+  m.rotation.x = -Math.PI/2;
+  m.position.set(x, y, z);
+  if (opts.rotZ) m.rotation.z = opts.rotZ;
+  m.receiveShadow = true;
+  parent.add(m);
+  return m;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   SECTION 6 — EXTERIOR GROUNDS
+   Grass plane, asphalt roads, curbs, driveway.
+   ══════════════════════════════════════════════════════════════ */
+const grounds = new THREE.Group();
+world.add(grounds);
+
+// Grass base 500x500
+{
+  const g = new THREE.Mesh(new THREE.PlaneGeometry(500, 500), MAT.grass);
+  g.rotation.x = -Math.PI / 2;
+  g.position.y = 0;
+  g.receiveShadow = true;
+  grounds.add(g);
+}
+
+// Asphalt apron around the south (entrance) side — the road
+// and a parking area in front of the building.
+{
+  const apron = new THREE.Mesh(new THREE.PlaneGeometry(180, 60), MAT.asphalt);
+  apron.rotation.x = -Math.PI / 2;
+  apron.position.set(0, 0.02, -95);
+  apron.receiveShadow = true;
+  grounds.add(apron);
+}
+// Asphalt ring around the whole building (for access)
+{
+  const ring = new THREE.Mesh(new THREE.PlaneGeometry(140, 160), MAT.asphalt);
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.set(0, 0.01, 0);
+  ring.receiveShadow = true;
+  grounds.add(ring);
+}
+// Grass strip close to the building so we can see grass right at the walls
+// (we lay a raised grass band that covers the asphalt ring near the building)
+{
+  // West grass strip (loading dock side has concrete, not grass)
+  const ws = new THREE.Mesh(new THREE.PlaneGeometry(6, 130), MAT.grass);
+  ws.rotation.x = -Math.PI/2;
+  ws.position.set(48, 0.05, 0);
+  ws.receiveShadow = true;
+  grounds.add(ws);
+
+  // South grass strip (entrance side) — split to leave the entry walkway open
+  const ss1 = new THREE.Mesh(new THREE.PlaneGeometry(30, 5), MAT.grass);
+  ss1.rotation.x = -Math.PI/2;
+  ss1.position.set(-15, 0.05, -63);
+  ss1.receiveShadow = true;
+  grounds.add(ss1);
+  const ss2 = new THREE.Mesh(new THREE.PlaneGeometry(18, 5), MAT.grass);
+  ss2.rotation.x = -Math.PI/2;
+  ss2.position.set(12, 0.05, -63);
+  ss2.receiveShadow = true;
+  grounds.add(ss2);
+
+  // North grass
+  const ns = new THREE.Mesh(new THREE.PlaneGeometry(110, 6), MAT.grass);
+  ns.rotation.x = -Math.PI/2;
+  ns.position.set(0, 0.05, 63);
+  ns.receiveShadow = true;
+  grounds.add(ns);
+}
+
+// Concrete pad for the loading dock (west side)
+{
+  const pad = new THREE.Mesh(new THREE.PlaneGeometry(20, 60), MAT.concrete);
+  pad.rotation.x = -Math.PI/2;
+  pad.position.set(-55, 0.04, 0);
+  pad.receiveShadow = true;
+  grounds.add(pad);
+}
+
+// Curbs — thin concrete lips around grass strips
+function curb(x, z, w, d){
+  const c = new THREE.Mesh(new THREE.BoxGeometry(w, 0.2, d), MAT.curb);
+  c.position.set(x, 0.1, z);
+  c.castShadow = false;
+  c.receiveShadow = true;
+  grounds.add(c);
+}
+curb(48, 0, 0.3, 130);      // west edge
+curb(-15, -65.5, 30, 0.3);  // south grass north edge
+curb(12, -65.5, 18, 0.3);
+curb(-30, -65.5, 0.3, 5);
+curb(0, -65.5, 0.3, 5);
+curb(20, -65.5, 0.3, 5);
+curb(0, 66, 110, 0.3);      // north
+
+/* ══════════════════════════════════════════════════════════════
+   SECTION 7 — EXTERIOR BUILDING
+   Walls, cladding, roof, entrance tower, loading docks
+   ══════════════════════════════════════════════════════════════ */
+const building = new THREE.Group();
+world.add(building);
+
+/* — 7.1 — LOADING DOCK (west face, X = B.x1) ————————————————— */
+/* Four roller doors on the west wall + concrete apron already placed */
+const loadingDoors = new THREE.Group();
+building.add(loadingDoors);
+{
+  const x = B.x1;  // west wall plane
+  for (let i = 0; i < 4; i++){
+    const z = -30 + i * 20;
+    // Roller door recess — dark metal cavity
+    box(loadingDoors, x - 0.05, 0, z, 0.6, 5.0, 5.5, MAT.trimDark);
+    // Roller door itself — ribbed metal
+    const doorMat = new THREE.MeshStandardMaterial({
+      color: 0xe0e0e0, metalness: 0.85, roughness: 0.38, envMapIntensity: 1.0
+    });
+    box(loadingDoors, x - 0.36, 0.05, z, 0.08, 5.0, 5.4, doorMat);
+    // Horizontal ribs
+    for (let r = 0; r < 25; r++){
+      box(loadingDoors, x - 0.42, 0.1 + r*0.2, z, 0.02, 0.06, 5.4, MAT.trimAlu, { cast:false });
+    }
+    // Bollards outside each door
+    for (const bx of [x - 4, x - 4]){
+      cyl(loadingDoors, bx, 0, z - 3, 0.18, 0.9, MAT.trimDark);
+      cyl(loadingDoors, bx, 0, z + 3, 0.18, 0.9, MAT.trimDark);
+    }
+  }
+}
+
+/* — 7.2 — SOUTH WALL (main face — where the entrance tower sits) — */
+/* Split into: left of tower (plain cladding), tower (glass), right of tower (plain) */
+
+/* Plain south wall section west of the tower: X = -45 to 20 */
+{
+  const x1 = B.x1, x2 = B.tX1;
+  const z  = B.z1;
+  const w  = x2 - x1;
+  const cx = (x1 + x2) / 2;
+
+  // Lower skirt (concrete) 0 to 1.2m
+  box(building, cx, 0, z - 0.05, w, 1.2, 0.2, MAT.concrete);
+
+  // Main cladding band 1.2 to 9.5 m — light grey
+  const bandH = 9.5 - 1.2;
+  const band = box(building, cx, 1.2, z - 0.05, w, bandH, 0.15, MAT.panelWhite);
+  // Scale UVs so texture tiles nicely across the wide surface
+  // (Three.js box UVs are already normalized — we rely on texture repeat)
+
+  // Accent band 9.5 to 11 — darker
+  box(building, cx, 9.5, z - 0.05, w, 1.5, 0.2, MAT.panelDark);
+
+  // Parapet cap
+  box(building, cx, B.wallH, z - 0.05, w, 0.4, 0.35, MAT.trimDark);
+
+  // A row of small windows high up (matches reference image 3)
+  for (let i = 0; i < 8; i++){
+    const wx = x1 + 3 + i * 5.5;
+    if (wx > x2 - 2) break;
+    // Frame
+    box(building, wx, 6.5, z - 0.18, 2.4, 1.6, 0.15, MAT.trimDark);
+    // Glass
+    box(building, wx, 6.6, z - 0.28, 2.2, 1.4, 0.06, MAT.glassTint);
+  }
+
+  // Wall sconce lights
+  for (let i = 0; i < 4; i++){
+    const lx = x1 + 12 + i * 16;
+    if (lx > x2 - 2) break;
+    // Fixture body
+    box(building, lx, 3.6, z - 0.25, 0.35, 0.5, 0.35, MAT.trimDark);
+    // Glow face
+    box(building, lx, 3.65, z - 0.45, 0.28, 0.4, 0.04, MAT.sconceGlow);
+  }
+}
+
+/* — 7.3 — ENTRANCE TOWER (southeast corner) ——————————————— */
+/* This is the standout architectural feature — tall glass wall
+   with a flat canopy, matching images 1 and 2. */
+const tower = new THREE.Group();
+building.add(tower);
+{
+  const tx1 = B.tX1, tx2 = B.tX2, tz1 = B.tZ1, tz2 = B.tZ2;
+  const th = B.tH;
+
+  // The tower's south face (front) is dominated by dark tinted glass
+  // The east face is panelled
+
+  // ---- Front (south) face — glass curtain wall ----
+  // Frame columns (mullions) — thin aluminium posts every 3m
+  const frontW = tx2 - tx1;
+  for (let i = 0; i <= frontW / 3; i++){
+    const mx = tx1 + i * 3;
+    box(tower, mx, 0, tz1, 0.15, th, 0.25, MAT.trimAlu);
+  }
+  // Horizontal transoms
+  for (const yy of [0, 4, 8, 12]){
+    box(tower, (tx1 + tx2)/2, yy, tz1, frontW, 0.15, 0.25, MAT.trimAlu);
+  }
+  // The glass itself
+  box(tower, (tx1 + tx2)/2, 0.15, tz1 + 0.02, frontW - 0.3, th - 0.3, 0.06, MAT.glassTint);
+
+  // ---- Entry portal — recessed with blue accent ----
+  // Blue accent band above the door level
+  box(tower, (tx1 + tx2)/2, 4.0, tz1 - 0.35, frontW, 0.6, 0.6, MAT.trimBlue);
+  // Under-canopy (flat soffit)
+  box(tower, (tx1 + tx2)/2, 3.9, tz1 - 1.6, frontW, 0.12, 2.6, MAT.trimBlue);
+
+  // ---- Clear-glass entrance doors (4 pairs) ----
+  for (let i = 0; i < 4; i++){
+    const dx = tx1 + 3 + i * 6;
+    box(tower, dx, 0.05, tz1 - 0.05, 2.4, 3.8, 0.06, MAT.glassClear);
+    // Handle
+    cyl(tower, dx - 0.9, 1.2, tz1 - 0.15, 0.03, 0.9, MAT.trimAlu);
+    cyl(tower, dx + 0.9, 1.2, tz1 - 0.15, 0.03, 0.9, MAT.trimAlu);
+  }
+
+  // ---- "50" building number (matches image 1) ----
+  // Rendered as extruded digits via two thin boxes forming a "5" and "0"
+  const numX = (tx1 + tx2)/2 + 6;
+  const numY = th - 1.2;
+  const numZ = tz1 - 0.4;
+  // Digit "5"
+  box(tower, numX - 0.5, numY,      numZ, 0.9, 0.16, 0.06, MAT.trimDark); // top bar
+  box(tower, numX - 0.85, numY - 0.4, numZ, 0.16, 0.7, 0.06, MAT.trimDark); // upper-left
+  box(tower, numX - 0.5, numY - 0.75, numZ, 0.9, 0.16, 0.06, MAT.trimDark); // mid bar
+  box(tower, numX - 0.15, numY - 1.1, numZ, 0.16, 0.7, 0.06, MAT.trimDark); // lower-right
+  box(tower, numX - 0.5, numY - 1.45, numZ, 0.9, 0.16, 0.06, MAT.trimDark); // bottom bar
+  // Digit "0" — 4 bars forming rectangle
+  const ox = numX + 0.8;
+  box(tower, ox, numY,      numZ, 0.9, 0.16, 0.06, MAT.trimDark);
+  box(tower, ox, numY - 1.45, numZ, 0.9, 0.16, 0.06, MAT.trimDark);
+  box(tower, ox - 0.38, numY - 0.72, numZ, 0.16, 1.6, 0.06, MAT.trimDark);
+  box(tower, ox + 0.38, numY - 0.72, numZ, 0.16, 1.6, 0.06, MAT.trimDark);
+
+  // ---- East face of the tower (visible from the road) ----
+  // Same cladding rhythm as the main walls
+  const eastZ = (tz1 + tz2) / 2;
+  const eastH = th;
+  // Lower concrete
+  box(tower, tx2, 0, eastZ, 0.2, 1.2, tz2 - tz1, MAT.concrete);
+  // Panel band
+  box(tower, tx2, 1.2, eastZ, 0.15, 9.5 - 1.2, tz2 - tz1, MAT.panelWhite);
+  // Accent band
+  box(tower, tx2, 9.5, eastZ, 0.2, 4.0, tz2 - tz1, MAT.panelDark);
+  // Parapet
+  box(tower, tx2, th, eastZ, 0.35, 0.4, tz2 - tz1, MAT.trimDark);
+
+  // Windows on east face
+  for (let i = 0; i < 5; i++){
+    const wz = tz1 + 4 + i * 5;
+    if (wz > tz2 - 2) break;
+    box(tower, tx2 - 0.18, 6.5, wz, 0.15, 1.6, 2.4, MAT.trimDark);
+    box(tower, tx2 - 0.28, 6.6, wz, 0.06, 1.4, 2.2, MAT.glassTint);
+  }
+
+  // ---- North face of tower (facing the main hall) ----
+  // Open — leads into the interior
+}
+
+/* — 7.4 — EAST WALL (X = B.x2) ——————————————— */
+{
+  const x = B.x2;
+  const z1 = B.z1, z2 = B.z2;
+  const cz = (z1 + z2) / 2;
+  const d = z2 - z1;
+
+  // Lower concrete
+  box(building, x, 0, cz, 0.2, 1.2, d, MAT.concrete);
+  // Panel band
+  box(building, x, 1.2, cz, 0.15, 9.5 - 1.2, d, MAT.panelWhite);
+  // Accent band
+  box(building, x, 9.5, cz, 0.2, 1.5, d, MAT.panelDark);
+  // Parapet
+  box(building, x, B.wallH, cz, 0.35, 0.4, d, MAT.trimDark);
+
+  // Windows spaced along the east wall
+  for (let i = 0; i < 10; i++){
+    const wz = z1 + 6 + i * 11;
+    if (wz > z2 - 3) break;
+    // Skip the tower zone
+    if (wz > B.tZ1 && wz < B.tZ2 && x === B.x2) continue;
+    box(building, x - 0.18, 6.5, wz, 0.15, 1.6, 2.4, MAT.trimDark);
+    box(building, x - 0.28, 6.6, wz, 0.06, 1.4, 2.2, MAT.glassTint);
+  }
+}
+
+/* — 7.5 — WEST WALL (X = B.x1) ————————————————— */
+{
+  const x = B.x1;
+  const z1 = B.z1, z2 = B.z2;
+  const cz = (z1 + z2) / 2;
+  const d = z2 - z1;
+
+  box(building, x, 0, cz, 0.2, 1.2, d, MAT.concrete);
+  box(building, x, 1.2, cz, 0.15, 9.5 - 1.2, d, MAT.panelGrey); // slightly darker on dock side
+  box(building, x, 9.5, cz, 0.2, 1.5, d, MAT.panelDark);
+  box(building, x, B.wallH, cz, 0.35, 0.4, d, MAT.trimDark);
+}
+
+/* — 7.6 — NORTH WALL (Z = B.z2) ——————————————— */
+{
+  const z = B.z2;
+  const x1 = B.x1, x2 = B.x2;
+  const cx = (x1 + x2) / 2;
+  const w = x2 - x1;
+
+  box(building, cx, 0, z, w, 1.2, 0.2, MAT.concrete);
+  box(building, cx, 1.2, z, w, 9.5 - 1.2, 0.15, MAT.panelWhite);
+  box(building, cx, 9.5, z, w, 1.5, 0.2, MAT.panelDark);
+  box(building, cx, B.wallH, z, w, 0.4, 0.35, MAT.trimDark);
+}
+
+/* — 7.7 — ROOF ——————————————————————————————— */
+{
+  const cx = (B.x1 + B.x2) / 2;
+  const cz = (B.z1 + B.z2) / 2;
+  const w  = B.x2 - B.x1;
+  const d  = B.z2 - B.z1;
+  const roof = new THREE.Mesh(new THREE.PlaneGeometry(w, d), MAT.roof);
+  roof.rotation.x = -Math.PI / 2;
+  roof.position.set(cx, B.wallH, cz);
+  roof.receiveShadow = true;
+  building.add(roof);
+
+  // Parapet cap ring
+  box(building, cx, B.wallH, B.z1 + 0.15, w, 0.4, 0.35, MAT.trimDark);
+  box(building, cx, B.wallH, B.z2 - 0.15, w, 0.4, 0.35, MAT.trimDark);
+  box(building, B.x1 + 0.15, B.wallH, cz, 0.35, 0.4, d, MAT.trimDark);
+  box(building, B.x2 - 0.15, B.wallH, cz, 0.35, 0.4, d, MAT.trimDark);
+
+  // Tower roof (flat cap over the entrance block)
+  const tcx = (B.tX1 + B.tX2) / 2;
+  const tcz = (B.tZ1 + B.tZ2) / 2;
+  const tw  = B.tX2 - B.tX1;
+  const td  = B.tZ2 - B.tZ1;
+  const tr = new THREE.Mesh(new THREE.PlaneGeometry(tw, td), MAT.roof);
+  tr.rotation.x = -Math.PI / 2;
+  tr.position.set(tcx, B.tH, tcz);
+  building.add(tr);
+  box(building, tcx, B.tH, B.tZ1 + 0.15, tw, 0.4, 0.35, MAT.trimDark);
+  box(building, tcx, B.tH, B.tZ2 - 0.15, tw, 0.4, 0.35, MAT.trimDark);
+  box(building, B.tX1 + 0.15, B.tH, tcz, 0.35, 0.4, td, MAT.trimDark);
+  box(building, B.tX2 - 0.15, B.tH, tcz, 0.35, 0.4, td, MAT.trimDark);
+}
+
+/* — 7.8 — ENTRANCE WALKWAY + STEPS + HANDRAILS ———————————— */
+{
+  // Concrete walkway leading to the doors
+  const walk = new THREE.Mesh(new THREE.PlaneGeometry(30, 8), MAT.concrete);
+  walk.rotation.x = -Math.PI / 2;
+  walk.position.set((B.tX1 + B.tX2)/2, 0.06, B.tZ1 - 6);
+  walk.receiveShadow = true;
+  world.add(walk);
+
+  // Steps up to the door threshold
+  for (let i = 0; i < 3; i++){
+    box(world, (B.tX1 + B.tX2)/2, i * 0.05, B.tZ1 + 0.4 - i*0.2, 30, 0.05, 0.6, MAT.curb);
+  }
+
+  // Handrails
+  const railMat = MAT.trimAlu;
+  // Left rail
+  cyl(world, B.tX1 + 2, 0, B.tZ1 - 1.5, 0.04, 1.1, railMat);
+  cyl(world, B.tX1 + 2, 0, B.tZ1 - 4,   0.04, 1.1, railMat);
+  box(world, B.tX1 + 2, 1.0, B.tZ1 - 2.75, 0.05, 0.05, 2.5, railMat);
+  // Right rail
+  cyl(world, B.tX2 - 2, 0, B.tZ1 - 1.5, 0.04, 1.1, railMat);
+  cyl(world, B.tX2 - 2, 0, B.tZ1 - 4,   0.04, 1.1, railMat);
+  box(world, B.tX2 - 2, 1.0, B.tZ1 - 2.75, 0.05, 0.05, 2.5, railMat);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   SECTION 8 — LANDSCAPING (trees, planters, bollards)
+   ══════════════════════════════════════════════════════════════ */
+const landscape = new THREE.Group();
+world.add(landscape);
+
+function makeTree(x, z){
+  const g = new THREE.Group();
+  // Trunk — slightly tapered by stacking two cylinders
+  cyl(g, 0, 0, 0, 0.14, 2.5, MAT.trunk);
+  cyl(g, 0, 2.4, 0, 0.10, 1.2, MAT.trunk);
+  // Foliage — several overlapping spheres to give a leafy shape
+  const clusters = [
+    [0, 3.6, 0, 1.1],
+    [-0.6, 3.4, 0.4, 0.8],
+    [0.6, 3.4, -0.4, 0.8],
+    [0.2, 4.1, 0.5, 0.7],
+    [-0.3, 4.0, -0.6, 0.7],
+  ];
+  for (const [fx, fy, fz, r] of clusters){
+    const s = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 8), MAT.foliage);
+    s.position.set(fx, fy, fz);
+    s.castShadow = true;
+    g.add(s);
+  }
+  g.position.set(x, 0.05, z);
+  landscape.add(g);
+}
+
+// Trees along the south grass strip
+for (let i = 0; i < 6; i++) makeTree(-22 + i * 8, -63);
+// Trees along the west grass strip
+for (let i = 0; i < 4; i++) makeTree(48, -40 + i * 20);
+
+// Bollards near the loading dock
+for (let i = 0; i < 8; i++){
+  const bx = -47;
+  const bz = -42 + i * 12;
+  cyl(landscape, bx, 0, bz, 0.15, 1.0, MAT.trimYellow || MAT.trimDark);
+  cyl(landscape, bx, 1.0, bz, 0.09, 0.15, MAT.trimDark);
+}
+
+// Bollards at the entrance drive
+for (let i = 0; i < 6; i++){
+  const bx = -5 + i * 3;
+  const bz = -75;
+  cyl(landscape, bx, 0, bz, 0.15, 0.9, MAT.trimDark);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   SECTION 9 — INTERIOR FACTORY
+   Empty, organized, structural. No machinery yet.
+   ══════════════════════════════════════════════════════════════ */
+const interior = new THREE.Group();
+world.add(interior);
+
+/* — 9.1 — INTERIOR FLOOR ———————————————————————————— */
+{
+  const cx = (B.x1 + B.x2) / 2;
+  const cz = (B.z1 + B.z2) / 2;
+  const w  = (B.x2 - B.x1) - 0.5;
+  const d  = (B.z2 - B.z1) - 0.5;
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(w, d), MAT.floor);
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.set(cx, 0.08, cz);
+  floor.receiveShadow = true;
+  interior.add(floor);
+
+  // Yellow safety walkway line — a 1m wide stripe running the length of the hall
+  const line = new THREE.Mesh(new THREE.PlaneGeometry(1.0, d - 4), MAT.markYellow);
+  line.rotation.x = -Math.PI / 2;
+  line.position.set(0, 0.09, cz);
+  line.receiveShadow = true;
+  interior.add(line);
+
+  // Second parallel safety line on the east side
+  const line2 = new THREE.Mesh(new THREE.PlaneGeometry(1.0, d - 4), MAT.markYellow);
+  line2.rotation.x = -Math.PI / 2;
+  line2.position.set(20, 0.09, cz);
+  line2.receiveShadow = true;
+  interior.add(line2);
+}
+
+/* — 9.2 — STRUCTURAL COLUMNS ————————————————————————— */
+/* Steel columns every 15 m in a grid. Painted blue, matching image 4. */
+const columnPositions = [];
+{
+  const spacingX = 15;
+  const spacingZ = 15;
+  for (let x = -30; x <= 30; x += spacingX){
+    for (let z = -45; z <= 45; z += spacingZ){
+      // Skip the entrance tower area
+      if (x >= B.tX1 - 2 && z >= B.tZ1 - 2 && z <= B.tZ2 + 2) continue;
+      columnPositions.push([x, z]);
+    }
+  }
+  for (const [x, z] of columnPositions){
+    // Column base — heavier flange
+    box(interior, x, 0, z, 1.0, 0.6, 1.0, MAT.steelDark);
+    // Main column shaft (H-beam suggested by two flanges + web)
+    box(interior, x, 0.6, z, 0.7, B.wallH - 1.2, 0.7, MAT.steelBlue);
+    // Flange caps top and bottom
+    box(interior, x, 0.4, z, 0.9, 0.3, 0.9, MAT.steelDark);
+    box(interior, x, B.wallH - 0.7, z, 0.9, 0.3, 0.9, MAT.steelDark);
+    // Collar at top (matches image 4 — red or yellow band near top)
+    box(interior, x, B.wallH - 1.6, z, 0.85, 0.4, 0.85, MAT.steelYellow);
+  }
+}
+
+/* — 9.3 — ROOF TRUSSES ———————————————————————————— */
+/* Steel trusses spanning the width. Yellow top chords, blue webs. */
+{
+  const span = B.x2 - B.x1 - 2;
+  const cx = (B.x1 + B.x2) / 2;
+  for (let z = -55; z <= 55; z += 7.5){
+    // Bottom chord
+    box(interior, cx, B.wallH - 1.6, z, span, 0.35, 0.35, MAT.steelBlue);
+    // Top chord
+    box(interior, cx, B.wallH - 0.5, z, span, 0.35, 0.35, MAT.steelYellow);
+    // Vertical + diagonal webs
+    for (let i = 0; i < 12; i++){
+      const x = B.x1 + 2 + i * (span / 12);
+      box(interior, x, B.wallH - 1.6, z, 0.22, 1.1, 0.22, MAT.steelBlue);
+    }
+    // Cross bracing (X shape) between every other pair
+    for (let i = 0; i < 6; i++){
+      const x1 = B.x1 + 2 + i * (span / 6);
+      const x2 = B.x1 + 2 + (i + 1) * (span / 6);
+      const midX = (x1 + x2) / 2;
+      // Diagonal — approximate with a thin rotated box
+      const dx = x2 - x1;
+      const diagLen = Math.sqrt(dx*dx + 1.1*1.1);
+      const angle = Math.atan2(1.1, dx);
+      const d1 = new THREE.Mesh(new THREE.BoxGeometry(diagLen, 0.15, 0.15), MAT.steelBlue);
+      d1.position.set(midX, B.wallH - 1.05, z);
+      d1.rotation.z = angle;
+      interior.add(d1);
+      const d2 = d1.clone();
+      d2.rotation.z = -angle;
+      interior.add(d2);
+    }
+  }
+
+  // Horizontal purlins running the length of the hall
+  for (let x = B.x1 + 2; x <= B.x2 - 2; x += 3){
+    box(interior, x, B.wallH - 0.15, 0, 0.18, 0.25, B.z2 - B.z1 - 2, MAT.steelDark);
+  }
+}
+
+/* — 9.4 — SKYLIGHTS ———————————————————————————————— */
+/* Long continuous skylight strips down the roof center. */
+{
+  const cx = (B.x1 + B.x2) / 2;
+  for (const offsetX of [-12, 0, 12]){
+    // Skylight housing (curb) — a low box around the glazing
+    box(interior, cx + offsetX, B.wallH - 0.15, 0, 4.0, 0.25, B.z2 - B.z1 - 4, MAT.steelDark);
+    // Glass panel — glows bright because sky is above
+    box(interior, cx + offsetX, B.wallH - 0.05, 0, 3.6, 0.10, B.z2 - B.z1 - 4.4, MAT.glassClear);
+    // Interior light emitted from each skylight segment
+    for (let z = -50; z <= 50; z += 16){
+      const l = new THREE.PointLight(0xfff4e0, 6, 30, 2);
+      l.position.set(cx + offsetX, B.wallH - 1.5, z);
+      interior.add(l);
+    }
+  }
+}
+
+/* — 9.5 — INTERIOR CEILING LAMPS (industrial high-bay) —————— */
+{
+  const cx = (B.x1 + B.x2) / 2;
+  for (let x = -35; x <= 35; x += 10){
+    for (let z = -50; z <= 50; z += 20){
+      // Lamp housing
+      const housing = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.3, 0.6), MAT.steelDark);
+      housing.position.set(x, B.wallH - 2.0, z);
+      housing.castShadow = false;
+      interior.add(housing);
+      // Emissive face
+      const face = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.05, 0.5), MAT.ceilLamp);
+      face.position.set(x, B.wallH - 2.15, z);
+      interior.add(face);
+      // Actual point light
+      const l = new THREE.PointLight(0xfff0d0, 9, 26, 2);
+      l.position.set(x, B.wallH - 2.5, z);
+      interior.add(l);
+    }
+  }
+}
+
+/* — 9.6 — OVERHEAD CRANE RAIL ———————————————————— */
+/* Two yellow rails running the length of the hall, on opposite sides. */
+{
+  const railY = B.wallH - 3.2;
+  for (const x of [-32, 32]){
+    // Rail girder
+    box(interior, x, railY, 0, 0.8, 0.6, B.z2 - B.z1 - 8, MAT.steelYellow);
+    // Bottom rail flange
+    box(interior, x, railY - 0.15, 0, 1.1, 0.15, B.z2 - B.z1 - 8, MAT.steelDark);
+    // Brackets back to columns
+    for (let z = -50; z <= 50; z += 7.5){
+      box(interior, x, railY, z, 1.4, 0.35, 0.35, MAT.steelDark);
+    }
+  }
+}
+
+/* — 9.7 — PIPE RUNS ON THE WEST WALL ————————————— */
+/* Big industrial pipes high on the wall, matching image 4. */
+{
+  const wallX = B.x1 + 1.5;
+  // 3 large parallel pipes
+  for (const offY of [0, 1.0, 2.0]){
+    const pipe = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.45, 0.45, B.z2 - B.z1 - 8, 16),
+      MAT.trimAlu
+    );
+    pipe.rotation.x = Math.PI / 2;
+    pipe.position.set(wallX, B.wallH - 3.5 + offY, 0);
+    pipe.castShadow = true;
+    interior.add(pipe);
+  }
+  // Vertical drops every 15m
+  for (let z = -50; z <= 50; z += 15){
+    cyl(interior, wallX, 2, z, 0.35, B.wallH - 3.5, MAT.trimAlu);
+  }
+}
+
+/* — 9.8 — INTERIOR LOADING DOORS (west) ————————— */
+/* Interior view of the four roller doors we placed on the outside */
+{
+  const x = B.x1 + 0.4;
+  for (let i = 0; i < 4; i++){
+    const z = -30 + i * 20;
+    // Interior frame
+    box(interior, x, 0, z - 3, 0.2, 5.2, 0.25, MAT.steelDark);
+    box(interior, x, 0, z + 3, 0.2, 5.2, 0.25, MAT.steelDark);
+    box(interior, x, 5.0, z, 0.2, 0.25, 6.25, MAT.steelDark);
+  }
+}
+
+/* — 9.9 — INTERIOR RECEPTION AREA (inside the tower) ————— */
+/* Simple counter + a rear wall so the entrance reads as a lobby. */
+{
+  const cx = (B.tX1 + B.tX2) / 2;
+  const cz = (B.tZ1 + B.tZ2) / 2;
+  // Back wall of the lobby (so you can't see through the tower into the hall)
+  box(interior, cx, 0, B.tZ2 - 1, B.tX2 - B.tX1 - 1, B.tH - 1, 0.2, MAT.panelWhite);
+  // Entry opening in the middle of that wall
+  // (We simply build two segments with a gap in the middle.)
+  // — we already built a full wall; carve by overlaying a hole is complex,
+  // so instead we replace the middle segment with a doorway frame.
+  // Simpler: just add a doorway frame in front of that wall.
+  box(interior, cx, 0, B.tZ2 - 1.1, 4.5, 3.0, 0.4, MAT.steelDark);
+  box(interior, cx, 3.0, B.tZ2 - 1.1, 4.5, 0.3, 0.4, MAT.steelDark);
+
+  // Reception counter — a long dark counter with a wood top
+  box(interior, cx - 4, 0, cz + 2, 6, 1.1, 0.9, MAT.trimDark);
+  box(interior, cx - 4, 1.1, cz + 2, 6.2, 0.08, 1.0, MAT.trimBlue);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   SECTION 10 — LIGHTING (environment + sun + interior fixtures)
+   ══════════════════════════════════════════════════════════════ */
+const hemi = new THREE.HemisphereLight(0xc8dcf0, 0x556655, 0.55);
+scene.add(hemi);
+
+const sun = new THREE.DirectionalLight(0xffe8c8, 1.6);
+sun.position.set(-80, 90, 60);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.left = -120;
+sun.shadow.camera.right = 120;
+sun.shadow.camera.top = 120;
+sun.shadow.camera.bottom = -120;
+sun.shadow.camera.near = 10;
+sun.shadow.camera.far = 250;
+sun.shadow.bias = -0.0004;
+scene.add(sun);
+
+// Fill light from the opposite side (as if bouncing off the ground)
+const fill = new THREE.DirectionalLight(0xb8c8d8, 0.25);
+fill.position.set(60, 40, -60);
+scene.add(fill);
+
+// Collect the point lights we made inside so we can toggle them
+const buildingLights = [];
+scene.traverse(o => {
+  if (o.isPointLight && o.parent && o.parent.parent === world) {
+    buildingLights.push(o);
+  }
+});
+
+let lit = true;
+function toggleLights(){
+  lit = !lit;
+  for (const l of buildingLights) l.visible = lit;
+  sun.intensity = lit ? 1.6 : 0.4;
+  hemi.intensity = lit ? 0.55 : 0.15;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   SECTION 11 — PLAYER · CONTROLS · VOICE LAMP
+   ══════════════════════════════════════════════════════════════ */
+const controls = new PointerLockControls(camera, renderer.domElement);
+const PLAYER = { height: 1.7, crouch: 1.05, speed: 5.0, sprint: 8.5, crouchSpeed: 2.5 };
+const keys = {};
+
+// Spawn on the entrance walkway facing the doors
+camera.position.set(0, PLAYER.height, -85);
+
+addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (e.code === 'KeyF') toggleLights();
+});
+addEventListener('keyup', e => { keys[e.code] = false; });
+
+const overlay = document.getElementById('overlay');
+overlay.addEventListener('click', () => controls.lock());
+controls.addEventListener('lock',   () => overlay.style.opacity = 0);
+controls.addEventListener('unlock', () => overlay.style.opacity = 1);
+
+// Voice lamp — the mic drives a spotlight in front of the player
+const voiceLamp = new THREE.SpotLight(0xcfe6ff, 0, 40, Math.PI / 6, 0.5, 1.4);
+scene.add(voiceLamp);
+const voiceTarget = new THREE.Object3D();
+scene.add(voiceTarget);
+voiceLamp.target = voiceTarget;
+
+let micAnalyser = null, micReady = false;
+const micBuf = new Uint8Array(256);
+async function initMic(){
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    micAnalyser = ctx.createAnalyser();
+    micAnalyser.fftSize = 512;
+    ctx.createMediaStreamSource(stream).connect(micAnalyser);
+    micReady = true;
+  } catch (e) { /* silent */ }
+}
+initMic();
+function readMic(){
+  if (!micReady) return keys['KeyY'] ? 0.7 : 0;
+  micAnalyser.getByteFrequencyData(micBuf);
+  let sum = 0;
+  for (let i = 0; i < micBuf.length; i++) sum += micBuf[i] * micBuf[i];
+  return Math.min(1, Math.sqrt(sum / micBuf.length) / 90);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   SECTION 12 — SIMPLE COLLISION
+   Axis-aligned collision against a small set of blocking volumes:
+   the four exterior walls and the tower rear wall. This is enough
+   for the empty factory — you can walk in through the entrance,
+   around the interior, and out the loading doors are blocked.
+   ══════════════════════════════════════════════════════════════ */
+const colliders = [];
+function addCollider(x1, z1, x2, z2){
+  colliders.push({ x1, z1, x2, z2 });
+}
+// West wall
+addCollider(B.x1 - 0.3, B.z1 - 1, B.x1 + 0.3, B.z2 + 1);
+// East wall
+addCollider(B.x2 - 0.3, B.z1 - 1, B.x2 + 0.3, B.z2 + 1);
+// North wall
+addCollider(B.x1 - 1, B.z2 - 0.3, B.x2 + 1, B.z2 + 0.3);
+// South wall west of tower
+addCollider(B.x1 - 1, B.z1 - 0.3, B.tX1, B.z1 + 0.3);
+// Tower east face (a solid wall from the exterior perspective)
+addCollider(B.tX2 - 0.2, B.tZ1 - 1, B.tX2 + 0.2, B.tZ2);
+// Tower north face (has a doorway — leave a gap in the middle)
+addCollider(B.tX1, B.tZ2 - 0.3, B.tX1 + 8, B.tZ2 + 0.3);      // left segment
+addCollider(B.tX2 - 8, B.tZ2 - 0.3, B.tX2, B.tZ2 + 0.3);      // right segment
+
+function canMove(x, z){
+  const r = 0.4;
+  for (const c of colliders){
+    if (x + r > c.x1 && x - r < c.x2 && z + r > c.z1 && z - r < c.z2) return false;
+  }
+  return true;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   SECTION 13 — HUD + ZONE TRACKING
+   ══════════════════════════════════════════════════════════════ */
+const zoneName  = document.getElementById('zonename');
+const zoneCoord = document.getElementById('zonecoord');
+const micFill   = document.getElementById('micfill');
+
+function currentZone(x, z){
+  if (x > B.x1 && x < B.x2 && z > B.z1 && z < B.z2){
+    if (x > B.tX1 && z < B.tZ2) return 'INTERIOR · ENTRANCE LOBBY';
+    if (x > 10) return 'INTERIOR · EAST BAY';
+    if (x < -10) return 'INTERIOR · WEST BAY';
+    return 'INTERIOR · MAIN HALL';
+  }
+  if (z < B.z1) return 'EXTERIOR · SOUTH FRONT';
+  if (z > B.z2) return 'EXTERIOR · NORTH REAR';
+  if (x < B.x1) return 'EXTERIOR · LOADING DOCK';
+  return 'EXTERIOR · EAST SIDE';
+}
+
+/* ══════════════════════════════════════════════════════════════
+   SECTION 14 — MAIN LOOP
+   ══════════════════════════════════════════════════════════════ */
+const clock = new THREE.Clock();
+const fwd = new THREE.Vector3();
+const right = new THREE.Vector3();
+let micLevel = 0;
+
+function tick(){
+  requestAnimationFrame(tick);
+  const dt = Math.min(clock.getDelta(), 0.05);
+
+  const crouching = !!(keys['ControlLeft'] || keys['KeyC']);
+  const targetH = crouching ? PLAYER.crouch : PLAYER.height;
+  camera.position.y += (targetH - camera.position.y) * Math.min(1, dt * 10);
+
+  camera.getWorldDirection(fwd);
+  fwd.y = 0; fwd.normalize();
+  right.crossVectors(fwd, camera.up).normalize();
+
+  const speed = crouching ? PLAYER.crouchSpeed : (keys['ShiftLeft'] ? PLAYER.sprint : PLAYER.speed);
+  const mv = new THREE.Vector3();
+  if (keys['KeyW']) mv.add(fwd);
+  if (keys['KeyS']) mv.sub(fwd);
+  if (keys['KeyD']) mv.add(right);
+  if (keys['KeyA']) mv.sub(right);
+  if (mv.lengthSq() > 0) mv.normalize().multiplyScalar(speed * dt);
+
+  const nx = camera.position.x + mv.x;
+  const nz = camera.position.z + mv.z;
+  if (canMove(nx, camera.position.z)) camera.position.x = nx;
+  if (canMove(camera.position.x, nz)) camera.position.z = nz;
+
+  // Voice lamp
+  const raw = readMic();
+  micLevel += (raw - micLevel) * Math.min(1, dt * 12);
+  const targetI = THREE.MathUtils.lerp(0.05, 16, micLevel);
+  const targetR = THREE.MathUtils.lerp(6, 40, micLevel);
+  voiceLamp.intensity += (targetI - voiceLamp.intensity) * Math.min(1, dt * 10);
+  voiceLamp.distance  += (targetR - voiceLamp.distance)  * Math.min(1, dt * 10);
+  voiceLamp.position.copy(camera.position);
+  voiceTarget.position.copy(camera.position).add(fwd.clone().multiplyScalar(10));
+  voiceTarget.position.y -= 0.4;
+  micFill.style.width = (micLevel * 100).toFixed(0) + '%';
+
+  // HUD
+  zoneName.textContent  = currentZone(camera.position.x, camera.position.z);
+  zoneCoord.textContent = `X ${camera.position.x.toFixed(1)} · Z ${camera.position.z.toFixed(1)}`;
+
+  renderer.render(scene, camera);
+}
+tick();
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>

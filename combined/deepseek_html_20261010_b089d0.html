@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sky &amp; Clouds — Procedural PBR Sky Renderer</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { height:100%; background:#000; overflow:hidden;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  #sky { display:block; width:100vw; height:100vh; cursor:grab; touch-action:none; }
+  #sky.dragging { cursor:grabbing; }
+
+  #ui {
+    position:fixed; left:16px; bottom:16px; display:flex; flex-direction:column; gap:10px;
+    padding:14px 16px; border-radius:14px;
+    background:rgba(10,14,22,.55); backdrop-filter:blur(14px);
+    border:1px solid rgba(255,255,255,.12);
+    box-shadow:0 8px 32px rgba(0,0,0,.45);
+    user-select:none; z-index:10;
+  }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .btn {
+    padding:8px 14px; border-radius:9px; cursor:pointer; font-size:13px; font-weight:600;
+    color:#dbe6f5; background:rgba(255,255,255,.07);
+    border:1px solid rgba(255,255,255,.14);
+    transition:.15s; white-space:nowrap;
+  }
+  .btn:hover { background:rgba(255,255,255,.15); transform:translateY(-1px); }
+  .btn.active { background:linear-gradient(180deg,#4d8dff,#2f6be0); border-color:#6aa3ff;
+    color:#fff; box-shadow:0 0 18px rgba(77,141,255,.55); }
+  .lbl { font-size:11px; letter-spacing:.08em; text-transform:uppercase;
+    color:#8ea3c0; font-weight:700; }
+  .slider { display:flex; align-items:center; gap:8px; }
+  input[type=range] { width:110px; accent-color:#4d8dff; }
+  #stats { font-size:11px; color:#7b8ca6; font-variant-numeric:tabular-nums; }
+  #err { position:fixed; inset:0; display:none; place-items:center; color:#f88;
+    background:#05070b; font-size:16px; text-align:center; padding:32px; z-index:99; }
+</style>
+</head>
+<body>
+<canvas id="sky"></canvas>
+
+<div id="ui">
+  <div class="row">
+    <span class="lbl">Weather</span>
+  </div>
+  <div class="row" id="presets"></div>
+  <div class="row">
+    <div class="slider"><span class="lbl">Quality</span>
+      <input id="quality" type="range" min="0.3" max="1" step="0.05" value="0.62"></div>
+    <div class="slider"><span class="lbl">Time</span>
+      <input id="timescale" type="range" min="0" max="6" step="0.1" value="1"></div>
+  </div>
+  <div id="stats">—</div>
+</div>
+
+<div id="err"></div>
+
+<script>
+"use strict";
+/* ============================================================================
+   SkyClouds — a self-contained procedural sky & volumetric cloud renderer.
+   Pure WebGL 1.0. No textures, no libraries, no assets.
+   ========================================================================== */
+
+/* ------------------------------- SHADERS --------------------------------- */
+
+const VERT_SRC = `
+attribute vec2 aPos;
+void main(){ gl_Position = vec4(aPos, 0.0, 1.0); }
+`;
+
+const FRAG_SRC = `
+precision highp float;
+precision highp int;
+
+#define PI 3.141592653589793
+#define MAX_STEPS 64
+#define LIGHT_STEPS 5
+
+/* -------- screen / camera -------- */
+uniform vec2  uResolution;
+uniform float uTime;
+uniform vec3  uCamRight;
+uniform vec3  uCamUp;
+uniform vec3  uCamForward;
+uniform float uFocal;
+uniform int   uSteps;
+
+/* -------- sun / atmosphere -------- */
+uniform vec3  uSunDir;
+uniform vec3  uSunColor;
+uniform float uSunIntensity;
+uniform float uSunAngSize;
+uniform float uDiscBoost;
+uniform float uRayleigh;
+uniform float uMieCoeff;
+uniform float uMieG;
+uniform float uSkyScale;
+
+/* -------- planet / cloud layer -------- */
+uniform float uCenterY;
+uniform float uCloudBottom;
+uniform float uCloudTop;
+uniform float uCloudThick;
+
+/* -------- cloud shape -------- */
+uniform float uCoverage;
+uniform float uSoftness;
+uniform float uDensity;
+uniform float uLightAbsorb;
+uniform float uShapeScale;
+uniform float uShapeScaleY;
+uniform float uDetailScale;
+uniform float uDetailScaleY;
+uniform float uDetailStrength;
+uniform float uVertMode;
+uniform vec2  uWindOffset;
+uniform vec2  uDetailOffset;
+
+/* -------- lighting / environment -------- */
+uniform vec3  uAmbient;
+uniform float uAmbientStrength;
+uniform vec3  uGroundColor;
+uniform float uFogDensity;
+uniform vec3  uFogColor;
+
+/* -------- weather overlay -------- */
+uniform float uNight;
+uniform float uRain;
+uniform float uSnow;
+uniform float uMaxDist;
+uniform float uExposure;
+
+/* =========================================================================
+   HASH & NOISE  (Dave Hoskins style integer-free hash — stable on all GPUs)
+   ========================================================================= */
+float hash13(vec3 p3){
+    p3 = fract(p3 * 0.1031);
+    p3 += dot(p3, p3.zyx + 31.32);
+    return fract((p3.x + p3.y) * p3.z);
+}
+
+float vnoise(vec3 x){
+    vec3 i = floor(x);
+    vec3 f = fract(x);
+    f = f * f * (3.0 - 2.0 * f);
+
+    float n000 = hash13(i + vec3(0.0, 0.0, 0.0));
+    float n100 = hash13(i + vec3(1.0, 0.0, 0.0));
+    float n010 = hash13(i + vec3(0.0, 1.0, 0.0));
+    float n110 = hash13(i + vec3(1.0, 1.0, 0.0));
+    float n001 = hash13(i + vec3(0.0, 0.0, 1.0));
+    float n101 = hash13(i + vec3(1.0, 0.0, 1.0));
+    float n011 = hash13(i + vec3(0.0, 1.0, 1.0));
+    float n111 = hash13(i + vec3(1.0, 1.0, 1.0));
+
+    return mix(
+        mix(mix(n000, n100, f.x), mix(n010, n110, f.x), f.y),
+        mix(mix(n001, n101, f.x), mix(n011, n111, f.x), f.y),
+        f.z);
+}
+
+float fbm3(vec3 p){
+    float s = 0.0, a = 0.5, n = 0.0;
+    for (int i = 0; i < 3; i++){
+        s += a * vnoise(p);
+        n += a;
+        p = p * 2.03 + vec3(11.3, 5.7, 17.1);
+        a *= 0.5;
+    }
+    return s / n;
+}
+
+float fbm4(vec3 p){
+    float s = 0.0, a = 0.5, n = 0.0;
+    for (int i = 0; i < 4; i++){
+        s += a * vnoise(p);
+        n += a;
+        p = p * 2.03 + vec3(11.3, 5.7, 17.1);
+        a *= 0.5;
+    }
+    return s / n;
+}
+
+/* =========================================================================
+   PHASE FUNCTIONS
+   ========================================================================= */
+float hg(float c, float g){
+    float g2 = g * g;
+    float d  = max(1.0 + g2 - 2.0 * g * c, 1e-4);
+    return (1.0 - g2) / (4.0 * PI * d * sqrt(d));
+}
+
+/* Dual-lobe: strong forward scatter + soft back scatter — real cloud look */
+float cloudPhase(float c){
+    return mix(hg(c, 0.78), hg(c, -0.35), 0.28);
+}
+
+/* =========================================================================
+   VERTICAL PROFILE — cumulus / stratus / nimbus
+   ========================================================================= */
+float vertProfile(float hf){
+    float a, b;
+    if (uVertMode < 0.5){
+        /* cumulus: flat base, billowy top */
+        a = smoothstep(0.0, 0.10, hf);
+        b = 1.0 - smoothstep(0.45, 1.00, hf);
+    } else if (uVertMode < 1.5){
+        /* stratus / altostratus: uniform slab */
+        a = smoothstep(0.0, 0.28, hf);
+        b = 1.0 - smoothstep(0.72, 1.00, hf);
+    } else {
+        /* nimbus: deep, dense, near full column */
+        a = smoothstep(0.0, 0.05, hf);
+        b = 1.0 - smoothstep(0.78, 1.00, hf);
+    }
+    return a * b;
+}
+
+/* =========================================================================
+   CLOUD DENSITY FIELD
+   pos is in kilometres, camera at origin, planet centre at (0,-uCenterY,0)
+   lod 0 = full (base + detail erosion)   1 = cheap (light march)
+   ========================================================================= */
+float cloudShape(vec3 pos, int lod){
+    float r  = length(pos - vec3(0.0, -uCenterY, 0.0));
+    float hf = (r - uCloudBottom) / uCloudThick;
+    if (hf < 0.0 || hf > 1.0) return 0.0;
+
+    float vert = vertProfile(hf);
+    if (vert <= 0.0) return 0.0;
+
+    vec3 wp = pos + vec3(uWindOffset.x, 0.0, uWindOffset.y);
+
+    vec3 sp = vec3(wp.x * uShapeScale,
+                   wp.y * uShapeScaleY,
+                   wp.z * uShapeScale);
+
+    float base = (lod == 0) ? fbm4(sp) : fbm3(sp);
+
+    float d = smoothstep(1.0 - uCoverage, 1.0 - uCoverage + uSoftness, base);
+    if (d <= 0.0) return 0.0;
+
+    if (lod == 0 && uDetailStrength > 0.0){
+        vec3 dp = vec3((wp.x + uDetailOffset.x) * uDetailScale,
+                        wp.y * uDetailScaleY,
+                       (wp.z + uDetailOffset.y) * uDetailScale);
+        float det = fbm3(dp);
+        /* erode the edges — gives wispy cauliflower detail */
+        d = clamp(d - det * uDetailStrength * (1.0 - d), 0.0, 1.0);
+    }
+
+    return d * vert;
+}
+
+/* =========================================================================
+   SHELL INTERSECTION
+   Numerically stable ray/sphere for a camera sitting just above the surface.
+   Returns the positive entry distance, or -1.
+   ========================================================================= */
+float shellHit(vec3 rd, float Rshell){
+    float H = uCenterY;
+    float b = -H * rd.y;                 /* dot(rd, C) with C = (0,-H,0) */
+    float c = H * H - Rshell * Rshell;   /* negative — camera is inside  */
+    float disc = b * b - c;
+    if (disc < 0.0) return -1.0;
+    float s = sqrt(disc);
+    float denom = b - s;
+    if (abs(denom) < 1e-9) return -1.0;
+    return c / denom;                    /* == b + s, stable */
+}
+
+/* =========================================================================
+   LIGHT MARCH — optical depth toward the sun (cheap LOD)
+   ========================================================================= */
+float lightMarch(vec3 p){
+    float ds = uCloudThick / float(LIGHT_STEPS) * 0.55;
+    float od = 0.0;
+    vec3 sp = p;
+    for (int i = 0; i < LIGHT_STEPS; i++){
+        sp += uSunDir * ds;
+        od += cloudShape(sp, 1);
+        if (od > 6.0) break;
+    }
+    return od * ds;
+}
+
+/* Poor-man's multiple scattering: three extinction orders blended.        */
+/* Poor-man's multiple scattering: three extinction orders blended. */
+vec3 multiScatterTrans(float od){
+    float o = od * uLightAbsorb;
+    vec3 t1 = vec3(exp(-o * 1.00));
+    vec3 t2 = vec3(exp(-o * 0.45));
+    vec3 t3 = vec3(exp(-o * 0.16));
+    return t1 * 0.55 + t2 * 0.30 + t3 * 0.15;
+}
+
+/* =========================================================================
+   VOLUMETRIC CLOUD MARCH
+   Returns rgb = in-scattered radiance, a = transmittance
+   ========================================================================= */
+vec4 marchClouds(vec3 rd){
+    float tB = shellHit(rd, uCloudBottom);
+    if (tB < 0.0) return vec4(0.0, 0.0, 0.0, 1.0);
+    float tT = shellHit(rd, uCloudTop);
+    if (tT < 0.0) return vec4(0.0, 0.0, 0.0, 1.0);
+
+    tB = max(tB, 0.0);
+    tT = min(tT, uMaxDist);
+    if (tT <= tB) return vec4(0.0, 0.0, 0.0, 1.0);
+
+    float span = tT - tB;
+    float dt   = clamp(span / float(uSteps), 0.025, 0.55);
+
+    /* per-pixel dither kills banding without needing TAA */
+    float jitter = hash13(vec3(gl_FragCoord.xy, fract(uTime) * 137.0));
+    float t = tB + dt * jitter;
+
+    float cosT = dot(rd, uSunDir);
+    float ph   = cloudPhase(cosT);
+
+    /* powder / dark-edge term: strongest when the sun is behind the viewer */
+    float powderMix = clamp(-cosT, 0.0, 1.0) * 0.55;
+
+    vec3  L = vec3(0.0);
+    float T = 1.0;
+
+    for (int i = 0; i < MAX_STEPS; i++){
+        if (i >= uSteps) break;
+        if (T < 0.008) break;
+
+        vec3  p     = rd * t;
+        float d     = cloudShape(p, 0);
+        float sigC  = d * uDensity;
+        float sigF  = uFogDensity;
+        float sigma = sigC + sigF;
+
+        float stepT = exp(-sigma * dt);
+        float integ = (1.0 - stepT) / max(sigma, 1e-6);
+
+        vec3 Scat = uFogColor * sigF;
+
+        if (sigC > 0.01){
+            float od    = lightMarch(p) * uDensity;
+            vec3  sunT  = multiScatterTrans(od);
+
+            float powder = 1.0 - exp(-d * 6.0);
+            float pw     = mix(1.0, powder, powderMix);
+
+            /* single + multiple scattering from the sun */
+            Scat += uSunColor * uSunIntensity * ph * sunT * pw * sigC;
+
+            /* ambient sky light bouncing inside the cloud */
+            Scat += uAmbient * uAmbientStrength * (0.25 + 0.75 * d) * sigC;
+        }
+
+        L += T * Scat * integ;
+        T *= stepT;
+        t += dt;
+    }
+
+    return vec4(L, T);
+}
+
+/* =========================================================================
+   ANALYTIC SKY (Preetham-style Rayleigh + Mie single scattering)
+   ========================================================================= */
+vec3 skyColor(vec3 rd){
+    vec3 up = vec3(0.0, 1.0, 0.0);
+
+    float sunfade = 1.0 - clamp(1.0 - exp((uSunDir.y - 1.0) / 0.5), 0.0, 1.0);
+    float rc = max(uRayleigh - (1.0 - sunfade), 0.05);
+
+    vec3 betaR = rc * vec3(5.5e-6, 13.0e-6, 22.4e-6);
+    vec3 betaM = vec3(21e-6) * uMieCoeff;
+
+    float za  = acos(clamp(rd.y, 0.0, 1.0));
+    float inv = 1.0 / (max(cos(za), 1e-3) +
+                       0.15 * pow(max(93.885 - degrees(za), 0.001), -1.253));
+
+    float sR = 8400.0 * inv * 0.45;
+    float sM = 1250.0 * inv * 0.45;
+
+    vec3 Fex = exp(-(betaR * sR + betaM * sM));
+
+    float c  = dot(rd, uSunDir);
+    float rP = 3.0 / (16.0 * PI) * (1.0 + c * c);
+
+    float g  = uMieG;
+    float g2 = g * g;
+    float mP = 3.0 / (8.0 * PI) * ((1.0 - g2) * (1.0 + c * c)) /
+               ((2.0 + g2) * pow(max(1.0 + g2 - 2.0 * g * c, 1e-4), 1.5));
+
+    vec3 num = betaR * rP + betaM * mP;
+    vec3 den = betaR + betaM;
+    vec3 base = num / den;
+
+    vec3 Lin = pow(max(uSunIntensity * base, vec3(0.0)), vec3(1.5)) * (1.0 - Fex);
+    Lin *= mix(vec3(1.0),
+               pow(max(uSunIntensity * base, vec3(0.0)), vec3(0.5)),
+               clamp(pow(1.0 - dot(up, uSunDir), 5.0), 0.0, 1.0));
+
+    return Lin * uSkyScale;
+}
+
+/* =========================================================================
+   STARS
+   ========================================================================= */
+float starField(vec3 rd){
+    vec3 p  = rd * 260.0;
+    vec3 id = floor(p);
+    vec3 fr = fract(p);
+
+    float h  = hash13(id);
+    float on = step(0.9885, h);
+    if (on < 0.5) return 0.0;
+
+    vec3 off = vec3(hash13(id + 1.3), hash13(id + 7.7), hash13(id + 3.1));
+    float dist = length(fr - off);
+
+    float s = smoothstep(0.30, 0.0, dist);
+    s *= 0.35 + 0.65 * hash13(id + 11.1);
+    s *= 0.75 + 0.25 * sin(uTime * 2.7 + h * 240.0);   /* twinkle */
+    return s;
+}
+
+/* =========================================================================
+   GROUND (below the horizon)
+   ========================================================================= */
+vec3 groundColor(vec3 rd){
+    float down = clamp(-rd.y, 0.0, 1.0);
+    vec3 hz = skyColor(normalize(vec3(rd.x, 0.02, rd.z)));
+    vec3 g  = uGroundColor * (uSunColor * uSunIntensity * 0.055 + uAmbient * 0.6);
+    return mix(hz, g, smoothstep(0.0, 0.10, down));
+}
+
+/* =========================================================================
+   WEATHER OVERLAYS (screen space)
+   ========================================================================= */
+float rainStreaks(vec2 frag, float t){
+    vec2 uv = frag / uResolution.y;
+    uv.x += uv.y * 0.13;                       /* wind slant */
+
+    vec2 p  = vec2(uv.x * 30.0, uv.y * 11.0 - t * 15.0);
+    vec2 id = floor(p);
+    vec2 fr = fract(p);
+
+    float on = step(0.58, hash13(vec3(id, 1.0)));
+    float x  = hash13(vec3(id, 2.0)) * 0.85 + 0.075;
+    float d  = abs(fr.x - x);
+
+    float s = smoothstep(0.055, 0.0, d) * on;
+    s *= smoothstep(0.0, 0.25, fr.y) * smoothstep(1.0, 0.55, fr.y);
+    return s;
+}
+
+float snowFlakes(vec2 frag, float t){
+    vec2 uv = frag / uResolution.y;
+    uv.x += sin(uv.y * 2.7 + t * 0.6) * 0.018;
+
+    vec2 p  = vec2(uv.x * 22.0, uv.y * 15.0 - t * 1.7);
+    vec2 id = floor(p);
+    vec2 fr = fract(p);
+
+    float on = step(0.80, hash13(vec3(id, 1.0)));
+    vec2  c  = vec2(hash13(vec3(id, 2.0)), hash13(vec3(id, 3.0))) * 0.8 + 0.1;
+    float d  = length(fr - c);
+
+    return on * smoothstep(0.14, 0.0, d);
+}
+
+/* =========================================================================
+   TONE MAPPING (ACES approximation)
+   ========================================================================= */
+vec3 aces(vec3 x){
+    const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
+    return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+}
+
+/* =========================================================================
+   MAIN
+   ========================================================================= */
+void main(){
+    vec2 uv = (gl_FragCoord.xy - 0.5 * uResolution) / uResolution.y;
+    vec3 rd = normalize(uCamForward * uFocal + uCamRight * uv.x + uCamUp * uv.y);
+
+    vec3 col;
+
+    if (rd.y > 0.0){
+        /* ---- sky ---- */
+        vec3 sky = skyColor(rd);
+
+        /* sun / moon disc + glow */
+        float ang  = acos(clamp(dot(rd, uSunDir), -1.0, 1.0));
+        float disc = 1.0 - smoothstep(uSunAngSize * 0.85, uSunAngSize * 1.20, ang);
+        float glow = exp(-ang * ang * 900.0) * 0.30;
+        sky += uSunColor * uSunIntensity * (disc + glow) * uDiscBoost;
+
+        /* stars */
+        sky += vec3(1.0, 1.0, 1.05) * starField(rd) * uNight * 1.4;
+
+        /* ---- clouds ---- */
+        vec4 cl = marchClouds(rd);
+        col = sky * cl.a + cl.rgb;
+    } else {
+        col = groundColor(rd);
+    }
+
+    /* ---- weather overlays ---- */
+    if (uRain > 0.001){
+        float r = rainStreaks(gl_FragCoord.xy, uTime);
+        col = mix(col, vec3(0.72, 0.78, 0.88), r * uRain * 0.35);
+        col *= (1.0 - uRain * 0.22);
+    }
+    if (uSnow > 0.001){
+        float s = snowFlakes(gl_FragCoord.xy, uTime);
+        col = mix(col, vec3(0.95, 0.97, 1.0), s * uSnow * 0.85);
+    }
+
+    /* ---- exposure + tonemap + gamma ---- */
+    col *= uExposure;
+    col = aces(col);
+    col = pow(col, vec3(1.0 / 2.2));
+
+    gl_FragColor = vec4(col, 1.0);
+}
+`;
+
+/* ------------------------------- PRESETS --------------------------------- */
+
+const PRESETS = {
+  sunny: {
+    label: "☀️ Sunny",
+    coverage: 0.42, softness: 0.24,
+    density: 7.0, lightAbsorb: 1.0,
+    cloudBottomKm: 1.35, cloudTopKm: 3.40,
+    vertMode: 0,
+    shapeScale: 0.34, shapeScaleY: 1.35,
+    detailScale: 2.40, detailScaleY: 3.60, detailStrength: 0.38,
+    windMs: [6.5, 2.0], windDetailMul: 1.35,
+    sunElevation: 51, sunAzimuth: 128,
+    sunColor: [1.00, 0.965, 0.90],
+    sunIntensity: 15.0, sunAngSize: 0.0047, discBoost: 6.0,
+    rayleigh: 1.8, mieCoeff: 0.0042, mieG: 0.80,
+    skyScale: 0.050,
+    ambient: [0.42, 0.55, 0.78], ambientStrength: 0.55,
+    groundColor: [0.20, 0.26, 0.15],
+    fogDensity: 0.012, fogColor: [0.42, 0.52, 0.68],
+    night: 0.0, rain: 0.0, snow: 0.0,
+    exposure: 1.0,
+  },
+
+  snowy: {
+    label: "❄️ Snowy",
+    coverage: 0.86, softness: 0.30,
+    density: 9.5, lightAbsorb: 1.0,
+    cloudBottomKm: 0.75, cloudTopKm: 2.90,
+    vertMode: 1,
+    shapeScale: 0.26, shapeScaleY: 2.20,
+    detailScale: 2.20, detailScaleY: 4.50, detailStrength: 0.42,
+    windMs: [11.0, -3.5], windDetailMul: 1.30,
+    sunElevation: 17, sunAzimuth: 200,
+    sunColor: [1.00, 0.96, 0.90],
+    sunIntensity: 5.0, sunAngSize: 0.0047, discBoost: 4.0,
+    rayleigh: 2.4, mieCoeff: 0.010, mieG: 0.85,
+    skyScale: 0.070,
+    ambient: [0.72, 0.78, 0.88], ambientStrength: 1.40,
+    groundColor: [0.72, 0.76, 0.82],
+    fogDensity: 0.045, fogColor: [0.62, 0.66, 0.72],
+    night: 0.0, rain: 0.0, snow: 1.0,
+    exposure: 0.85,
+  },
+
+  rainy: {
+    label: "🌧️ Rainy",
+    coverage: 0.94, softness: 0.34,
+    density: 13.0, lightAbsorb: 1.0,
+    cloudBottomKm: 0.45, cloudTopKm: 4.60,
+    vertMode: 2,
+    shapeScale: 0.22, shapeScaleY: 0.90,
+    detailScale: 1.80, detailScaleY: 2.60, detailStrength: 0.45,
+    windMs: [24.0, -8.0], windDetailMul: 1.45,
+    sunElevation: 13, sunAzimuth: 95,
+    sunColor: [0.95, 0.94, 0.92],
+    sunIntensity: 3.2, sunAngSize: 0.0047, discBoost: 2.0,
+    rayleigh: 1.6, mieCoeff: 0.014, mieG: 0.86,
+    skyScale: 0.030,
+    ambient: [0.30, 0.34, 0.40], ambientStrength: 1.10,
+    groundColor: [0.09, 0.10, 0.10],
+    fogDensity: 0.055, fogColor: [0.24, 0.26, 0.29],
+    night: 0.0, rain: 1.0, snow: 0.0,
+    exposure: 1.15,
+  },
+
+  night: {
+    label: "🌙 Night",
+    coverage: 0.34, softness: 0.28,
+    density: 6.0, lightAbsorb: 1.0,
+    cloudBottomKm: 1.60, cloudTopKm: 3.90,
+    vertMode: 1,
+    shapeScale: 0.28, shapeScaleY: 1.10,
+    detailScale: 2.00, detailScaleY: 3.00, detailStrength: 0.30,
+    windMs: [2.2, 0.8], windDetailMul: 1.25,
+    sunElevation: 38, sunAzimuth: 250,          /* the moon */
+    sunColor: [0.62, 0.72, 1.00],
+    sunIntensity: 1.6, sunAngSize: 0.0155, discBoost: 3.0,
+    rayleigh: 0.55, mieCoeff: 0.0018, mieG: 0.72,
+    skyScale: 0.030,
+    ambient: [0.10, 0.16, 0.32], ambientStrength: 0.90,
+    groundColor: [0.04, 0.05, 0.07],
+    fogDensity: 0.010, fogColor: [0.05, 0.07, 0.12],
+    night: 1.0, rain: 0.0, snow: 0.0,
+    exposure: 1.35,
+  },
+};
+
+/* --------------------------- RENDERER CLASS ------------------------------ */
+
+const PLANET_RADIUS_KM = 6371.0;
+
+class SkyClouds {
+  constructor(canvas, options = {}) {
+    this.canvas = canvas;
+    this.opts = Object.assign({
+      quality: 0.62,       // internal resolution scale
+      fov: 58,             // vertical FOV degrees
+      camAltitudeKm: 0.05, // 50 m eye height
+      maxDist: 40.0,       // km — cloud march cap
+      steps: 64,
+      exposure: 1.0,
+    }, options);
+
+    const gl = canvas.getContext("webgl", {
+      alpha: false, antialias: false, depth: false, stencil: false,
+      premultipliedAlpha: false, preserveDrawingBuffer: false,
+      powerPreference: "high-performance",
+    }) || canvas.getContext("experimental-webgl");
+
+    if (!gl) throw new Error("WebGL is not supported on this device.");
+    this.gl = gl;
+
+    this.program = this._buildProgram(VERT_SRC, FRAG_SRC);
+    gl.useProgram(this.program);
+
+    /* fullscreen triangle */
+    this.vbo = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.vbo);
+    gl.bufferData(gl.ARRAY_BUFFER,
+      new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+    const aPos = gl.getAttribLocation(this.program, "aPos");
+    gl.enableVertexAttribArray(aPos);
+    gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+    /* cache uniforms */
+    this.u = {};
+    const n = gl.getProgramParameter(this.program, gl.ACTIVE_UNIFORMS);
+    for (let i = 0; i < n; i++) {
+      const info = gl.getActiveUniform(this.program, i);
+      const name = info.name.replace(/\[0\]$/, "");
+      this.u[name] = gl.getUniformLocation(this.program, name);
+    }
+
+    /* state */
+    this.time = 0;
+    this.windOffset = [0, 0];
+    this.detailOffset = [0, 0];
+    this.yaw = 0;
+    this.pitch = 0.14;
+    this.quality = this.opts.quality;
+    this.timeScale = 1.0;
+    this.presetName = "sunny";
+    this.preset = Object.assign({}, PRESETS.sunny);
+
+    this._fpsAcc = 0; this._fpsFrames = 0; this.fps = 0;
+    this._raf = null; this._last = 0; this._running = false;
+    this._onResize = this._resize.bind(this);
+    window.addEventListener("resize", this._onResize);
+    this._resize();
+
+    this.setPreset("sunny");
+    this._bindPointer();
+  }
+
+  /* ------------------------------------------------------------------ */
+  _buildProgram(vsSrc, fsSrc) {
+    const gl = this.gl;
+    const compile = (type, src) => {
+      const sh = gl.createShader(type);
+      gl.shaderSource(sh, src);
+      gl.compileShader(sh);
+      if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+        const log = gl.getShaderInfoLog(sh);
+        console.error(log, src);
+        throw new Error("Shader compile error: " + log);
+      }
+      return sh;
+    };
+    const p = gl.createProgram();
+    gl.attachShader(p, compile(gl.VERTEX_SHADER, vsSrc));
+    gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fsSrc));
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+      throw new Error("Program link error: " + gl.getProgramInfoLog(p));
+    }
+    return p;
+  }
+
+  /* ------------------------------------------------------------------ */
+  _resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = Math.max(1, Math.floor(this.canvas.clientWidth  * dpr * this.quality));
+    const h = Math.max(1, Math.floor(this.canvas.clientHeight * dpr * this.quality));
+    if (this.canvas.width !== w || this.canvas.height !== h) {
+      this.canvas.width = w;
+      this.canvas.height = h;
+      this.gl.viewport(0, 0, w, h);
+    }
+  }
+
+  setQuality(q) {
+    this.quality = Math.max(0.2, Math.min(1.5, q));
+    this._resize();
+  }
+
+  /* ------------------------------------------------------------------ */
+  setPreset(name) {
+    const p = PRESETS[name];
+    if (!p) throw new Error("Unknown preset: " + name);
+    this.presetName = name;
+    this.preset = Object.assign({}, p);
+    /* snap offsets so switching feels clean */
+    return this;
+  }
+
+  setParams(obj) { Object.assign(this.preset, obj); return this; }
+  setCamera(yaw, pitch) { this.yaw = yaw; this.pitch = pitch; return this; }
+  setTimeScale(s) { this.timeScale = s; return this; }
+
+  /* ------------------------------------------------------------------ */
+  _bindPointer() {
+    const c = this.canvas;
+    let dragging = false, lx = 0, ly = 0;
+
+    const down = (e) => {
+      dragging = true; c.classList.add("dragging");
+      lx = e.clientX; ly = e.clientY;
+      c.setPointerCapture?.(e.pointerId);
+    };
+    const move = (e) => {
+      if (!dragging) return;
+      const dx = e.clientX - lx, dy = e.clientY - ly;
+      lx = e.clientX; ly = e.clientY;
+      this.yaw   -= dx * 0.0032;
+      this.pitch += dy * 0.0032;
+      this.pitch = Math.max(-0.55, Math.min(1.35, this.pitch));
+    };
+    const up = (e) => {
+      dragging = false; c.classList.remove("dragging");
+      c.releasePointerCapture?.(e.pointerId);
+    };
+
+    c.addEventListener("pointerdown", down);
+    c.addEventListener("pointermove", move);
+    c.addEventListener("pointerup", up);
+    c.addEventListener("pointercancel", up);
+    this._unbindPointer = () => {
+      c.removeEventListener("pointerdown", down);
+      c.removeEventListener("pointermove", move);
+      c.removeEventListener("pointerup", up);
+      c.removeEventListener("pointercancel", up);
+    };
+  }
+
+  /* ------------------------------------------------------------------ */
+  _setU(loc, v) {
+    const gl = this.gl;
+    if (loc == null) return;
+    if (typeof v === "number") { gl.uniform1f(loc, v); return; }
+    const a = v;
+    if (a.length === 2) gl.uniform2f(loc, a[0], a[1]);
+    else if (a.length === 3) gl.uniform3f(loc, a[0], a[1], a[2]);
+    else if (a.length === 4) gl.uniform4f(loc, a[0], a[1], a[2], a[3]);
+  }
+
+  /* ------------------------------------------------------------------ */
+  render(dt) {
+    const gl = this.gl;
+    const p  = this.preset;
+    const u  = this.u;
+
+    dt = Math.min(dt, 0.1);
+    this.time += dt;
+
+    /* ---------- wind advection ---------- */
+    const wx = p.windMs[0] / 1000;   /* m/s -> km/s */
+    const wz = p.windMs[1] / 1000;
+    const ts = this.timeScale;
+    this.windOffset[0]   += wx * dt * ts;
+    this.windOffset[1]   += wz * dt * ts;
+    this.detailOffset[0] += wx * dt * ts * (p.windDetailMul - 1);
+    this.detailOffset[1] += wz * dt * ts * (p.windDetailMul - 1);
+
+    /* ---------- camera basis ---------- */
+    const cy = Math.cos(this.yaw),  sy = Math.sin(this.yaw);
+    const cp = Math.cos(this.pitch), sp = Math.sin(this.pitch);
+
+    let fwd = [cp * sy, sp, cp * cy];
+    let upW = [0, 1, 0];
+    /* right = normalize(cross(fwd, up)) */
+    let rx = fwd[1] * upW[2] - fwd[2] * upW[1];
+    let ry = fwd[2] * upW[0] - fwd[0] * upW[2];
+    let rz = fwd[0] * upW[1] - fwd[1] * upW[0];
+    let rl = Math.hypot(rx, ry, rz) || 1;
+    rx /= rl; ry /= rl; rz /= rl;
+    /* up = cross(right, fwd) */
+    const ux = ry * fwd[2] - rz * fwd[1];
+    const uy = rz * fwd[0] - rx * fwd[2];
+    const uz = rx * fwd[1] - ry * fwd[0];
+
+    /* ---------- sun direction ---------- */
+    const e = p.sunElevation * Math.PI / 180;
+    const a = p.sunAzimuth   * Math.PI / 180;
+    const sun = [Math.cos(e) * Math.sin(a), Math.sin(e), Math.cos(e) * Math.cos(a)];
+
+    /* ---------- cloud altitudes -> absolute radii ---------- */
+    const centerY = PLANET_RADIUS_KM + this.opts.camAltitudeKm;
+    const cBot = PLANET_RADIUS_KM + p.cloudBottomKm;
+    const cTop = PLANET_RADIUS_KM + p.cloudTopKm;
+
+    const focal = 1.0 / Math.tan((this.opts.fov * Math.PI / 180) * 0.5);
+
+    /* ---------- upload ---------- */
+    gl.useProgram(this.program);
+
+    this._setU(u.uResolution,  [this.canvas.width, this.canvas.height]);
+    this._setU(u.uTime,        this.time);
+    this._setU(u.uCamRight,    [rx, ry, rz]);
+    this._setU(u.uCamUp,       [ux, uy, uz]);
+    this._setU(u.uCamForward,  fwd);
+    this._setU(u.uFocal,       focal);
+    if (u.uSteps) gl.uniform1i(u.uSteps, this.opts.steps | 0);
+
+    this._setU(u.uSunDir,       sun);
+    this._setU(u.uSunColor,     p.sunColor);
+    this._setU(u.uSunIntensity, p.sunIntensity);
+    this._setU(u.uSunAngSize,   p.sunAngSize);
+    this._setU(u.uDiscBoost,    p.discBoost);
+    this._setU(u.uRayleigh,     p.rayleigh);
+    this._setU(u.uMieCoeff,     p.mieCoeff);
+    this._setU(u.uMieG,         p.mieG);
+    this._setU(u.uSkyScale,     p.skyScale);
+
+    this._setU(u.uCenterY,     centerY);
+    this._setU(u.uCloudBottom, cBot);
+    this._setU(u.uCloudTop,    cTop);
+    this._setU(u.uCloudThick,  cTop - cBot);
+
+    this._setU(u.uCoverage,       p.coverage);
+    this._setU(u.uSoftness,       p.softness);
+    this._setU(u.uDensity,        p.density);
+    this._setU(u.uLightAbsorb,    p.lightAbsorb);
+    this._setU(u.uShapeScale,     p.shapeScale);
+    this._setU(u.uShapeScaleY,    p.shapeScaleY);
+    this._setU(u.uDetailScale,    p.detailScale);
+    this._setU(u.uDetailScaleY,   p.detailScaleY);
+    this._setU(u.uDetailStrength, p.detailStrength);
+    this._setU(u.uVertMode,       p.vertMode);
+
+    this._setU(u.uWindOffset,   this.windOffset);
+    this._setU(u.uDetailOffset, this.detailOffset);
+
+    this._setU(u.uAmbient,         p.ambient);
+    this._setU(u.uAmbientStrength, p.ambientStrength);
+    this._setU(u.uGroundColor,     p.groundColor);
+    this._setU(u.uFogDensity,      p.fogDensity);
+    this._setU(u.uFogColor,        p.fogColor);
+
+    this._setU(u.uNight,    p.night);
+    this._setU(u.uRain,     p.rain);
+    this._setU(u.uSnow,     p.snow);
+    this._setU(u.uMaxDist,  this.opts.maxDist);
+    this._setU(u.uExposure, p.exposure * this.opts.exposure);
+
+    /* ---------- draw ---------- */
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  /* ------------------------------------------------------------------ */
+  start() {
+    if (this._running) return this;
+    this._running = true;
+    this._last = performance.now();
+
+    const loop = (now) => {
+      if (!this._running) return;
+      const dt = (now - this._last) / 1000;
+      this._last = now;
+
+      this.render(dt);
+
+      this._fpsAcc += dt;
+      this._fpsFrames++;
+      if (this._fpsAcc >= 0.5) {
+        this.fps = this._fpsFrames / this._fpsAcc;
+        this._fpsAcc = 0; this._fpsFrames = 0;
+        if (this.onStats) this.onStats(this.fps);
+      }
+      this._raf = requestAnimationFrame(loop);
+    };
+    this._raf = requestAnimationFrame(loop);
+    return this;
+  }
+
+  stop() {
+    this._running = false;
+    if (this._raf) cancelAnimationFrame(this._raf);
+    this._raf = null;
+    return this;
+  }
+
+  destroy() {
+    this.stop();
+    this._unbindPointer?.();
+    window.removeEventListener("resize", this._onResize);
+    const gl = this.gl;
+    gl.deleteBuffer(this.vbo);
+    gl.deleteProgram(this.program);
+  }
+}
+
+/* ------------------------------ DEMO BOOT -------------------------------- */
+
+(function main(){
+  const canvas = document.getElementById("sky");
+  const errEl  = document.getElementById("err");
+
+  let sky;
+  try {
+    sky = new SkyClouds(canvas, {
+      quality: 0.62,
+      fov: 58,
+      camAltitudeKm: 0.05,
+      maxDist: 40.0,
+      steps: 64,
+      exposure: 1.0,
+    });
+  } catch (e) {
+    errEl.style.display = "grid";
+    errEl.textContent = "Could not start the renderer: " + e.message;
+    return;
+  }
+
+  /* preset buttons */
+  const bar = document.getElementById("presets");
+  const buttons = {};
+  Object.keys(PRESETS).forEach((key) => {
+    const b = document.createElement("button");
+    b.className = "btn";
+    b.textContent = PRESETS[key].label;
+    b.onclick = () => {
+      sky.setPreset(key);
+      Object.values(buttons).forEach((x) => x.classList.remove("active"));
+      b.classList.add("active");
+    };
+    bar.appendChild(b);
+    buttons[key] = b;
+  });
+  buttons.sunny.classList.add("active");
+
+  /* quality slider */
+  const q = document.getElementById("quality");
+  q.oninput = () => sky.setQuality(parseFloat(q.value));
+
+  /* time scale slider */
+  const tsl = document.getElementById("timescale");
+  tsl.oninput = () => sky.setTimeScale(parseFloat(tsl.value));
+
+  /* stats */
+  const stats = document.getElementById("stats");
+  sky.onStats = (fps) => {
+    stats.textContent =
+      `${fps.toFixed(0)} fps  ·  ${canvas.width}×${canvas.height}  ·  ${sky.presetName}`;
+  };
+
+  sky.start();
+})();
+</script>
+</body>
+</html>

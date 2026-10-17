@@ -1,0 +1,829 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>The Vlog: Forest of Evidence — PBR HTML Game</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #050705; font-family: "Courier New", monospace; color: #e8e8e8; }
+  canvas { display: block; }
+
+  #instructions {
+    position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column;
+    justify-content: center; align-items: center; gap: 12px;
+    background: radial-gradient(circle at center, rgba(20,28,20,.92), rgba(0,0,0,.98));
+    cursor: pointer; text-align: center; padding: 24px;
+  }
+  #instructions h1 { margin: 0; font-size: clamp(22px, 5vw, 52px); letter-spacing: 3px; color: #d7e8c8; text-shadow: 0 0 24px #3d5a3a; }
+  #instructions p { margin: 0; color: #a8b8a0; max-width: 760px; line-height: 1.5; }
+  #instructions .keys { color: #f0c96a; font-size: 13px; }
+
+  #crosshair {
+    position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    z-index: 20; font-size: 24px; color: #fff; text-shadow: 0 0 6px #000;
+    pointer-events: none; display: none;
+  }
+
+  #prompt {
+    position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%);
+    z-index: 25; padding: 8px 14px; background: rgba(0,0,0,.65);
+    border: 1px solid rgba(255,255,255,.2); border-radius: 6px;
+    color: #fff; font-size: 14px; display: none; pointer-events: none;
+    text-shadow: 0 1px 2px #000;
+  }
+
+  #toolbar {
+    position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+    z-index: 30; display: flex; gap: 6px; flex-wrap: wrap; justify-content: center;
+    max-width: 96vw; pointer-events: none;
+  }
+  .tool {
+    padding: 6px 9px; border-radius: 4px; background: rgba(0,0,0,.55);
+    border: 1px solid rgba(255,255,255,.18); font-size: 11px; color: #aaa;
+    white-space: nowrap;
+  }
+  .tool.selected { border-color: #f0c96a; color: #f0c96a; background: rgba(80,60,20,.45); }
+
+  #vlog-ui {
+    position: fixed; inset: 0; z-index: 15; display: none; pointer-events: none;
+    padding: 18px; border: 3px solid rgba(255,255,255,.12); border-radius: 10px;
+  }
+  #rec { color: #fff; font-weight: bold; font-size: 13px; text-shadow: 0 1px 3px #000; }
+  #rec-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #ff2b2b; margin-right: 6px; animation: blink 1s infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+  #facecam {
+    position: absolute; right: 18px; bottom: 18px; width: 240px; height: 140px;
+    border: 2px solid rgba(255,255,255,.25); background: rgba(0,0,0,.75);
+    display: flex; align-items: center; justify-content: center; color: #555; font-size: 12px;
+  }
+  #chat {
+    position: absolute; left: 18px; bottom: 18px; width: min(340px, 70vw); height: 150px;
+    overflow: hidden; background: rgba(0,0,0,.55); border: 1px solid rgba(0,255,120,.4);
+    padding: 8px; font-size: 11px; color: #6dff9e; line-height: 1.45;
+  }
+
+  .overlay {
+    position: fixed; z-index: 50; inset: 5vh 5vw; overflow: auto;
+    background: rgba(8,12,8,.96); border: 1px solid #455a45; border-radius: 10px;
+    padding: 22px; display: none; box-shadow: 0 0 40px rgba(0,0,0,.8);
+  }
+  .overlay h2 { margin: 0 0 10px; color: #d7e8c8; letter-spacing: 1px; }
+  .overlay .sub { color: #8fa08a; font-size: 12px; margin-bottom: 16px; }
+  .challenge-row { padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,.07); font-size: 12px; color: #b8b8b8; }
+  .challenge-row.done { color: #7dff9a; }
+  .challenge-row .id { color: #f0c96a; display: inline-block; width: 40px; }
+  .evidence-row { padding: 7px 0; border-bottom: 1px solid rgba(255,255,255,.08); color: #d8d8d8; font-size: 12px; }
+  #board .pin { color: #ff6b6b; }
+</style>
+</head>
+<body>
+
+<div id="instructions">
+  <h1>THE VLOG: FOREST OF EVIDENCE</h1>
+  <p>You are a vlogger-detective. Recreate the missing streamer’s route, use physical tools, solve the Seven-Thirds watchtower lock, and collect evidence.</p>
+  <p class="keys">Click to Start • WASD move • Mouse look • E interact • 1–9 tools • F UV • V vlog • B board • C challenges</p>
+</div>
+
+<div id="crosshair">+</div>
+<div id="prompt"></div>
+<div id="toolbar"></div>
+
+<div id="vlog-ui">
+  <div id="rec"><span id="rec-dot"></span>REC [4K 60FPS]</div>
+  <div id="facecam">FACE CAMERA</div>
+  <div id="chat"></div>
+</div>
+
+<div id="board" class="overlay">
+  <h2>DEDUCTION BOARD</h2>
+  <div class="sub">Evidence and contradictions linked by red string.</div>
+  <div id="board-list"></div>
+</div>
+
+<div id="challenges" class="overlay">
+  <h2>CHALLENGES</h2>
+  <div class="sub" id="challenge-progress"></div>
+  <div id="challenge-list"></div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+
+/* ---------------------------------------------------------------------------
+   Utilities
+--------------------------------------------------------------------------- */
+const $ = (id) => document.getElementById(id);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+
+/* ---------------------------------------------------------------------------
+   Data
+--------------------------------------------------------------------------- */
+const TOOLS = [
+  { id: 'crowbar',   name: 'Crowbar',   key: '1' },
+  { id: 'hacksaw',   name: 'Hacksaw',   key: '2' },
+  { id: 'file',      name: 'File',      key: '3' },
+  { id: 'scale',     name: 'Scale',     key: '4' },
+  { id: 'uv_light',  name: 'UV Light',  key: '5' },
+  { id: 'dslr',      name: 'DSLR',      key: '6' },
+  { id: 'rope',      name: 'Rope',      key: '7' },
+  { id: 'wrench',    name: 'Wrench',    key: '8' },
+  { id: 'lockpick',  name: 'Lockpick',  key: '9' }
+];
+
+const CHALLENGES = [
+  ['c01','Watch first vlog and identify trailhead'],
+  ['c02','Recreate vlogger route through forest'],
+  ['c03','Choose correct path at fork'],
+  ['c04','Reach main house without damaging evidence'],
+  ['c05','Find watchtower and solve Seven-Thirds lock'],
+  ['c06','Recover first gold evidence marker'],
+  ['c07','Interview ranger and test alibi'],
+  ['c08','Cross ravine with rope/pulley physics'],
+  ['c09','Open culvert hatch and recover package'],
+  ['c10','Enter mine adit without collapse'],
+  ['c11','Reroute greenhouse pressure'],
+  ['c12','Align chapel brass discs with UV symbols'],
+  ['c13','Open cellar hatch and recover server drive'],
+  ['c14','Access evidence room and sync projector'],
+  ['c15','Complete final deduction board'],
+  ['c16','UV challenge: reveal invisible ink'],
+  ['c17','Thermal challenge: find recently touched handle'],
+  ['c18','Audio challenge: locate hidden radio'],
+  ['c19','Footprint challenge: cast and match boot print'],
+  ['c20','Fingerprint challenge: lift and match print'],
+  ['c21','Airflow challenge: find hidden draft'],
+  ['c22','EMF challenge: locate hidden wiring'],
+  ['c23','Contradiction challenge: spot edited footage'],
+  ['c24','Timeline challenge: sync vlog to security timestamp'],
+  ['c25','Serial number challenge: read lock serial'],
+  ['c26','Lockpicking challenge: pick deadbolt'],
+  ['c27','Breaching challenge: pry door with Halligan'],
+  ['c28','Cutting challenge: bolt cutters vs chain'],
+  ['c29','Valve challenge: cut and reroute copper pipes'],
+  ['c30','Rope challenge: tie pulley rig'],
+  ['c31','Electrical challenge: bypass alarm'],
+  ['c32','Elevator challenge: open panel and climb hatch'],
+  ['c33','Vehicle challenge: dig truck out of mud'],
+  ['c34','Engine challenge: identify missing part'],
+  ['c35','Measurement challenge: match lock pin length'],
+  ['c36','Trail fork choice: avoid wrong path hazard'],
+  ['c37','Ravine crossing: balance rope weight'],
+  ['c38','Culvert water pressure: wedge before slam'],
+  ['c39','Mine collapse: chisel without vibration threshold'],
+  ['c40','Watchtower wind: secure rope before climbing'],
+  ['c41','Sewer flow: navigate against current'],
+  ['c42','Quarry edge: safe path around deep water'],
+  ['c43','Train yard: avoid unstable boxcar'],
+  ['c44','Substation: avoid electrified fence'],
+  ['c45','Bunker blast door: manual counterweight'],
+  ['c46','Interview ranger: catch lie about footprints'],
+  ['c47','Interview diner owner: match alibi to camera'],
+  ['c48','Interview historian: unlock chapel meaning'],
+  ['c49','Interview police officer: access evidence locker'],
+  ['c50','Interview fan: recover hidden memory card'],
+  ['c51','Consent challenge: real people require releases'],
+  ['c52','Solve every door without breaking evidence'],
+  ['c53','Complete deduction board with no wrong links'],
+  ['c54','Find all gold markers in one day'],
+  ['c55','Record all vlog evidence without camera damage'],
+  ['c56','Cross ravine without dropping rope'],
+  ['c57','Open all elevators and reach every shaft'],
+  ['c58','Collect all PBR material samples'],
+  ['c59','Find all hidden UV symbols'],
+  ['c60','Finish with no NPC lies accepted']
+];
+
+/* ---------------------------------------------------------------------------
+   Game State
+--------------------------------------------------------------------------- */
+const state = {
+  selectedTool: 'crowbar',
+  uvOn: false,
+  vlogOn: false,
+  evidenceCollected: false,
+  watchtowerStep: 0,
+  watchtowerSolved: false,
+  doorOpen: false,
+  elevatorMoving: false,
+  elevatorTargetY: 0.25,
+  goldPlaced: false,
+  completedChallenges: new Set(),
+  evidence: []
+};
+
+const SAVE_KEY = 'vlog_forest_of_evidence_save_v1';
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (data.selectedTool) state.selectedTool = data.selectedTool;
+    if (typeof data.uvOn === 'boolean') state.uvOn = data.uvOn;
+    if (typeof data.evidenceCollected === 'boolean') state.evidenceCollected = data.evidenceCollected;
+    if (typeof data.watchtowerStep === 'number') state.watchtowerStep = data.watchtowerStep;
+    if (typeof data.watchtowerSolved === 'boolean') state.watchtowerSolved = data.watchtowerSolved;
+    if (typeof data.doorOpen === 'boolean') state.doorOpen = data.doorOpen;
+    if (typeof data.goldPlaced === 'boolean') state.goldPlaced = data.goldPlaced;
+    if (Array.isArray(data.completedChallenges)) state.completedChallenges = new Set(data.completedChallenges);
+    if (Array.isArray(data.evidence)) state.evidence = data.evidence;
+    window.__savedPosition = data.position || null;
+  } catch (e) { console.warn('Load failed', e); }
+}
+
+function saveState() {
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify({
+      selectedTool: state.selectedTool,
+      uvOn: state.uvOn,
+      evidenceCollected: state.evidenceCollected,
+      watchtowerStep: state.watchtowerStep,
+      watchtowerSolved: state.watchtowerSolved,
+      doorOpen: state.doorOpen,
+      goldPlaced: state.goldPlaced,
+      completedChallenges: Array.from(state.completedChallenges),
+      evidence: state.evidence,
+      position: camera ? { x: camera.position.x, y: camera.position.y, z: camera.position.z } : null
+    }));
+  } catch (e) { /* ignore */ }
+}
+
+function complete(id) {
+  if (state.completedChallenges.has(id)) return;
+  state.completedChallenges.add(id);
+  addChat('Challenge complete: ' + id);
+  updateChallenges();
+  saveState();
+  beep();
+}
+
+/* ---------------------------------------------------------------------------
+   UI
+--------------------------------------------------------------------------- */
+function renderToolbar() {
+  const bar = $('toolbar');
+  bar.innerHTML = TOOLS.map(t =>
+    `<div class="tool ${t.id === state.selectedTool ? 'selected' : ''}">${t.key} ${t.name}</div>`
+  ).join('');
+}
+
+function addChat(text) {
+  const chat = $('chat');
+  const div = document.createElement('div');
+  div.textContent = text;
+  chat.appendChild(div);
+  while (chat.children.length > 6) chat.removeChild(chat.firstChild);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function updateChallenges() {
+  const done = state.completedChallenges.size;
+  $('challenge-progress').textContent = `${done} / ${CHALLENGES.length} completed`;
+  $('challenge-list').innerHTML = CHALLENGES.map(([id, title]) => {
+    const isDone = state.completedChallenges.has(id);
+    return `<div class="challenge-row ${isDone ? 'done' : ''}"><span class="id">${id}</span>${isDone ? '✓ ' : ''}${title}</div>`;
+  }).join('');
+}
+
+function renderBoard() {
+  const list = $('board-list');
+  if (!state.evidence.length) {
+    list.innerHTML = `<div class="evidence-row">No evidence collected yet. Use the UV light on the marked tree.</div>`;
+    return;
+  }
+  list.innerHTML = state.evidence.map((e, i) =>
+    `<div class="evidence-row"><span class="pin">●</span> ${i + 1}. ${e}</div>`
+  ).join('');
+}
+
+/* ---------------------------------------------------------------------------
+   Audio
+--------------------------------------------------------------------------- */
+let audioCtx = null;
+function beep() {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = 620;
+    gain.gain.value = 0.06;
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    const now = audioCtx.currentTime;
+    gain.gain.setValueAtTime(0.06, now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
+    osc.start(now);
+    osc.stop(now + 0.13);
+  } catch (e) { /* ignore */ }
+}
+
+/* ---------------------------------------------------------------------------
+   Three.js Setup
+--------------------------------------------------------------------------- */
+loadState();
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b0f0c);
+scene.fog = new THREE.FogExp2(0x0b0f0c, 0.018);
+
+const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.08, 500);
+camera.position.set(0, 1.6, 12);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.8));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+document.body.appendChild(renderer.domElement);
+
+/* Lighting */
+scene.add(new THREE.AmbientLight(0x3a4a3a, 0.65));
+
+const moon = new THREE.DirectionalLight(0xaaccff, 1.6);
+moon.position.set(18, 28, 12);
+moon.castShadow = true;
+moon.shadow.mapSize.set(2048, 2048);
+moon.shadow.camera.left = -60;
+moon.shadow.camera.right = 60;
+moon.shadow.camera.top = 60;
+moon.shadow.camera.bottom = -60;
+scene.add(moon);
+
+const flashlight = new THREE.SpotLight(0xffffff, 5.5, 35, Math.PI / 6, 0.45, 1.2);
+flashlight.castShadow = true;
+flashlight.position.set(0, 0, 0);
+flashlight.target.position.set(0, 0, -1);
+camera.add(flashlight);
+camera.add(flashlight.target);
+scene.add(camera);
+
+/* ---------------------------------------------------------------------------
+   Materials
+--------------------------------------------------------------------------- */
+const groundMat = new THREE.MeshStandardMaterial({ color: 0x2C3E2E, roughness: 0.95, metalness: 0.0 });
+const wallMat = new THREE.MeshStandardMaterial({ color: 0x5A5F63, roughness: 0.9, metalness: 0.0 });
+const woodMat = new THREE.MeshStandardMaterial({ color: 0x4A3B32, roughness: 0.82, metalness: 0.0 });
+const darkWoodMat = new THREE.MeshStandardMaterial({ color: 0x2b1d14, roughness: 1.0, metalness: 0.0 });
+const metalMat = new THREE.MeshStandardMaterial({ color: 0x708090, roughness: 0.32, metalness: 0.82 });
+const brassMat = new THREE.MeshStandardMaterial({ color: 0xb08d57, roughness: 0.28, metalness: 0.9 });
+const goldMat = new THREE.MeshStandardMaterial({ color: 0x5a4520, roughness: 0.45, metalness: 0.65 });
+const uvEvidenceMat = new THREE.MeshStandardMaterial({
+  color: 0x000000,
+  emissive: 0x8A2BE2,
+  emissiveIntensity: state.uvOn ? 2 : 0,
+  roughness: 1,
+  metalness: 0
+});
+
+/* ---------------------------------------------------------------------------
+   World
+--------------------------------------------------------------------------- */
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(240, 240), groundMat);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// Forest trees
+function seededRandom(seed) {
+  let s = seed;
+  return () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
+}
+const rand = seededRandom(42);
+for (let i = 0; i < 90; i++) {
+  const x = rand() * 180 - 90;
+  const z = rand() * 180 - 90;
+  if (Math.abs(x) < 13 && Math.abs(z + 20) < 13) continue;
+  if (Math.abs(x - 15) < 7 && Math.abs(z + 5) < 7) continue;
+  const h = 8 + rand() * 12;
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.55, h, 7), darkWoodMat);
+  trunk.position.set(x, h / 2, z);
+  trunk.castShadow = true;
+  trunk.receiveShadow = true;
+  scene.add(trunk);
+  const foliage = new THREE.Mesh(new THREE.ConeGeometry(1.8 + rand() * 1.5, 4 + rand() * 3, 7),
+    new THREE.MeshStandardMaterial({ color: 0x1f3322, roughness: 1.0, metalness: 0 }));
+  foliage.position.set(x, h + 1.2, z);
+  foliage.castShadow = true;
+  scene.add(foliage);
+}
+
+// House
+const house = new THREE.Mesh(new THREE.BoxGeometry(20, 10, 20), wallMat);
+house.position.set(0, 5, -20);
+house.castShadow = true;
+house.receiveShadow = true;
+scene.add(house);
+
+const roof = new THREE.Mesh(new THREE.ConeGeometry(15, 5, 4), new THREE.MeshStandardMaterial({ color: 0x2a2420, roughness: 0.9 }));
+roof.position.set(0, 12.5, -20);
+roof.rotation.y = Math.PI / 4;
+roof.castShadow = true;
+scene.add(roof);
+
+// Door
+const door = new THREE.Mesh(new THREE.BoxGeometry(2, 4, 0.2), woodMat);
+door.position.set(0, 2, -9.9);
+door.castShadow = true;
+door.userData.interactable = 'door';
+door.userData.label = 'House Door — use Crowbar';
+scene.add(door);
+
+// Trailhead sign
+const signPost = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 2.5, 8), darkWoodMat);
+signPost.position.set(0, 1.25, 8);
+signPost.castShadow = true;
+scene.add(signPost);
+const signBoard = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.9, 0.12), woodMat);
+signBoard.position.set(0, 2.4, 8);
+signBoard.castShadow = true;
+signBoard.userData.interactable = 'trailhead';
+signBoard.userData.label = 'Trailhead Kiosk — inspect vlog frames';
+scene.add(signBoard);
+
+// Watchtower
+const towerGroup = new THREE.Group();
+towerGroup.position.set(15, 0, -5);
+
+const base = new THREE.Mesh(new THREE.BoxGeometry(6, 0.5, 6), metalMat);
+base.position.y = 0.25;
+base.castShadow = true;
+base.receiveShadow = true;
+towerGroup.add(base);
+
+for (const [px, pz] of [[-2.6,-2.6],[2.6,-2.6],[-2.6,2.6],[2.6,2.6]]) {
+  const post = new THREE.Mesh(new THREE.BoxGeometry(0.3, 5, 0.3), metalMat);
+  post.position.set(px, 2.5, pz);
+  post.castShadow = true;
+  towerGroup.add(post);
+}
+
+const top = new THREE.Mesh(new THREE.BoxGeometry(6, 0.5, 6), metalMat);
+top.position.y = 5.25;
+top.castShadow = true;
+top.receiveShadow = true;
+towerGroup.add(top);
+
+const scalePuzzle = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.1, 1.1), brassMat);
+scalePuzzle.position.set(0, 5.95, 0);
+scalePuzzle.castShadow = true;
+scalePuzzle.userData.interactable = 'scale';
+scalePuzzle.userData.label = 'Seven-Thirds Scale Lock';
+towerGroup.add(scalePuzzle);
+
+scene.add(towerGroup);
+
+// UV evidence tree
+const uvTree = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 1.3, 14, 8), darkWoodMat);
+uvTree.position.set(-8, 7, 4);
+uvTree.castShadow = true;
+scene.add(uvTree);
+
+const uvEvidence = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.9), uvEvidenceMat);
+uvEvidence.position.set(-8, 5.2, 4.65);
+uvEvidence.userData.interactable = 'uv_evidence';
+uvEvidence.userData.label = 'UV Evidence — use UV Light';
+scene.add(uvEvidence);
+
+// Gold marker pedestal
+const goldPedestal = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.7, 1, 12), goldMat);
+goldPedestal.position.set(5, 0.5, 0);
+goldPedestal.castShadow = true;
+goldPedestal.userData.interactable = 'gold';
+goldPedestal.userData.label = 'Gold Evidence Marker';
+scene.add(goldPedestal);
+
+// Elevator
+const elevator = new THREE.Mesh(new THREE.BoxGeometry(3, 0.5, 3), metalMat);
+elevator.position.set(8, 0.25, 8);
+elevator.castShadow = true;
+elevator.receiveShadow = true;
+elevator.userData.interactable = 'elevator';
+elevator.userData.label = 'Elevator — press E';
+scene.add(elevator);
+
+// Security monitor
+const monitor = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.9, 0.15), new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.5, metalness: 0.3 }));
+monitor.position.set(-4, 1.5, -9.8);
+monitor.userData.interactable = 'monitor';
+monitor.userData.label = 'Security Monitor — static feed';
+scene.add(monitor);
+
+// Apply saved visual states
+if (state.doorOpen) {
+  door.rotation.y = Math.PI / 2;
+  door.position.x = 1;
+}
+if (state.goldPlaced) goldPedestal.material = new THREE.MeshStandardMaterial({ color: 0xffd700, roughness: 0.25, metalness: 0.9 });
+if (state.uvOn) {
+  flashlight.color.setHex(0x8A2BE2);
+  uvEvidenceMat.emissiveIntensity = 2;
+}
+if (window.__savedPosition) {
+  camera.position.set(window.__savedPosition.x, window.__savedPosition.y, window.__savedPosition.z);
+}
+
+/* ---------------------------------------------------------------------------
+   Controls
+--------------------------------------------------------------------------- */
+const controls = new PointerLockControls(camera, document.body);
+const instructions = $('instructions');
+const crosshair = $('crosshair');
+const promptEl = $('prompt');
+const vlogUI = $('vlog-ui');
+
+let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
+const velocity = new THREE.Vector3();
+const direction = new THREE.Vector3();
+let prevTime = performance.now();
+
+instructions.addEventListener('click', () => {
+  controls.lock();
+});
+
+controls.addEventListener('lock', () => {
+  instructions.style.display = 'none';
+  crosshair.style.display = 'block';
+});
+
+controls.addEventListener('unlock', () => {
+  instructions.style.display = 'flex';
+  crosshair.style.display = 'none';
+});
+
+document.addEventListener('keydown', (e) => {
+  switch (e.code) {
+    case 'KeyW': moveForward = true; break;
+    case 'KeyS': moveBackward = true; break;
+    case 'KeyA': moveLeft = true; break;
+    case 'KeyD': moveRight = true; break;
+    case 'KeyE': interact(); break;
+    case 'KeyF': toggleUV(); break;
+    case 'KeyV': toggleVlog(); break;
+    case 'KeyB': toggleOverlay('board'); renderBoard(); break;
+    case 'KeyC': toggleOverlay('challenges'); updateChallenges(); break;
+  }
+  if (e.key >= '1' && e.key <= '9') {
+    const idx = Number(e.key) - 1;
+    if (TOOLS[idx]) {
+      state.selectedTool = TOOLS[idx].id;
+      renderToolbar();
+      addChat('Equipped: ' + TOOLS[idx].name);
+      beep();
+    }
+  }
+});
+
+document.addEventListener('keyup', (e) => {
+  switch (e.code) {
+    case 'KeyW': moveForward = false; break;
+    case 'KeyS': moveBackward = false; break;
+    case 'KeyA': moveLeft = false; break;
+    case 'KeyD': moveRight = false; break;
+  }
+});
+
+function toggleUV() {
+  state.uvOn = !state.uvOn;
+  flashlight.color.setHex(state.uvOn ? 0x8A2BE2 : 0xffffff);
+  uvEvidenceMat.emissiveIntensity = state.uvOn ? 2 : 0;
+  addChat(state.uvOn ? 'UV Blacklight ON' : 'UV Blacklight OFF');
+  beep();
+  saveState();
+}
+
+function toggleVlog() {
+  state.vlogOn = !state.vlogOn;
+  vlogUI.style.display = state.vlogOn ? 'block' : 'none';
+  beep();
+}
+
+function toggleOverlay(id) {
+  const el = $(id);
+  const isOpen = el.style.display === 'block';
+  document.querySelectorAll('.overlay').forEach(o => o.style.display = 'none');
+  if (!isOpen) el.style.display = 'block';
+}
+
+/* ---------------------------------------------------------------------------
+   Interaction
+--------------------------------------------------------------------------- */
+const raycaster = new THREE.Raycaster();
+const centerScreen = new THREE.Vector2(0, 0);
+
+function getInteractable() {
+  raycaster.setFromCamera(centerScreen, camera);
+  const intersects = raycaster.intersectObjects(scene.children, true);
+  for (const hit of intersects) {
+    if (hit.distance > 4.2) continue;
+    let obj = hit.object;
+    while (obj && !obj.userData.interactable) obj = obj.parent;
+    if (obj) return obj;
+  }
+  return null;
+}
+
+function interact() {
+  const obj = getInteractable();
+  if (!obj) return;
+  const id = obj.userData.interactable;
+
+  if (id === 'trailhead') {
+    complete('c01'); complete('c02'); complete('c03');
+    addChat('Chat: Trailhead matched. Correct path selected.');
+    beep();
+  } else if (id === 'door') {
+    if (state.selectedTool === 'crowbar') {
+      state.doorOpen = !state.doorOpen;
+      door.rotation.y = state.doorOpen ? Math.PI / 2 : 0;
+      door.position.x = state.doorOpen ? 1 : 0;
+      complete('c04');
+      addChat('Chat: Door forced with crowbar.');
+      beep();
+      saveState();
+    } else {
+      addChat('Chat: Equip the crowbar (1) to pry the door.');
+    }
+  } else if (id === 'scale') {
+    handleScalePuzzle();
+  } else if (id === 'uv_evidence') {
+    if (state.uvOn && state.selectedTool === 'uv_light') {
+      if (!state.evidenceCollected) {
+        state.evidenceCollected = true;
+        state.evidence.push('UV symbol on the marked tree: three brass disc alignment clue.');
+        complete('c16');
+        addChat('Chat: UV evidence collected.');
+        renderBoard();
+        saveState();
+        beep();
+      } else {
+        addChat('Chat: Evidence already collected.');
+      }
+    } else {
+      addChat('Chat: Equip UV Light (5) and toggle UV (F).');
+    }
+  } else if (id === 'gold') {
+    if (state.watchtowerSolved && !state.goldPlaced) {
+      state.goldPlaced = true;
+      goldPedestal.material = new THREE.MeshStandardMaterial({ color: 0xffd700, roughness: 0.25, metalness: 0.9 });
+      complete('c06');
+      addChat('Chat: Gold marker placed. Daily objective complete.');
+      saveState();
+      beep();
+    } else if (!state.watchtowerSolved) {
+      addChat('Chat: Solve the watchtower Seven-Thirds lock first.');
+    } else {
+      addChat('Chat: Gold marker already placed.');
+    }
+  } else if (id === 'elevator') {
+    state.elevatorMoving = true;
+    state.elevatorTargetY = elevator.position.y > 1 ? 0.25 : 5.25;
+    addChat('Chat: Elevator moving.');
+    beep();
+  } else if (id === 'monitor') {
+    addChat('Chat: Security feed: static. Timestamp 03:17:42.');
+    complete('c24');
+    beep();
+  }
+}
+
+function handleScalePuzzle() {
+  if (state.watchtowerSolved) {
+    addChat('Chat: Seven-Thirds lock already solved.');
+    return;
+  }
+  if (state.watchtowerStep === 0) {
+    if (state.selectedTool === 'hacksaw') {
+      state.watchtowerStep = 1;
+      addChat('Chat: Brass bars cut into thirds.');
+      beep();
+      saveState();
+    } else {
+      addChat('Chat: Equip Hacksaw (2) to cut the brass bars.');
+    }
+  } else if (state.watchtowerStep === 1) {
+    if (state.selectedTool === 'file') {
+      state.watchtowerStep = 2;
+      addChat('Chat: Pieces filed and calibrated.');
+      beep();
+      saveState();
+    } else {
+      addChat('Chat: Equip File (3) to calibrate the thirds.');
+    }
+  } else if (state.watchtowerStep === 2) {
+    if (state.selectedTool === 'scale') {
+      state.watchtowerSolved = true;
+      state.watchtowerStep = 3;
+      complete('c05');
+      addChat('Chat: Seven equal weights placed. Scale lock opened.');
+      beep();
+      saveState();
+    } else {
+      addChat('Chat: Equip Scale (4) to weigh the seven pieces.');
+    }
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Animation Loop
+--------------------------------------------------------------------------- */
+function animate() {
+  requestAnimationFrame(animate);
+
+  const now = performance.now();
+  const dt = Math.min((now - prevTime) / 1000, 0.05);
+  prevTime = now;
+
+  if (controls.isLocked) {
+    velocity.x -= velocity.x * 10.0 * dt;
+    velocity.z -= velocity.z * 10.0 * dt;
+
+    direction.z = Number(moveForward) - Number(moveBackward);
+    direction.x = Number(moveRight) - Number(moveLeft);
+    direction.normalize();
+
+    if (moveForward || moveBackward) velocity.z -= direction.z * 380.0 * dt;
+    if (moveLeft || moveRight) velocity.x -= direction.x * 380.0 * dt;
+
+    controls.moveRight(-velocity.x * dt);
+    controls.moveForward(-velocity.z * dt);
+
+    camera.position.x = clamp(camera.position.x, -110, 110);
+    camera.position.z = clamp(camera.position.z, -110, 110);
+  }
+
+  // Elevator movement and player ride
+  if (state.elevatorMoving) {
+    const diff = state.elevatorTargetY - elevator.position.y;
+    if (Math.abs(diff) > 0.01) {
+      const step = Math.sign(diff) * Math.min(Math.abs(diff), 2.2 * dt);
+      elevator.position.y += step;
+      if (Math.abs(camera.position.x - elevator.position.x) < 1.8 &&
+          Math.abs(camera.position.z - elevator.position.z) < 1.8 &&
+          Math.abs(camera.position.y - (elevator.position.y + 1.6)) < 0.9) {
+        camera.position.y += step;
+      }
+    } else {
+      elevator.position.y = state.elevatorTargetY;
+      state.elevatorMoving = false;
+    }
+  }
+
+  const onElevator = Math.abs(camera.position.x - elevator.position.x) < 1.8 &&
+                     Math.abs(camera.position.z - elevator.position.z) < 1.8 &&
+                     Math.abs(camera.position.y - (elevator.position.y + 1.6)) < 0.9;
+  if (!onElevator && !state.elevatorMoving) camera.position.y = 1.6;
+
+  // Interaction prompt
+  const target = getInteractable();
+  if (target && controls.isLocked) {
+    promptEl.textContent = '[E] ' + (target.userData.label || target.userData.interactable);
+    promptEl.style.display = 'block';
+  } else {
+    promptEl.style.display = 'none';
+  }
+
+  renderer.render(scene, camera);
+}
+
+/* ---------------------------------------------------------------------------
+   Init
+--------------------------------------------------------------------------- */
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+window.addEventListener('beforeunload', saveState);
+setInterval(saveState, 5000);
+
+renderToolbar();
+updateChallenges();
+renderBoard();
+addChat('Chat: Welcome to the forest. Find the trailhead.');
+addChat('Chat: Equip tools with 1–9. Use E to interact.');
+
+if (state.uvOn) {
+  flashlight.color.setHex(0x8A2BE2);
+  uvEvidenceMat.emissiveIntensity = 2;
+}
+
+animate();
+</script>
+</body>
+</html>

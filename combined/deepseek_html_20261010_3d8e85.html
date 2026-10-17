@@ -1,0 +1,1173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Desert</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:system-ui,sans-serif}
+  canvas{display:block;width:100%;height:100%}
+  #hud{position:fixed;left:14px;bottom:12px;color:#fff9;font-size:12px;line-height:1.7;
+       pointer-events:none;text-shadow:0 1px 3px #000;letter-spacing:.04em}
+  #lock{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+        color:#fff;background:#000a;cursor:pointer;font-size:14px;letter-spacing:.18em;
+        text-transform:uppercase;backdrop-filter:blur(3px)}
+  #lock.hide{display:none}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="hud">WASD move &middot; SHIFT run &middot; MOUSE look &middot; ESC release</div>
+<div id="lock">click to walk</div>
+<script>
+"use strict";
+
+/* =========================================================================
+   DESERT — bigger map, real geological strata under the sand skin.
+   ========================================================================= */
+
+const canvas = document.getElementById('gl');
+const gl = canvas.getContext('webgl2', {
+  antialias: true, alpha: false, depth: true, powerPreference: 'high-performance'
+});
+if (!gl) { document.body.innerHTML = '<h1 style="color:#fff;font:16px sans-serif;padding:40px">WebGL2 required.</h1>'; throw new Error('no webgl2'); }
+
+/* ------------------------------------------------------------------ config */
+const GRID    = 640;              // bigger mesh for bigger map
+const WORLD   = 130.0;            // world size (m) — was 48
+const H_MIN   = -8.0;
+const H_MAX   =  32.0;
+const H_RANGE = H_MAX - H_MIN;
+const INV_RANGE = 1.0 / H_RANGE;
+const WORLD_HALF = WORLD * 0.5;
+const LIMIT   = WORLD_HALF - 6.0;
+
+const WIND_RATE  = 0.065;
+
+const EYE_HEIGHT = 1.68;
+const WALK_SPEED = 1.60;
+const RUN_SPEED  = 4.35;
+const ACCEL_TIME = 0.42;
+const STOP_TIME  = 0.30;
+
+// How strongly depth below the sand skin reveals deeper strata
+const LAYER_SCALE = 40.0;
+
+/* ------------------------------------------------------------- CPU buffers */
+const N = GRID * GRID;
+const baseH   = new Float32Array(N);
+const height  = new Float32Array(N);
+const mask    = new Float32Array(N);
+const windN   = new Float32Array(N);
+const texData = new Uint8Array(N * 4);
+const maskData= new Uint8Array(N * 4);
+const activeFlag = new Uint8Array(N);
+let   activeList = [];
+
+/* ------------------------------------------------------------------- noise */
+function ihash(x, y) {
+  let h = Math.imul(x | 0, 374761393) + Math.imul(y | 0, 668265263);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+function vnoise(x, y) {
+  const xi = Math.floor(x), yi = Math.floor(y);
+  const xf = x - xi, yf = y - yi;
+  const u = xf * xf * (3 - 2 * xf);
+  const v = yf * yf * (3 - 2 * yf);
+  const a = ihash(xi, yi),     b = ihash(xi + 1, yi);
+  const c = ihash(xi, yi + 1), d = ihash(xi + 1, yi + 1);
+  return (a * (1 - u) + b * u) * (1 - v) + (c * (1 - u) + d * u) * v;
+}
+function fbm(x, y, oct) {
+  let s = 0, amp = 0.5, f = 1;
+  for (let i = 0; i < oct; i++) { s += amp * vnoise(x * f, y * f); f *= 2.0; amp *= 0.5; }
+  return s;
+}
+const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
+
+/* --------------------------------------------------------- terrain sculpt */
+function terrainAt(wx, wz) {
+  // Regional biome — some areas are big dunes, some are flat plains
+  const region = fbm(wx * 0.010 + 5.1, wz * 0.010 + 2.7, 2);
+  const duneAmp = 3.5 + 15.0 * clamp01((region - 0.25) * 1.6);
+
+  // Long ridges perpendicular to wind
+  const field = fbm(wx * 0.020 + 3.7, wz * 0.008, 2);
+  let s = clamp01(field * 1.55 - 0.15);
+  let ridge = 1.0 - Math.abs(2.0 * s - 1.0);
+  ridge = ridge * ridge * (3.0 - 2.0 * ridge);
+  const dune = duneAmp * ridge;
+
+  // Secondary rippled dune field
+  const field2 = fbm(wx * 0.055 + 8.3, wz * 0.055 + 4.9, 2);
+  let s2 = clamp01(field2 * 1.5 - 0.1);
+  let ridge2 = 1.0 - Math.abs(2.0 * s2 - 1.0);
+  ridge2 = ridge2 * ridge2 * (3.0 - 2.0 * ridge2);
+  const dune2 = duneAmp * 0.28 * ridge2;
+
+  const roll = 3.2 * (fbm(wx * 0.004 + 11.3, wz * 0.004 + 5.1, 2) - 0.5);
+  const med  = 1.15 * (fbm(wx * 0.030 + 2.2, wz * 0.030 + 9.4, 3) - 0.5);
+  const fine = 0.28 * (fbm(wx * 0.11,  wz * 0.11,  2) - 0.5);
+
+  return roll + dune + dune2 + med + fine;
+}
+
+/* ------------------------------------------------------------ texel encode */
+function encodeTexel(k) {
+  let v = (height[k] - H_MIN) * INV_RANGE;
+  if (v < 0) v = 0; else if (v > 1) v = 1;
+  const q = (v * 65535.0 + 0.5) | 0;
+  const o = k << 2;
+  texData[o]     = (q >> 8) & 255;
+  texData[o + 1] = q & 255;
+  texData[o + 2] = 0;
+  texData[o + 3] = 255;
+
+  let m = mask[k];
+  if (m > 1) m = 1;
+  maskData[o]     = (m * 255.0 + 0.5) | 0;
+  maskData[o + 1] = 0;
+  maskData[o + 2] = 0;
+  maskData[o + 3] = 255;
+}
+
+/* --------------------------------------------------------------- world gen */
+(function generate() {
+  for (let j = 0; j < GRID; j++) {
+    const wz = (j / (GRID - 1) - 0.5) * WORLD;
+    for (let i = 0; i < GRID; i++) {
+      const wx = (i / (GRID - 1) - 0.5) * WORLD;
+      const k = j * GRID + i;
+      const h = terrainAt(wx, wz);
+      baseH[k] = h;
+      height[k] = h;
+      encodeTexel(k);
+      windN[k] = 0.30 + Math.random() * 1.50;
+    }
+  }
+})();
+
+/* -------------------------------------------------------- height sampling */
+function sampleHeight(x, z) {
+  const fx = (x / WORLD + 0.5) * (GRID - 1);
+  const fz = (z / WORLD + 0.5) * (GRID - 1);
+  let x0 = Math.floor(fx), z0 = Math.floor(fz);
+  const tx = fx - x0, tz = fz - z0;
+  let x1 = x0 + 1, z1 = z0 + 1;
+  if (x0 < 0) x0 = 0; if (x1 > GRID - 1) x1 = GRID - 1;
+  if (z0 < 0) z0 = 0; if (z1 > GRID - 1) z1 = GRID - 1;
+  const h00 = height[z0 * GRID + x0];
+  const h10 = height[z0 * GRID + x1];
+  const h01 = height[z1 * GRID + x0];
+  const h11 = height[z1 * GRID + x1];
+  return (h00 * (1 - tx) + h10 * tx) * (1 - tz) + (h01 * (1 - tx) + h11 * tx) * tz;
+}
+
+/* =========================================================== MATRIX MATH == */
+function mat4() { return new Float32Array(16); }
+function perspective(out, fovy, aspect, near, far) {
+  const f = 1 / Math.tan(fovy / 2);
+  out.fill(0);
+  out[0] = f / aspect; out[5] = f;
+  out[10] = (far + near) / (near - far);
+  out[11] = -1;
+  out[14] = 2 * far * near / (near - far);
+  return out;
+}
+function lookAt(out, eye, center, up) {
+  let z0 = eye[0] - center[0], z1 = eye[1] - center[1], z2 = eye[2] - center[2];
+  let len = 1 / Math.hypot(z0, z1, z2); z0 *= len; z1 *= len; z2 *= len;
+  let x0 = up[1] * z2 - up[2] * z1, x1 = up[2] * z0 - up[0] * z2, x2 = up[0] * z1 - up[1] * z0;
+  len = Math.hypot(x0, x1, x2);
+  if (len === 0) { x0 = 0; x1 = 0; x2 = 0; } else { len = 1 / len; x0 *= len; x1 *= len; x2 *= len; }
+  const y0 = z1 * x2 - z2 * x1, y1 = z2 * x0 - z0 * x2, y2 = z0 * x1 - z1 * x0;
+  out[0] = x0; out[1] = y0; out[2] = z0; out[3] = 0;
+  out[4] = x1; out[5] = y1; out[6] = z1; out[7] = 0;
+  out[8] = x2; out[9] = y2; out[10] = z2; out[11] = 0;
+  out[12] = -(x0 * eye[0] + x1 * eye[1] + x2 * eye[2]);
+  out[13] = -(y0 * eye[0] + y1 * eye[1] + y2 * eye[2]);
+  out[14] = -(z0 * eye[0] + z1 * eye[1] + z2 * eye[2]);
+  out[15] = 1;
+  return out;
+}
+function mul(out, a, b) {
+  for (let c = 0; c < 4; c++) {
+    const b0 = b[c * 4], b1 = b[c * 4 + 1], b2 = b[c * 4 + 2], b3 = b[c * 4 + 3];
+    out[c * 4]     = a[0] * b0 + a[4] * b1 + a[8]  * b2 + a[12] * b3;
+    out[c * 4 + 1] = a[1] * b0 + a[5] * b1 + a[9]  * b2 + a[13] * b3;
+    out[c * 4 + 2] = a[2] * b0 + a[6] * b1 + a[10] * b2 + a[14] * b3;
+    out[c * 4 + 3] = a[3] * b0 + a[7] * b1 + a[11] * b2 + a[15] * b3;
+  }
+  return out;
+}
+function invert(out, a) {
+  const a00=a[0],a01=a[1],a02=a[2],a03=a[3], a10=a[4],a11=a[5],a12=a[6],a13=a[7],
+        a20=a[8],a21=a[9],a22=a[10],a23=a[11], a30=a[12],a31=a[13],a32=a[14],a33=a[15];
+  const b00=a00*a11-a01*a10, b01=a00*a12-a02*a10, b02=a00*a13-a03*a10,
+        b03=a01*a12-a02*a11, b04=a01*a13-a03*a11, b05=a02*a13-a03*a12,
+        b06=a20*a31-a21*a30, b07=a20*a32-a22*a30, b08=a20*a33-a23*a30,
+        b09=a21*a32-a22*a31, b10=a21*a33-a23*a31, b11=a22*a33-a23*a32;
+  let det = b00*b11-b01*b10+b02*b09+b03*b08-b04*b07+b05*b06;
+  if (!det) return null;
+  det = 1.0 / det;
+  out[0]=(a11*b11-a12*b10+a13*b09)*det; out[1]=(a02*b10-a01*b11-a03*b09)*det;
+  out[2]=(a31*b05-a32*b04+a33*b03)*det; out[3]=(a22*b04-a21*b05-a23*b03)*det;
+  out[4]=(a12*b08-a10*b11-a13*b07)*det; out[5]=(a00*b11-a02*b08+a03*b07)*det;
+  out[6]=(a32*b02-a30*b05-a33*b01)*det; out[7]=(a20*b05-a22*b02+a23*b01)*det;
+  out[8]=(a10*b10-a11*b08+a13*b06)*det; out[9]=(a01*b08-a00*b10-a03*b06)*det;
+  out[10]=(a30*b04-a31*b02+a33*b00)*det; out[11]=(a21*b02-a20*b04-a23*b00)*det;
+  out[12]=(a11*b07-a10*b09-a12*b06)*det; out[13]=(a00*b09-a01*b07+a02*b06)*det;
+  out[14]=(a31*b01-a30*b03-a32*b00)*det; out[15]=(a20*b03-a21*b01+a22*b00)*det;
+  return out;
+}
+
+/* ============================================================== SHADERS == */
+const CONSTS = `
+const int   GRID    = ${GRID};
+const float WORLD   = ${WORLD.toFixed(1)};
+const float H_MIN   = ${H_MIN.toFixed(1)};
+const float H_RANGE = ${H_RANGE.toFixed(1)};
+`;
+
+const TERRAIN_VS = `#version 300 es
+precision highp float;
+${CONSTS}
+uniform sampler2D uHeight;
+uniform mat4 uViewProj;
+
+in vec2  aGrid;
+in float aBaseH;
+
+out vec3  vWorld;
+out vec3  vNormal;
+out vec2  vUV;
+out float vDepth;
+
+float decode(vec4 t) {
+  float q = floor(t.r * 255.0 + 0.5) * 256.0 + floor(t.g * 255.0 + 0.5);
+  return (q / 65535.0) * H_RANGE + H_MIN;
+}
+float hAt(ivec2 c) {
+  c = clamp(c, ivec2(0), ivec2(GRID - 1));
+  return decode(texelFetch(uHeight, c, 0));
+}
+
+void main() {
+  ivec2 g = ivec2(aGrid);
+  float hCurrent = hAt(g);
+  float hx = hAt(g + ivec2(1, 0)) - hAt(g - ivec2(1, 0));
+  float hz = hAt(g + ivec2(0, 1)) - hAt(g - ivec2(0, 1));
+
+  float cell = WORLD / float(GRID - 1);
+  vec3 n = normalize(vec3(-hx, 2.0 * cell, -hz));
+
+  vec2 uv = aGrid / float(GRID - 1);
+  vec3 p = vec3((uv.x - 0.5) * WORLD, hCurrent, (uv.y - 0.5) * WORLD);
+
+  vWorld  = p;
+  vNormal = n;
+  vUV     = uv;
+  vDepth  = hBaseDelta(aBaseH, hCurrent);
+  gl_Position = uViewProj * vec4(p, 1.0);
+}
+`;
+
+// Small helper injected into the vertex shader — but GLSL doesn't let us define
+// outside main after main. Put it before main instead.
+const TERRAIN_VS_SAFE = TERRAIN_VS.replace(
+  'float hAt(ivec2 c) {',
+  `float hBaseDelta(float base, float current) {
+  float d = base - current;
+  return d < 0.0 ? 0.0 : d;
+}
+float hAt(ivec2 c) {`
+);
+
+const TERRAIN_FS = `#version 300 es
+precision highp float;
+${CONSTS}
+
+in vec3  vWorld;
+in vec3  vNormal;
+in vec2  vUV;
+in float vDepth;
+
+out vec4 fragColor;
+
+uniform sampler2D uMask;
+uniform vec3 uCamPos;
+uniform vec3 uSunDir;
+uniform vec3 uSunColor;
+uniform vec3 uSkyColor;
+uniform vec3 uGroundColor;
+uniform vec3 uHorizon;
+uniform float uTime;
+
+const float PI = 3.14159265359;
+const float LAYER_SCALE = ${LAYER_SCALE.toFixed(1)};
+
+float D_GGX(float NoH, float a) {
+  float a2 = a * a;
+  float d = NoH * NoH * (a2 - 1.0) + 1.0;
+  return a2 / (PI * d * d);
+}
+float V_Smith(float NoV, float NoL, float a) {
+  float a2 = a * a;
+  float gv = NoL * sqrt(NoV * NoV * (1.0 - a2) + a2);
+  float gl = NoV * sqrt(NoL * NoL * (1.0 - a2) + a2);
+  return 0.5 / max(gv + gl, 1e-5);
+}
+vec3 F_Schlick(vec3 f0, float VoH) {
+  return f0 + (1.0 - f0) * pow(1.0 - VoH, 5.0);
+}
+float hash21(vec2 p) {
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+
+// -------------------------------------------------------------------------
+// Geologic stack — top to bottom as you dig in.
+//   y = 0  at surface (loose sand skin)
+//   y grows with depth below the ORIGINAL undisturbed surface.
+// -------------------------------------------------------------------------
+vec3 layerColor(float y) {
+  vec3 c_soil     = vec3(0.86, 0.74, 0.55); // loose aeolian sand skin
+  vec3 c_packed   = vec3(0.71, 0.57, 0.41); // compacted sand, warmer
+  vec3 c_caliche  = vec3(0.68, 0.62, 0.51); // pale caliche hardpan
+  vec3 c_clay     = vec3(0.53, 0.30, 0.18); // iron-rich red clay
+  vec3 c_sandst   = vec3(0.44, 0.25, 0.15); // red sandstone
+  vec3 c_shale    = vec3(0.28, 0.22, 0.19); // dark shale
+  vec3 c_bedrock  = vec3(0.17, 0.14, 0.12); // basement bedrock
+
+  vec3 c = c_soil;
+  c = mix(c, c_packed,  smoothstep(0.28, 0.55, y));
+  c = mix(c, c_caliche, smoothstep(0.85, 1.20, y));
+  c = mix(c, c_clay,    smoothstep(1.70, 2.15, y));
+  c = mix(c, c_sandst,  smoothstep(3.00, 3.55, y));
+  c = mix(c, c_shale,   smoothstep(4.80, 5.30, y));
+  c = mix(c, c_bedrock, smoothstep(7.00, 7.80, y));
+  return c;
+}
+
+void main() {
+  vec3 N = normalize(vNormal);
+  float dist = length(vWorld - uCamPos);
+  float maskV = texture(uMask, vUV).r;
+
+  // --------------------------------------------------------- layer geometry
+  // Depth below original surface, amplified so cm-scale footfalls expose
+  // metre-scale strata.
+  float depth = max(vDepth, 0.0);
+  float layerY = depth * LAYER_SCALE;
+
+  // organic wobble so layer boundaries aren't perfect rings
+  layerY += 0.05 * sin(vWorld.x * 3.10 + vWorld.z * 1.70);
+  layerY += 0.04 * sin(vWorld.z * 5.30 + 1.40);
+  layerY += 0.03 * sin((vWorld.x + vWorld.z) * 8.20 + 0.6);
+
+  vec3 deepColor = layerColor(layerY);
+
+  // ----------------------------------------------------------- sand skin
+  vec3 sandHi = vec3(0.87, 0.77, 0.56);
+  vec3 sandLo = vec3(0.61, 0.48, 0.33);
+  float sv = 0.5 + 0.5 * sin(vWorld.x * 0.55) * sin(vWorld.z * 0.45);
+  float sv2 = 0.5 + 0.5 * sin(vWorld.x * 1.9 + 0.7) * sin(vWorld.z * 2.3 - 0.4);
+  vec3 sandCol = mix(sandLo, sandHi, clamp(sv * 0.6 + sv2 * 0.4, 0.0, 1.0));
+
+  // crest bleaching & trough darkening
+  float crest = smoothstep(0.55, 0.97, N.y);
+  sandCol = mix(sandCol, sandCol * 1.06 + vec3(0.03), crest * 0.5);
+  float trough = smoothstep(0.55, 0.15, N.y);
+  sandCol = mix(sandCol, sandCol * 0.88, trough * 0.4);
+
+  // Blend sand -> strata as we go below the skin
+  float strataBlend = smoothstep(0.05, 0.35, layerY);
+  vec3 albedo = mix(sandCol, deepColor, strataBlend);
+
+  // Disturbed areas feel slightly wetter / denser / darker
+  albedo = mix(albedo, albedo * vec3(0.85, 0.78, 0.68), maskV * 0.35);
+
+  // -------------------------------------------------- procedural sand ripples
+  float rf = 1.0 - smoothstep(3.0, 26.0, dist);
+  if (rf > 0.001) {
+    float z = vWorld.z;
+    float warp  = 1.5 * sin(z * 0.55) + 0.8 * sin(z * 1.6 + 2.0);
+    float phase = vWorld.x * 4.0 + warp;
+    float c = cos(phase);
+    float gx = 0.16 * c;
+    float gz = 0.055 * c * (0.825 * cos(z * 0.55) + 1.28 * cos(z * 1.6 + 2.0));
+    N = normalize(N - rf * 1.6 * vec3(gx, 0.0, gz));
+  }
+  float nf = 1.0 - smoothstep(1.0, 4.0, dist);
+  if (nf > 0.001) {
+    float g = hash21(vWorld.xz * 42.0) - 0.5;
+    N = normalize(N + nf * 0.14 * vec3(g, 0.0, g * 0.7));
+  }
+
+  // ----------------------------------------------------------------- PBR
+  vec3 V = normalize(uCamPos - vWorld);
+  vec3 L = normalize(uSunDir);
+  vec3 H = normalize(V + L);
+
+  float NoV = max(dot(N, V), 1e-4);
+  float NoL = max(dot(N, L), 0.0);
+  float NoH = max(dot(N, H), 0.0);
+  float VoH = max(dot(V, H), 0.0);
+
+  // Deeper strata are a bit smoother (wet clay, bedrock)
+  float rough = mix(0.90, 0.74, strataBlend) + maskV * 0.02;
+  float a = rough * rough;
+  vec3 f0 = vec3(0.038);
+
+  float D   = D_GGX(NoH, a);
+  float Vis = V_Smith(NoV, NoL, a);
+  vec3  F   = F_Schlick(f0, VoH);
+
+  vec3 spec = D * Vis * F;
+  vec3 kd   = 1.0 - F;
+  vec3 diff = albedo / PI;
+  vec3 col  = (kd * diff + spec) * uSunColor * NoL;
+
+  float hemi = 0.5 + 0.5 * N.y;
+  col += mix(uGroundColor, uSkyColor, hemi) * albedo;
+
+  float fill = max(dot(N, normalize(vec3(L.x, 0.0, L.z))), 0.0);
+  col += albedo * vec3(0.10, 0.06, 0.03) * fill;
+
+  col += uSkyColor * f0 * (1.0 - rough) * 1.8;
+
+  // ------------------------------------------------- atmospheric haze
+  float fog = 1.0 - exp(-dist * 0.055);
+  float sunFogBoost = pow(max(dot(normalize(vWorld - uCamPos), L), 0.0), 4.0);
+  vec3 fogCol = mix(uHorizon, uSunColor * 0.9, sunFogBoost * 0.35);
+  col = mix(col, fogCol, fog * 0.94);
+
+  // --------------------------------------------------- filmic grade
+  vec2 ndc = gl_FragCoord.xy / vec2(1600.0, 900.0);
+  ndc = ndc * 2.0 - 1.0;
+  col *= 1.0 - 0.28 * dot(ndc, ndc);
+
+  col = mix(col, col * vec3(1.06, 0.99, 0.90), smoothstep(0.05, 0.55, length(col)));
+  col = mix(col * vec3(0.92, 0.96, 1.06), col, smoothstep(0.0, 0.35, length(col)));
+
+  col = col / (col + vec3(1.0));
+  fragColor = vec4(pow(col, vec3(1.0 / 2.2)), 1.0);
+}
+`;
+
+/* ------------------------------------------------------------------- sky */
+const SKY_VS = `#version 300 es
+precision highp float;
+in vec2 aPos;
+uniform mat4 uInvVP;
+uniform vec3 uCamPos;
+out vec3 vDir;
+void main() {
+  vec4 p = uInvVP * vec4(aPos, 1.0, 1.0);
+  vDir = p.xyz / p.w - uCamPos;
+  gl_Position = vec4(aPos, 0.9999, 1.0);
+}
+`;
+
+const SKY_FS = `#version 300 es
+precision highp float;
+in vec3 vDir;
+out vec4 fragColor;
+uniform vec3 uSunDir;
+uniform vec3 uSunColor;
+uniform vec3 uHorizon;
+uniform vec3 uZenith;
+uniform float uTime;
+
+void main() {
+  vec3 d = normalize(vDir);
+  float t = d.y;
+
+  vec3 sky = mix(uHorizon, uZenith, smoothstep(-0.02, 0.62, t));
+  sky = mix(uHorizon * 0.78, sky, smoothstep(-0.14, 0.03, t));
+
+  float s = max(dot(d, uSunDir), 0.0);
+  float disk = pow(s, 2200.0);
+  float halo = pow(s, 40.0) * 0.55 + pow(s, 9.0) * 0.22 + pow(s, 3.0) * 0.07;
+  sky += uSunColor * (disk * 22.0 + halo);
+
+  vec3 toSun = uSunDir;
+  vec3 perp1 = normalize(cross(toSun, vec3(0.0, 1.0, 0.0)));
+  vec3 perp2 = cross(perp1, toSun);
+  float a1 = atan(dot(d, perp2), dot(d, perp1));
+
+  float rays =
+      0.55 + 0.45 * sin(a1 * 26.0 + uTime * 0.22 + 0.7)
+    + 0.25 * sin(a1 * 51.0 - uTime * 0.14);
+  rays = max(rays, 0.0);
+  rays = pow(rays, 3.5);
+
+  float rayMask = pow(s, 6.0) * (1.0 - smoothstep(0.35, 1.0, t));
+  sky += uSunColor * rays * rayMask * 0.55;
+
+  float sunset = pow(max(1.0 - abs(t) * 2.0, 0.0), 3.0);
+  sky += vec3(0.18, 0.10, 0.06) * sunset * 0.4;
+
+  vec3 c = sky / (sky + vec3(1.0));
+  fragColor = vec4(pow(c, vec3(1.0 / 2.2)), 1.0);
+}
+`;
+
+/* -------------------------------------------------------------- particles */
+const PART_VS = `#version 300 es
+precision highp float;
+in vec3 aCenter;
+in vec2 aCorner;
+in float aSize;
+in float aAlpha;
+
+uniform mat4 uViewProj;
+uniform vec3 uCamRight;
+uniform vec3 uCamUp;
+
+out vec2  vUV;
+out float vAlpha;
+out vec3  vWorld;
+
+void main() {
+  vUV = aCorner;
+  vAlpha = aAlpha;
+  vec3 wp = aCenter + (uCamRight * aCorner.x + uCamUp * aCorner.y) * aSize;
+  vWorld = wp;
+  gl_Position = uViewProj * vec4(wp, 1.0);
+}
+`;
+
+const PART_FS = `#version 300 es
+precision highp float;
+in vec2  vUV;
+in float vAlpha;
+in vec3  vWorld;
+out vec4 fragColor;
+
+uniform vec3 uCamPos;
+uniform vec3 uSunDir;
+uniform vec3 uHorizon;
+
+void main() {
+  float r = length(vUV);
+  if (r > 1.0) discard;
+  float a = smoothstep(1.0, 0.10, r) * vAlpha;
+
+  vec3 nrm = normalize(vec3(vUV.x, 1.2, vUV.y));
+  float lit = 0.60 + 0.40 * max(dot(nrm, uSunDir), 0.0);
+  vec3 col = vec3(0.86, 0.76, 0.56) * lit;
+
+  float dist = length(vWorld - uCamPos);
+  col = mix(col, uHorizon, 1.0 - exp(-dist * 0.06));
+
+  col = col / (col + vec3(1.0));
+  fragColor = vec4(pow(col, vec3(1.0 / 2.2)), a);
+}
+`;
+
+/* ========================================================== GL plumbing == */
+function compile(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS))
+    console.error(gl.getShaderInfoLog(s), '\n', src);
+  return s;
+}
+function link(vsSrc, fsSrc) {
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, vsSrc));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fsSrc));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS))
+    console.error(gl.getProgramInfoLog(p));
+  const u = {};
+  const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) {
+    const info = gl.getActiveUniform(p, i);
+    u[info.name] = gl.getUniformLocation(p, info.name);
+  }
+  return { prog: p, u };
+}
+
+const terrain = link(TERRAIN_VS_SAFE, TERRAIN_FS);
+const skyP    = link(SKY_VS, SKY_FS);
+const partP   = link(PART_VS, PART_FS);
+
+/* ------------------------------------------------------- height texture */
+const heightTex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, heightTex);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, GRID, GRID, 0, gl.RGBA, gl.UNSIGNED_BYTE, texData);
+
+const maskTex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, maskTex);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, GRID, GRID, 0, gl.RGBA, gl.UNSIGNED_BYTE, maskData);
+
+/* ---------------------------------------------------------- terrain mesh */
+const gridVerts = new Float32Array(N * 2);
+for (let j = 0; j < GRID; j++)
+  for (let i = 0; i < GRID; i++) {
+    const k = (j * GRID + i) * 2;
+    gridVerts[k] = i;
+    gridVerts[k + 1] = j;
+  }
+
+const indices = new Uint32Array((GRID - 1) * (GRID - 1) * 6);
+{
+  let p = 0;
+  for (let j = 0; j < GRID - 1; j++) {
+    for (let i = 0; i < GRID - 1; i++) {
+      const a = j * GRID + i, b = a + 1, c = a + GRID, d = c + 1;
+      indices[p++] = a; indices[p++] = c; indices[p++] = b;
+      indices[p++] = b; indices[p++] = c; indices[p++] = d;
+    }
+  }
+}
+
+const terrainVAO = gl.createVertexArray();
+gl.bindVertexArray(terrainVAO);
+
+const gridBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, gridBuf);
+gl.bufferData(gl.ARRAY_BUFFER, gridVerts, gl.STATIC_DRAW);
+const aGridLoc = gl.getAttribLocation(terrain.prog, 'aGrid');
+gl.enableVertexAttribArray(aGridLoc);
+gl.vertexAttribPointer(aGridLoc, 2, gl.FLOAT, false, 0, 0);
+
+// base height attribute — geological reference surface
+const baseBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, baseBuf);
+gl.bufferData(gl.ARRAY_BUFFER, baseH, gl.STATIC_DRAW);
+const aBaseHLoc = gl.getAttribLocation(terrain.prog, 'aBaseH');
+gl.enableVertexAttribArray(aBaseHLoc);
+gl.vertexAttribPointer(aBaseHLoc, 1, gl.FLOAT, false, 0, 0);
+
+const idxBuf = gl.createBuffer();
+gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuf);
+gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+gl.bindVertexArray(null);
+
+/* ------------------------------------------------------------ sky buffer */
+const skyVAO = gl.createVertexArray();
+gl.bindVertexArray(skyVAO);
+const skyBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, skyBuf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+const aPosLoc = gl.getAttribLocation(skyP.prog, 'aPos');
+gl.enableVertexAttribArray(aPosLoc);
+gl.vertexAttribPointer(aPosLoc, 2, gl.FLOAT, false, 0, 0);
+gl.bindVertexArray(null);
+
+/* ------------------------------------------------------- particle system */
+const MAX_P = 3000;
+const pPos    = new Float32Array(MAX_P * 3);
+const pVel    = new Float32Array(MAX_P * 3);
+const pLife   = new Float32Array(MAX_P);
+const pMaxL   = new Float32Array(MAX_P);
+const pSize   = new Float32Array(MAX_P);
+const pGrav   = new Float32Array(MAX_P);
+let   pCount  = 0;
+
+const FLOATS_PER_VERT = 7;
+const VERTS_PER_PART  = 6;
+const partVerts = new Float32Array(MAX_P * VERTS_PER_PART * FLOATS_PER_VERT);
+
+const partVAO = gl.createVertexArray();
+gl.bindVertexArray(partVAO);
+const partBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, partBuf);
+gl.bufferData(gl.ARRAY_BUFFER, partVerts.byteLength, gl.DYNAMIC_DRAW);
+
+const P_STRIDE = FLOATS_PER_VERT * 4;
+const aCenterLoc = gl.getAttribLocation(partP.prog, 'aCenter');
+const aCornerLoc = gl.getAttribLocation(partP.prog, 'aCorner');
+const aSizeLoc   = gl.getAttribLocation(partP.prog, 'aSize');
+const aAlphaLoc  = gl.getAttribLocation(partP.prog, 'aAlpha');
+gl.enableVertexAttribArray(aCenterLoc); gl.vertexAttribPointer(aCenterLoc, 3, gl.FLOAT, false, P_STRIDE, 0);
+gl.enableVertexAttribArray(aCornerLoc); gl.vertexAttribPointer(aCornerLoc, 2, gl.FLOAT, false, P_STRIDE, 12);
+gl.enableVertexAttribArray(aSizeLoc);   gl.vertexAttribPointer(aSizeLoc,   1, gl.FLOAT, false, P_STRIDE, 20);
+gl.enableVertexAttribArray(aAlphaLoc);  gl.vertexAttribPointer(aAlphaLoc,  1, gl.FLOAT, false, P_STRIDE, 24);
+gl.bindVertexArray(null);
+
+const CORNERS = [
+  [-1,-1], [ 1,-1], [-1, 1],
+  [-1, 1], [ 1,-1], [ 1, 1]
+];
+
+function spawnParticles(x, y, z, dirX, dirZ, count, spread, speed, grav) {
+  for (let i = 0; i < count && pCount < MAX_P; i++) {
+    const idx = pCount++;
+    const a = Math.random() * Math.PI * 2;
+    const r = Math.random();
+
+    const b = idx * 3;
+    pPos[b]     = x + Math.cos(a) * 0.05 * r;
+    pPos[b + 1] = y + 0.015;
+    pPos[b + 2] = z + Math.sin(a) * 0.05 * r;
+
+    const out = speed * (0.12 + Math.random() * 0.55) * spread;
+    pVel[b]     = -dirX * speed * 0.25 + Math.cos(a) * out + (Math.random() - 0.5) * 0.25;
+    pVel[b + 1] = speed * (0.35 + Math.random() * 0.95);
+    pVel[b + 2] = -dirZ * speed * 0.25 + Math.sin(a) * out + (Math.random() - 0.5) * 0.25;
+
+    pLife[idx] = pMaxL[idx] = 0.45 + Math.random() * 0.95;
+    pSize[idx] = 0.018 + Math.random() * 0.048;
+    pGrav[idx] = grav;
+  }
+}
+
+function spawnAmbientMote(px, pz, gy) {
+  if (pCount >= MAX_P) return;
+  const idx = pCount++;
+  const b = idx * 3;
+  const ang = Math.random() * Math.PI * 2;
+  const dist = 2 + Math.random() * 26;
+  pPos[b]     = px + Math.cos(ang) * dist;
+  pPos[b + 1] = gy + 0.4 + Math.random() * 6.5;
+  pPos[b + 2] = pz + Math.sin(ang) * dist;
+  pVel[b]     = 0.22 + Math.random() * 0.55;
+  pVel[b + 1] = -0.015 + Math.random() * 0.07;
+  pVel[b + 2] = (Math.random() - 0.5) * 0.18;
+  pLife[idx] = pMaxL[idx] = 3.5 + Math.random() * 4.5;
+  pSize[idx] = 0.010 + Math.random() * 0.026;
+  pGrav[idx] = 0.02;
+}
+
+function updateParticles(dt) {
+  for (let i = 0; i < pCount; i++) {
+    pLife[i] -= dt;
+    if (pLife[i] <= 0) {
+      const l = --pCount;
+      if (l !== i) {
+        pPos[i*3]=pPos[l*3]; pPos[i*3+1]=pPos[l*3+1]; pPos[i*3+2]=pPos[l*3+2];
+        pVel[i*3]=pVel[l*3]; pVel[i*3+1]=pVel[l*3+1]; pVel[i*3+2]=pVel[l*3+2];
+        pLife[i]=pLife[l]; pMaxL[i]=pMaxL[l]; pSize[i]=pSize[l]; pGrav[i]=pGrav[l];
+      }
+      i--; continue;
+    }
+
+    const b = i * 3;
+    const g = pGrav[i];
+    pVel[b + 1] -= 9.8 * g * dt;
+    pVel[b]     += (0.55 - pVel[b]) * dt * (0.45 + g * 0.9);
+    pVel[b + 2] += (0.0 - pVel[b + 2]) * dt * 0.20;
+
+    const drag = Math.exp(-(1.4 + g * 0.6) * dt);
+    pVel[b] *= drag; pVel[b + 1] *= drag; pVel[b + 2] *= drag;
+
+    pPos[b]     += pVel[b] * dt;
+    pPos[b + 1] += pVel[b + 1] * dt;
+    pPos[b + 2] += pVel[b + 2] * dt;
+
+    const gh = sampleHeight(pPos[b], pPos[b + 2]);
+    if (pPos[b + 1] < gh) {
+      pPos[b + 1] = gh;
+      if (pVel[b + 1] < 0) pVel[b + 1] *= -0.18;
+      pVel[b] *= 0.45; pVel[b + 2] *= 0.45;
+      if (g > 0.5) pLife[i] -= dt * 2.2;
+      else         pLife[i] -= dt * 0.7;
+    }
+  }
+
+  let o = 0;
+  for (let i = 0; i < pCount; i++) {
+    const b = i * 3;
+    const cx = pPos[b], cy = pPos[b + 1], cz = pPos[b + 2];
+    const sz = pSize[i];
+    const alpha = Math.min(1.0, pLife[i] / pMaxL[i] * 2.6);
+    for (let v = 0; v < 6; v++) {
+      partVerts[o++] = cx;
+      partVerts[o++] = cy;
+      partVerts[o++] = cz;
+      partVerts[o++] = CORNERS[v][0];
+      partVerts[o++] = CORNERS[v][1];
+      partVerts[o++] = sz;
+      partVerts[o++] = alpha;
+    }
+  }
+  if (pCount > 0) {
+    gl.bindBuffer(gl.ARRAY_BUFFER, partBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, partVerts.subarray(0, pCount * VERTS_PER_PART * FLOATS_PER_VERT));
+  }
+}
+
+/* ========================================================== FOOTPRINTS == */
+function stampFoot(px, pz, dirX, dirZ, strength, depth) {
+  const HALF_L = 0.185;
+  const HALF_W = 0.082;
+  const REACH  = 0.66;
+
+  let i0 = Math.floor(((px - REACH) / WORLD + 0.5) * (GRID - 1));
+  let i1 = Math.ceil (((px + REACH) / WORLD + 0.5) * (GRID - 1));
+  let j0 = Math.floor(((pz - REACH) / WORLD + 0.5) * (GRID - 1));
+  let j1 = Math.ceil (((pz + REACH) / WORLD + 0.5) * (GRID - 1));
+  if (i0 < 0) i0 = 0; if (i1 > GRID - 1) i1 = GRID - 1;
+  if (j0 < 0) j0 = 0; if (j1 > GRID - 1) j1 = GRID - 1;
+
+  const invL = 1 / HALF_L, invW = 1 / HALF_W;
+
+  for (let j = j0; j <= j1; j++) {
+    const wz = (j / (GRID - 1) - 0.5) * WORLD;
+    const dz = wz - pz;
+    for (let i = i0; i <= i1; i++) {
+      const wx = (i / (GRID - 1) - 0.5) * WORLD;
+      const dx = wx - px;
+
+      const u = dx * dirX + dz * dirZ;
+      const v = -dx * dirZ + dz * dirX;
+
+      const uu = u * invL, vv = v * invW;
+      const e = uu * uu + vv * vv;
+      if (e > 2.2) continue;
+
+      const k = j * GRID + i;
+
+      if (e < 1.0) {
+        const d = Math.pow(1.0 - e, 0.55);
+        const amt = d * strength;
+        let m = mask[k] + amt;
+        if (m > 1.0) m = 1.0;
+        mask[k] = m;
+        height[k] -= amt * depth;
+      } else {
+        const rim = 1.0 - Math.abs(e - 1.35) / 0.85;
+        if (rim <= 0) continue;
+        height[k] += rim * 0.012 * strength;
+        let m = mask[k] + rim * 0.35 * strength;
+        if (m > 1.0) m = 1.0;
+        mask[k] = m;
+      }
+
+      if (!activeFlag[k]) {
+        activeFlag[k] = 1;
+        activeList.push(k);
+      }
+      encodeTexel(k);
+    }
+  }
+}
+
+/* ============================================================== WIND ==== */
+let terrainDirty = false;
+let maskDirty = false;
+
+function updateWind(dt) {
+  if (activeList.length === 0) return;
+
+  const keep = [];
+  for (let n = 0; n < activeList.length; n++) {
+    const k = activeList[n];
+    const m = mask[k];
+    if (m <= 0.0005) { mask[k] = 0; height[k] = baseH[k]; activeFlag[k] = 0; encodeTexel(k); continue; }
+
+    const cover = dt * WIND_RATE * windN[k];
+    let nm = m - cover;
+
+    if (nm <= 0) {
+      nm = 0;
+      height[k] = baseH[k];
+      activeFlag[k] = 0;
+    } else {
+      height[k] += (baseH[k] - height[k]) * (cover / m);
+      keep.push(k);
+    }
+    mask[k] = nm;
+    encodeTexel(k);
+  }
+  activeList = keep;
+  terrainDirty = true;
+  maskDirty = true;
+}
+
+/* ============================================================== PLAYER == */
+const player = {
+  x: 0, z: 0,
+  yaw: 0.6, pitch: -0.05,
+  vx: 0, vz: 0,
+  camY: 0,
+  bob: 0,
+  strideAcc: 0,
+  footSide: 1
+};
+
+const keys = Object.create(null);
+let locked = false;
+
+const lockEl = document.getElementById('lock');
+canvas.addEventListener('click', () => canvas.requestPointerLock());
+lockEl.addEventListener('click', () => canvas.requestPointerLock());
+document.addEventListener('pointerlockchange', () => {
+  locked = document.pointerLockElement === canvas;
+  lockEl.classList.toggle('hide', locked);
+});
+document.addEventListener('mousemove', e => {
+  if (!locked) return;
+  player.yaw   -= e.movementX * 0.0022;
+  player.pitch -= e.movementY * 0.0022;
+  const lim = 1.45;
+  if (player.pitch >  lim) player.pitch =  lim;
+  if (player.pitch < -lim) player.pitch = -lim;
+});
+addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) e.preventDefault();
+});
+addEventListener('keyup', e => { keys[e.code] = false; });
+
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  const w = Math.floor(innerWidth * dpr);
+  const h = Math.floor(innerHeight * dpr);
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w; canvas.height = h;
+  }
+  gl.viewport(0, 0, canvas.width, canvas.height);
+}
+addEventListener('resize', resize);
+resize();
+
+/* ================================================================ LOOP == */
+const viewM = mat4(), projM = mat4(), vpM = mat4(), invVPM = mat4();
+const camPos = [0, 0, 0];
+const camRight = [1, 0, 0];
+const camUp    = [0, 1, 0];
+
+const SUN_DIR = (() => { const v = [-0.48, 0.42, 0.32]; const l = Math.hypot(...v); return v.map(a => a / l); })();
+const SUN_COLOR  = [3.05, 2.35, 1.55];
+const SKY_COLOR  = [0.28, 0.38, 0.58];
+const GND_COLOR  = [0.42, 0.29, 0.16];
+const HORIZON    = [0.74, 0.54, 0.36];
+const ZENITH     = [0.14, 0.28, 0.55];
+
+player.camY = sampleHeight(player.x, player.z) + EYE_HEIGHT;
+
+let last = performance.now();
+let ambientTimer = 0;
+let simTime = 0;
+
+function frame(now) {
+  let dt = (now - last) / 1000;
+  last = now;
+  if (dt > 0.05) dt = 0.05;
+  simTime += dt;
+
+  /* ---------- movement ---------- */
+  const cy = Math.cos(player.yaw), sy = Math.sin(player.yaw);
+  const cp = Math.cos(player.pitch), sp = Math.sin(player.pitch);
+
+  const fwdX = -sy, fwdZ = -cy;
+  const rgtX =  cy, rgtZ = -sy;
+
+  let ix = 0, iz = 0;
+  if (keys['KeyW'] || keys['ArrowUp'])    iz += 1;
+  if (keys['KeyS'] || keys['ArrowDown'])  iz -= 1;
+  if (keys['KeyD'] || keys['ArrowRight']) ix += 1;
+  if (keys['KeyA'] || keys['ArrowLeft'])  ix -= 1;
+
+  const running = !!(keys['ShiftLeft'] || keys['ShiftRight']);
+  const targetSpeed = running ? RUN_SPEED : WALK_SPEED;
+
+  let dx = fwdX * iz + rgtX * ix;
+  let dz = fwdZ * iz + rgtZ * ix;
+  const dl = Math.hypot(dx, dz);
+  if (dl > 0) { dx /= dl; dz /= dl; }
+
+  const tvx = dx * targetSpeed;
+  const tvz = dz * targetSpeed;
+  const moving = (dl > 0);
+  const tau = moving ? ACCEL_TIME : STOP_TIME;
+  const k = 1 - Math.exp(-dt / tau);
+  player.vx += (tvx - player.vx) * k;
+  player.vz += (tvz - player.vz) * k;
+
+  const speed = Math.hypot(player.vx, player.vz);
+
+  player.x += player.vx * dt;
+  player.z += player.vz * dt;
+
+  if (player.x >  LIMIT) { player.x =  LIMIT; player.vx = 0; }
+  if (player.x < -LIMIT) { player.x = -LIMIT; player.vx = 0; }
+  if (player.z >  LIMIT) { player.z =  LIMIT; player.vz = 0; }
+  if (player.z < -LIMIT) { player.z = -LIMIT; player.vz = 0; }
+
+  /* ---------- footsteps ---------- */
+  if (speed > 0.22) {
+    const stride = 0.68 + speed * 0.115;
+    player.strideAcc += speed * dt;
+    if (player.strideAcc >= stride) {
+      player.strideAcc -= stride;
+
+      const mvLen = speed > 1e-4 ? 1 / speed : 0;
+      const mdirX = player.vx * mvLen;
+      const mdirZ = player.vz * mvLen;
+
+      player.footSide *= -1;
+      const latX = -mdirZ, latZ = mdirX;
+      const fx = player.x + latX * 0.115 * player.footSide + mdirX * 0.14;
+      const fz = player.z + latZ * 0.115 * player.footSide + mdirZ * 0.14;
+
+      const groundY = sampleHeight(fx, fz);
+      const depth    = running ? 0.075 : 0.042;
+      const strength = running ? 1.0 : 0.85;
+
+      stampFoot(fx, fz, mdirX, mdirZ, strength, depth);
+
+      const n     = running ? 22 + (Math.random() * 12 | 0) : 5 + (Math.random() * 5 | 0);
+      const spread = running ? 1.05 : 0.42;
+      const kick   = running ? 1.75 : 0.72;
+      spawnParticles(fx, groundY, fz, mdirX, mdirZ, n, spread, kick, 1.0);
+
+      if (running && Math.random() < 0.75) {
+        spawnParticles(
+          fx + (Math.random() - 0.5) * 0.55,
+          groundY,
+          fz + (Math.random() - 0.5) * 0.55,
+          mdirX, mdirZ,
+          4 + (Math.random() * 7 | 0),
+          1.5, 1.2, 1.0
+        );
+      }
+    }
+  } else {
+    player.strideAcc = 0.68;
+  }
+
+  /* ---------- ambient dust motes ---------- */
+  ambientTimer -= dt;
+  if (ambientTimer <= 0) {
+    ambientTimer = 0.030 + Math.random() * 0.09;
+    const gy = sampleHeight(player.x, player.z);
+    const n = 1 + (Math.random() * 4 | 0);
+    for (let i = 0; i < n; i++) spawnAmbientMote(player.x, player.z, gy);
+  }
+
+  /* ---------- head bob ---------- */
+  player.bob += dt * speed * 2.05;
+  const bobAmt = Math.min(speed / RUN_SPEED, 1.0);
+  const bobY = Math.sin(player.bob) * 0.042 * bobAmt;
+  const bobX = Math.cos(player.bob * 0.5) * 0.025 * bobAmt;
+
+  const targetY = sampleHeight(player.x, player.z) + EYE_HEIGHT;
+  player.camY += (targetY - player.camY) * Math.min(1, dt * 11.0);
+
+  camPos[0] = player.x + camRight[0] * bobX;
+  camPos[1] = player.camY + bobY;
+  camPos[2] = player.z + camRight[2] * bobX;
+
+  /* ---------- camera basis ---------- */
+  const fx = -sy * cp, fy = sp, fz = -cy * cp;
+  camRight[0] = cy; camRight[1] = 0; camRight[2] = -sy;
+  camUp[0] = camRight[1] * fz - camRight[2] * fy;
+  camUp[1] = camRight[2] * fx - camRight[0] * fz;
+  camUp[2] = camRight[0] * fy - camRight[1] * fx;
+
+  const aspect = canvas.width / canvas.height;
+  perspective(projM, 1.15, aspect, 0.08, 500);
+  lookAt(viewM, camPos, [camPos[0] + fx, camPos[1] + fy, camPos[2] + fz], [0, 1, 0]);
+  mul(vpM, projM, viewM);
+  invert(invVPM, vpM);
+
+  /* ---------- simulation ---------- */
+  updateWind(dt);
+  updateParticles(dt);
+
+  if (terrainDirty) {
+    gl.bindTexture(gl.TEXTURE_2D, heightTex);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, GRID, GRID, gl.RGBA, gl.UNSIGNED_BYTE, texData);
+    terrainDirty = false;
+  }
+  if (maskDirty) {
+    gl.bindTexture(gl.TEXTURE_2D, maskTex);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, GRID, GRID, gl.RGBA, gl.UNSIGNED_BYTE, maskData);
+    maskDirty = false;
+  }
+
+  /* ============================== RENDER ============================== */
+  gl.clearColor(HORIZON[0] / (HORIZON[0] + 1), HORIZON[1] / (HORIZON[1] + 1), HORIZON[2] / (HORIZON[2] + 1), 1);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST);
+  gl.depthFunc(gl.LEQUAL);
+
+  /* --- sky --- */
+  gl.disable(gl.DEPTH_TEST);
+  gl.depthMask(false);
+  gl.disable(gl.CULL_FACE);
+  gl.useProgram(skyP.prog);
+  gl.uniformMatrix4fv(skyP.u.uInvVP, false, invVPM);
+  gl.uniform3fv(skyP.u.uCamPos, camPos);
+  gl.uniform3fv(skyP.u.uSunDir, SUN_DIR);
+  gl.uniform3fv(skyP.u.uSunColor, SUN_COLOR);
+  gl.uniform3fv(skyP.u.uHorizon, HORIZON);
+  gl.uniform3fv(skyP.u.uZenith, ZENITH);
+  gl.uniform1f(skyP.u.uTime, simTime);
+  gl.bindVertexArray(skyVAO);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  /* --- terrain --- */
+  gl.enable(gl.DEPTH_TEST);
+  gl.depthMask(true);
+  gl.enable(gl.CULL_FACE);
+  gl.cullFace(gl.BACK);
+
+  gl.useProgram(terrain.prog);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, heightTex);
+  gl.uniform1i(terrain.u.uHeight, 0);
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, maskTex);
+  gl.uniform1i(terrain.u.uMask, 1);
+
+  gl.uniformMatrix4fv(terrain.u.uViewProj, false, vpM);
+  gl.uniform3fv(terrain.u.uCamPos, camPos);
+  gl.uniform3fv(terrain.u.uSunDir, SUN_DIR);
+  gl.uniform3fv(terrain.u.uSunColor, SUN_COLOR);
+  gl.uniform3fv(terrain.u.uSkyColor, SKY_COLOR);
+  gl.uniform3fv(terrain.u.uGroundColor, GND_COLOR);
+  gl.uniform3fv(terrain.u.uHorizon, HORIZON);
+  gl.uniform1f(terrain.u.uTime, simTime);
+
+  gl.bindVertexArray(terrainVAO);
+  gl.drawElements(gl.TRIANGLES, indices.length, gl.UNSIGNED_INT, 0);
+
+  /* --- particles --- */
+  if (pCount > 0) {
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.depthMask(false);
+    gl.disable(gl.CULL_FACE);
+
+    gl.useProgram(partP.prog);
+    gl.uniformMatrix4fv(partP.u.uViewProj, false, vpM);
+    gl.uniform3fv(partP.u.uCamPos, camPos);
+    gl.uniform3fv(partP.u.uCamRight, camRight);
+    gl.uniform3fv(partP.u.uCamUp, camUp);
+    gl.uniform3fv(partP.u.uSunDir, SUN_DIR);
+    gl.uniform3fv(partP.u.uHorizon, HORIZON);
+
+    gl.bindVertexArray(partVAO);
+    gl.drawArrays(gl.TRIANGLES, 0, pCount * VERTS_PER_PART);
+
+    gl.depthMask(true);
+    gl.disable(gl.BLEND);
+  }
+
+  gl.bindVertexArray(null);
+  requestAnimationFrame(frame);
+}
+
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

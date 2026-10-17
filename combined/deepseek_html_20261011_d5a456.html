@@ -1,0 +1,1355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Stage · Avatar</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; overflow:hidden; background:#07080b; }
+  canvas { display:block; }
+</style>
+</head>
+<body>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+}}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls }   from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ============================================================================
+   CONFIG
+   ========================================================================= */
+const HEAD_Y      = 1.62;
+const HEAD_SCALE  = 0.235;
+const CAM_DIST    = 1.45;
+
+const SKIN_BASE   = 0x8a5530;
+const SKIN_DEEP   = 0x4a2a12;
+const LIP_COLOR   = 0x8a4840;
+const TONGUE_COL  = 0xa85752;
+const GUM_COLOR   = 0x7a2a35;
+const TOOTH_COLOR = 0xf4eee2;
+const HAIR_COLOR  = 0x0b0807;
+const HOODIE      = 0x121316;
+const LED_BLUE    = 0x3a8aff;
+const WARM_LAMP   = 0xffb46a;
+
+/* ============================================================================
+   RENDERER · SCENE · CAMERA
+   ========================================================================= */
+const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputColorSpace    = THREE.SRGBColorSpace;
+renderer.toneMapping         = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+renderer.shadowMap.enabled   = true;
+renderer.shadowMap.type      = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x07080b);
+scene.fog        = new THREE.Fog(0x07080b, 6.5, 14);
+
+const camera = new THREE.PerspectiveCamera(30, innerWidth/innerHeight, 0.04, 60);
+camera.position.set(0.02, 1.58, CAM_DIST);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.55, 0);
+controls.enableDamping  = true;
+controls.dampingFactor  = 0.08;
+controls.enablePan      = false;
+controls.minDistance    = 0.45;
+controls.maxDistance    = 3.5;
+controls.minPolarAngle  = Math.PI * 0.20;
+controls.maxPolarAngle  = Math.PI * 0.72;
+controls.update();
+
+/* ============================================================================
+   ENVIRONMENT
+   ========================================================================= */
+const pmrem = new THREE.PMREMGenerator(renderer);
+pmrem.compileEquirectangularShader();
+const envRT = pmrem.fromScene(new RoomEnvironment(), 0.04);
+scene.environment = envRT.texture;
+scene.environmentIntensity = 0.60;
+
+/* ============================================================================
+   LIGHTING
+   ========================================================================= */
+scene.add(new THREE.AmbientLight(0xffffff, 0.14));
+
+const keyLight = new THREE.DirectionalLight(0xffe8cc, 3.0);
+keyLight.position.set(1.5, 2.4, 1.7);
+keyLight.castShadow = true;
+keyLight.shadow.mapSize.set(2048, 2048);
+keyLight.shadow.camera.near   = 0.4;
+keyLight.shadow.camera.far    = 10;
+keyLight.shadow.camera.left   = -2.2;
+keyLight.shadow.camera.right  =  2.2;
+keyLight.shadow.camera.top    =  2.8;
+keyLight.shadow.camera.bottom = -0.6;
+keyLight.shadow.bias = -0.0005;
+keyLight.shadow.radius = 3;
+keyLight.target.position.set(0, 1.5, 0);
+scene.add(keyLight, keyLight.target);
+
+const rimLight = new THREE.DirectionalLight(0x5a9bff, 2.1);
+rimLight.position.set(2.2, 2.0, -1.8);
+rimLight.target.position.set(0, 1.5, 0);
+scene.add(rimLight, rimLight.target);
+
+const fillLight = new THREE.DirectionalLight(0xc8d8ff, 0.40);
+fillLight.position.set(-1.7, 1.1, 1.6);
+scene.add(fillLight);
+
+const ledGlow1 = new THREE.PointLight(LED_BLUE, 3.6, 4.4, 2.0);
+ledGlow1.position.set(-1.7, 0.85, -3.2);
+scene.add(ledGlow1);
+
+const ledGlow2 = new THREE.PointLight(LED_BLUE, 2.6, 3.8, 2.0);
+ledGlow2.position.set(2.4, 1.4, -1.6);
+scene.add(ledGlow2);
+
+const lampLight = new THREE.PointLight(WARM_LAMP, 1.2, 2.6, 2.0);
+lampLight.position.set(-3.1, 2.55, -2.3);
+scene.add(lampLight);
+
+/* ============================================================================
+   TEXTURE FACTORY
+   ========================================================================= */
+function cvs(size) { const c = document.createElement('canvas'); c.width = c.height = size; return c; }
+
+function makeFloorTexture() {
+  const S = 1024, c = cvs(S), g = c.getContext('2d');
+  g.fillStyle = '#14100c'; g.fillRect(0, 0, S, S);
+  const plank = S / 8;
+  for (let i = 0; i < 8; i++) {
+    const y = i * plank, sh = 0.85 + Math.random() * 0.25;
+    g.fillStyle = `rgb(${Math.floor(30*sh)},${Math.floor(22*sh)},${Math.floor(16*sh)})`;
+    g.fillRect(0, y + 2, S, plank - 4);
+    g.strokeStyle = 'rgba(0,0,0,0.22)'; g.lineWidth = 1;
+    for (let j = 0; j < 6; j++) {
+      const yy = y + 10 + Math.random() * (plank - 20);
+      g.beginPath(); g.moveTo(0, yy);
+      g.bezierCurveTo(S*0.3, yy + (Math.random()-.5)*8, S*0.65, yy + (Math.random()-.5)*8, S, yy);
+      g.stroke();
+    }
+    g.fillStyle = 'rgba(0,0,0,0.5)'; g.fillRect(0, y + plank - 3, S, 3);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8;
+  return t;
+}
+function makeFloorRoughness() {
+  const S = 512, c = cvs(S), g = c.getContext('2d');
+  g.fillStyle = '#c0c0c0'; g.fillRect(0, 0, S, S);
+  for (let i = 0; i < 4000; i++) {
+    const v = 140 + Math.random() * 115;
+    g.fillStyle = `rgb(${v},${v},${v})`;
+    g.fillRect(Math.random()*S, Math.random()*S, 2, 2);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+function makeWallTexture() {
+  const S = 512, c = cvs(S), g = c.getContext('2d');
+  g.fillStyle = '#171a22'; g.fillRect(0, 0, S, S);
+  for (let i = 0; i < 12000; i++) {
+    const v = 20 + Math.random() * 18;
+    g.fillStyle = `rgba(${v},${v+2},${v+8},0.35)`;
+    g.fillRect(Math.random()*S, Math.random()*S, 2, 2);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4;
+  return t;
+}
+function makePosterTexture(variant = 0) {
+  const W = 512, H = 700, c = document.createElement('canvas');
+  c.width = W; c.height = H; const g = c.getContext('2d');
+  const palettes = [
+    ['#0d1830','#25407a','#5a3a70','#c96b48'],
+    ['#0a1220','#1e3458','#3c4a72','#a86078'],
+    ['#180f28','#3a2258','#703060','#d97b52']
+  ];
+  const cols = palettes[variant % palettes.length];
+  const grad = g.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0.00, cols[0]); grad.addColorStop(0.35, cols[1]);
+  grad.addColorStop(0.68, cols[2]); grad.addColorStop(1.00, cols[3]);
+  g.fillStyle = grad; g.fillRect(0, 0, W, H);
+  g.fillStyle = 'rgba(8,12,24,0.78)';
+  g.beginPath(); g.moveTo(0, H*0.60);
+  g.lineTo(W*0.16, H*0.42); g.lineTo(W*0.30, H*0.53); g.lineTo(W*0.47, H*0.36);
+  g.lineTo(W*0.65, H*0.50); g.lineTo(W*0.83, H*0.44); g.lineTo(W, H*0.56);
+  g.lineTo(W, H); g.lineTo(0, H); g.closePath(); g.fill();
+  g.fillStyle = 'rgba(3,5,10,0.94)';
+  g.beginPath(); g.moveTo(0, H*0.79);
+  g.lineTo(W*0.22, H*0.63); g.lineTo(W*0.42, H*0.74); g.lineTo(W*0.60, H*0.61);
+  g.lineTo(W*0.80, H*0.71); g.lineTo(W, H*0.65);
+  g.lineTo(W, H); g.lineTo(0, H); g.closePath(); g.fill();
+  g.fillStyle = 'rgba(255, 220, 200, 0.88)';
+  g.beginPath(); g.arc(W*0.78, H*0.22, 30, 0, Math.PI*2); g.fill();
+  for (let i = 0; i < 2400; i++) {
+    g.fillStyle = `rgba(0,0,0,${Math.random()*0.05})`;
+    g.fillRect(Math.random()*W, Math.random()*H, 1.4, 1.4);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  return t;
+}
+function makeBookSpineTexture() {
+  const W = 256, H = 64, c = document.createElement('canvas');
+  c.width = W; c.height = H; const g = c.getContext('2d');
+  g.fillStyle = '#0d0c11'; g.fillRect(0, 0, W, H);
+  const cols = ['#8a3a3a','#3a5a8a','#4a7a4a','#8a6a2a','#5a3a7a','#2a6a6a'];
+  let x = 0;
+  while (x < W) {
+    const w = 14 + Math.random() * 22;
+    g.fillStyle = cols[Math.floor(Math.random()*cols.length)];
+    g.fillRect(x + 1, 2, w - 2, H - 4);
+    g.fillStyle = 'rgba(255,255,255,0.12)';
+    g.fillRect(x + w - 2, 2, 1, H - 4);
+    x += w;
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+function makeSkinTexture() {
+  const S = 1024, c = cvs(S), g = c.getContext('2d');
+  g.fillStyle = '#8a5530'; g.fillRect(0, 0, S, S);
+
+  const faceGrad = g.createRadialGradient(0.25*S, 0.55*S, 30, 0.25*S, 0.55*S, 0.30*S);
+  faceGrad.addColorStop(0,   'rgba(230,170,120,0.28)');
+  faceGrad.addColorStop(0.6, 'rgba(180,120,80,0.10)');
+  faceGrad.addColorStop(1,   'rgba(60,35,15,0.10)');
+  g.fillStyle = faceGrad; g.fillRect(0, 0, S, S);
+
+  const side = g.createLinearGradient(0, 0, S, 0);
+  side.addColorStop(0.00, 'rgba(30,15,5,0.48)');
+  side.addColorStop(0.18, 'rgba(30,15,5,0.10)');
+  side.addColorStop(0.32, 'rgba(0,0,0,0)');
+  side.addColorStop(0.68, 'rgba(0,0,0,0)');
+  side.addColorStop(0.82, 'rgba(30,15,5,0.10)');
+  side.addColorStop(1.00, 'rgba(30,15,5,0.48)');
+  g.fillStyle = side; g.fillRect(0, 0, S, S);
+
+  const fore = g.createRadialGradient(0.25*S, 0.38*S, 20, 0.25*S, 0.38*S, 0.18*S);
+  fore.addColorStop(0, 'rgba(255,215,170,0.22)');
+  fore.addColorStop(1, 'rgba(255,215,170,0)');
+  g.fillStyle = fore; g.fillRect(0, 0, S, S);
+
+  const cheek = g.createRadialGradient(0.25*S, 0.62*S, 15, 0.25*S, 0.62*S, 0.14*S);
+  cheek.addColorStop(0, 'rgba(200,110,80,0.20)');
+  cheek.addColorStop(1, 'rgba(200,110,80,0)');
+  g.fillStyle = cheek; g.fillRect(0, 0, S, S);
+
+  const stubble = g.createRadialGradient(0.25*S, 0.72*S, 30, 0.25*S, 0.72*S, 0.13*S);
+  stubble.addColorStop(0, 'rgba(20,12,8,0.38)');
+  stubble.addColorStop(1, 'rgba(20,12,8,0)');
+  g.fillStyle = stubble; g.fillRect(0, 0, S, S);
+
+  for (let i = 0; i < 6000; i++) {
+    const a = Math.random() * 0.05;
+    g.fillStyle = Math.random() > 0.5 ? `rgba(0,0,0,${a})` : `rgba(255,220,180,${a*0.6})`;
+    g.fillRect(Math.random()*S, Math.random()*S, 1.4, 1.4);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+  return t;
+}
+function makeSkinRoughness() {
+  const S = 512, c = cvs(S), g = c.getContext('2d');
+  g.fillStyle = '#b0b0b0'; g.fillRect(0, 0, S, S);
+  const hi = g.createRadialGradient(0.25*S, 0.45*S, 10, 0.25*S, 0.45*S, 0.20*S);
+  hi.addColorStop(0, 'rgba(120,120,120,1)');
+  hi.addColorStop(1, 'rgba(176,176,176,0)');
+  g.fillStyle = hi; g.fillRect(0, 0, S, S);
+  for (let i = 0; i < 3000; i++) {
+    const v = 150 + Math.random() * 105;
+    g.fillStyle = `rgb(${v},${v},${v})`;
+    g.fillRect(Math.random()*S, Math.random()*S, 2, 2);
+  }
+  return new THREE.CanvasTexture(c);
+}
+
+/* ============================================================================
+   MATERIALS
+   ========================================================================= */
+const skinMap      = makeSkinTexture();
+const skinRoughMap = makeSkinRoughness();
+
+const MAT = {
+  floor: new THREE.MeshStandardMaterial({
+    map: makeFloorTexture(), roughnessMap: makeFloorRoughness(),
+    roughness: 0.92, metalness: 0.04, envMapIntensity: 0.35
+  }),
+  wall:    new THREE.MeshStandardMaterial({
+    map: makeWallTexture(), color: 0xffffff,
+    roughness: 0.94, metalness: 0.0, envMapIntensity: 0.25
+  }),
+  ceiling: new THREE.MeshStandardMaterial({ color: 0x0c0e13, roughness: 1.0 }),
+
+  bedFrame: new THREE.MeshStandardMaterial({ color: 0x0b0c10, roughness: 0.68, metalness: 0.08, envMapIntensity: 0.5 }),
+  mattress: new THREE.MeshStandardMaterial({ color: 0x181b25, roughness: 0.95, metalness: 0.0 }),
+  blanket:  new THREE.MeshStandardMaterial({ color: 0x141824, roughness: 1.0,  metalness: 0.0 }),
+  pillow:   new THREE.MeshStandardMaterial({ color: 0x2a2e3a, roughness: 0.98, metalness: 0.0 }),
+
+  shelf:    new THREE.MeshStandardMaterial({ color: 0x0d0e12, roughness: 0.72, metalness: 0.10, envMapIntensity: 0.7 }),
+  dresser:  new THREE.MeshStandardMaterial({ color: 0x101217, roughness: 0.58, metalness: 0.18, envMapIntensity: 0.9 }),
+  wood:     new THREE.MeshStandardMaterial({ color: 0x2a1f16, roughness: 0.85, metalness: 0.02 }),
+
+  led: new THREE.MeshStandardMaterial({
+    color: 0x0a1a30, emissive: LED_BLUE, emissiveIntensity: 4.5,
+    roughness: 0.4, metalness: 0.0
+  }),
+  lampGlow: new THREE.MeshStandardMaterial({
+    color: 0x3a2a1a, emissive: WARM_LAMP, emissiveIntensity: 3.2, roughness: 0.6
+  }),
+
+  plant: new THREE.MeshStandardMaterial({ color: 0x1e3a24, roughness: 0.85 }),
+  pot:   new THREE.MeshStandardMaterial({ color: 0x2a1f1a, roughness: 0.9, metalness: 0.02 }),
+
+  skin: new THREE.MeshPhysicalMaterial({
+    map: skinMap, roughnessMap: skinRoughMap, color: 0xffffff,
+    roughness: 0.52, metalness: 0.0,
+    clearcoat: 0.20, clearcoatRoughness: 0.55,
+    sheen: 0.32, sheenColor: new THREE.Color(0xff9a6a), sheenRoughness: 0.85,
+    envMapIntensity: 0.85
+  }),
+
+  lips: new THREE.MeshPhysicalMaterial({
+    color: LIP_COLOR, roughness: 0.36, metalness: 0.0,
+    clearcoat: 0.80, clearcoatRoughness: 0.16,
+    sheen: 0.4, sheenColor: new THREE.Color(0xff8a70), sheenRoughness: 0.55,
+    envMapIntensity: 0.95
+  }),
+
+  tongue: new THREE.MeshPhysicalMaterial({
+    color: TONGUE_COL, roughness: 0.28, metalness: 0.0,
+    clearcoat: 0.70, clearcoatRoughness: 0.14,
+    sheen: 0.6, sheenColor: new THREE.Color(0xff9090), sheenRoughness: 0.48,
+    envMapIntensity: 0.75
+  }),
+
+  gum: new THREE.MeshPhysicalMaterial({
+    color: GUM_COLOR, roughness: 0.55, metalness: 0.0,
+    clearcoat: 0.35, clearcoatRoughness: 0.4
+  }),
+
+  tooth: new THREE.MeshPhysicalMaterial({
+    color: TOOTH_COLOR, roughness: 0.20, metalness: 0.0,
+    clearcoat: 1.0, clearcoatRoughness: 0.05,
+    envMapIntensity: 1.15
+  }),
+
+  mouthCavity: new THREE.MeshStandardMaterial({
+    color: 0x100405, roughness: 1.0, metalness: 0.0, side: THREE.DoubleSide
+  }),
+
+  hair: new THREE.MeshPhysicalMaterial({
+    color: HAIR_COLOR, roughness: 0.58, metalness: 0.08,
+    clearcoat: 0.35, clearcoatRoughness: 0.28,
+    sheen: 0.5, sheenColor: new THREE.Color(0x4a3a30), sheenRoughness: 0.72,
+    envMapIntensity: 1.0
+  }),
+
+  hoodie:     new THREE.MeshStandardMaterial({ color: HOODIE, roughness: 0.94, metalness: 0.0, envMapIntensity: 0.35 }),
+  hoodieDark: new THREE.MeshStandardMaterial({ color: 0x0a0b0d, roughness: 0.96 }),
+
+  eyeWhite: new THREE.MeshPhysicalMaterial({
+    color: 0xf3ece3, roughness: 0.14, metalness: 0.0,
+    clearcoat: 1.0, clearcoatRoughness: 0.04
+  }),
+  iris: new THREE.MeshPhysicalMaterial({
+    color: 0x4a2410, roughness: 0.22, metalness: 0.0,
+    clearcoat: 0.9, clearcoatRoughness: 0.08, envMapIntensity: 1.05
+  }),
+  pupil: new THREE.MeshStandardMaterial({ color: 0x050302, roughness: 0.10 }),
+  cornea: new THREE.MeshPhysicalMaterial({
+    color: 0xffffff, transparent: true, opacity: 0.07,
+    roughness: 0.02, metalness: 0.0,
+    clearcoat: 1.0, clearcoatRoughness: 0.02
+  }),
+
+  brow: new THREE.MeshStandardMaterial({ color: 0x0a0706, roughness: 0.78 }),
+  lash: new THREE.MeshStandardMaterial({ color: 0x080504, roughness: 0.72 }),
+
+  headphonePlastic: new THREE.MeshPhysicalMaterial({
+    color: 0x0a0b0d, roughness: 0.36, metalness: 0.28,
+    clearcoat: 0.6, clearcoatRoughness: 0.25, envMapIntensity: 1.05
+  }),
+  headphonePad: new THREE.MeshStandardMaterial({ color: 0x141414, roughness: 0.98, metalness: 0.0 }),
+
+  metal: new THREE.MeshStandardMaterial({
+    color: 0x1a1b1f, roughness: 0.28, metalness: 0.94, envMapIntensity: 1.2
+  }),
+  foam: new THREE.MeshStandardMaterial({ color: 0x0c0c10, roughness: 1.0 }),
+
+  chair: new THREE.MeshStandardMaterial({ color: 0x0a0b0e, roughness: 0.82, metalness: 0.05, envMapIntensity: 0.45 }),
+  chairAccent: new THREE.MeshStandardMaterial({ color: 0x121418, roughness: 0.68, metalness: 0.10 })
+};
+
+/* ============================================================================
+   ROOM BUILDER
+   ========================================================================= */
+function buildRoom() {
+  const room = new THREE.Group();
+
+  const fTex = MAT.floor.map; fTex.repeat.set(3, 4);
+  const fRgh = MAT.floor.roughnessMap; fRgh.repeat.set(3, 4);
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(7, 8), MAT.floor);
+  floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0, -1.5);
+  floor.receiveShadow = true; room.add(floor);
+
+  const wTex = MAT.wall.map; wTex.repeat.set(3, 2);
+  const back = new THREE.Mesh(new THREE.PlaneGeometry(7, 3.4), MAT.wall);
+  back.position.set(0, 1.7, -4.5); back.receiveShadow = true; room.add(back);
+
+  const wallSideMat = MAT.wall.clone();
+  const left = new THREE.Mesh(new THREE.PlaneGeometry(8, 3.4), wallSideMat);
+  left.rotation.y = Math.PI / 2; left.position.set(-3.5, 1.7, -0.5);
+  left.receiveShadow = true; room.add(left);
+
+  const right = new THREE.Mesh(new THREE.PlaneGeometry(8, 3.4), wallSideMat);
+  right.rotation.y = -Math.PI / 2; right.position.set(3.5, 1.7, -0.5);
+  right.receiveShadow = true; room.add(right);
+
+  const ceil = new THREE.Mesh(new THREE.PlaneGeometry(7, 8), MAT.ceiling);
+  ceil.rotation.x = Math.PI / 2; ceil.position.set(0, 3.4, -1.5); room.add(ceil);
+
+  // BED
+  const bedFrame = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.35, 2.0), MAT.bedFrame);
+  bedFrame.position.set(-1.95, 0.18, -3.1);
+  bedFrame.castShadow = bedFrame.receiveShadow = true; room.add(bedFrame);
+
+  const mattress = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.22, 1.95), MAT.mattress);
+  mattress.position.set(-1.95, 0.47, -3.1);
+  mattress.castShadow = mattress.receiveShadow = true; room.add(mattress);
+
+  const blanket = new THREE.Mesh(new THREE.BoxGeometry(1.88, 0.10, 1.5), MAT.blanket);
+  blanket.position.set(-1.95, 0.62, -3.0);
+  blanket.castShadow = blanket.receiveShadow = true; room.add(blanket);
+
+  for (let i = 0; i < 2; i++) {
+    const p = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.16, 0.42), MAT.pillow);
+    p.position.set(-2.35 + i*0.80, 0.68, -3.85);
+    p.rotation.y = (Math.random()-0.5) * 0.15;
+    p.castShadow = p.receiveShadow = true; room.add(p);
+  }
+
+  const headboard = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.75, 0.06), MAT.bedFrame);
+  headboard.position.set(-1.95, 0.75, -4.15);
+  headboard.castShadow = headboard.receiveShadow = true; room.add(headboard);
+
+  // LEDs
+  const ledBack = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.028, 0.03), MAT.led);
+  ledBack.position.set(-1.95, 1.20, -4.44); room.add(ledBack);
+
+  const ledBackGlow = new THREE.Mesh(
+    new THREE.BoxGeometry(2.35, 0.35, 0.02),
+    new THREE.MeshBasicMaterial({ color: LED_BLUE, transparent: true, opacity: 0.22,
+      depthWrite: false, blending: THREE.AdditiveBlending })
+  );
+  ledBackGlow.position.set(-1.95, 1.20, -4.43); room.add(ledBackGlow);
+
+  const ledRight = new THREE.Mesh(new THREE.BoxGeometry(0.028, 1.9, 0.03), MAT.led);
+  ledRight.position.set(3.42, 1.55, -1.6); room.add(ledRight);
+
+  const ledRightGlow = new THREE.Mesh(
+    new THREE.BoxGeometry(0.02, 2.1, 0.35),
+    new THREE.MeshBasicMaterial({ color: LED_BLUE, transparent: true, opacity: 0.18,
+      depthWrite: false, blending: THREE.AdditiveBlending })
+  );
+  ledRightGlow.position.set(3.41, 1.55, -1.6); room.add(ledRightGlow);
+
+  // BOOKSHELF
+  const shelfGroup = new THREE.Group();
+  shelfGroup.position.set(-3.28, 0, -2.0); room.add(shelfGroup);
+
+  const shelfW = 0.42, shelfD = 1.30, shelfH = 2.35;
+  for (const sx of [-1, 1]) {
+    const side = new THREE.Mesh(new THREE.BoxGeometry(0.04, shelfH, shelfD), MAT.shelf);
+    side.position.set(sx * 0.20, shelfH/2, 0);
+    side.castShadow = true; shelfGroup.add(side);
+  }
+  const shelfCount = 5;
+  for (let i = 0; i <= shelfCount; i++) {
+    const b = new THREE.Mesh(new THREE.BoxGeometry(shelfW, 0.035, shelfD), MAT.shelf);
+    b.position.set(0, (i/shelfCount)*shelfH, 0);
+    b.castShadow = b.receiveShadow = true; shelfGroup.add(b);
+  }
+
+  const bookMat = new THREE.MeshStandardMaterial({
+    map: makeBookSpineTexture(), roughness: 0.78, metalness: 0.02
+  });
+  for (let s = 0; s < shelfCount; s++) {
+    const y = (s/shelfCount)*shelfH + 0.10;
+    const count = 3 + Math.floor(Math.random()*4);
+    let z = -0.55;
+    for (let b = 0; b < count; b++) {
+      const w = 0.05 + Math.random()*0.06;
+      const h = 0.16 + Math.random()*0.08;
+      const bk = new THREE.Mesh(new THREE.BoxGeometry(0.20, h, w), bookMat);
+      bk.position.set(0.02, y + h/2, z + w/2);
+      bk.castShadow = true; shelfGroup.add(bk);
+      z += w + 0.006;
+    }
+  }
+
+  const lampBase = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.055, 0.09, 16), MAT.pot);
+  lampBase.position.set(0, 2.40, -0.40); shelfGroup.add(lampBase);
+  const lampShade = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.075, 0.10, 0.14, 20, 1, true), MAT.lampGlow
+  );
+  lampShade.position.set(0, 2.53, -0.40); shelfGroup.add(lampShade);
+
+  const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.045, 0.10, 12), MAT.pot);
+  pot.position.set(0, 1.52, 0.35); shelfGroup.add(pot);
+  for (let i = 0; i < 8; i++) {
+    const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.045 + Math.random()*0.02, 8, 6), MAT.plant);
+    leaf.position.set((Math.random()-0.5)*0.10, 1.62 + Math.random()*0.14, 0.35 + (Math.random()-0.5)*0.10);
+    leaf.scale.set(1, 1.35, 1); shelfGroup.add(leaf);
+  }
+
+  // DRESSER
+  const dresser = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.85, 0.55), MAT.dresser);
+  dresser.position.set(2.55, 0.425, -3.5);
+  dresser.castShadow = dresser.receiveShadow = true; room.add(dresser);
+
+  for (let i = 0; i < 3; i++) {
+    const b = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.055, 0.22), MAT.wood);
+    b.position.set(3.15, 0.88 + i*0.055, -3.5);
+    b.rotation.y = (Math.random()-0.5)*0.3;
+    b.castShadow = true; room.add(b);
+  }
+  const dpot = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.060, 0.13, 14), MAT.pot);
+  dpot.position.set(1.95, 0.915, -3.4); dpot.castShadow = true; room.add(dpot);
+  for (let i = 0; i < 8; i++) {
+    const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.05 + Math.random()*0.025, 8, 6), MAT.plant);
+    leaf.position.set(1.95 + (Math.random()-0.5)*0.14, 1.03 + Math.random()*0.16, -3.4 + (Math.random()-0.5)*0.14);
+    leaf.scale.set(1, 1.4, 1); room.add(leaf);
+  }
+
+  // POSTERS
+  const posters = [
+    { x: -0.55, y: 1.90, w: 0.72, h: 0.98, v: 0, r: -0.012 },
+    { x:  0.42, y: 1.95, w: 0.62, h: 0.85, v: 1, r:  0.010 },
+    { x:  0.42, y: 1.00, w: 0.62, h: 0.85, v: 2, r:  0.008 },
+    { x:  1.20, y: 1.90, w: 0.58, h: 0.78, v: 0, r: -0.010 }
+  ];
+  for (const p of posters) {
+    const mat = new THREE.MeshStandardMaterial({
+      map: makePosterTexture(p.v), roughness: 0.62, metalness: 0.05, envMapIntensity: 0.5
+    });
+    const poster = new THREE.Mesh(new THREE.PlaneGeometry(p.w, p.h), mat);
+    poster.position.set(p.x, p.y, -4.485); poster.rotation.z = p.r;
+    room.add(poster);
+
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(p.w + 0.035, p.h + 0.035, 0.014), MAT.shelf);
+    frame.position.set(p.x, p.y, -4.492); frame.rotation.z = p.r;
+    room.add(frame);
+  }
+
+  // CHAIR
+  const chairBack = new THREE.Mesh(new THREE.BoxGeometry(0.70, 0.86, 0.12), MAT.chair);
+  chairBack.position.set(0, 1.05, -0.55);
+  chairBack.rotation.x = -0.08;
+  chairBack.castShadow = chairBack.receiveShadow = true; room.add(chairBack);
+
+  const headrest = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.20, 0.11), MAT.chairAccent);
+  headrest.position.set(0, 1.56, -0.53);
+  headrest.rotation.x = -0.08;
+  headrest.castShadow = true; room.add(headrest);
+
+  for (const sx of [-1, 1]) {
+    const wing = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.50, 0.18), MAT.chairAccent);
+    wing.position.set(sx * 0.44, 1.50, -0.47);
+    wing.rotation.z = sx * 0.10;
+    wing.castShadow = true; room.add(wing);
+  }
+
+  return room;
+}
+scene.add(buildRoom());
+
+/* ============================================================================
+   HEAD SCULPT
+   ========================================================================= */
+function sculptHeadGeometry() {
+  const geo = new THREE.SphereGeometry(0.5, 128, 96);
+  const pos = geo.attributes.position;
+  const N = pos.count;
+
+  for (let i = 0; i < N; i++) {
+    let x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+
+    x *= 0.82; y *= 1.16; z *= 0.98;
+    if (z < 0) z *= 0.95;
+    if (z > 0.18) z = 0.18 + (z - 0.18) * 0.45;
+
+    if (y < -0.02) {
+      const t = Math.min(1, (-0.02 - y) / 0.52);
+      const taper = 1 - 0.52 * t * t;
+      x *= taper;
+      if (z < 0.05) z += 0.055 * t * t * Math.abs(x) * 8;
+    }
+
+    {
+      const d = Math.hypot(x / 0.12, (y - (-0.36)) / 0.13);
+      if (d < 1 && z > 0.12) {
+        const f = (1 - d) * (1 - d);
+        z += 0.070 * f;
+        y -= 0.020 * f;
+      }
+    }
+
+    for (const sx of [-1, 1]) {
+      const d = Math.hypot((x - sx*0.17) / 0.14, (y - (-0.03)) / 0.11);
+      if (d < 1 && z > 0.05) {
+        const f = (1 - d) * (1 - d);
+        z += 0.032 * f;
+        x += sx * 0.022 * f;
+      }
+    }
+
+    {
+      const d = Math.hypot((y - 0.13) / 0.050, x / 0.28);
+      if (d < 1 && z > 0.18) {
+        const f = (1 - d) * (1 - d);
+        z += 0.030 * f;
+      }
+    }
+
+    for (const sx of [-1, 1]) {
+      const d = Math.hypot((x - sx*0.110) / 0.048, (y - 0.050) / 0.038);
+      if (d < 1 && z > 0.18) {
+        const f = (1 - d) * (1 - d);
+        z -= 0.028 * f;
+      }
+    }
+
+    if (Math.abs(x) < 0.055 && y > -0.22 && y < 0.16 && z > 0.22) {
+      const ridge = 1 - Math.abs(x) / 0.055;
+      const vf    = 1 - Math.abs(y - (-0.02)) / 0.20;
+      z += 0.038 * ridge * vf;
+    }
+
+    {
+      const d = Math.hypot(x / 0.14, (y - (-0.21)) / 0.075);
+      if (d < 1 && z > 0.16) {
+        const f = (1 - d) * (1 - d);
+        z -= 0.022 * f;
+      }
+    }
+
+    for (const sx of [-1, 1]) {
+      const d = Math.hypot((x - sx*0.27) / 0.10, (y - 0.19) / 0.11);
+      if (d < 1 && z > 0.0) {
+        const f = (1 - d) * (1 - d);
+        z -= 0.015 * f;
+        x -= sx * 0.010 * f;
+      }
+    }
+
+    if (y < -0.46) {
+      const t = Math.min(1, (-0.46 - y) / 0.14);
+      z *= 1 - 0.34 * t;
+      x *= 1 - 0.30 * t;
+    }
+
+    pos.setXYZ(i, x, y, z);
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/* ============================================================================
+   TOOTH ROW
+   ========================================================================= */
+function buildToothRow(y, z, isUpper, radius = 0.070) {
+  const group = new THREE.Group();
+  const count = 9;
+  for (let i = 0; i < count; i++) {
+    const a = (-0.5 + i/(count - 1)) * Math.PI * 1.15;
+    const w = 0.016, h = isUpper ? 0.022 : 0.018, d = 0.012;
+    const tooth = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), MAT.tooth);
+    tooth.position.set(
+      Math.sin(a) * radius,
+      y + Math.cos(a) * 0.004,
+      z - Math.cos(a) * 0.018
+    );
+    tooth.rotation.y = -a * 0.6;
+    group.add(tooth);
+  }
+  return group;
+}
+
+/* ============================================================================
+   CHARACTER BUILDER
+   ========================================================================= */
+function buildCharacter() {
+  const root = new THREE.Group();
+
+  // ============ BODY ============
+  const body = new THREE.Group();
+  root.add(body);
+
+  const torso = new THREE.Mesh(
+    new THREE.CapsuleGeometry(0.200, 0.34, 10, 32),
+    MAT.hoodie
+  );
+  torso.position.set(0, 1.10, 0);
+  torso.scale.set(1.05, 1.0, 0.70);
+  torso.castShadow = torso.receiveShadow = true;
+  body.add(torso);
+
+  for (const sx of [-1, 1]) {
+    const sh = new THREE.Mesh(new THREE.SphereGeometry(0.120, 22, 18), MAT.hoodie);
+    sh.position.set(sx * 0.175, 1.38, 0);
+    sh.scale.set(1.05, 0.88, 0.88);
+    sh.castShadow = true;
+    body.add(sh);
+  }
+
+  for (const sx of [-1, 1]) {
+    const arm = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.080, 0.26, 8, 18),
+      MAT.hoodie
+    );
+    arm.position.set(sx * 0.225, 1.16, 0.02);
+    arm.rotation.z = sx * 0.12;
+    arm.rotation.x = 0.16;
+    arm.castShadow = true;
+    body.add(arm);
+  }
+
+  const hood = new THREE.Mesh(
+    new THREE.TorusGeometry(0.135, 0.058, 16, 32, Math.PI * 1.2),
+    MAT.hoodieDark
+  );
+  hood.position.set(0, 1.42, -0.08);
+  hood.rotation.x = Math.PI * 0.55;
+  hood.rotation.z = Math.PI * 0.40;
+  hood.castShadow = true;
+  body.add(hood);
+
+  const pocket = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.10, 0.03), MAT.hoodieDark);
+  pocket.position.set(0, 0.90, 0.145);
+  body.add(pocket);
+
+  for (const sx of [-1, 1]) {
+    const s = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.0045, 0.0045, 0.16, 6),
+      new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.9 })
+    );
+    s.position.set(sx * 0.045, 1.30, 0.150);
+    s.rotation.z = sx * 0.06;
+    body.add(s);
+
+    const tip = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.007, 0.007, 0.014, 6),
+      MAT.metal
+    );
+    tip.position.set(sx * 0.045, 1.215, 0.150);
+    body.add(tip);
+  }
+
+  const neck = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.062, 0.078, 0.18, 26),
+    MAT.skin
+  );
+  neck.position.set(0, 1.47, -0.01);
+  neck.castShadow = true;
+  body.add(neck);
+
+  const traps = new THREE.Mesh(new THREE.SphereGeometry(0.14, 22, 18), MAT.skin);
+  traps.scale.set(1.55, 0.36, 0.88);
+  traps.position.set(0, 1.40, -0.02);
+  traps.castShadow = true;
+  body.add(traps);
+
+  // ============ HEAD ============
+  const headGroup = new THREE.Group();
+  headGroup.position.set(0, HEAD_Y, 0);
+  headGroup.scale.setScalar(HEAD_SCALE);
+  root.add(headGroup);
+
+  const head = new THREE.Mesh(sculptHeadGeometry(), MAT.skin);
+  head.castShadow = head.receiveShadow = true;
+  headGroup.add(head);
+
+  for (const sx of [-1, 1]) {
+    const earGroup = new THREE.Group();
+    earGroup.position.set(sx * 0.400, 0.005, -0.03);
+    earGroup.rotation.y = sx * 0.22;
+    earGroup.rotation.z = sx * -0.10;
+    headGroup.add(earGroup);
+
+    const helix = new THREE.Mesh(
+      new THREE.TorusGeometry(0.042, 0.008, 10, 22, Math.PI * 1.5),
+      MAT.skin
+    );
+    helix.rotation.y = Math.PI / 2;
+    helix.rotation.z = sx * 0.6;
+    helix.scale.set(1, 1.15, 0.55);
+    helix.castShadow = true;
+    earGroup.add(helix);
+
+    const lobe = new THREE.Mesh(new THREE.SphereGeometry(0.022, 12, 10), MAT.skin);
+    lobe.scale.set(1, 0.80, 0.50);
+    lobe.position.set(0, -0.042, 0);
+    earGroup.add(lobe);
+
+    const inner = new THREE.Mesh(
+      new THREE.SphereGeometry(0.020, 12, 10),
+      new THREE.MeshStandardMaterial({ color: SKIN_DEEP, roughness: 0.72 })
+    );
+    inner.scale.set(0.6, 1.1, 0.35);
+    inner.position.set(-sx * 0.010, -0.005, 0.005);
+    earGroup.add(inner);
+  }
+
+  // Nose
+  const bridge = new THREE.Mesh(new THREE.CapsuleGeometry(0.018, 0.11, 6, 14), MAT.skin);
+  bridge.position.set(0, -0.020, 0.318);
+  bridge.rotation.x = 0.22;
+  bridge.scale.set(0.75, 1, 0.85);
+  bridge.castShadow = true;
+  headGroup.add(bridge);
+
+  const noseTip = new THREE.Mesh(new THREE.SphereGeometry(0.028, 22, 18), MAT.skin);
+  noseTip.scale.set(1.10, 0.82, 1.25);
+  noseTip.position.set(0, -0.100, 0.335);
+  noseTip.castShadow = true;
+  headGroup.add(noseTip);
+
+  for (const sx of [-1, 1]) {
+    const wing = new THREE.Mesh(new THREE.SphereGeometry(0.020, 16, 14), MAT.skin);
+    wing.scale.set(1, 0.85, 1.05);
+    wing.position.set(sx * 0.025, -0.105, 0.320);
+    wing.castShadow = true;
+    headGroup.add(wing);
+
+    const nostril = new THREE.Mesh(
+      new THREE.SphereGeometry(0.009, 10, 8),
+      new THREE.MeshStandardMaterial({ color: 0x150606, roughness: 0.95 })
+    );
+    nostril.scale.set(0.72, 0.82, 1.10);
+    nostril.position.set(sx * 0.025, -0.113, 0.322);
+    headGroup.add(nostril);
+  }
+
+  // Eyes
+  const eyes = [];
+  for (const sx of [-1, 1]) {
+    const eyeGroup = new THREE.Group();
+    eyeGroup.position.set(sx * 0.110, 0.050, 0.275);
+    headGroup.add(eyeGroup);
+
+    const sclera = new THREE.Mesh(new THREE.SphereGeometry(0.045, 28, 22), MAT.eyeWhite);
+    sclera.scale.set(1.0, 1.0, 0.92);
+    eyeGroup.add(sclera);
+
+    const iris = new THREE.Mesh(new THREE.SphereGeometry(0.024, 24, 18), MAT.iris);
+    iris.position.set(0, 0, 0.026);
+    iris.scale.set(1, 1, 0.60);
+    eyeGroup.add(iris);
+
+    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.011, 18, 14), MAT.pupil);
+    pupil.position.set(0, 0, 0.038);
+    pupil.scale.set(1, 1, 0.5);
+    eyeGroup.add(pupil);
+
+    const cornea = new THREE.Mesh(new THREE.SphereGeometry(0.047, 24, 18), MAT.cornea);
+    cornea.scale.set(0.98, 1.02, 0.92);
+    eyeGroup.add(cornea);
+
+    const h1 = new THREE.Mesh(
+      new THREE.SphereGeometry(0.0055, 8, 6),
+      new THREE.MeshBasicMaterial({ color: 0xffffff })
+    );
+    h1.position.set(-sx * 0.008, 0.012, 0.045);
+    eyeGroup.add(h1);
+
+    const h2 = new THREE.Mesh(
+      new THREE.SphereGeometry(0.0030, 8, 6),
+      new THREE.MeshBasicMaterial({ color: 0xffffff })
+    );
+    h2.position.set(sx * 0.010, -0.008, 0.043);
+    eyeGroup.add(h2);
+
+    eyes.push({ sclera, iris, pupil, cornea });
+  }
+
+  // Brows + lashes
+  for (const sx of [-1, 1]) {
+    const brow = new THREE.Mesh(new THREE.BoxGeometry(0.095, 0.014, 0.018), MAT.brow);
+    brow.position.set(sx * 0.110, 0.130, 0.290);
+    brow.rotation.z = sx * 0.14;
+    brow.rotation.x = -0.10;
+    brow.castShadow = true;
+    headGroup.add(brow);
+
+    const lash = new THREE.Mesh(new THREE.BoxGeometry(0.086, 0.008, 0.014), MAT.lash);
+    lash.position.set(sx * 0.108, 0.088, 0.288);
+    lash.rotation.z = sx * 0.05;
+    headGroup.add(lash);
+  }
+
+  // Hair
+  const hairGeo = new THREE.SphereGeometry(0.5, 84, 60, 0, Math.PI * 2, 0, Math.PI * 0.48);
+  {
+    const hp = hairGeo.attributes.position;
+    for (let i = 0; i < hp.count; i++) {
+      let x = hp.getX(i), y = hp.getY(i), z = hp.getZ(i);
+      x *= 0.82 * 1.020;
+      y *= 1.16 * 1.020;
+      z *= 0.98 * 1.020;
+      if (z < 0) z *= 0.95;
+      if (z > 0.18) z = 0.18 + (z - 0.18) * 0.45;
+      if (z > 0.24 && y < 0.30) z *= 0.90;
+      if (Math.abs(x) > 0.26 && y < 0.18) y -= 0.05;
+      hp.setXYZ(i, x, y, z);
+    }
+    hairGeo.computeVertexNormals();
+  }
+  const hair = new THREE.Mesh(hairGeo, MAT.hair);
+  hair.castShadow = true;
+  headGroup.add(hair);
+
+  for (const sx of [-1, 1]) {
+    const sideburn = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.070, 0.020), MAT.hair);
+    sideburn.position.set(sx * 0.328, 0.020, 0.100);
+    sideburn.rotation.y = sx * 0.15;
+    sideburn.castShadow = true;
+    headGroup.add(sideburn);
+  }
+
+  // MOUTH RIG
+  const cavity = new THREE.Mesh(
+    new THREE.SphereGeometry(0.072, 28, 22),
+    MAT.mouthCavity
+  );
+  cavity.scale.set(1.10, 1.05, 0.55);
+  cavity.position.set(0, -0.210, 0.240);
+  cavity.renderOrder = -1;
+  headGroup.add(cavity);
+
+  const upperGum = new THREE.Mesh(
+    new THREE.TorusGeometry(0.072, 0.012, 10, 26, Math.PI * 1.30),
+    MAT.gum
+  );
+  upperGum.rotation.x = Math.PI / 2;
+  upperGum.rotation.z = Math.PI / 2;
+  upperGum.position.set(0, -0.185, 0.270);
+  upperGum.scale.set(1, 1, 0.75);
+  headGroup.add(upperGum);
+
+  const upperTeeth = buildToothRow(-0.182, 0.288, true, 0.070);
+  headGroup.add(upperTeeth);
+
+  const upperLipCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(-0.058, -0.192, 0.290),
+    new THREE.Vector3(-0.030, -0.178, 0.315),
+    new THREE.Vector3( 0.000, -0.176, 0.322),
+    new THREE.Vector3( 0.030, -0.178, 0.315),
+    new THREE.Vector3( 0.058, -0.192, 0.290)
+  ]);
+  const upperLip = new THREE.Mesh(
+    new THREE.TubeGeometry(upperLipCurve, 40, 0.0115, 12, false),
+    MAT.lips
+  );
+  upperLip.castShadow = true;
+  headGroup.add(upperLip);
+
+  const philtrum = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.022, 0.010), MAT.skin);
+  philtrum.position.set(0, -0.165, 0.310);
+  headGroup.add(philtrum);
+
+  // JAW GROUP
+  const PIVOT = new THREE.Vector3(0, -0.02, -0.10);
+  const jawGroup = new THREE.Group();
+  jawGroup.position.copy(PIVOT);
+  headGroup.add(jawGroup);
+
+  const inJaw = (obj, worldPos) => {
+    obj.position.copy(worldPos).sub(PIVOT);
+    jawGroup.add(obj);
+    return obj;
+  };
+
+  const lowerLipCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(-0.056, -0.212, 0.288),
+    new THREE.Vector3(-0.028, -0.228, 0.314),
+    new THREE.Vector3( 0.000, -0.232, 0.320),
+    new THREE.Vector3( 0.028, -0.228, 0.314),
+    new THREE.Vector3( 0.056, -0.212, 0.288)
+  ]);
+  const lowerLip = new THREE.Mesh(
+    new THREE.TubeGeometry(lowerLipCurve, 40, 0.0135, 12, false),
+    MAT.lips
+  );
+  lowerLip.castShadow = true;
+  lowerLip.geometry.translate(-PIVOT.x, -PIVOT.y, -PIVOT.z);
+  jawGroup.add(lowerLip);
+
+  const lowerGum = new THREE.Mesh(
+    new THREE.TorusGeometry(0.070, 0.011, 10, 26, Math.PI * 1.30),
+    MAT.gum
+  );
+  lowerGum.rotation.x = -Math.PI / 2;
+  lowerGum.rotation.z = Math.PI / 2;
+  lowerGum.scale.set(1, 1, 0.75);
+  inJaw(lowerGum, new THREE.Vector3(0, -0.230, 0.268));
+
+  const lowerTeeth = buildToothRow(-0.232, 0.288, false, 0.068);
+  lowerTeeth.position.sub(PIVOT);
+  jawGroup.add(lowerTeeth);
+
+  const chin = new THREE.Mesh(new THREE.SphereGeometry(0.072, 24, 18), MAT.skin);
+  chin.scale.set(1.00, 0.88, 0.74);
+  chin.castShadow = true;
+  inJaw(chin, new THREE.Vector3(0, -0.290, 0.245));
+
+  // TONGUE
+  const tongueGroup = new THREE.Group();
+  tongueGroup.position.set(0, -0.214, 0.222).sub(PIVOT);
+  jawGroup.add(tongueGroup);
+
+  const tongue = new THREE.Mesh(new THREE.SphereGeometry(0.030, 26, 20), MAT.tongue);
+  tongue.scale.set(1.65, 0.32, 1.45);
+  tongue.position.set(0, 0, 0.016);
+  tongue.castShadow = true;
+  tongueGroup.add(tongue);
+
+  const tongueTip = new THREE.Mesh(new THREE.SphereGeometry(0.020, 20, 16), MAT.tongue);
+  tongueTip.scale.set(1.15, 0.42, 1.30);
+  tongueTip.position.set(0, 0.002, 0.050);
+  tongueGroup.add(tongueTip);
+
+  const tongueRoot = new THREE.Mesh(new THREE.SphereGeometry(0.024, 18, 14), MAT.tongue);
+  tongueRoot.scale.set(1.40, 0.50, 1.20);
+  tongueRoot.position.set(0, -0.004, -0.030);
+  tongueGroup.add(tongueRoot);
+
+  // HEADPHONES
+  const headband = new THREE.Mesh(
+    new THREE.TorusGeometry(0.375, 0.024, 16, 48, Math.PI),
+    MAT.headphonePlastic
+  );
+  headband.rotation.x = Math.PI / 2;
+  headband.rotation.z = Math.PI / 2;
+  headband.position.set(0, 0.062, -0.010);
+  headband.castShadow = true;
+  headGroup.add(headband);
+
+  const bandPad = new THREE.Mesh(
+    new THREE.TorusGeometry(0.375, 0.026, 12, 40, Math.PI * 0.42),
+    MAT.headphonePad
+  );
+  bandPad.rotation.x = Math.PI / 2;
+  bandPad.rotation.z = Math.PI / 2 - Math.PI * 0.21;
+  bandPad.position.set(0, 0.062, -0.010);
+  bandPad.scale.set(1, 1, 0.55);
+  headGroup.add(bandPad);
+
+  for (const sx of [-1, 1]) {
+    const cup = new THREE.Group();
+    cup.position.set(sx * 0.415, -0.008, 0.012);
+    headGroup.add(cup);
+
+    const housing = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.105, 0.105, 0.058, 36),
+      MAT.headphonePlastic
+    );
+    housing.rotation.z = Math.PI / 2;
+    housing.castShadow = true;
+    cup.add(housing);
+
+    const trim = new THREE.Mesh(new THREE.TorusGeometry(0.101, 0.005, 10, 36), MAT.metal);
+    trim.rotation.y = Math.PI / 2;
+    trim.position.x = -sx * 0.030;
+    cup.add(trim);
+
+    const pad = new THREE.Mesh(new THREE.TorusGeometry(0.088, 0.023, 14, 36), MAT.headphonePad);
+    pad.rotation.y = Math.PI / 2;
+    pad.position.x = -sx * 0.031;
+    cup.add(pad);
+
+    const padFace = new THREE.Mesh(new THREE.CircleGeometry(0.086, 32), MAT.headphonePad);
+    padFace.rotation.y = -sx * Math.PI / 2;
+    padFace.position.x = -sx * 0.033;
+    cup.add(padFace);
+
+    const arm = new THREE.Mesh(
+      new THREE.BoxGeometry(0.036, 0.046, 0.100),
+      MAT.headphonePlastic
+    );
+    arm.position.set(0, 0.112, -0.012);
+    cup.add(arm);
+
+    const nub = new THREE.Mesh(new THREE.SphereGeometry(0.013, 12, 10), MAT.metal);
+    nub.position.set(0, 0.090, -0.012);
+    cup.add(nub);
+  }
+
+  const cableCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0.415, -0.10, 0.02),
+    new THREE.Vector3(0.38, -0.28, 0.10),
+    new THREE.Vector3(0.32, -0.44, 0.13),
+    new THREE.Vector3(0.26, -0.56, 0.14),
+    new THREE.Vector3(0.22, -0.66, 0.14)
+  ]);
+  const cable = new THREE.Mesh(
+    new THREE.TubeGeometry(cableCurve, 40, 0.0045, 8, false),
+    new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.85 })
+  );
+  cable.castShadow = true;
+  headGroup.add(cable);
+
+  // MIC ON BOOM ARM
+  const micGroup = new THREE.Group();
+  root.add(micGroup);
+
+  const boomStart = new THREE.Vector3(0.68, 0.85, 0.10);
+  const boomEnd   = new THREE.Vector3(0.10, 1.36, 0.40);
+  const boomDir   = boomEnd.clone().sub(boomStart);
+  const boomLen   = boomDir.length();
+
+  const boom = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.010, 0.010, boomLen, 14),
+    MAT.metal
+  );
+  boom.position.copy(boomStart).add(boomEnd).multiplyScalar(0.5);
+  boom.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), boomDir.clone().normalize());
+  boom.castShadow = true;
+  micGroup.add(boom);
+
+  const joint = new THREE.Mesh(new THREE.SphereGeometry(0.024, 16, 12), MAT.metal);
+  joint.position.copy(boomStart).lerp(boomEnd, 0.42);
+  micGroup.add(joint);
+
+  const joint2 = new THREE.Mesh(new THREE.SphereGeometry(0.018, 12, 10), MAT.metal);
+  joint2.position.copy(boomStart).lerp(boomEnd, 0.75);
+  micGroup.add(joint2);
+
+  const mountRing = new THREE.Mesh(
+    new THREE.TorusGeometry(0.052, 0.006, 10, 32),
+    MAT.metal
+  );
+  mountRing.position.copy(boomEnd);
+  mountRing.rotation.x = Math.PI / 2.2;
+  micGroup.add(mountRing);
+
+  const micBody = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.034, 0.034, 0.18, 32),
+    new THREE.MeshStandardMaterial({
+      color: 0x1a1b1f, roughness: 0.30, metalness: 0.80, envMapIntensity: 1.2
+    })
+  );
+  micBody.position.set(boomEnd.x, boomEnd.y + 0.030, boomEnd.z + 0.045);
+  micBody.rotation.x = -0.40;
+  micBody.castShadow = true;
+  micGroup.add(micBody);
+
+  const windscreen = new THREE.Mesh(new THREE.SphereGeometry(0.048, 28, 22), MAT.foam);
+  windscreen.scale.set(1, 1.30, 1);
+  windscreen.position.set(boomEnd.x, boomEnd.y + 0.130, boomEnd.z + 0.085);
+  windscreen.castShadow = true;
+  micGroup.add(windscreen);
+
+  return {
+    root, headGroup, head, body, neck, torso,
+    jawGroup, upperLip, lowerLip,
+    tongueGroup, tongue, tongueTip,
+    eyes, PIVOT
+  };
+}
+
+const character = buildCharacter();
+scene.add(character.root);
+
+/* ============================================================================
+   SPEECH ANALYZER — driven by remote boundary events from the control page
+   ========================================================================= */
+const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
+
+class SpeechAnalyzer {
+  constructor() {
+    this.speaking = false; this.time = 0;
+    this.amplitude = 0; this.bands = [0, 0, 0, 0];
+    this.impulse = 0; this.wiggle = 0;
+  }
+  start() { if (!this.speaking) { this.speaking = true; this.time = 0; } }
+  end()   { this.speaking = false; }
+  pulse(s = 0.7) { this.impulse = Math.min(1.2, this.impulse + s); }
+
+  update(dt) {
+    this.time += dt;
+    const t = this.time;
+
+    let env = 0;
+    if (this.speaking) {
+      const e = 0.42
+              + 0.30 * Math.sin(t * 8.10)
+              + 0.18 * Math.sin(t * 13.70 + 1.3)
+              + 0.11 * Math.sin(t * 21.90 + 2.7);
+      const gate = 0.62 + 0.38 * Math.sin(t * 5.10 + 0.9);
+      env = clamp01(e) * gate + this.impulse * 0.45;
+    }
+    this.impulse = Math.max(0, this.impulse - dt * 6.0);
+
+    const ampRate = this.speaking ? 18 : 30;
+    this.amplitude = THREE.MathUtils.lerp(
+      this.amplitude, clamp01(env), 1 - Math.exp(-ampRate * dt)
+    );
+
+    const rawBands = [
+      0.5 + 0.5 * Math.sin(t * 3.10 + 0.4),
+      0.5 + 0.5 * Math.sin(t * 7.70 + 2.2),
+      0.5 + 0.5 * Math.sin(t * 11.3 + 4.1),
+      0.5 + 0.5 * Math.sin(t * 5.50 + 5.6)
+    ];
+    for (let i = 0; i < 4; i++) {
+      this.bands[i] = THREE.MathUtils.lerp(
+        this.bands[i], rawBands[i] * this.amplitude,
+        1 - Math.exp(-10 * dt)
+      );
+    }
+    this.wiggle = Math.sin(t * 11.5) * this.amplitude * 0.35;
+  }
+}
+const analyzer = new SpeechAnalyzer();
+
+/* ============================================================================
+   LIP-SYNC + IDLE
+   ========================================================================= */
+const smooth = {
+  jaw: 0, tongueZ: 0, tongueY: 0, tongueX: 0,
+  lipSpread: 0, lipRound: 0
+};
+let blinkTimer = 1.5 + Math.random() * 2.5;
+let blinkPhase = -1;
+const BLINK_DURATION = 0.15;
+
+const expLerp = (c, t, r, dt) => THREE.MathUtils.lerp(c, t, 1 - Math.exp(-r * dt));
+
+function updateFace(dt) {
+  const amp = analyzer.amplitude;
+  const [oB, eB, iB, uB] = analyzer.bands;
+
+  const targetJaw = amp * 0.30;
+  smooth.jaw = expLerp(smooth.jaw, targetJaw, amp > smooth.jaw ? 30 : 18, dt);
+  character.jawGroup.rotation.x = smooth.jaw;
+
+  const spread  = iB * 0.35 + eB * 0.20;
+  const rounded = oB * 0.35 + uB * 0.30;
+  smooth.lipSpread = expLerp(smooth.lipSpread, spread,  14, dt);
+  smooth.lipRound  = expLerp(smooth.lipRound,  rounded, 14, dt);
+
+  const lipSX = 1 + smooth.lipSpread * 0.06 - smooth.lipRound * 0.05;
+  const lipSY = 1 + smooth.lipRound  * 0.18 - smooth.lipSpread * 0.05;
+  character.upperLip.scale.set(lipSX, lipSY, 1);
+  character.lowerLip.scale.set(lipSX, lipSY, 1);
+
+  const tongueForward = amp * 0.030;
+  const tongueLift    = (iB * 0.22 + eB * 0.16) * 0.050;
+  const tongueSide    = analyzer.wiggle * 0.018;
+
+  smooth.tongueZ = expLerp(smooth.tongueZ, tongueForward, 22, dt);
+  smooth.tongueY = expLerp(smooth.tongueY, tongueLift,    20, dt);
+  smooth.tongueX = expLerp(smooth.tongueX, tongueSide,    28, dt);
+
+  character.tongueGroup.position.z = (0.222 - character.PIVOT.z) + smooth.tongueZ;
+  character.tongueGroup.position.y = (-0.214 - character.PIVOT.y) + smooth.tongueY;
+  character.tongueGroup.rotation.y = smooth.tongueX * 2.5;
+  character.tongueGroup.rotation.x = -0.14 - smooth.tongueY * 1.2;
+  character.tongueTip.position.x   = smooth.tongueX * 1.5;
+
+  let blinkW = 0;
+  if (blinkPhase >= 0) {
+    blinkPhase += dt;
+    const p = blinkPhase / BLINK_DURATION;
+    blinkW = p < 1 ? Math.sin(p * Math.PI) : 0;
+    if (p >= 1) { blinkPhase = -1; blinkTimer = 1.8 + Math.random() * 3.4; }
+  } else {
+    blinkTimer -= dt;
+    if (blinkTimer <= 0) blinkPhase = 0;
+  }
+
+  for (const e of character.eyes) {
+    const s = 1 - blinkW * 0.92;
+    e.sclera.scale.set(1.0, s, 0.92);
+    e.iris.scale.set(1, s, 0.60);
+    e.pupil.scale.set(1, s, 0.50);
+    e.cornea.scale.set(0.98, s * 1.02, 0.92);
+  }
+}
+
+/* ============================================================================
+   BROADCAST LISTENER — the only input to this page
+   ========================================================================= */
+const channel = new BroadcastChannel('avatar-speech');
+
+channel.onmessage = (e) => {
+  const msg = e.data;
+  if (!msg || !msg.type) return;
+
+  if (msg.type === 'start') {
+    analyzer.start();
+  } else if (msg.type === 'boundary') {
+    analyzer.pulse(0.72);
+  } else if (msg.type === 'end') {
+    analyzer.end();
+  }
+};
+
+// Tell the control page we're alive
+channel.postMessage({ type: 'stage-ready' });
+
+/* ============================================================================
+   ANIMATION LOOP
+   ========================================================================= */
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t  = clock.elapsedTime;
+
+  analyzer.update(dt);
+  updateFace(dt);
+
+  character.headGroup.rotation.y = Math.sin(t * 0.65) * 0.022;
+  character.headGroup.rotation.x = Math.sin(t * 1.10) * 0.010;
+  character.headGroup.rotation.z = Math.sin(t * 0.87) * 0.008;
+
+  const breath = 1 + Math.sin(t * 1.6) * 0.006;
+  character.torso.scale.set(1.05, breath, 0.70);
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>

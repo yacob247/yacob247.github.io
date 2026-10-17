@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Vlog: Forest of Evidence - PBR HTML</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Courier New', Courier, monospace; }
+        canvas { display: block; }
+        
+        /* VLOG UI OVERLAY */
+        #vlog-ui {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; display: none; box-sizing: border-box; padding: 20px;
+            border: 4px solid rgba(255, 255, 255, 0.2); border-radius: 10px;
+        }
+        #rec-dot {
+            width: 15px; height: 15px; background-color: red; border-radius: 50%;
+            display: inline-block; animation: blink 1s infinite; margin-right: 10px;
+        }
+        #vlog-text { color: white; font-weight: bold; text-shadow: 1px 1px 2px black; }
+        #facecam {
+            position: absolute; bottom: 20px; right: 20px; width: 250px; height: 150px;
+            background-color: #111; border: 2px solid #333; display: flex;
+            justify-content: center; align-items: center; color: #555;
+        }
+        #chat-box {
+            position: absolute; bottom: 20px; left: 20px; width: 300px; height: 150px;
+            background-color: rgba(0,0,0,0.5); color: #0f0; padding: 10px; font-size: 12px;
+            overflow: hidden; border: 1px solid #0f0;
+        }
+        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0; } 100% { opacity: 1; } }
+
+        /* CROSSHAIR */
+        #crosshair {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            color: white; font-size: 24px; pointer-events: none; text-shadow: 0 0 5px black;
+        }
+
+        /* INSTRUCTIONS */
+        #instructions {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            color: white; text-align: center; background: rgba(0,0,0,0.8); padding: 20px;
+            border-radius: 10px; cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="instructions">
+        <h1>THE VLOG: FOREST OF EVIDENCE</h1>
+        <p>Click to Start</p>
+        <p style="font-size: 12px; color: #aaa;">WASD: Move | Mouse: Look | E: Interact | F: UV Light | V: Toggle Vlog</p>
+    </div>
+
+    <div id="crosshair" style="display: none;">+</div>
+
+    <div id="vlog-ui">
+        <div id="vlog-text"><span id="rec-dot"></span>REC [4K 60FPS]</div>
+        <div id="facecam">FACE CAMERA</div>
+        <div id="chat-box">
+            <div>[Mod] Stay safe out there!</div>
+            <div>[User1] Did you hear that?</div>
+            <div>[User2] The house looks creepy...</div>
+        </div>
+    </div>
+
+    <!-- Import Three.js and Physics -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+
+        // --- 1. ENGINE SETUP (PBR RENDERING) ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x111111); // Dark forest night
+        scene.fog = new THREE.FogExp2(0x111111, 0.02);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true; // Realistic PBR Shadows
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.0;
+        document.body.appendChild(renderer.domElement);
+
+        // --- 2. LIGHTING ---
+        const ambientLight = new THREE.AmbientLight(0x404040, 0.5); // Dim moonlight
+        scene.add(ambientLight);
+
+        const moonLight = new THREE.DirectionalLight(0xaaccff, 1.5);
+        moonLight.position.set(10, 20, 10);
+        moonLight.castShadow = true;
+        moonLight.shadow.mapSize.width = 2048;
+        moonLight.shadow.mapSize.height = 2048;
+        scene.add(moonLight);
+
+        // Player Flashlight / UV Light
+        const flashlight = new THREE.SpotLight(0xffffff, 5);
+        flashlight.position.set(0, 0, 0);
+        flashlight.target.position.set(0, 0, -1);
+        flashlight.angle = Math.PI / 6;
+        flashlight.penumbra = 0.5;
+        flashlight.castShadow = true;
+        camera.add(flashlight);
+        camera.add(flashlight.target);
+        scene.add(camera);
+
+        // --- 3. PBR MATERIALS ---
+        // Standard PBR Material (Ground)
+        const groundMat = new THREE.MeshStandardMaterial({ 
+            color: 0x2C3E2E, // Desaturated Forest Green
+            roughness: 0.9,  // Wet mud
+            metalness: 0.1 
+        });
+        
+        // Wooden Door Material
+        const doorMat = new THREE.MeshStandardMaterial({
+            color: 0x4A3B32, // Muddy Brown
+            roughness: 0.8,
+            metalness: 0.0
+        });
+
+        // Concrete Wall Material
+        const wallMat = new THREE.MeshStandardMaterial({
+            color: 0x5A5F63, // Wet Slate Gray
+            roughness: 0.9,
+            metalness: 0.0
+        });
+
+        // UV Glowing Material (For hidden evidence)
+        const uvEvidenceMat = new THREE.MeshStandardMaterial({
+            color: 0x000000,
+            emissive: 0x8A2BE2, // Purple
+            emissiveIntensity: 0 // Hidden by default
+        });
+
+        // --- 4. WORLD GEOMETRY ---
+        // Ground
+        const groundGeo = new THREE.PlaneGeometry(200, 200);
+        const ground = new THREE.Mesh(groundGeo, groundMat);
+        ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        // The House (Basic Blockout)
+        const houseGeo = new THREE.BoxGeometry(20, 10, 20);
+        const house = new THREE.Mesh(houseGeo, wallMat);
+        house.position.set(0, 5, -20);
+        house.castShadow = true;
+        house.receiveShadow = true;
+        scene.add(house);
+
+        // The Door
+        const doorGeo = new THREE.BoxGeometry(2, 4, 0.2);
+        const door = new THREE.Mesh(doorGeo, doorMat);
+        door.position.set(0, 2, -10.1); // Placed on front of house
+        door.castShadow = true;
+        scene.add(door);
+
+        // Hidden UV Evidence (On the tree)
+        const treeGeo = new THREE.CylinderGeometry(1, 1.5, 15, 8);
+        const treeMat = new THREE.MeshStandardMaterial({ color: 0x2b1d14, roughness: 1 });
+        const tree = new THREE.Mesh(treeGeo, treeMat);
+        tree.position.set(-10, 7.5, 5);
+        tree.castShadow = true;
+        scene.add(tree);
+
+        const evidenceGeo = new THREE.PlaneGeometry(1, 1);
+        const evidence = new THREE.Mesh(evidenceGeo, uvEvidenceMat);
+        evidence.position.set(-10, 5, 5.6); // On the tree
+        scene.add(evidence);
+
+        // The Elevator (Shaft & Platform)
+        const elevatorGeo = new THREE.BoxGeometry(4, 0.5, 4);
+        const elevatorMat = new THREE.MeshStandardMaterial({ color: 0x708090, metalness: 0.8, roughness: 0.2 }); // Galvanized Steel
+        const elevator = new THREE.Mesh(elevatorGeo, elevatorMat);
+        elevator.position.set(20, 0.25, 0);
+        elevator.castShadow = true;
+        elevator.receiveShadow = true;
+        scene.add(elevator);
+
+        let elevatorMoving = false;
+        let elevatorTargetY = 0.25;
+
+        // --- 5. PLAYER CONTROLS & PHYSICS ---
+        const controls = new PointerLockControls(camera, document.body);
+        const instructions = document.getElementById('instructions');
+        const vlogUI = document.getElementById('vlog-ui');
+        const crosshair = document.getElementById('crosshair');
+
+        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
+        const velocity = new THREE.Vector3();
+        const direction = new THREE.Vector3();
+        let prevTime = performance.now();
+
+        instructions.addEventListener('click', () => { controls.lock(); });
+
+        controls.addEventListener('lock', () => {
+            instructions.style.display = 'none';
+            crosshair.style.display = 'block';
+        });
+
+        controls.addEventListener('unlock', () => {
+            instructions.style.display = 'block';
+            crosshair.style.display = 'none';
+        });
+
+        document.addEventListener('keydown', (e) => {
+            switch (e.code) {
+                case 'KeyW': moveForward = true; break;
+                case 'KeyS': moveBackward = true; break;
+                case 'KeyA': moveLeft = true; break;
+                case 'KeyD': moveRight = true; break;
+                case 'KeyV': // Toggle Vlog UI
+                    vlogUI.style.display = vlogUI.style.display === 'none' ? 'block' : 'none';
+                    break;
+                case 'KeyF': // Toggle UV Light
+                    if (flashlight.color.getHex() === 0xffffff) {
+                        flashlight.color.setHex(0x8A2BE2); // UV Purple
+                        uvEvidenceMat.emissiveIntensity = 2; // Reveal hidden evidence
+                    } else {
+                        flashlight.color.setHex(0xffffff); // Normal White
+                        uvEvidenceMat.emissiveIntensity = 0;
+                    }
+                    break;
+                case 'KeyE': // Interact
+                    interact();
+                    break;
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            switch (e.code) {
+                case 'KeyW': moveForward = false; break;
+                case 'KeyS': moveBackward = false; break;
+                case 'KeyA': moveLeft = false; break;
+                case 'KeyD': moveRight = false; break;
+            }
+        });
+
+        // --- 6. RAYCASTING (INTERACTION SYSTEM) ---
+        const raycaster = new THREE.Raycaster();
+        const centerScreen = new THREE.Vector2(0, 0);
+
+        function interact() {
+            raycaster.setFromCamera(centerScreen, camera);
+            const intersects = raycaster.intersectObjects(scene.children);
+
+            if (intersects.length > 0) {
+                const object = intersects[0].object;
+                
+                // Door Interaction
+                if (object === door) {
+                    // Simple door open logic (rotate)
+                    if (door.rotation.y === 0) {
+                        door.rotation.y = Math.PI / 2;
+                        door.position.x = 1; // Shift pivot
+                    } else {
+                        door.rotation.y = 0;
+                        door.position.x = 0;
+                    }
+                }
+
+                // Elevator Interaction
+                if (object === elevator) {
+                    if (!elevatorMoving) {
+                        elevatorMoving = true;
+                        elevatorTargetY = elevator.position.y === 0.25 ? 10.25 : 0.25;
+                    }
+                }
+            }
+        }
+
+        // --- 7. ANIMATION LOOP ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const time = performance.now();
+            const delta = (time - prevTime) / 1000;
+
+            if (controls.isLocked) {
+                // Physics & Movement
+                velocity.x -= velocity.x * 10.0 * delta;
+                velocity.z -= velocity.z * 10.0 * delta;
+
+                direction.z = Number(moveForward) - Number(moveBackward);
+                direction.x = Number(moveRight) - Number(moveLeft);
+                direction.normalize();
+
+                if (moveForward || moveBackward) velocity.z -= direction.z * 400.0 * delta;
+                if (moveLeft || moveRight) velocity.x -= direction.x * 400.0 * delta;
+
+                controls.moveRight(-velocity.x * delta);
+                controls.moveForward(-velocity.z * delta);
+
+                // Elevator Movement Logic
+                if (elevatorMoving) {
+                    if (Math.abs(elevator.position.y - elevatorTargetY) > 0.1) {
+                        elevator.position.y += (elevatorTargetY > elevator.position.y) ? 5 * delta : -5 * delta;
+                        
+                        // Move player if standing on elevator
+                        if (Math.abs(camera.position.y - (elevator.position.y + 1.6)) < 0.5 && 
+                            Math.abs(camera.position.x - elevator.position.x) < 2 && 
+                            Math.abs(camera.position.z - elevator.position.z) < 2) {
+                            camera.position.y = elevator.position.y + 1.6;
+                        }
+                    } else {
+                        elevatorMoving = false;
+                    }
+                }
+            }
+
+            prevTime = time;
+            renderer.render(scene, camera);
+        }
+
+        // Handle Window Resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+</body>
+</html>

@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Control · Script Studio</title>
+<style>
+  :root {
+    --bg: #0b0d10;
+    --panel: #12161c;
+    --line: rgba(255,255,255,.09);
+    --text: #e8ecf1;
+    --muted: #8b95a3;
+    --accent: #5eead4;
+    --danger: #f87171;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; min-height: 100%;
+    background: var(--bg); color: var(--text);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  header {
+    padding: 22px 28px;
+    border-bottom: 1px solid var(--line);
+  }
+  header h1 { margin: 0; font-size: 16px; font-weight: 600; }
+  header p  { margin: 6px 0 0; color: var(--muted); font-size: 12.5px; }
+
+  main {
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 24px 28px 140px;
+  }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 18px;
+    box-shadow: 0 20px 50px rgba(0,0,0,.4);
+  }
+  .card h2 {
+    margin: 0 0 14px;
+    font-size: 12px;
+    letter-spacing: .10em;
+    text-transform: uppercase;
+    color: var(--muted);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .card h2 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+
+  textarea {
+    width: 100%;
+    min-height: 200px;
+    resize: vertical;
+    padding: 14px 16px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: rgba(0,0,0,.34);
+    color: var(--text);
+    font: inherit;
+    font-size: 15px;
+    line-height: 1.62;
+    outline: none;
+    transition: border-color .18s, box-shadow .18s;
+  }
+  textarea:focus {
+    border-color: rgba(94,234,212,.55);
+    box-shadow: 0 0 0 3px rgba(94,234,212,.12);
+  }
+
+  .row {
+    display: flex; align-items: center; gap: 10px;
+    margin-top: 14px;
+  }
+  select {
+    flex: 1;
+    background: rgba(0,0,0,.42);
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 10px 12px;
+    font: inherit;
+    font-size: 13px;
+    outline: none;
+    cursor: pointer;
+  }
+  select:focus { border-color: rgba(94,234,212,.5); }
+
+  .sliders {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-top: 14px;
+  }
+  .sliders label {
+    display: block;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .slider-row { display: flex; align-items: center; gap: 10px; }
+  input[type=range] { flex: 1; accent-color: var(--accent); height: 4px; }
+  .val {
+    min-width: 36px;
+    text-align: right;
+    font-size: 12px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  footer {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    padding: 16px 28px;
+    background: rgba(10,12,16,.88);
+    backdrop-filter: blur(22px) saturate(150%);
+    -webkit-backdrop-filter: blur(22px) saturate(150%);
+    border-top: 1px solid var(--line);
+    display: flex; align-items: center; gap: 12px;
+    z-index: 10;
+  }
+
+  .btn {
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 10px 18px;
+    border-radius: 10px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: transform .12s, background .18s, opacity .18s;
+    white-space: nowrap;
+  }
+  .btn:active { transform: translateY(1px); }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  .btn-primary { background: var(--accent); color: #04211c; }
+  .btn-primary:hover:not(:disabled) { background: #7df3e0; }
+  .btn-ghost {
+    background: rgba(255,255,255,.06);
+    color: var(--text);
+    border-color: var(--line);
+  }
+  .btn-ghost:hover:not(:disabled) { background: rgba(255,255,255,.12); }
+  .btn-warn {
+    background: rgba(248,113,113,.14);
+    color: #fca5a5;
+    border-color: rgba(248,113,113,.3);
+  }
+  .btn-warn:hover:not(:disabled) { background: rgba(248,113,113,.22); }
+
+  #status {
+    margin-left: auto;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  #status.live { color: var(--accent); }
+  #status.err  { color: var(--danger); }
+
+  .notice {
+    margin-top: 16px;
+    background: rgba(248,113,113,.08);
+    border: 1px solid rgba(248,113,113,.25);
+    color: #fca5a5;
+    padding: 12px 16px;
+    border-radius: 10px;
+    font-size: 12.5px;
+    line-height: 1.55;
+    display: none;
+  }
+  .notice.show { display: block; }
+  .notice.info {
+    background: rgba(94,234,212,.08);
+    border-color: rgba(94,234,212,.25);
+    color: #7df3e0;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Script Studio · Control</h1>
+  <p>Paste your script, pick a voice, hit Speak. The stage window does the talking.</p>
+</header>
+
+<main>
+  <section class="card">
+    <h2><span class="dot"></span>Speech script</h2>
+    <textarea id="script">Hey everyone, welcome back to the stream. Look at my face — real brow ridge, real cheekbones, real jaw, real lips, real teeth, and a moving tongue. Every material here is physically based rendering.</textarea>
+
+    <div class="row">
+      <select id="voicePicker"></select>
+      <button class="btn btn-ghost" id="previewBtn">▶ Test voice</button>
+    </div>
+
+    <div class="sliders">
+      <div>
+        <label>Rate <span class="val" id="rateVal">0.95</span></label>
+        <div class="slider-row">
+          <input type="range" id="rate" min="0.6" max="1.4" step="0.01" value="0.95">
+        </div>
+      </div>
+      <div>
+        <label>Pitch <span class="val" id="pitchVal">1.00</span></label>
+        <div class="slider-row">
+          <input type="range" id="pitch" min="0.6" max="1.4" step="0.01" value="1.00">
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="notice" id="notice"></div>
+</main>
+
+<footer>
+  <button class="btn btn-primary" id="speakBtn">▶ Speak</button>
+  <button class="btn btn-warn" id="stopBtn" disabled>■ Stop</button>
+  <button class="btn btn-ghost" id="openStageBtn">↗ Open stage</button>
+  <span id="status">Ready</span>
+</footer>
+
+<script>
+/* ============================================================================
+   CHANNEL to the stage page
+   ========================================================================= */
+const channel = new BroadcastChannel('avatar-speech');
+
+const $ = id => document.getElementById(id);
+const scriptEl     = $('script');
+const voicePicker  = $('voicePicker');
+const previewBtn   = $('previewBtn');
+const rateEl       = $('rate');
+const pitchEl      = $('pitch');
+const rateVal      = $('rateVal');
+const pitchVal     = $('pitchVal');
+const speakBtn     = $('speakBtn');
+const stopBtn      = $('stopBtn');
+const openStageBtn = $('openStageBtn');
+const statusEl     = $('status');
+const noticeEl     = $('notice');
+
+function setStatus(t, cls = '') { statusEl.textContent = t; statusEl.className = cls; }
+
+/* ============================================================================
+   VOICE MANAGEMENT — score so the most natural voice wins
+   ========================================================================= */
+let allVoices = [];
+
+/**
+ * Score a voice — higher = more human-sounding.
+ * Prefers cloud/neural voices over the local robotic default.
+ */
+function scoreVoice(v) {
+  let s = 0;
+  const n = (v.name || '').toLowerCase();
+  const lang = (v.lang || '').toLowerCase();
+
+  // Cloud/neural engines sound dramatically less robotic
+  if (n.includes('natural'))   s += 40;
+  if (n.includes('neural'))    s += 40;
+  if (n.includes('premium'))   s += 28;
+  if (n.includes('enhanced'))  s += 28;
+  if (n.includes('siri'))      s += 24;
+  if (n.includes('google'))    s += 18;
+  if (n.includes('samantha'))  s += 16;
+  if (n.includes('aria'))      s += 14;
+  if (n.includes('jenny'))     s += 14;
+  if (n.includes('guy'))       s += 12;
+  if (n.includes('ava'))       s += 12;
+  if (n.includes('microsoft')) s += 6;
+  if (n.includes('apple'))     s += 4;
+
+  // Penalise known robotic names
+  if (n.includes('albert'))    s -= 20;
+  if (n.includes('zarvox'))    s -= 30;
+  if (n.includes('bells'))     s -= 30;
+  if (n.includes('boing'))     s -= 30;
+  if (n.includes('bubbles'))   s -= 30;
+  if (n.includes('cellos'))    s -= 30;
+  if (n.includes('jester'))    s -= 30;
+  if (n.includes('organ'))     s -= 30;
+  if (n.includes('superstar')) s -= 30;
+  if (n.includes('trinoids'))  s -= 30;
+  if (n.includes('whisper'))   s -= 30;
+
+  // Cloud voices are usually higher quality than local
+  if (v.localService === false) s += 10;
+
+  // Prefer English
+  if (lang.startsWith('en-us')) s += 12;
+  else if (lang.startsWith('en')) s += 6;
+
+  return s;
+}
+
+function refreshVoices() {
+  allVoices = window.speechSynthesis ? window.speechSynthesis.getVoices() : [];
+
+  const english = allVoices
+    .filter(v => /^en/i.test(v.lang))
+    .sort((a, b) => scoreVoice(b) - scoreVoice(a));
+
+  voicePicker.innerHTML = '';
+
+  if (!english.length) {
+    const o = document.createElement('option');
+    o.textContent = 'No English voices installed';
+    o.disabled = true;
+    voicePicker.appendChild(o);
+
+    noticeEl.textContent =
+      'No English voices were found on this system. Please install a voice pack ' +
+      '(Windows: Settings → Time & Language → Speech · macOS: System Settings → ' +
+      'Accessibility → Spoken Content → System Voice → Manage Voices) and reload.';
+    noticeEl.className = 'notice show';
+    return;
+  }
+
+  english.forEach(v => {
+    const o = document.createElement('option');
+    o.value = v.name;
+    o.dataset.lang = v.lang;
+    // Show a "quality" hint on the top-scored voices
+    const isNeural = /natural|neural|premium|enhanced|siri|google/i.test(v.name);
+    o.textContent = `${v.name} · ${v.lang}${isNeural ? '  ★' : ''}`;
+    voicePicker.appendChild(o);
+  });
+
+  // Show a soft hint if the top-scorer is clearly better than the default
+  const topScore = scoreVoice(english[0]);
+  if (topScore > 40) {
+    noticeEl.innerHTML =
+      'Auto-picked the most natural voice available: <strong>' +
+      english[0].name + '</strong>. Voices marked ★ are neural / premium quality.';
+    noticeEl.className = 'notice info show';
+  } else {
+    noticeEl.className = 'notice';
+  }
+}
+
+if (window.speechSynthesis) {
+  refreshVoices();
+  window.speechSynthesis.onvoiceschanged = refreshVoices;
+} else {
+  noticeEl.textContent = 'This browser does not support the Web Speech API.';
+  noticeEl.className = 'notice show';
+}
+
+/* ============================================================================
+   SLIDERS
+   ========================================================================= */
+function bindSlider(input, label) {
+  const update = () => { label.textContent = parseFloat(input.value).toFixed(2); };
+  input.addEventListener('input', update);
+  update();
+}
+bindSlider(rateEl, rateVal);
+bindSlider(pitchEl, pitchVal);
+
+/* ============================================================================
+   SPEECH ENGINE
+   ----------------------------------------------------------------------------
+   Chunk by sentence so the engine breathes between them, add a small gap, and
+   use a slightly-below-neutral rate — the combination is what stops the TTS
+   from sounding robotic.
+   ========================================================================= */
+let activeToken = 0;
+
+function chunkText(text, max = 180) {
+  const sentences = text.match(/[^.!?\n]+[.!?]*/g) || [text];
+  const out = []; let buf = '';
+  for (const s of sentences) {
+    if (buf && (buf + s).length > max) { out.push(buf.trim()); buf = ''; }
+    buf += s;
+  }
+  if (buf.trim()) out.push(buf.trim());
+  return out.filter(Boolean);
+}
+
+async function speakAll(text) {
+  if (!text.trim()) { setStatus('Nothing to speak', 'err'); return; }
+  if (!window.speechSynthesis) { setStatus('Not supported', 'err'); return; }
+
+  activeToken += 1;
+  const token = activeToken;
+
+  window.speechSynthesis.cancel();
+  await new Promise(r => setTimeout(r, 80));
+
+  const chunks = chunkText(text);
+  const voice = allVoices.find(v => v.name === voicePicker.value) || null;
+  const rate  = parseFloat(rateEl.value);
+  const pitch = parseFloat(pitchEl.value);
+
+  speakBtn.disabled = true;
+  stopBtn.disabled  = false;
+  setStatus('Speaking…', 'live');
+
+  // Tell the stage to start the mouth
+  channel.postMessage({ type: 'start', text });
+
+  // Compute global char offsets for each chunk so boundary events can be
+  // converted to a single global index.
+  let globalOffset = 0;
+  const offsets = chunks.map(c => {
+    const off = globalOffset;
+    globalOffset += c.length + 1;   // +1 for the sentence split
+    return off;
+  });
+
+  function speakChunk(i) {
+    return new Promise(resolve => {
+      if (token !== activeToken) { resolve(); return; }
+      if (i >= chunks.length)    { resolve(); return; }
+
+      const u = new SpeechSynthesisUtterance(chunks[i]);
+      if (voice) { u.voice = voice; u.lang = voice.lang; }
+      else       { u.lang = 'en-US'; }
+      u.rate   = rate;
+      u.pitch  = pitch;
+      u.volume = 1.0;
+
+      u.onboundary = e => {
+        if (token !== activeToken) return;
+        if (e.name && e.name !== 'word' && e.name !== 'sentence') return;
+        const globalIndex = offsets[i] + (e.charIndex || 0);
+        channel.postMessage({ type: 'boundary', charIndex: globalIndex });
+      };
+
+      u.onend = () => {
+        // Short breath gap between sentences — makes it flow rather than stutter
+        setTimeout(() => { resolve(); speakChunk(i + 1).then(resolve); }, 110);
+      };
+
+      u.onerror = e => {
+        if (e.error === 'interrupted' || e.error === 'canceled') { resolve(); return; }
+        console.warn('[TTS]', e.error);
+        resolve();
+      };
+
+      window.speechSynthesis.speak(u);
+    });
+  }
+
+  await speakChunk(0);
+
+  if (token === activeToken) {
+    channel.postMessage({ type: 'end' });
+    speakBtn.disabled = false;
+    stopBtn.disabled  = true;
+    setStatus('Ready');
+  }
+}
+
+/* ============================================================================
+   BUTTONS
+   ========================================================================= */
+speakBtn.addEventListener('click', () => speakAll(scriptEl.value));
+
+stopBtn.addEventListener('click', () => {
+  activeToken += 1;
+  if (window.speechSynthesis) window.speechSynthesis.cancel();
+  channel.postMessage({ type: 'end' });
+  speakBtn.disabled = false;
+  stopBtn.disabled  = true;
+  setStatus('Stopped');
+});
+
+previewBtn.addEventListener('click', () => {
+  speakAll('This is a quick preview of how I sound.');
+});
+
+openStageBtn.addEventListener('click', () => {
+  window.open('stage.html', 'avatar-stage', 'width=1280,height=800');
+});
+
+/* Detect a file:// origin — BroadcastChannel and speech synthesis behave
+   best over a real http origin. */
+if (location.protocol === 'file:') {
+  noticeEl.innerHTML =
+    'You opened this page from <code>file://</code>. BroadcastChannel and speech ' +
+    'synthesis work best over <code>http://localhost</code>. Run ' +
+    '<code>python3 -m http.server 8000</code> in this folder and visit ' +
+    '<code>http://localhost:8000/control.html</code>.';
+  noticeEl.className = 'notice show';
+}
+
+/* Small sanity check: warn if no stage has announced itself yet. */
+let stageSeen = false;
+channel.addEventListener('message', e => {
+  if (e.data && e.data.type === 'stage-ready') stageSeen = true;
+});
+setTimeout(() => {
+  if (!stageSeen && location.protocol !== 'file:') {
+    const n = noticeEl.cloneNode(false);
+    n.textContent = 'No stage window detected. Click “Open stage” to launch it.';
+    n.className = 'notice show';
+    if (!noticeEl.classList.contains('show')) {
+      noticeEl.replaceWith(n);
+    }
+  }
+}, 1500);
+</script>
+</body>
+</html>

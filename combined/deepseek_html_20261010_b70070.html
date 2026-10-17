@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>RDR2 Snow Engine - Dynamic Displacement</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #0d1b2a; cursor: crosshair; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+        #loading {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            color: #a0c4ff; font-family: monospace; font-size: 20px; pointer-events: none;
+            text-shadow: 1px 1px 2px black; text-align: center;
+        }
+        #info {
+            position: absolute; bottom: 20px; left: 20px; color: #a0c4ff;
+            font-family: monospace; font-size: 14px; pointer-events: none;
+            text-shadow: 1px 1px 2px black; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 5px;
+        }
+        #crosshair {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            color: rgba(255, 255, 255, 0.6); font-size: 20px; pointer-events: none;
+            font-weight: bold; text-shadow: 0 0 2px black;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="glCanvas"></canvas>
+    <div id="crosshair">+</div>
+    <div id="loading">Generating Alpine Mountains...<br>(This may take a moment)</div>
+    <div id="info">WASD to Walk | Mouse Drag to Look | Walk to carve trenches in the snow</div>
+
+    <script>
+        // ==========================================
+        // 1. MATRIX MATH (FROM SCRATCH)
+        // ==========================================
+        const mat4 = {
+            create: () => new Float32Array(16),
+            identity: (out) => {
+                out[0]=1; out[1]=0; out[2]=0; out[3]=0;
+                out[4]=0; out[5]=1; out[6]=0; out[7]=0;
+                out[8]=0; out[9]=0; out[10]=1; out[11]=0;
+                out[12]=0; out[13]=0; out[14]=0; out[15]=1;
+                return out;
+            },
+            perspective: (out, fovy, aspect, near, far) => {
+                const f = 1.0 / Math.tan(fovy / 2);
+                out[0]=f/aspect; out[1]=0; out[2]=0; out[3]=0;
+                out[4]=0; out[5]=f; out[6]=0; out[7]=0;
+                out[8]=0; out[9]=0; out[10]=(far+near)/(near-far); out[11]=-1;
+                out[12]=0; out[13]=0; out[14]=(2*far*near)/(near-far); out[15]=0;
+                return out;
+            },
+            lookAt: (out, eye, center, up) => {
+                let z = [eye[0]-center[0], eye[1]-center[1], eye[2]-center[2]];
+                let len = Math.hypot(z[0], z[1], z[2]);
+                z = [z[0]/len, z[1]/len, z[2]/len];
+                let x = [up[1]*z[2] - up[2]*z[1], up[2]*z[0] - up[0]*z[2], up[0]*z[1] - up[1]*z[0]];
+                len = Math.hypot(x[0], x[1], x[2]);
+                x = [x[0]/len, x[1]/len, x[2]/len];
+                let y = [z[1]*x[2] - z[2]*x[1], z[2]*x[0] - z[0]*x[2], z[0]*x[1] - z[1]*x[0]];
+                out[0]=x[0]; out[1]=y[0]; out[2]=z[0]; out[3]=0;
+                out[4]=x[1]; out[5]=y[1]; out[6]=z[1]; out[7]=0;
+                out[8]=x[2]; out[9]=y[2]; out[10]=z[2]; out[11]=0;
+                out[12]=-(x[0]*eye[0]+x[1]*eye[1]+x[2]*eye[2]);
+                out[13]=-(y[0]*eye[0]+y[1]*eye[1]+y[2]*eye[2]);
+                out[14]=-(z[0]*eye[0]+z[1]*eye[1]+z[2]*eye[2]);
+                out[15]=1;
+                return out;
+            },
+            multiply: (out, a, b) => {
+                let a00=a[0], a01=a[1], a02=a[2], a03=a[3];
+                let a10=a[4], a11=a[5], a12=a[6], a13=a[7];
+                let a20=a[8], a21=a[9], a22=a[10], a23=a[11];
+                let a30=a[12], a31=a[13], a32=a[14], a33=a[15];
+                for (let i = 0; i < 4; i++) {
+                    let b0=b[i*4], b1=b[i*4+1], b2=b[i*4+2], b3=b[i*4+3];
+                    out[i*4] = b0*a00 + b1*a10 + b2*a20 + b3*a30;
+                    out[i*4+1] = b0*a01 + b1*a11 + b2*a21 + b3*a31;
+                    out[i*4+2] = b0*a02 + b1*a12 + b2*a22 + b3*a32;
+                    out[i*4+3] = b0*a03 + b1*a13 + b2*a23 + b3*a33;
+                }
+                return out;
+            },
+            translate: (out, a, v) => {
+                let x=v[0], y=v[1], z=v[2];
+                let a00=a[0], a01=a[1], a02=a[2], a03=a[3];
+                let a10=a[4], a11=a[5], a12=a[6], a13=a[7];
+                let a20=a[8], a21=a[9], a22=a[10], a23=a[11];
+                out[0]=a00; out[1]=a01; out[2]=a02; out[3]=a03;
+                out[4]=a10; out[5]=a11; out[6]=a12; out[7]=a13;
+                out[8]=a20; out[9]=a21; out[10]=a22; out[11]=a23;
+                out[12]=a00*x + a10*y + a20*z + a[12];
+                out[13]=a01*x + a11*y + a21*z + a[13];
+                out[14]=a02*x + a12*y + a22*z + a[14];
+                out[15]=a03*x + a13*y + a23*z + a[15];
+                return out;
+            },
+            scale: (out, a, v) => {
+                let x=v[0], y=v[1], z=v[2];
+                out[0]=a[0]*x; out[1]=a[1]*x; out[2]=a[2]*x; out[3]=a[3]*x;
+                out[4]=a[4]*y; out[5]=a[5]*y; out[6]=a[6]*y; out[7]=a[7]*y;
+                out[8]=a[8]*z; out[9]=a[9]*z; out[10]=a[10]*z; out[11]=a[11]*z;
+                out[12]=a[12]; out[13]=a[13]; out[14]=a[14]; out[15]=a[15];
+                return out;
+            }
+        };
+
+        // ==========================================
+        // 2. WEBGL SETUP
+        // ==========================================
+        const canvas = document.getElementById('glCanvas');
+        const gl = canvas.getContext('webgl', { antialias: true, alpha: false, preserveDrawingBuffer: false });
+        if (!gl) { alert("WebGL not supported"); }
+        gl.getExtension('OES_element_index_uint');
+        gl.getExtension('OES_standard_derivatives'); // Needed for crumble normal maps
+
+        function createShader(type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error(gl.getShaderInfoLog(shader));
+                return null;
+            }
+            return shader;
+        }
+
+        function createProgram(vsSource, fsSource) {
+            const vs = createShader(gl.VERTEX_SHADER, vsSource);
+            const fs = createShader(gl.FRAGMENT_SHADER, fsSource);
+            const program = gl.createProgram();
+            gl.attachShader(program, vs);
+            gl.attachShader(program, fs);
+            gl.linkProgram(program);
+            return program;
+        }
+
+        // ==========================================
+        // 3. NOISE & SMOOTH ALPINE TERRAIN
+        // ==========================================
+        function fract(x) { return x - Math.floor(x); }
+        function hash(n) { return fract(Math.sin(n) * 43758.5453123); }
+        function noise2D(x, y) {
+            let i = Math.floor(x), j = Math.floor(y);
+            let fx = fract(x), fy = fract(y);
+            let u = fx * fx * (3.0 - 2.0 * fx), v = fy * fy * (3.0 - 2.0 * fy);
+            let a = hash(i + j * 57.0), b = hash(i + 1.0 + j * 57.0);
+            let c = hash(i + (j + 1.0) * 57.0), d = hash(i + 1.0 + (j + 1.0) * 57.0);
+            return a * (1.0 - u) * (1.0 - v) + b * u * (1.0 - v) + c * (1.0 - u) * v + d * u * v;
+        }
+        function fbm(x, y) {
+            let value = 0.0, amplitude = 1.0, frequency = 1.0;
+            for (let i = 0; i < 5; i++) {
+                value += amplitude * noise2D(x * frequency, y * frequency);
+                frequency *= 2.0; amplitude *= 0.5;
+            }
+            return value;
+        }
+        
+        // FIXED: Smooth, rolling alpine mountains (no more jagged spikes)
+        function getTerrainHeight(x, z) {
+            // Domain warping for realistic snowdrifts
+            let warpX = fbm(x * 0.01, z * 0.01) * 20.0;
+            let warpZ = fbm(x * 0.01 + 5.2, z * 0.01 + 1.3) * 20.0;
+            
+            // Base majestic mountains
+            let h = fbm((x + warpX) * 0.005, (z + warpZ) * 0.005) * 60.0;
+            h += fbm((x + warpX) * 0.02, (z + warpZ) * 0.02) * 15.0;
+            
+            // Rolling hills
+            h -= Math.sin(x * 0.01) * Math.cos(z * 0.01) * 10.0;
+            
+            // Flatten spawn area
+            let distToCenter = Math.hypot(x, z);
+            let spawnFlatten = Math.max(0, 1.0 - (distToCenter / 50.0));
+            h = h * (1.0 - spawnFlatten) + (-5.0) * spawnFlatten;
+            
+            return h;
+        }
+
+        // ==========================================
+        // 4. SHADERS
+        // ==========================================
+
+        // --- SKY SHADER ---
+        const skyVS = `attribute vec2 aPosition; varying vec2 vUv;
+            void main() { vUv = aPosition * 0.5 + 0.5; gl_Position = vec4(aPosition, 0.999, 1.0); }`;
+        const skyFS = `precision highp float; varying vec2 vUv;
+            void main() {
+                vec3 topColor = vec3(0.1, 0.3, 0.8);
+                vec3 bottomColor = vec3(0.8, 0.9, 1.0);
+                float mixFactor = smoothstep(0.0, 0.8, vUv.y);
+                vec3 color = mix(bottomColor, topColor, mixFactor);
+                float cloud = sin(vUv.x * 15.0) * cos(vUv.y * 25.0) * 0.05;
+                gl_FragColor = vec4(color + cloud, 1.0);
+            }`;
+
+        // --- TERRAIN SHADER (Dynamic Displacement & Crumble Normal Maps) ---
+        const terrainVS = `attribute vec3 aPosition; attribute vec3 aNormal;
+            uniform mat4 uProjection, uView, uModel;
+            uniform sampler2D uFootprintMap;
+            uniform vec2 uMapScale;
+            varying vec3 vWorldPos, vNormal;
+            varying float vSnowDepth;
+            
+            void main() {
+                vec4 worldPos = uModel * vec4(aPosition, 1.0);
+                vec3 N = normalize(mat3(uModel) * aNormal);
+                
+                // RDR2 Dynamic Displacement: Read the footprint map
+                vec2 uv = (worldPos.xz + 400.0) / 800.0;
+                float footprint = texture2D(uFootprintMap, uv).r;
+                
+                // Push the ground down where footprints exist
+                float snowDepth = (1.0 - footprint) * 2.5; // Max depth 2.5 meters
+                worldPos.y -= snowDepth;
+                
+                vWorldPos = worldPos.xyz;
+                vNormal = N;
+                vSnowDepth = snowDepth;
+                gl_Position = uProjection * uView * worldPos;
+            }`;
+        const terrainFS = `precision highp float; varying vec3 vWorldPos, vNormal;
+            uniform vec3 uCameraPos, uLightDir, uLightColor, uAmbientColor;
+            uniform sampler2D uFootprintMap;
+            uniform vec2 uMapScale;
+            const float PI = 3.14159265359;
+
+            float DistributionGGX(vec3 N, vec3 H, float roughness) {
+                float a = roughness * roughness; float a2 = a * a;
+                float NdotH = max(dot(N, H), 0.0); float NdotH2 = NdotH * NdotH;
+                return a2 / max(PI * (NdotH2 * (a2 - 1.0) + 1.0) * (NdotH2 * (a2 - 1.0) + 1.0), 0.001);
+            }
+            float GeometrySchlickGGX(float NdotV, float roughness) {
+                float r = (roughness + 1.0); float k = (r * r) / 8.0;
+                return NdotV / (NdotV * (1.0 - k) + k);
+            }
+            float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness) {
+                return GeometrySchlickGGX(max(dot(N, V), 0.0), roughness) * 
+                       GeometrySchlickGGX(max(dot(N, L), 0.0), roughness);
+            }
+            vec3 fresnelSchlick(float cosTheta, vec3 F0) {
+                return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+            }
+
+            void main() {
+                vec3 N = normalize(vNormal); vec3 V = normalize(uCameraPos - vWorldPos);
+                vec3 L = normalize(-uLightDir); vec3 H = normalize(V + L);
+                float NdotL = max(dot(N, L), 0.0);
+                
+                // RDR2 Crumble Normal Maps: Calculate derivatives of the footprint map
+                vec2 uv = (vWorldPos.xz + 400.0) / 800.0;
+                float footprint = texture2D(uFootprintMap, uv).r;
+                float dX = dFdx(footprint) * 50.0;
+                float dY = dFdy(footprint) * 50.0;
+                vec3 crumbleNormal = normalize(N + vec3(dX, 0.0, dY));
+                
+                // Blend the crumble normal based on how deep the trench is
+                float trenchFactor = smoothstep(0.0, 0.5, vSnowDepth);
+                N = normalize(mix(N, crumbleNormal, trenchFactor));
+                
+                float slope = dot(N, vec3(0.0, 1.0, 0.0));
+                float snowAmount = smoothstep(0.4, 0.8, slope);
+                vec3 snowColor = vec3(0.95, 0.98, 1.0);
+                vec3 trenchColor = vec3(0.7, 0.75, 0.8); // Darker, compacted snow
+                
+                vec3 albedo = mix(snowColor, trenchColor, trenchFactor);
+                
+                float roughness = 0.9;
+                vec3 F0 = vec3(0.04); 
+                float NDF = DistributionGGX(N, H, roughness);
+                float G = GeometrySmith(N, V, L, roughness);
+                vec3 F = fresnelSchlick(max(dot(H, V), 0.0), F0);
+                vec3 specular = (NDF * G * F) / (4.0 * max(dot(N, V), 0.0) * NdotL + 0.001);
+                vec3 kD = vec3(1.0) - F;
+                
+                vec3 color = (kD * albedo / PI + specular) * uLightColor * NdotL;
+                color += snowColor * max(dot(N, L), 0.0) * snowAmount * 0.3 * uLightColor;
+                color += uAmbientColor * albedo;
+                
+                float dist = length(uCameraPos - vWorldPos);
+                float fogFactor = clamp(exp(-dist * 0.0015), 0.0, 1.0);
+                gl_FragColor = vec4(mix(vec3(0.85, 0.9, 1.0), color, fogFactor), 1.0);
+            }`;
+
+        // --- OBJECT SHADER ---
+        const objectVS = `attribute vec3 aPosition; attribute vec3 aNormal;
+            uniform mat4 uProjection, uView, uModel;
+            varying vec3 vWorldPos, vNormal;
+            void main() {
+                vec4 worldPos = uModel * vec4(aPosition, 1.0);
+                vWorldPos = worldPos.xyz; vNormal = normalize(mat3(uModel) * aNormal);
+                gl_Position = uProjection * uView * worldPos;
+            }`;
+        const objectFS = `precision highp float; varying vec3 vWorldPos, vNormal;
+            uniform vec3 uCameraPos, uLightDir, uLightColor, uAmbientColor, uColor;
+            uniform float uRoughness;
+            void main() {
+                vec3 N = normalize(vNormal); vec3 V = normalize(uCameraPos - vWorldPos);
+                vec3 L = normalize(-uLightDir); float NdotL = max(dot(N, L), 0.0);
+                vec3 color = uColor * NdotL * uLightColor + uAmbientColor * uColor;
+                vec3 H = normalize(V + L);
+                color += vec3(pow(max(dot(N, H), 0.0), 32.0) * (1.0 - uRoughness) * 0.5);
+                float dist = length(uCameraPos - vWorldPos);
+                gl_FragColor = vec4(mix(vec3(0.85, 0.9, 1.0), color, clamp(exp(-dist * 0.0015), 0.0, 1.0)), 1.0);
+            }`;
+
+        // --- BLIZZARD SNOW SHADER ---
+        const snowVS = `attribute vec3 aPosition; attribute float aRandom;
+            uniform mat4 uProjection, uView; uniform float uTime; uniform vec3 uCameraPos;
+            uniform float uPlayerSpeed; varying float vAlpha, vSize;
+            void main() {
+                vec3 pos = aPosition;
+                float t = uTime * 0.8 + aRandom * 100.0;
+                float windX = sin(t) * 0.2 + cos(t * 0.3) * 0.2;
+                float windZ = cos(t * 0.8) * 0.2 + sin(t * 0.5) * 0.2;
+                pos.x += windX * 10.0; pos.z += windZ * 10.0;
+                pos.y -= mod(uTime * 3.0 + aRandom * 40.0, 40.0);
+                
+                float distX = pos.x - uCameraPos.x; float distZ = pos.z - uCameraPos.z;
+                pos.x = uCameraPos.x + mod(distX + 25.0, 50.0) - 25.0;
+                pos.z = uCameraPos.z + mod(distZ + 25.0, 50.0) - 25.0;
+                pos.y = uCameraPos.y + mod(pos.y - uCameraPos.y + 20.0, 40.0) - 20.0;
+                
+                vec3 toPlayer = pos - uCameraPos;
+                float distToPlayer = length(toPlayer);
+                if (distToPlayer < 4.0) {
+                    pos += normalize(toPlayer) * (4.0 - distToPlayer) * uPlayerSpeed * 2.0;
+                }
+                
+                vec4 mvPos = uView * vec4(pos, 1.0);
+                gl_Position = uProjection * mvPos;
+                vSize = (15.0 / -mvPos.z) * (0.5 + aRandom * 1.5);
+                gl_PointSize = clamp(vSize, 1.0, 12.0);
+                vAlpha = clamp(1.0 - (-mvPos.z / 30.0), 0.0, 1.0);
+            }`;
+        const snowFS = `precision highp float; varying float vAlpha;
+            void main() {
+                vec2 coord = gl_PointCoord - vec2(0.5);
+                float dist = length(coord); if (dist > 0.5) discard;
+                gl_FragColor = vec4(vec3(0.95, 0.98, 1.0), smoothstep(0.5, 0.1, dist) * vAlpha * 0.3);
+            }`;
+
+        // --- FOOTSTEP KICKUP SHADER ---
+        const kickupVS = `attribute vec3 aPosition; attribute float aLife;
+            uniform mat4 uProjection, uView; varying float vAlpha;
+            void main() {
+                vec4 mvPos = uView * vec4(aPosition, 1.0);
+                gl_Position = uProjection * mvPos;
+                gl_PointSize = clamp((100.0 / -mvPos.z) * (0.5 + aLife), 1.0, 20.0);
+                vAlpha = aLife;
+            }`;
+        const kickupFS = `precision highp float; varying float vAlpha;
+            void main() {
+                vec2 coord = gl_PointCoord - vec2(0.5);
+                float dist = length(coord); if (dist > 0.5) discard;
+                gl_FragColor = vec4(vec3(1.0, 1.0, 1.0), smoothstep(0.5, 0.0, dist) * vAlpha * 0.8);
+            }`;
+
+        // --- FOOTPRINT PAINT SHADER (Renders into FBO) ---
+        const paintVS = `attribute vec2 aPosition; varying vec2 vUv;
+            void main() { vUv = aPosition * 0.5 + 0.5; gl_Position = vec4(aPosition, 0.0, 1.0); }`;
+        const paintFS = `precision highp float; varying vec2 vUv;
+            uniform vec2 uPlayerPos; uniform float uPaintRadius;
+            void main() {
+                // Draw a black circle at the player's location
+                vec2 uvPlayer = uPlayerPos; // Already normalized 0-1
+                float dist = length(vUv - uvPlayer);
+                float brush = smoothstep(uPaintRadius, uPaintRadius * 0.5, dist);
+                gl_FragColor = vec4(vec3(1.0 - brush), 1.0);
+            }`;
+
+        // ==========================================
+        // 5. GEOMETRY GENERATION
+        // ==========================================
+        const terrainProgram = createProgram(terrainVS, terrainFS);
+        const objectProgram = createProgram(objectVS, objectFS);
+        const snowProgram = createProgram(snowVS, snowFS);
+        const kickupProgram = createProgram(kickupVS, kickupFS);
+        const skyProgram = createProgram(skyVS, skyFS);
+        const paintProgram = createProgram(paintVS, paintFS);
+
+        function createBuffer(data, type) {
+            const buffer = gl.createBuffer();
+            gl.bindBuffer(type, buffer);
+            gl.bufferData(type, new Float32Array(data), gl.STATIC_DRAW);
+            return buffer;
+        }
+
+        // --- FBO FOR DYNAMIC SNOW DISPLACEMENT ---
+        const FBO_SIZE = 1024;
+        const footprintTex = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, footprintTex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, FBO_SIZE, FBO_SIZE, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+        const footprintFBO = gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, footprintFBO);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, footprintTex, 0);
+        
+        // Initialize FBO to white (no depression)
+        gl.viewport(0, 0, FBO_SIZE, FBO_SIZE);
+        gl.clearColor(1.0, 1.0, 1.0, 1.0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+        // --- TERRAIN ---
+        const TERRAIN_SIZE = 800, TERRAIN_SEGS = 250;
+        const terrainVerts = [], terrainNorms = [], terrainIndices = [];
+        for (let z = 0; z <= TERRAIN_SEGS; z++) {
+            for (let x = 0; x <= TERRAIN_SEGS; x++) {
+                const px = (x / TERRAIN_SEGS - 0.5) * TERRAIN_SIZE;
+                const pz = (z / TERRAIN_SEGS - 0.5) * TERRAIN_SIZE;
+                const py = getTerrainHeight(px, pz);
+                terrainVerts.push(px, py, pz);
+                const eps = 1.0;
+                const hL = getTerrainHeight(px - eps, pz), hR = getTerrainHeight(px + eps, pz);
+                const hD = getTerrainHeight(px, pz - eps), hU = getTerrainHeight(px, pz + eps);
+                let nx = hL - hR, ny = 2.0 * eps, nz = hD - hU;
+                let len = Math.hypot(nx, ny, nz);
+                terrainNorms.push(nx/len, ny/len, nz/len);
+            }
+        }
+        for (let z = 0; z < TERRAIN_SEGS; z++) {
+            for (let x = 0; x < TERRAIN_SEGS; x++) {
+                const a = z * (TERRAIN_SEGS + 1) + x, b = a + 1;
+                const c = (z + 1) * (TERRAIN_SEGS + 1) + x, d = c + 1;
+                terrainIndices.push(a, b, c, b, d, c);
+            }
+        }
+        const terrainVBO = createBuffer(terrainVerts, gl.ARRAY_BUFFER);
+        const terrainNBO = createBuffer(terrainNorms, gl.ARRAY_BUFFER);
+        const terrainIBO = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, terrainIBO);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(terrainIndices), gl.STATIC_DRAW);
+
+        // --- DENSE FOREST ---
+        const allTreeVerts = [], allTreeNorms = [], allTreeIndices = [];
+        let treeIndexOffset = 0;
+        function addConeToTree(radius, height, segments, cx, cy, cz) {
+            allTreeVerts.push(cx, cy + height, cz); allTreeNorms.push(0, 1, 0);
+            for (let i = 0; i <= segments; i++) {
+                const angle = (i / segments) * Math.PI * 2;
+                allTreeVerts.push(cx + Math.cos(angle) * radius, cy, cz + Math.sin(angle) * radius);
+                allTreeNorms.push(Math.cos(angle), 0.5, Math.sin(angle));
+            }
+            for (let i = 0; i < segments; i++) {
+                allTreeIndices.push(treeIndexOffset, treeIndexOffset + 1 + i, treeIndexOffset + 2 + i);
+            }
+            treeIndexOffset += segments + 2;
+        }
+        function addCylinderToTree(radius, height, segments, cx, cy, cz) {
+            for (let i = 0; i <= segments; i++) {
+                const angle = (i / segments) * Math.PI * 2;
+                const nx = Math.cos(angle), nz = Math.sin(angle);
+                allTreeVerts.push(cx + nx * radius, cy, cz + nz * radius);
+                allTreeVerts.push(cx + nx * radius, cy + height, cz + nz * radius);
+                allTreeNorms.push(nx, 0, nz, nx, 0, nz);
+            }
+            for (let i = 0; i < segments; i++) {
+                const a = treeIndexOffset + i * 2;
+                allTreeIndices.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+            }
+            treeIndexOffset += (segments + 1) * 2;
+        }
+        for (let t = 0; t < 800; t++) {
+            const tx = (Math.random() - 0.5) * 750, tz = (Math.random() - 0.5) * 750;
+            if (Math.hypot(tx, tz) < 20) continue;
+            const ty = getTerrainHeight(tx, tz);
+            if (ty > 60.0) continue;
+            const scale = 1.5 + Math.random() * 3.0;
+            addCylinderToTree(0.3 * scale, 3.0 * scale, 6, tx, ty, tz);
+            for (let i = 0; i < 6; i++) {
+                const layerY = ty + (1.0 + i * 1.5) * scale;
+                const layerRadius = (4.0 - i * 0.6) * scale;
+                addConeToTree(layerRadius, 2.0 * scale, 8, tx, layerY, tz);
+                addConeToTree(layerRadius * 0.95, 1.6 * scale, 8, tx, layerY + 0.3 * scale, tz);
+            }
+        }
+        const treeVBO = createBuffer(allTreeVerts, gl.ARRAY_BUFFER);
+        const treeNBO = createBuffer(allTreeNorms, gl.ARRAY_BUFFER);
+        const treeIBO = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, treeIBO);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(allTreeIndices), gl.STATIC_DRAW);
+
+        // --- SNOWMAN ---
+        function createSphere(radius, segments) {
+            const verts = [], norms = [], inds = [];
+            for (let y = 0; y <= segments; y++) {
+                for (let x = 0; x <= segments; x++) {
+                    const u = x / segments, v = y / segments;
+                    const theta = u * Math.PI * 2, phi = v * Math.PI;
+                    const px = radius * Math.sin(phi) * Math.cos(theta);
+                    const py = radius * Math.cos(phi);
+                    const pz = radius * Math.sin(phi) * Math.sin(theta);
+                    verts.push(px, py, pz); norms.push(px/radius, py/radius, pz/radius);
+                }
+            }
+            for (let y = 0; y < segments; y++) {
+                for (let x = 0; x < segments; x++) {
+                    const a = y * (segments + 1) + x;
+                    inds.push(a, a + 1, a + segments + 1, a + 1, a + segments + 2, a + segments + 1);
+                }
+            }
+            return { verts, norms, inds };
+        }
+        const sphereData = createSphere(1.0, 24);
+        const sphereVBO = createBuffer(sphereData.verts, gl.ARRAY_BUFFER);
+        const sphereNBO = createBuffer(sphereData.norms, gl.ARRAY_BUFFER);
+        const sphereIBO = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, sphereIBO);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(sphereData.inds), gl.STATIC_DRAW);
+        const snowmanParts = [
+            { vbo: sphereVBO, nbo: sphereNBO, ibo: sphereIBO, count: sphereData.inds.length, color: [0.95, 0.98, 1.0], pos: [0, -1.5, -15], scale: [2.5, 2.5, 2.5], rough: 0.9 },
+            { vbo: sphereVBO, nbo: sphereNBO, ibo: sphereIBO, count: sphereData.inds.length, color: [0.95, 0.98, 1.0], pos: [0, 1.5, -15], scale: [1.8, 1.8, 1.8], rough: 0.9 },
+            { vbo: sphereVBO, nbo: sphereNBO, ibo: sphereIBO, count: sphereData.inds.length, color: [0.95, 0.98, 1.0], pos: [0, 3.5, -15], scale: [1.2, 1.2, 1.2], rough: 0.9 },
+            { vbo: sphereVBO, nbo: sphereNBO, ibo: sphereIBO, count: sphereData.inds.length, color: [0.1, 0.1, 0.1], pos: [-0.4, 3.8, -14.0], scale: [0.1, 0.1, 0.1], rough: 0.2 },
+            { vbo: sphereVBO, nbo: sphereNBO, ibo: sphereIBO, count: sphereData.inds.length, color: [0.1, 0.1, 0.1], pos: [0.4, 3.8, -14.0], scale: [0.1, 0.1, 0.1], rough: 0.2 },
+            { vbo: sphereVBO, nbo: sphereNBO, ibo: sphereIBO, count: sphereData.inds.length, color: [1.0, 0.4, 0.0], pos: [0, 3.5, -13.8], scale: [0.15, 0.4, 0.15], rough: 0.5 },
+            { vbo: sphereVBO, nbo: sphereNBO, ibo: sphereIBO, count: sphereData.inds.length, color: [0.1, 0.1, 0.1], pos: [0, 2.0, -13.1], scale: [0.15, 0.15, 0.15], rough: 0.2 },
+            { vbo: sphereVBO, nbo: sphereNBO, ibo: sphereIBO, count: sphereData.inds.length, color: [0.1, 0.1, 0.1], pos: [0, 1.0, -12.7], scale: [0.15, 0.15, 0.15], rough: 0.2 },
+            { vbo: sphereVBO, nbo: sphereNBO, ibo: sphereIBO, count: sphereData.inds.length, color: [0.1, 0.1, 0.1], pos: [0, 0.0, -12.2], scale: [0.15, 0.15, 0.15], rough: 0.2 },
+            { vbo: sphereVBO, nbo: sphereNBO, ibo: sphereIBO, count: sphereData.inds.length, color: [0.05, 0.05, 0.05], pos: [0, 4.6, -15], scale: [1.0, 0.1, 1.0], rough: 0.8 },
+            { vbo: sphereVBO, nbo: sphereNBO, ibo: sphereIBO, count: sphereData.inds.length, color: [0.05, 0.05, 0.05], pos: [0, 5.2, -15], scale: [0.7, 0.8, 0.7], rough: 0.8 },
+        ];
+
+        // --- PARTICLES ---
+        const MAX_SNOW = 30000;
+        const snowPositions = new Float32Array(MAX_SNOW * 3);
+        const snowRandoms = new Float32Array(MAX_SNOW);
+        for (let i = 0; i < MAX_SNOW; i++) {
+            snowPositions[i*3] = (Math.random() - 0.5) * 100;
+            snowPositions[i*3+1] = (Math.random() - 0.5) * 40;
+            snowPositions[i*3+2] = (Math.random() - 0.5) * 100;
+            snowRandoms[i] = Math.random();
+        }
+        const snowPosBuffer = createBuffer(snowPositions, gl.ARRAY_BUFFER);
+        const snowRandBuffer = createBuffer(snowRandoms, gl.ARRAY_BUFFER);
+
+        const MAX_KICKUP = 200;
+        const kickupPositions = new Float32Array(MAX_KICKUP * 3);
+        const kickupLives = new Float32Array(MAX_KICKUP);
+        const kickupVels = new Float32Array(MAX_KICKUP * 3);
+        let kickupIndex = 0;
+        const kickupPosBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, kickupPosBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, kickupPositions, gl.DYNAMIC_DRAW);
+        const kickupLifeBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, kickupLifeBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, kickupLives, gl.DYNAMIC_DRAW);
+
+        function spawnKickup(x, y, z, dirX, dirZ) {
+            for (let i = 0; i < 5; i++) {
+                const idx = kickupIndex; kickupIndex = (kickupIndex + 1) % MAX_KICKUP;
+                kickupPositions[idx*3] = x + (Math.random() - 0.5) * 0.5;
+                kickupPositions[idx*3+1] = y + 0.1;
+                kickupPositions[idx*3+2] = z + (Math.random() - 0.5) * 0.5;
+                kickupVels[idx*3] = dirX * (0.5 + Math.random()) + (Math.random() - 0.5) * 2.0;
+                kickupVels[idx*3+1] = 1.0 + Math.random() * 2.0;
+                kickupVels[idx*3+2] = dirZ * (0.5 + Math.random()) + (Math.random() - 0.5) * 2.0;
+                kickupLives[idx] = 1.0;
+            }
+        }
+
+        const skyVBO = createBuffer(new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.ARRAY_BUFFER);
+        const paintVBO = createBuffer(new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.ARRAY_BUFFER);
+
+        // ==========================================
+        // 6. FIRST-PERSON CONTROLS
+        // ==========================================
+        let playerPos = [0, 0, 0];
+        let yaw = 0, pitch = 0;
+        let keys = {};
+        let isDragging = false, lastMouseX = 0, lastMouseY = 0;
+        let moveSpeed = 0.3;
+        let bobTimer = 0;
+        let currentSpeed = 0;
+        let snowDepth = 0.0; // Simulated snow depth under player
+
+        window.addEventListener('keydown', e => keys[e.code] = true);
+        window.addEventListener('keyup', e => keys[e.code] = false);
+        
+        canvas.addEventListener('mousedown', (e) => { isDragging = true; lastMouseX = e.clientX; lastMouseY = e.clientY; });
+        window.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            yaw -= (e.clientX - lastMouseX) * 0.003;
+            pitch -= (e.clientY - lastMouseY) * 0.003;
+            pitch = Math.max(-1.5, Math.min(1.5, pitch));
+            lastMouseX = e.clientX; lastMouseY = e.clientY;
+        });
+        window.addEventListener('mouseup', () => isDragging = false);
+        canvas.addEventListener('wheel', (e) => { moveSpeed += e.deltaY * 0.001; moveSpeed = Math.max(0.1, Math.min(1.5, moveSpeed)); });
+
+        // ==========================================
+        // 7. RENDER LOOP
+        // ==========================================
+        document.getElementById('loading').style.display = 'none';
+        let then = 0;
+
+        function render(now) {
+            now *= 0.001;
+            const deltaTime = now - then;
+            then = now;
+            
+            // --- PLAYER MOVEMENT (RDR2 IK & High-Step Formula) ---
+            let forwardX = Math.sin(yaw), forwardZ = Math.cos(yaw);
+            let rightX = Math.cos(yaw), rightZ = -Math.sin(yaw);
+            let dx = 0, dz = 0;
+            
+            if (keys['KeyW'] || keys['ArrowUp']) { dx += forwardX; dz += forwardZ; }
+            if (keys['KeyS'] || keys['ArrowDown']) { dx -= forwardX; dz -= forwardZ; }
+            if (keys['KeyA'] || keys['ArrowLeft']) { dx -= rightX; dz -= rightZ; }
+            if (keys['KeyD'] || keys['ArrowRight']) { dx += rightX; dz += rightZ; }
+            
+            const len = Math.hypot(dx, dz);
+            currentSpeed = 0;
+            if (len > 0) {
+                dx /= len; dz /= len;
+                playerPos[0] += dx * moveSpeed;
+                playerPos[2] += dz * moveSpeed;
+                
+                // RDR2 High-Step Formula: Move slower and bob higher in deep snow
+                currentSpeed = moveSpeed * (1.0 - snowDepth * 0.4);
+                bobTimer += deltaTime * 15.0 * (1.0 + snowDepth);
+                
+                if (Math.sin(bobTimer * 2) < -0.8 && Math.random() < 0.5) {
+                    const feetY = getTerrainHeight(playerPos[0], playerPos[2]);
+                    spawnKickup(playerPos[0], feetY, playerPos[2], dx, dz);
+                }
+            } else {
+                bobTimer *= 0.9;
+            }
+            
+            // Raycast down to find terrain height
+            const terrainHeight = getTerrainHeight(playerPos[0], playerPos[2]);
+            
+            // Simulate snow depth based on noise (RDR2 Temperature/TTL system)
+            snowDepth = 0.3 + fbm(playerPos[0] * 0.05, playerPos[2] * 0.05) * 0.5;
+            
+            // Eye height = terrain + snow depth + IK bob
+            playerPos[1] = terrainHeight + snowDepth + 1.7;
+            const bobOffset = Math.sin(bobTimer) * (0.05 + snowDepth * 0.1) * (currentSpeed > 0 ? 1 : 0);
+            
+            const cameraPos = [playerPos[0], playerPos[1] + bobOffset, playerPos[2]];
+            const lookDir = [Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)];
+            const cameraTarget = [cameraPos[0] + lookDir[0], cameraPos[1] + lookDir[1], cameraPos[2] + lookDir[2]];
+            
+            const projectionMatrix = mat4.create();
+            const viewMatrix = mat4.create();
+            const modelMatrix = mat4.create();
+            
+            mat4.perspective(projectionMatrix, Math.PI / 3, canvas.width / canvas.height, 0.1, 1000);
+            mat4.lookAt(viewMatrix, cameraPos, cameraTarget, [0, 1, 0]);
+            mat4.identity(modelMatrix);
+            
+            const lightDir = [0.3, 0.8, 0.5];
+            const lightColor = [1.0, 1.0, 0.95];
+            const ambientColor = [0.4, 0.5, 0.7];
+
+            // ==========================================
+            // PASS 1: PAINT FOOTPRINTS INTO FBO (RDR2 Render Target)
+            // ==========================================
+            gl.bindFramebuffer(gl.FRAMEBUFFER, footprintFBO);
+            gl.viewport(0, 0, FBO_SIZE, FBO_SIZE);
+            gl.useProgram(paintProgram);
+            
+            // Normalize player position to 0-1 UV space
+            const uvX = (playerPos[0] + 400.0) / 800.0;
+            const uvZ = (playerPos[2] + 400.0) / 800.0;
+            
+            gl.uniform2f(gl.getUniformLocation(paintProgram, "uPlayerPos"), uvX, uvZ);
+            gl.uniform1f(gl.getUniformLocation(paintProgram, "uPaintRadius"), 0.02); // Size of footprint
+            
+            gl.bindBuffer(gl.ARRAY_BUFFER, paintVBO);
+            gl.enableVertexAttribArray(gl.getAttribLocation(paintProgram, "aPosition"));
+            gl.vertexAttribPointer(gl.getAttribLocation(paintProgram, "aPosition"), 2, gl.FLOAT, false, 0, 0);
+            
+            gl.disable(gl.DEPTH_TEST);
+            gl.enable(gl.BLEND);
+            gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); // Blend paint
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+            
+            // Restore main framebuffer
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+            gl.viewport(0, 0, canvas.width, canvas.height);
+            gl.clearColor(0.1, 0.15, 0.25, 1.0);
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+            gl.enable(gl.DEPTH_TEST);
+            gl.disable(gl.BLEND);
+            gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+            // ==========================================
+            // PASS 2: DRAW SCENE
+            // ==========================================
+
+            // 1. DRAW SKY
+            gl.useProgram(skyProgram);
+            gl.depthMask(false);
+            gl.bindBuffer(gl.ARRAY_BUFFER, skyVBO);
+            gl.enableVertexAttribArray(gl.getAttribLocation(skyProgram, "aPosition"));
+            gl.vertexAttribPointer(gl.getAttribLocation(skyProgram, "aPosition"), 2, gl.FLOAT, false, 0, 0);
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+            gl.depthMask(true);
+
+            // 2. DRAW TERRAIN (With Dynamic Displacement)
+            gl.useProgram(terrainProgram);
+            gl.uniformMatrix4fv(gl.getUniformLocation(terrainProgram, "uProjection"), false, projectionMatrix);
+            gl.uniformMatrix4fv(gl.getUniformLocation(terrainProgram, "uView"), false, viewMatrix);
+            gl.uniformMatrix4fv(gl.getUniformLocation(terrainProgram, "uModel"), false, modelMatrix);
+            gl.uniform3fv(gl.getUniformLocation(terrainProgram, "uCameraPos"), cameraPos);
+            gl.uniform3fv(gl.getUniformLocation(terrainProgram, "uLightDir"), lightDir);
+            gl.uniform3fv(gl.getUniformLocation(terrainProgram, "uLightColor"), lightColor);
+            gl.uniform3fv(gl.getUniformLocation(terrainProgram, "uAmbientColor"), ambientColor);
+            
+            // Bind Footprint Map to both Vertex and Fragment shaders
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, footprintTex);
+            gl.uniform1i(gl.getUniformLocation(terrainProgram, "uFootprintMap"), 0);
+            gl.uniform2f(gl.getUniformLocation(terrainProgram, "uMapScale"), 800.0, 800.0);
+            
+            gl.bindBuffer(gl.ARRAY_BUFFER, terrainVBO);
+            gl.enableVertexAttribArray(gl.getAttribLocation(terrainProgram, "aPosition"));
+            gl.vertexAttribPointer(gl.getAttribLocation(terrainProgram, "aPosition"), 3, gl.FLOAT, false, 0, 0);
+            gl.bindBuffer(gl.ARRAY_BUFFER, terrainNBO);
+            gl.enableVertexAttribArray(gl.getAttribLocation(terrainProgram, "aNormal"));
+            gl.vertexAttribPointer(gl.getAttribLocation(terrainProgram, "aNormal"), 3, gl.FLOAT, false, 0, 0);
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, terrainIBO);
+            gl.drawElements(gl.TRIANGLES, terrainIndices.length, gl.UNSIGNED_INT, 0);
+
+            // 3. DRAW OBJECTS
+            gl.useProgram(objectProgram);
+            gl.uniformMatrix4fv(gl.getUniformLocation(objectProgram, "uProjection"), false, projectionMatrix);
+            gl.uniformMatrix4fv(gl.getUniformLocation(objectProgram, "uView"), false, viewMatrix);
+            gl.uniformMatrix4fv(gl.getUniformLocation(objectProgram, "uModel"), false, modelMatrix);
+            gl.uniform3fv(gl.getUniformLocation(objectProgram, "uCameraPos"), cameraPos);
+            gl.uniform3fv(gl.getUniformLocation(objectProgram, "uLightDir"), lightDir);
+            gl.uniform3fv(gl.getUniformLocation(objectProgram, "uLightColor"), lightColor);
+            gl.uniform3fv(gl.getUniformLocation(objectProgram, "uAmbientColor"), ambientColor);
+            
+            const oPosLoc = gl.getAttribLocation(objectProgram, "aPosition");
+            const oNormLoc = gl.getAttribLocation(objectProgram, "aNormal");
+            const uColorLoc = gl.getUniformLocation(objectProgram, "uColor");
+            const uRoughLoc = gl.getUniformLocation(objectProgram, "uRoughness");
+            
+            gl.bindBuffer(gl.ARRAY_BUFFER, treeVBO);
+            gl.enableVertexAttribArray(oPosLoc);
+            gl.vertexAttribPointer(oPosLoc, 3, gl.FLOAT, false, 0, 0);
+            gl.bindBuffer(gl.ARRAY_BUFFER, treeNBO);
+            gl.enableVertexAttribArray(oNormLoc);
+            gl.vertexAttribPointer(oNormLoc, 3, gl.FLOAT, false, 0, 0);
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, treeIBO);
+            gl.uniform3fv(uColorLoc, [1.0, 1.0, 1.0]);
+            gl.uniform1f(uRoughLoc, 0.9);
+            gl.drawElements(gl.TRIANGLES, allTreeIndices.length, gl.UNSIGNED_INT, 0);
+
+            for (let part of snowmanParts) {
+                mat4.identity(modelMatrix);
+                mat4.translate(modelMatrix, modelMatrix, part.pos);
+                mat4.scale(modelMatrix, modelMatrix, part.scale);
+                gl.uniformMatrix4fv(gl.getUniformLocation(objectProgram, "uModel"), false, modelMatrix);
+                gl.uniform3fv(uColorLoc, part.color);
+                gl.uniform1f(uRoughLoc, part.rough);
+                
+                gl.bindBuffer(gl.ARRAY_BUFFER, part.vbo);
+                gl.enableVertexAttribArray(oPosLoc);
+                gl.vertexAttribPointer(oPosLoc, 3, gl.FLOAT, false, 0, 0);
+                gl.bindBuffer(gl.ARRAY_BUFFER, part.nbo);
+                gl.enableVertexAttribArray(oNormLoc);
+                gl.vertexAttribPointer(oNormLoc, 3, gl.FLOAT, false, 0, 0);
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, part.ibo);
+                gl.drawElements(gl.TRIANGLES, part.count, gl.UNSIGNED_INT, 0);
+            }
+
+            // 4. DRAW BLIZZARD SNOW (Temperature TTL Melting Logic)
+            gl.useProgram(snowProgram);
+            gl.uniformMatrix4fv(gl.getUniformLocation(snowProgram, "uProjection"), false, projectionMatrix);
+            gl.uniformMatrix4fv(gl.getUniformLocation(snowProgram, "uView"), false, viewMatrix);
+            gl.uniform1f(gl.getUniformLocation(snowProgram, "uTime"), now);
+            gl.uniform3fv(gl.getUniformLocation(snowProgram, "uCameraPos"), cameraPos);
+            gl.uniform1f(gl.getUniformLocation(snowProgram, "uPlayerSpeed"), currentSpeed > 0 ? 1.0 : 0.0);
+            
+            gl.bindBuffer(gl.ARRAY_BUFFER, snowPosBuffer);
+            gl.enableVertexAttribArray(gl.getAttribLocation(snowProgram, "aPosition"));
+            gl.vertexAttribPointer(gl.getAttribLocation(snowProgram, "aPosition"), 3, gl.FLOAT, false, 0, 0);
+            gl.bindBuffer(gl.ARRAY_BUFFER, snowRandBuffer);
+            gl.enableVertexAttribArray(gl.getAttribLocation(snowProgram, "aRandom"));
+            gl.vertexAttribPointer(gl.getAttribLocation(snowProgram, "aRandom"), 1, gl.FLOAT, false, 0, 0);
+            gl.drawArrays(gl.POINTS, 0, MAX_SNOW);
+
+            // 5. DRAW FOOTSTEP KICKUP
+            for (let i = 0; i < MAX_KICKUP; i++) {
+                if (kickupLives[i] > 0) {
+                    kickupLives[i] -= deltaTime * 2.0;
+                    if (kickupLives[i] < 0) kickupLives[i] = 0;
+                    kickupVels[i*3+1] -= deltaTime * 9.8;
+                    kickupPositions[i*3] += kickupVels[i*3] * deltaTime * 10.0;
+                    kickupPositions[i*3+1] += kickupVels[i*3+1] * deltaTime * 10.0;
+                    kickupPositions[i*3+2] += kickupVels[i*3+2] * deltaTime * 10.0;
+                }
+            }
+            gl.bindBuffer(gl.ARRAY_BUFFER, kickupPosBuffer);
+            gl.bufferSubData(gl.ARRAY_BUFFER, 0, kickupPositions);
+            gl.bindBuffer(gl.ARRAY_BUFFER, kickupLifeBuffer);
+            gl.bufferSubData(gl.ARRAY_BUFFER, 0, kickupLives);
+            
+            gl.useProgram(kickupProgram);
+            gl.uniformMatrix4fv(gl.getUniformLocation(kickupProgram, "uProjection"), false, projectionMatrix);
+            gl.uniformMatrix4fv(gl.getUniformLocation(kickupProgram, "uView"), false, viewMatrix);
+            
+            gl.bindBuffer(gl.ARRAY_BUFFER, kickupPosBuffer);
+            gl.enableVertexAttribArray(gl.getAttribLocation(kickupProgram, "aPosition"));
+            gl.vertexAttribPointer(gl.getAttribLocation(kickupProgram, "aPosition"), 3, gl.FLOAT, false, 0, 0);
+            gl.bindBuffer(gl.ARRAY_BUFFER, kickupLifeBuffer);
+            gl.enableVertexAttribArray(gl.getAttribLocation(kickupProgram, "aLife"));
+            gl.vertexAttribPointer(gl.getAttribLocation(kickupProgram, "aLife"), 1, gl.FLOAT, false, 0, 0);
+            gl.drawArrays(gl.POINTS, 0, MAX_KICKUP);
+            
+            requestAnimationFrame(render);
+        }
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+        requestAnimationFrame(render);
+    </script>
+</body>
+</html>

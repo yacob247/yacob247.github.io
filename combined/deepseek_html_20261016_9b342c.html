@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PyAgent Pro — Local AI · Files · Web · Python</title>
+<style>
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:#0d1117;color:#e6edf3;
+       font-family:ui-sans-serif,system-ui,"Segoe UI",Roboto,sans-serif;
+       display:flex;flex-direction:column;height:100vh;overflow:hidden;font-size:13.5px}
+  header{display:flex;align-items:center;justify-content:space-between;gap:10px;
+         padding:10px 14px;background:#161b22;border-bottom:1px solid #30363d}
+  .brand{font-weight:600;display:flex;align-items:center;gap:8px}
+  .brand span{color:#7d8590;font-weight:400;font-size:11px}
+  .hdrActions{display:flex;gap:6px;align-items:center}
+  .hdrActions button, .hdrActions label.btn{background:#21262d;border:1px solid #30363d;
+    color:#e6edf3;border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer}
+  .hdrActions button:hover,.hdrActions label.btn:hover{background:#30363d}
+  .hdrActions input[type=file]{display:none}
+  .status{font-size:11px;padding:3px 10px;border-radius:999px;
+          background:#21262d;color:#7d8590;white-space:nowrap}
+  .status.ok{color:#3fb950}.status.warn{color:#d29922}
+  .status.err{color:#f85149}.status.load{color:#58a6ff}
+
+  .cfgBar{display:flex;gap:6px;padding:6px 10px;background:#0d1117;
+          border-bottom:1px solid #30363d;flex-wrap:wrap;align-items:center;font-size:11px}
+  .cfgBar input{background:#161b22;border:1px solid #30363d;color:#e6edf3;
+                border-radius:6px;padding:4px 8px;font-size:11px;font-family:inherit}
+  .cfgBar label{color:#7d8590;display:flex;align-items:center;gap:4px}
+  #modelUrl{flex:1;min-width:180px}
+  #modelLib{flex:1;min-width:160px}
+  #maxSteps{width:52px}
+  #temp{width:52px}
+
+  main{flex:1;display:grid;grid-template-columns:1fr 1.15fr;min-height:0}
+  .paneL{display:flex;flex-direction:column;min-width:0;min-height:0;border-right:1px solid #30363d}
+  .paneR{display:flex;flex-direction:column;min-width:0;min-height:0;background:#0b0f14}
+
+  .filesBar{display:flex;gap:6px;padding:6px 10px;background:#0b0f14;
+            border-bottom:1px solid #30363d;overflow-x:auto;white-space:nowrap}
+  .filesBar .fileChip{background:#161b22;border:1px solid #30363d;color:#e6edf3;
+    padding:3px 9px;border-radius:6px;font-size:11px;cursor:pointer;
+    font-family:ui-monospace,Menlo,monospace}
+  .filesBar .fileChip.active{background:#1f6feb;border-color:#2b82e8;color:#fff}
+  .filesBar .empty{color:#484f58;font-size:11px;padding:3px}
+
+  #chat{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
+  .msg{display:flex;gap:9px;max-width:100%}
+  .avatar{flex-shrink:0;width:26px;height:26px;border-radius:7px;
+          display:flex;align-items:center;justify-content:center;font-size:13px}
+  .msg.user .avatar{background:#1f6feb}
+  .msg.ai   .avatar{background:#238636}
+  .msg.sys  .avatar{background:#30363d}
+  .msg.tool .avatar{background:#8957e5}
+  .bubble{flex:1;min-width:0;background:#161b22;border:1px solid #30363d;
+          border-radius:10px;padding:9px 12px;line-height:1.55;word-wrap:break-word}
+  .msg.user .bubble{background:#1c2b45;border-color:#1f6feb}
+  .msg.sys  .bubble{background:#1a1d21;border-color:#30363d;color:#7d8590;font-size:12.5px}
+  .msg.tool .bubble{background:#1a1426;border-color:#4c2889;font-size:12.5px}
+  .bubble p{margin:0 0 6px}.bubble p:last-child{margin-bottom:0}
+  .bubble code{background:#0d1117;padding:1px 5px;border-radius:4px;
+               font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;
+               border:1px solid #30363d}
+  .bubble pre{background:#0d1117;border:1px solid #30363d;border-radius:6px;
+              padding:8px 10px;overflow-x:auto;margin:5px 0;
+              font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;line-height:1.5}
+  .bubble pre code{background:none;border:0;padding:0}
+  .step{border-left:2px solid #30363d;padding-left:9px;margin:6px 0}
+  .step .label{font-size:10px;text-transform:uppercase;letter-spacing:.06em;
+               color:#7d8590;margin-bottom:2px;font-weight:600}
+  .step.run .label{color:#58a6ff}.step.out .label{color:#3fb950}
+  .dot{display:inline-block;width:5px;height:5px;border-radius:50%;
+       background:#58a6ff;margin-right:4px;animation:pulse 1s infinite}
+  @keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}
+
+  footer{border-top:1px solid #30363d;background:#161b22;padding:8px 12px}
+  .composer{display:flex;gap:6px;align-items:flex-end}
+  #input{flex:1;background:#0d1117;border:1px solid #30363d;color:#e6edf3;
+         border-radius:9px;padding:9px 11px;font-size:13px;font-family:inherit;
+         resize:none;max-height:150px;line-height:1.4;outline:none}
+  #input:focus{border-color:#1f6feb}
+  .send{background:#238636;border:1px solid #2ea043;color:#fff;border-radius:9px;
+        padding:9px 15px;font-size:13px;font-weight:600;cursor:pointer;height:38px}
+  .send:hover{background:#2ea043}.send:disabled{opacity:.4;cursor:not-allowed}
+
+  .wsHead{display:flex;align-items:center;justify-content:space-between;
+          padding:6px 10px;background:#161b22;border-bottom:1px solid #30363d;gap:6px}
+  .wsTabs{display:flex;gap:3px}
+  .wsTabs button{background:transparent;border:1px solid transparent;color:#7d8590;
+                 padding:4px 10px;border-radius:5px;font-size:11.5px;cursor:pointer;font-weight:600}
+  .wsTabs button:hover{color:#e6edf3;background:#21262d}
+  .wsTabs button.active{background:#1f6feb;color:#fff}
+  .wsActions{display:flex;gap:5px}
+  .wsActions button{background:#21262d;border:1px solid #30363d;color:#e6edf3;
+                    border-radius:5px;padding:4px 9px;font-size:11.5px;cursor:pointer}
+  .wsActions button:hover{background:#30363d}
+  .wsActions button.primary{background:#1f6feb;border-color:#2b82e8;color:#fff}
+  .wsActions button.primary:hover{background:#2b82e8}
+  .wsActions button.save{background:#238636;border-color:#2ea043;color:#fff}
+
+  .wsBody{flex:1;display:flex;flex-direction:column;min-height:0;position:relative}
+  .wsPane{display:none;flex:1;flex-direction:column;min-height:0;width:100%;height:100%}
+  .wsPane.active{display:flex}
+  #codeEditor{flex:1;width:100%;background:#0d1117;color:#e6edf3;border:0;
+              padding:12px;font-family:ui-monospace,Menlo,Consolas,monospace;
+              font-size:12.5px;line-height:1.55;resize:none;outline:none;tab-size:4}
+  #previewFrame{flex:1;width:100%;border:0;background:#fff}
+  #pythonTerm{flex:1;background:#05070c;color:#a1ebd6;padding:12px;
+              font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;
+              line-height:1.5;overflow-y:auto;white-space:pre-wrap;word-break:break-word}
+  #toolLog{flex:1;background:#0a0d13;color:#c9a2ff;padding:12px;
+           font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;
+           line-height:1.5;overflow-y:auto;white-space:pre-wrap}
+  #progress{height:3px;background:#21262d;overflow:hidden;display:none}
+  #progressBar{height:100%;width:0%;background:#58a6ff;transition:width .2s}
+
+  @media(max-width:900px){
+    main{grid-template-columns:1fr;grid-template-rows:1fr 1fr}
+    .paneL{border-right:0;border-bottom:1px solid #30363d}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">🐍 PyAgent Pro <span>local AI · files · web · python</span></div>
+  <div class="hdrActions">
+    <label class="btn">📎 Upload <input id="fileUpload" type="file" multiple></label>
+    <button id="clearBtn">Clear chat</button>
+    <button id="newBtn">New chat</button>
+  </div>
+  <div id="status" class="status">booting…</div>
+</header>
+
+<div class="cfgBar">
+  <label>R2 <input id="modelUrl" value="https://pub-406a7f3fa4d44f41b5317520aa1aaf4a.r2.dev"></label>
+  <label>Lib <input id="modelLib" placeholder="model_lib .wasm (optional)"></label>
+  <label>steps <input id="maxSteps" type="number" value="8" min="1" max="20"></label>
+  <label>temp <input id="temp" type="number" value="0.3" min="0" max="1" step="0.1"></label>
+  <label><input id="webOn" type="checkbox" checked> web</label>
+</div>
+<div id="progress"><div id="progressBar"></div></div>
+
+<main>
+  <section class="paneL">
+    <div id="filesBar" class="filesBar"><span class="empty">no files — upload or let the AI create some</span></div>
+    <div id="chat"></div>
+    <footer>
+      <div class="composer">
+        <textarea id="input" rows="1"
+          placeholder="Ask anything. I can chat, run Python, edit files, fetch pages, search the web. (Enter to send)"></textarea>
+        <button id="send" class="send" disabled>Send</button>
+      </div>
+    </footer>
+  </section>
+
+  <section class="paneR">
+    <div class="wsHead">
+      <div class="wsTabs">
+        <button data-tab="code" class="active">Code</button>
+        <button data-tab="preview">Preview</button>
+        <button data-tab="python">Python</button>
+        <button data-tab="tools">Tools</button>
+      </div>
+      <div class="wsActions">
+        <button id="saveFile" class="save">Save file</button>
+        <button id="runPy" class="primary">▶ Run Python</button>
+        <button id="renderHt">▶ Render HTML</button>
+        <button id="copyCode">Copy</button>
+      </div>
+    </div>
+    <div class="wsBody">
+      <div id="paneCode" class="wsPane active"><textarea id="codeEditor" spellcheck="false"></textarea></div>
+      <div id="panePreview" class="wsPane"><iframe id="previewFrame" sandbox="allow-scripts allow-modals allow-forms allow-popups allow-same-origin"></iframe></div>
+      <div id="panePython" class="wsPane"><div id="pythonTerm">Python engine starting…</div></div>
+      <div id="paneTools" class="wsPane"><div id="toolLog">Tool calls will appear here.
+
+Each line = one action the AI took: edit_lines, write_file, fetch_url, search, run_python.</div></div>
+    </div>
+  </section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js"></script>
+
+<script type="module">
+import * as webllm from 'https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.85/+esm';
+
+const $ = (id) => document.getElementById(id);
+const chatEl = $('chat'), codeEd = $('codeEditor'), term = $('pythonTerm');
+const preview = $('previewFrame'), toolLog = $('toolLog'), filesBar = $('filesBar');
+
+let pyodide = null, pyReady = false;
+let engine = null, modelReady = false, running = false;
+
+const state = {
+  files: {},
+  activeFile: null,
+  libs: [],
+};
+
+const MODEL_LIB_FALLBACKS = [
+  'https://huggingface.co/mlc-ai/binary-mlc-llm-libs/resolve/main/web-llm-models/v0_2_85/base/Qwen2-0.5B-Instruct-q4f16_1_cs1k-webgpu.wasm',
+  'https://huggingface.co/mlc-ai/binary-mlc-llm-libs/resolve/main/web-llm-models/v0_2_84/base/Qwen2-0.5B-Instruct-q4f16_1_cs1k-webgpu.wasm',
+];
+
+function setStatus(t, c=''){ const s=$('status'); s.textContent=t; s.className='status '+c; }
+function esc(s){ return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function renderMd(text){
+  const blocks=[];
+  text=String(text).replace(/```(\w*)\n?([\s\S]*?)```/g,(_,l,c)=>{
+    blocks.push('<pre><code>'+esc(c.replace(/\n$/,''))+'</code></pre>');
+    return '\u0000'+(blocks.length-1)+'\u0000';
+  });
+  text=esc(text);
+  text=text.replace(/`([^`\n]+)`/g,'<code>$1</code>');
+  text=text.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');
+  text=text.replace(/\u0000(\d+)\u0000/g,(_,i)=>blocks[+i]);
+  return text.split('\n').map(l=>'<p>'+(l||'&nbsp;')+'</p>').join('');
+}
+function addMessage(role, html, {raw=false}={}){
+  const w=document.createElement('div'); w.className='msg '+role;
+  const av={user:'👤',ai:'🐍',sys:'⚙️',tool:'🛠'}[role]||'•';
+  w.innerHTML='<div class="avatar">'+av+'</div><div class="bubble">'+(raw?html:renderMd(html))+'</div>';
+  chatEl.appendChild(w); chatEl.scrollTop=chatEl.scrollHeight;
+  return w.querySelector('.bubble');
+}
+function scrollDown(){ chatEl.scrollTop=chatEl.scrollHeight; }
+function logTool(line){ toolLog.textContent += '\n' + line; toolLog.scrollTop = toolLog.scrollHeight; }
+
+document.querySelectorAll('.wsTabs button').forEach(b=>{
+  b.addEventListener('click',()=>{
+    const t=b.dataset.tab;
+    document.querySelectorAll('.wsTabs button').forEach(x=>x.classList.toggle('active',x===b));
+    document.querySelectorAll('.wsPane').forEach(p=>p.classList.remove('active'));
+    $('pane'+t.charAt(0).toUpperCase()+t.slice(1)).classList.add('active');
+    if(t==='preview') renderHtml();
+  });
+});
+function openTab(n){ const b=document.querySelector(`.wsTabs button[data-tab="${n}"]`); if(b) b.click(); }
+
+function renderFileBar(){
+  filesBar.innerHTML='';
+  const names = Object.keys(state.files);
+  if(!names.length){ filesBar.innerHTML='<span class="empty">no files — upload or let the AI create some</span>'; return; }
+  names.forEach(n=>{
+    const c=document.createElement('span'); c.className='fileChip'+(n===state.activeFile?' active':'');
+    c.textContent=n; c.title=state.files[n].lang||'';
+    c.onclick=()=>{ setActiveFile(n); };
+    c.oncontextmenu=(e)=>{ e.preventDefault(); if(confirm('Delete '+n+'?')){ delete state.files[n]; if(state.activeFile===n) state.activeFile=Object.keys(state.files)[0]||null; refreshEditor(); renderFileBar(); } };
+    filesBar.appendChild(c);
+  });
+}
+function setActiveFile(name){
+  if(!state.files[name]) return;
+  if(state.activeFile && state.files[state.activeFile]) state.files[state.activeFile].content = codeEd.value;
+  state.activeFile = name;
+  codeEd.value = state.files[name].content || '';
+  renderFileBar();
+  openTab('code');
+}
+function refreshEditor(){
+  if(state.activeFile && state.files[state.activeFile]) codeEd.value = state.files[state.activeFile].content;
+  else codeEd.value = '';
+  renderFileBar();
+}
+
+$('fileUpload').addEventListener('change', async (e)=>{
+  const files = Array.from(e.target.files||[]);
+  for(const f of files){
+    const txt = await f.text();
+    const lang = guessLang(f.name);
+    state.files[f.name] = { content: txt, lang };
+    if(!state.activeFile) state.activeFile = f.name;
+  }
+  refreshEditor();
+  addMessage('sys', 'Loaded '+files.length+' file'+(files.length>1?'s':'')+': '+files.map(f=>'`'+f.name+'`').join(', '));
+  e.target.value='';
+});
+function guessLang(name){
+  const n=name.toLowerCase();
+  if(n.endsWith('.py')) return 'python';
+  if(n.endsWith('.js')) return 'javascript';
+  if(n.endsWith('.ts')) return 'typescript';
+  if(n.endsWith('.html')||n.endsWith('.htm')) return 'html';
+  if(n.endsWith('.css')) return 'css';
+  if(n.endsWith('.json')) return 'json';
+  if(n.endsWith('.md')) return 'markdown';
+  if(n.endsWith('.sql')) return 'sql';
+  if(n.endsWith('.java')) return 'java';
+  if(n.endsWith('.c')) return 'c';
+  if(n.endsWith('.cpp')) return 'cpp';
+  return 'text';
+}
+
+$('saveFile').addEventListener('click', ()=>{
+  if(!state.activeFile){ addMessage('sys','No active file. Upload one or let the AI create one.'); return; }
+  state.files[state.activeFile].content = codeEd.value;
+  addMessage('sys','Saved `'+state.activeFile+'`');
+});
+
+codeEd.addEventListener('keydown',(e)=>{
+  if(e.key==='Tab'){ e.preventDefault();
+    const s=codeEd.selectionStart,en=codeEd.selectionEnd;
+    codeEd.value=codeEd.value.slice(0,s)+'    '+codeEd.value.slice(en);
+    codeEd.selectionStart=codeEd.selectionEnd=s+4;
+  }
+});
+
+function renderHtml(){
+  let src = codeEd.value || '<body style="background:#111;color:#888;font-family:sans-serif;padding:24px">Nothing to render.</body>';
+  if(state.libs.length){
+    const tags = state.libs.map(u=>'<script src="'+esc(u)+'"><\/script>').join('\n');
+    if(/<head[^>]*>/i.test(src)) src = src.replace(/<head[^>]*>/i, m => m + '\n' + tags);
+    else if(/<body[^>]*>/i.test(src)) src = src.replace(/<body[^>]*>/i, m => m + '\n' + tags);
+  }
+  preview.srcdoc = src;
+}
+$('renderHt').addEventListener('click',()=>{ openTab('preview'); renderHtml(); });
+$('runPy').addEventListener('click',()=>{ openTab('python'); runPython(codeEd.value); });
+$('copyCode').addEventListener('click', async ()=>{
+  try{ await navigator.clipboard.writeText(codeEd.value); setStatus('copied','ok');
+    setTimeout(()=>setStatus(modelReady?'ready':'booting…','ok'),1200); }catch(e){ setStatus('copy failed','err'); }
+});
+
+async function bootPython(){
+  setStatus('loading Python…','load');
+  addMessage('sys','Booting Python runtime (Pyodide / WASM)…');
+  try{
+    pyodide = await loadPyodide({indexURL:'https://cdn.jsdelivr.net/pyodide/v0.26.2/full/'});
+    await pyodide.loadPackage(['micropip','numpy']);
+    pyReady=true;
+    term.textContent='Python '+pyodide.version.split(' ')[0]+' ready. numpy + micropip loaded.\n';
+    addMessage('sys','✅ Python '+pyodide.version.split(' ')[0]+' ready.');
+  }catch(e){
+    setStatus('Python failed','err'); term.textContent='Python boot failed: '+(e.message||e);
+    addMessage('sys','❌ Python boot failed: '+(e.message||e));
+  }
+}
+function runPython(code){
+  return new Promise(async (resolve)=>{
+    if(!pyReady){ resolve('(python engine not ready)'); return; }
+    let buf='';
+    pyodide.setStdout({batched:s=>{buf+=s+'\n';}});
+    pyodide.setStderr({batched:s=>{buf+=s+'\n';}});
+    const head = code.split('\n')[0].slice(0,70);
+    term.textContent += '\n>>> '+head+(code.includes('\n')?' …':'')+'\n';
+    try{
+      const r = await pyodide.runPythonAsync(code);
+      if(r!==undefined&&r!==null) buf+=(buf&&!buf.endsWith('\n')?'\n':'')+String(r);
+    }catch(err){ buf+=(buf&&!buf.endsWith('\n')?'\n':'')+(err.message||String(err)); }
+    const out = buf.trimEnd();
+    if(out) term.textContent += out + '\n';
+    term.scrollTop = term.scrollHeight;
+    resolve(out);
+  });
+}
+
+async function fetchUrl(url){
+  const proxies = [
+    u=>`https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+    u=>`https://corsproxy.io/?${encodeURIComponent(u)}`,
+  ];
+  for(const p of proxies){
+    try{
+      const res = await fetch(p(url));
+      if(!res.ok) continue;
+      const txt = await res.text();
+      return txt.slice(0, 20000);
+    }catch(e){ }
+  }
+  throw new Error('all fetch proxies failed for '+url);
+}
+
+async function webSearch(q){
+  const url = 'https://duckduckgo.com/html/?q=' + encodeURIComponent(q);
+  const html = await fetchUrl(url);
+  const results = [];
+  const re = /<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+  let m;
+  while((m = re.exec(html)) && results.length < 8){
+    const link = decodeURIComponent((m[1].match(/uddg=([^&]+)/)||[])[1]||m[1]);
+    const title = m[2].replace(/<[^>]+>/g,'').trim();
+    if(link && title) results.push({ title, url: link });
+  }
+  if(!results.length) return '(no results parsed)\n\nRaw snippet:\n'+html.slice(0,800);
+  return results.map((r,i)=>`${i+1}. ${r.title}\n   ${r.url}`).join('\n');
+}
+
+const tools = {
+  list_files(){
+    const names = Object.keys(state.files);
+    if(!names.length) return '(no files)';
+    return names.map(n=>`- ${n} (${state.files[n].lang||'text'}, ${state.files[n].content.length} chars)`).join('\n');
+  },
+  read_file({file, start, end}){
+    if(!state.files[file]) return 'ERROR: no such file: '+file;
+    const lines = state.files[file].content.split('\n');
+    const s = Math.max(0, (start|0) - 1);
+    const e = Math.min(lines.length, end ? end|0 : s+80);
+    return `File: ${file} (lines ${s+1}-${e} of ${lines.length})\n`+
+      lines.slice(s,e).map((l,i)=>`${s+i+1}: ${l}`).join('\n');
+  },
+  write_file({file, content}){
+    if(!file) return 'ERROR: no file name';
+    state.files[file] = { content: String(content||''), lang: guessLang(file) };
+    if(!state.activeFile) state.activeFile = file;
+    if(state.activeFile === file){ codeEd.value = state.files[file].content; openTab('code'); }
+    renderFileBar();
+    return `Wrote ${file} (${state.files[file].content.length} chars)`;
+  },
+  edit_lines({file, start, end, content}){
+    if(!state.files[file]) return 'ERROR: no such file: '+file;
+    if(!start || !end) return 'ERROR: edit_lines needs start and end (1-based)';
+    const lines = state.files[file].content.split('\n');
+    const s = Math.max(0, (start|0) - 1);
+    const e = Math.min(lines.length, end|0);
+    const before = lines.length;
+    const newLines = String(content||'').split('\n');
+    lines.splice(s, e-s, ...newLines);
+    state.files[file].content = lines.join('\n');
+    if(state.activeFile === file) codeEd.value = state.files[file].content;
+    return `Edited ${file}: replaced lines ${s+1}-${e} (${e-s} line${e-s===1?'':'s'}) with ${newLines.length} line${newLines.length===1?'':'s'}. File was ${before} lines, now ${lines.length}.`;
+  },
+  run_python({code}){
+    return runPython(String(code||''));
+  },
+  async fetch_url({url}){
+    if(!$('webOn').checked) return 'ERROR: web access is disabled by the user.';
+    try{
+      const body = await fetchUrl(url);
+      return `Fetched ${url} (${body.length} chars)\n\n`+body.slice(0,6000);
+    }catch(e){ return 'FETCH ERROR: '+(e.message||e); }
+  },
+  async search({query}){
+    if(!$('webOn').checked) return 'ERROR: web access is disabled by the user.';
+    try{ return await webSearch(query); }
+    catch(e){ return 'SEARCH ERROR: '+(e.message||e); }
+  },
+  add_library({url}){
+    if(!url) return 'ERROR: no url';
+    if(state.libs.includes(url)) return 'already loaded: '+url;
+    state.libs.push(url);
+    addMessage('sys','🔗 Library added for preview: `'+url+'`');
+    return 'Library added. It will be injected into HTML previews. Total libs: '+state.libs.length;
+  },
+};
+
+async function bootModel(){
+  const modelUrl = $('modelUrl').value.trim().replace(/\/+$/,'');
+  const userLib  = $('modelLib').value.trim();
+  if(!navigator.gpu){
+    setStatus('WebGPU missing','err');
+    addMessage('sys','❌ **WebLLM requires WebGPU.** Use Chrome/Edge 113+ on desktop.');
+    return;
+  }
+  if(!modelUrl){ setStatus('model URL missing','err'); return; }
+
+  const libs = userLib ? [userLib, ...MODEL_LIB_FALLBACKS] : MODEL_LIB_FALLBACKS;
+  const modelId = 'r2-model';
+  const bubble = addMessage('sys','🧠 Loading model from R2 via WebLLM…');
+  $('progress').style.display='block'; $('progressBar').style.width='0%';
+  setStatus('loading model…','load');
+  let lastErr = null;
+
+  for(const libUrl of libs){
+    console.log('[pyagent] try lib',libUrl);
+    bubble.innerHTML = renderMd('🧠 Trying kernel:\n`'+libUrl+'`');
+    try{
+      engine = await webllm.CreateMLCEngine(modelId, {
+        appConfig:{
+          cacheBackend:'indexeddb',
+          model_list:[{ model:modelUrl, model_id:modelId, model_lib:libUrl,
+                        overrides:{context_window_size:4096} }]
+        },
+        initProgressCallback:(p)=>{
+          const pct=p.progress?Math.round(p.progress*100):0;
+          $('progressBar').style.width=pct+'%';
+          bubble.innerHTML = renderMd('🧠 **'+modelId+'** — '+pct+'%\n\n`'+(p.text||'')+'`');
+        }
+      });
+      modelReady=true; $('progress').style.display='none';
+      setStatus('ready','ok');
+      bubble.innerHTML = renderMd('✅ Model ready. Loaded from R2, cached locally.');
+      $('send').disabled=false;
+      return;
+    }catch(e){ lastErr=e; engine=null; console.warn('[pyagent] lib failed',libUrl,e.message||e); }
+  }
+  $('progress').style.display='none';
+  setStatus('model failed','err');
+  bubble.innerHTML='❌ All kernels failed: <pre><code>'+esc(lastErr?.message||String(lastErr))+'</code></pre>';
+}
+
+const SYSTEM_PROMPT = `You are PyAgent, a helpful local AI with tools.
+You are direct, honest, and you ONLY state facts you can back up.
+
+# REPLY FORMAT (strict)
+Every reply must be ONE JSON object, nothing outside it:
+
+{"tool":"<name>","<param>":"<value>"}
+
+When you are done talking to the user:
+{"tool":"final","reply":"<your answer>"}
+
+# TOOLS
+
+run_python(code)          -> executes Python, returns stdout. Use for math, data, algorithms.
+write_file(file,content)  -> creates or overwrites a file.
+edit_lines(file,start,end,content) -> replaces lines start..end (1-based, inclusive) with new content. THIS is how you fix code without regenerating it.
+read_file(file,start,end) -> reads lines from a file (start/end optional).
+list_files()              -> lists uploaded/created files.
+fetch_url(url)            -> downloads a URL, returns text.
+search(query)             -> web search, returns list of results.
+add_library(url)          -> adds a JS CDN lib (e.g. three.js) to HTML previews.
+final(reply)              -> the ONLY way to end a turn. Put your final message in "reply".
+
+# RULES
+- One tool call per reply. Do not chain tools inside one JSON.
+- After a tool result comes back, decide the next tool OR use "final".
+- To FIX code: read_file first, then edit_lines. NEVER rewrite the whole file.
+- To run math: run_python. Copy the printed number EXACTLY into the final reply.
+- NEVER invent numbers. If a computation is needed, run it.
+- If the user just chats (hi, opinion, explain), skip tools: go straight to {"tool":"final","reply":"..."}.
+- Prefer files with these extensions: .py .js .html .css .json .md .sql
+- Languages you can write: Python, JavaScript, TypeScript, HTML, CSS, SQL, JSON, Markdown, C, C++, Java, Bash.
+
+# EXAMPLES
+
+user: hi
+{"tool":"final","reply":"Hey — what are we building?"}
+
+user: what is 4827 * 6192
+{"tool":"run_python","code":"print(4827 * 6192)"}
+(tool returns 29888784)
+{"tool":"final","reply":"4827 × 6192 = 29888784."}
+
+user: create a python script that prints the first 20 primes
+{"tool":"write_file","file":"primes.py","content":"primes = []\\nn = 2\\nwhile len(primes) < 20:\\n    if all(n % p for p in primes):\\n        primes.append(n)\\n    n += 1\\nprint(primes)"}
+(tool returns: Wrote primes.py)
+{"tool":"final","reply":"Created primes.py — run it to see the first 20 primes."}
+
+user: in main.py, change lines 5-7 to compute the average instead of the sum
+{"tool":"read_file","file":"main.py","start":1,"end":15}
+(tool returns the lines)
+{"tool":"edit_lines","file":"main.py","start":5,"end":7,"content":"total = sum(values)\\navg = total / len(values)\\nprint(avg)"}
+(tool returns: Edited main.py: replaced lines 5-7 with 3 lines.)
+{"tool":"final","reply":"Done. Lines 5-7 of main.py now compute the average."}
+
+user: build a three.js spinning cube in HTML
+{"tool":"add_library","url":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"}
+{"tool":"write_file","file":"cube.html","content":"<html><head><\\/head><body>\\n<script>\\nconst s=new THREE.Scene();const c=new THREE.PerspectiveCamera(75,innerWidth/innerHeight,0.1,1000);const r=new THREE.WebGLRenderer();r.setSize(innerWidth,innerHeight);document.body.appendChild(r.domElement);const m=new THREE.Mesh(new THREE.BoxGeometry(),new THREE.MeshBasicMaterial({color:0x44aa88,wireframe:true}));s.add(m);c.position.z=3;function a(){requestAnimationFrame(a);m.rotation.x+=0.01;m.rotation.y+=0.01;r.render(s,c)}a();\\n<\\/script>\\n<\\/body><\\/html>"}
+{"tool":"final","reply":"Made cube.html with a spinning three.js cube. Open the Preview tab."}
+
+user: what is the population of tokyo
+{"tool":"search","query":"Tokyo population 2024"}
+(tool returns results)
+{"tool":"final","reply":"..."}
+`;
+
+let history = [{role:'system',content:SYSTEM_PROMPT}];
+
+function parseToolCall(raw){
+  try{
+    const obj = JSON.parse(raw.trim());
+    if(obj && obj.tool) return obj;
+  }catch(e){ }
+
+  const m = raw.match(/\{[\s\S]*\}/);
+  if(m){
+    try{
+      const obj = JSON.parse(m[0]);
+      if(obj && obj.tool) return obj;
+    }catch(e){}
+  }
+
+  const fence = raw.match(/```(?:python|py)?[ \t]*\r?\n([\s\S]*?)```/i);
+  if(fence) return { tool:'run_python', code: fence[1].trim() };
+
+  return null;
+}
+
+async function executeTool(call){
+  const t = call.tool;
+  logTool('• '+t+' '+JSON.stringify({...call, tool:undefined}).slice(0,160));
+  if(!tools[t]) return 'ERROR: unknown tool "'+t+'"';
+  try{
+    const r = await tools[t](call);
+    const trimmed = String(r==null?'':r).slice(0, 6000);
+    logTool('  → '+trimmed.split('\n')[0].slice(0,120));
+    return trimmed;
+  }catch(e){
+    logTool('  ✗ '+(e.message||e));
+    return 'ERROR: '+(e.message||e);
+  }
+}
+
+async function handleUserMessage(text){
+  if(running || !modelReady) return;
+  addMessage('user', text);
+  history.push({role:'user',content:text});
+  running = true; $('send').disabled = true;
+
+  const MAX = Math.max(1, Math.min(20, parseInt($('maxSteps').value,10)||8));
+  const TEMP = Math.max(0, Math.min(1, parseFloat($('temp').value)||0.3));
+
+  try{
+    for(let step=0; step<MAX; step++){
+      const bubble = addMessage('ai','<span class="dot"></span>thinking…',{raw:true});
+      let reply = '';
+      try{
+        const res = await engine.chat.completions.create({
+          messages: history, temperature: TEMP, max_tokens: 400
+        });
+        reply = res.choices[0].message.content || '';
+      }catch(e){
+        bubble.innerHTML = '⚠️ Model error: '+esc(e.message||e); break;
+      }
+
+      const call = parseToolCall(reply);
+
+      if(!call){
+        bubble.innerHTML = renderMd(reply);
+        history.push({role:'assistant',content:reply});
+        scrollDown();
+        break;
+      }
+
+      if(call.tool === 'final'){
+        bubble.innerHTML = renderMd(call.reply || '(done)');
+        history.push({role:'assistant',content:call.reply||''});
+        scrollDown();
+        break;
+      }
+
+      bubble.innerHTML = renderMd(
+        '**'+call.tool+'**\n```json\n'+esc(JSON.stringify(call,null,2).slice(0,400))+'\n```'
+      );
+      scrollDown();
+
+      const result = await executeTool(call);
+
+      bubble.innerHTML +=
+        '<div class="step out"><div class="label">result</div>'+
+        '<pre><code>'+esc(result.slice(0,800))+'</code></pre></div>';
+      scrollDown();
+
+      history.push({role:'assistant',content:reply});
+      history.push({role:'user',content:
+        'TOOL RESULT:\n```\n'+result+'\n```\n\nNext: call the next tool, or "final" if the task is done.'});
+
+      if(history.length > 20) history = [history[0], ...history.slice(-18)];
+    }
+  }catch(e){
+    addMessage('sys','⚠️ '+(e.message||e));
+  }finally{
+    running=false; $('send').disabled=false; $('input').focus();
+  }
+}
+
+const input = $('input');
+function autoGrow(){ input.style.height='auto'; input.style.height=Math.min(input.scrollHeight,150)+'px'; }
+input.addEventListener('input',autoGrow);
+function send(){
+  const t=input.value.trim();
+  if(!t||running||!modelReady) return;
+  input.value=''; autoGrow(); handleUserMessage(t);
+}
+input.addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();} });
+$('send').addEventListener('click',send);
+
+$('clearBtn').addEventListener('click',()=>{ chatEl.innerHTML=''; });
+$('newBtn').addEventListener('click',()=>{
+  history=[{role:'system',content:SYSTEM_PROMPT}]; chatEl.innerHTML='';
+  addMessage('sys','New chat started.');
+});
+
+addMessage('ai',
+  'Hey — I\'m **PyAgent Pro**. I chat normally, and I can:\n\n'+
+  '• **run Python** live in your browser\n'+
+  '• **upload, edit, and create files** (I edit only the lines you ask about)\n'+
+  '• **fetch URLs and search the web**\n'+
+  '• **add JS libraries** (three.js, Chart.js, etc.) to HTML previews\n\n'+
+  'Try:\n'+
+  '• "create a python script that solves quadratic equations"\n'+
+  '• "build an HTML page with a spinning three.js cube"\n'+
+  '• "search for the latest python release and tell me"\n'+
+  '• upload a .py and say "in that file, replace lines 10-12 with …"\n\n'+
+  'When I generate code, it lands in the **workspace** on the right.');
+
+renderFileBar();
+(async()=>{ await bootPython(); await bootModel(); })();
+</script>
+</body>
+</html>

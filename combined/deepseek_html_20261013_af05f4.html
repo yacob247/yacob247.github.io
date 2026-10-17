@@ -1,0 +1,1085 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Zhaozhou Bridge — PBR Construction</title>
+<style>
+  :root{ color-scheme:dark; }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  html,body{ width:100%; height:100%; overflow:hidden; background:#06070a;
+    font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  #scene{ display:block; width:100%; height:100%; }
+
+  #hud{ position:fixed; inset:0; pointer-events:none; display:flex;
+        flex-direction:column; justify-content:space-between; }
+
+  #caption{ position:absolute; left:50%; bottom:118px; transform:translateX(-50%);
+    width:min(760px,86vw); text-align:center; font-size:clamp(13px,1.6vw,19px);
+    line-height:1.5; color:#f2efe8; text-shadow:0 2px 12px rgba(0,0,0,.95),0 0 40px rgba(0,0,0,.7);
+    letter-spacing:.01em; transition:opacity .45s ease; font-weight:450; }
+
+  #bar{ position:absolute; left:0; right:0; bottom:0; padding:14px 22px 18px;
+    background:linear-gradient(to top,rgba(4,6,10,.92),rgba(4,6,10,.55) 55%,transparent);
+    pointer-events:auto; display:flex; align-items:center; gap:16px; }
+
+  button{ pointer-events:auto; width:42px; height:42px; flex:0 0 42px; border-radius:50%;
+    border:1px solid rgba(255,255,255,.18); background:rgba(255,255,255,.07);
+    color:#fff; cursor:pointer; display:grid; place-items:center;
+    backdrop-filter:blur(10px); transition:.18s; }
+  button:hover{ background:rgba(255,255,255,.17); transform:scale(1.06); }
+  button svg{ width:16px; height:16px; fill:#fff; }
+
+  #scrub{ flex:1; -webkit-appearance:none; appearance:none; height:4px; border-radius:4px;
+    background:rgba(255,255,255,.16); outline:none; cursor:pointer; }
+  #scrub::-webkit-slider-thumb{ -webkit-appearance:none; width:14px; height:14px;
+    border-radius:50%; background:#fff; box-shadow:0 0 10px rgba(255,255,255,.6); cursor:pointer; }
+  #scrub::-moz-range-thumb{ width:14px; height:14px; border:0; border-radius:50%;
+    background:#fff; box-shadow:0 0 10px rgba(255,255,255,.6); cursor:pointer; }
+
+  #time{ font-variant-numeric:tabular-nums; font-size:12.5px; color:#9fb0c4;
+    letter-spacing:.06em; min-width:78px; text-align:right; }
+
+  #title{ position:absolute; top:26px; left:50%; transform:translateX(-50%);
+    font-size:12px; letter-spacing:.42em; text-transform:uppercase;
+    color:rgba(255,255,255,.5); font-weight:600; white-space:nowrap; }
+
+  #loader{ position:fixed; inset:0; background:#06070a; display:grid; place-items:center;
+    z-index:50; transition:opacity .7s ease; }
+  #loader .inner{ text-align:center; }
+  #loader .ring{ width:44px; height:44px; margin:0 auto 18px; border-radius:50%;
+    border:2px solid rgba(255,255,255,.12); border-top-color:#8fb6d8;
+    animation:spin .85s linear infinite; }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+  #loader p{ font-size:11.5px; letter-spacing:.34em; text-transform:uppercase;
+    color:rgba(255,255,255,.42); }
+  #loader.done{ opacity:0; pointer-events:none; }
+</style>
+</head>
+<body>
+<canvas id="scene"></canvas>
+
+<div id="hud">
+  <div id="title">Zhaozhou Bridge · 赵州桥 · 605 AD</div>
+  <div id="caption"></div>
+  <div id="bar">
+    <button id="play" aria-label="Play/Pause">
+      <svg id="playIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+    </button>
+    <input id="scrub" type="range" min="0" max="1000" value="0" step="1" aria-label="Timeline">
+    <div id="time">0:00 / 1:00</div>
+  </div>
+</div>
+
+<div id="loader"><div class="inner"><div class="ring"></div><p>Forging PBR materials</p></div></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.161.0/build/three.module.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* ══════════════════════════════════════════════════════════════════════
+   0.  TIMELINE  (seconds)
+   ══════════════════════════════════════════════════════════════════════ */
+const T = {
+  slabs:       2.5,    // first pillars + slabs appear
+  crack:       8.5,    // long slabs crack
+  morePillars: 13.5,   // add more pillars
+  boat:        19.0,   // boat arrives and is blocked
+  crumble:     25.0,   // old bridge collapses
+  arch:        28.5,   // voussoirs build the arch
+  spandrel:    36.0,   // spandrel walls
+  deck:        40.5,   // roadway
+  railings:    44.5,   // railings
+  flood:       49.0,   // flood rises
+  openArches:  54.5,   // side arches open
+  END:         60.0
+};
+
+/* ══════════════════════════════════════════════════════════════════════
+   1.  RENDERER · SCENE · CAMERA
+   ══════════════════════════════════════════════════════════════════════ */
+const canvas   = document.getElementById('scene');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, powerPreference:'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
+renderer.toneMapping       = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.02;
+renderer.outputColorSpace  = THREE.SRGBColorSpace;
+
+const scene  = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(38, innerWidth/innerHeight, 0.4, 1600);
+
+/* ── procedural sky (equirect) → PMREM environment for real IBL ─────── */
+function makeSkyTexture(){
+  const W = 2048, H = 1024;
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const x = c.getContext('2d');
+
+  const g = x.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0.00, '#123f7d');
+  g.addColorStop(0.24, '#3f74b4');
+  g.addColorStop(0.40, '#7aa8d2');
+  g.addColorStop(0.478,'#c3d8e6');
+  g.addColorStop(0.500,'#e2e8ea');
+  g.addColorStop(0.512,'#8b8172');
+  g.addColorStop(0.62, '#5c5343');
+  g.addColorStop(0.80, '#3a342a');
+  g.addColorStop(1.00, '#232019');
+  x.fillStyle = g; x.fillRect(0, 0, W, H);
+
+  // wispy clouds
+  x.globalCompositeOperation = 'screen';
+  for (let i = 0; i < 26; i++){
+    const cx = Math.random()*W, cy = H*0.10 + Math.random()*H*0.30;
+    const r  = 90 + Math.random()*230;
+    const rg = x.createRadialGradient(cx, cy, 0, cx, cy, r);
+    const a  = 0.05 + Math.random()*0.11;
+    rg.addColorStop(0, `rgba(255,255,255,${a})`);
+    rg.addColorStop(1, 'rgba(255,255,255,0)');
+    x.fillStyle = rg;
+    x.save(); x.translate(cx, cy); x.scale(1, 0.32);
+    x.beginPath(); x.arc(0, 0, r, 0, Math.PI*2); x.fill(); x.restore();
+  }
+  x.globalCompositeOperation = 'source-over';
+
+  // sun disc + glow
+  const sx = W*0.285, sy = H*0.215;
+  const sg = x.createRadialGradient(sx, sy, 0, sx, sy, 260);
+  sg.addColorStop(0.00, 'rgba(255,253,244,1)');
+  sg.addColorStop(0.05, 'rgba(255,246,214,0.95)');
+  sg.addColorStop(0.22, 'rgba(255,236,190,0.30)');
+  sg.addColorStop(1.00, 'rgba(255,230,180,0)');
+  x.fillStyle = sg; x.beginPath(); x.arc(sx, sy, 260, 0, Math.PI*2); x.fill();
+  x.fillStyle = '#fffdf6'; x.beginPath(); x.arc(sx, sy, 26, 0, Math.PI*2); x.fill();
+
+  const t = new THREE.CanvasTexture(c);
+  t.mapping    = THREE.EquirectangularReflectionMapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+const skyTex = makeSkyTexture();
+const pmrem  = new THREE.PMREMGenerator(renderer);
+pmrem.compileEquirectangularShader();
+scene.environment = pmrem.fromEquirectangular(skyTex).texture;
+scene.background  = skyTex;
+scene.backgroundIntensity = 1.0;
+scene.fog = new THREE.Fog(0xa9bfd2, 190, 760);
+pmrem.dispose();
+
+/* ── sun ────────────────────────────────────────────────────────────── */
+const sun = new THREE.DirectionalLight(0xfff0d6, 3.1);
+sun.position.set(59, 93, -49);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left:-72, right:72, top:62, bottom:-62, near:1, far:340 });
+sun.shadow.bias = -0.0006;
+sun.shadow.normalBias = 0.055;
+sun.target.position.set(0, 5, 0);
+scene.add(sun, sun.target);
+
+/* ══════════════════════════════════════════════════════════════════════
+   2.  PROCEDURAL PBR TEXTURE FACTORY
+   ══════════════════════════════════════════════════════════════════════ */
+function hash2(ix, iy, period){
+  ix = ((ix % period) + period) % period;
+  iy = ((iy % period) + period) % period;
+  let h = Math.imul(ix, 374761393) ^ Math.imul(iy, 668265263);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+function pnoise(x, y, period){
+  const xi = Math.floor(x), yi = Math.floor(y);
+  const xf = x - xi, yf = y - yi;
+  const u = xf*xf*(3-2*xf), v = yf*yf*(3-2*yf);
+  const a = hash2(xi, yi, period),     b = hash2(xi+1, yi, period);
+  const c = hash2(xi, yi+1, period),   d = hash2(xi+1, yi+1, period);
+  return a*(1-u)*(1-v) + b*u*(1-v) + c*(1-u)*v + d*u*v;
+}
+function tfbm(u, v, freq, oct, gain = 0.5){
+  let s = 0, amp = 1, tot = 0, f = freq;
+  for (let i = 0; i < oct; i++){ s += amp*pnoise(u*f, v*f, f); tot += amp; amp *= gain; f *= 2; }
+  return s / tot;
+}
+
+function cv(size){ const c = document.createElement('canvas'); c.width = c.height = size; return c; }
+
+function makeNormalMap(height, size, strength){
+  const c = cv(size), ctx = c.getContext('2d');
+  const img = ctx.createImageData(size, size), d = img.data;
+  for (let y = 0; y < size; y++){
+    for (let x = 0; x < size; x++){
+      const xm = (x - 1 + size) % size, xp = (x + 1) % size;
+      const ym = (y - 1 + size) % size, yp = (y + 1) % size;
+      const dx = height[y*size + xp] - height[y*size + xm];
+      const dy = height[yp*size + x] - height[ym*size + x];
+      let nx = -dx*strength, ny = dy*strength, nz = 1;
+      const l = Math.hypot(nx, ny, nz);
+      const i = (y*size + x)*4;
+      d[i]   = (nx/l*0.5 + 0.5)*255;
+      d[i+1] = (ny/l*0.5 + 0.5)*255;
+      d[i+2] = (nz/l*0.5 + 0.5)*255;
+      d[i+3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+
+/* ── STONE ──────────────────────────────────────────────────────────── */
+function makeStone(){
+  const S = 512;
+  const h = new Float32Array(S*S);
+  const alb = cv(S), rgh = cv(S);
+  const ac = alb.getContext('2d'), rc = rgh.getContext('2d');
+  const ai = ac.createImageData(S, S), ri = rc.createImageData(S, S);
+  const ad = ai.data, rd = ri.data;
+
+  for (let y = 0; y < S; y++){
+    for (let x = 0; x < S; x++){
+      const u = x/S, v = y/S;
+      const base  = tfbm(u, v, 4, 5);
+      const grain = tfbm(u + 3.7, v + 1.3, 34, 3);
+      const pit   = Math.pow(Math.abs(tfbm(u + 9.1, v + 5.5, 62, 2) - 0.5)*2, 7);
+      let n = base*0.62 + grain*0.38;
+      n -= pit*0.30;
+      n = Math.max(0, Math.min(1, n));
+      h[y*S + x] = n;
+
+      // cool grey limestone with warm flecks
+      const shade = 0.42 + n*0.60;
+      const warm  = (grain - 0.5)*0.10;
+      const i = (y*S + x)*4;
+      ad[i]   = Math.min(255, (150*shade + warm*90) );
+      ad[i+1] = Math.min(255, (148*shade + warm*70) );
+      ad[i+2] = Math.min(255, (140*shade + warm*30) );
+
+      const r = 0.66 + (1 - n)*0.26 + pit*0.14;
+      rd[i] = rd[i+1] = rd[i+2] = Math.min(255, r*255);
+      rd[i+3] = 255;
+    }
+  }
+  ac.putImageData(ai, 0, 0); rc.putImageData(ri, 0, 0);
+
+  const map = new THREE.CanvasTexture(alb);
+  map.colorSpace = THREE.SRGBColorSpace;
+  const rough = new THREE.CanvasTexture(rgh);
+  [map, rough].forEach(t => { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; });
+
+  return { map, rough, normal: makeNormalMap(h, S, 2.6) };
+}
+
+/* ── WOOD ───────────────────────────────────────────────────────────── */
+function makeWood(){
+  const S = 512, h = new Float32Array(S*S);
+  const alb = cv(S), ac = alb.getContext('2d');
+  const ai = ac.createImageData(S, S), ad = ai.data;
+
+  for (let y = 0; y < S; y++){
+    for (let x = 0; x < S; x++){
+      const u = x/S, v = y/S;
+      const warp = tfbm(u*0.4, v*3.0, 3, 3) * 0.35;
+      const rings = Math.sin((v*22 + warp*9) * Math.PI) * 0.5 + 0.5;
+      const fib   = tfbm(u + 11.2, v + 4.4, 48, 3);
+      const n = rings*0.55 + fib*0.45;
+      h[y*S + x] = n;
+      const i = (y*S + x)*4;
+      ad[i]   = 74 + n*78;
+      ad[i+1] = 46 + n*58;
+      ad[i+2] = 24 + n*40;
+      ad[i+3] = 255;
+    }
+  }
+  ac.putImageData(ai, 0, 0);
+  const map = new THREE.CanvasTexture(alb);
+  map.colorSpace = THREE.SRGBColorSpace;
+  map.wrapS = map.wrapT = THREE.RepeatWrapping;
+  map.anisotropy = 8;
+  return { map, normal: makeNormalMap(h, S, 1.7) };
+}
+
+/* ── SOIL / RIVERBANK ───────────────────────────────────────────────── */
+function makeSoil(){
+  const S = 512, h = new Float32Array(S*S);
+  const alb = cv(S), ac = alb.getContext('2d');
+  const ai = ac.createImageData(S, S), ad = ai.data;
+
+  for (let y = 0; y < S; y++){
+    for (let x = 0; x < S; x++){
+      const u = x/S, v = y/S;
+      const clump = tfbm(u, v, 7, 5);
+      const grit  = tfbm(u + 5.1, v + 8.8, 58, 3);
+      const n = clump*0.68 + grit*0.32;
+      h[y*S + x] = n;
+      const i = (y*S + x)*4;
+      ad[i]   = 92 + n*70;
+      ad[i+1] = 78 + n*62;
+      ad[i+2] = 54 + n*46;
+      ad[i+3] = 255;
+    }
+  }
+  ac.putImageData(ai, 0, 0);
+  const map = new THREE.CanvasTexture(alb);
+  map.colorSpace = THREE.SRGBColorSpace;
+  map.wrapS = map.wrapT = THREE.RepeatWrapping;
+  map.anisotropy = 8;
+  return { map, normal: makeNormalMap(h, S, 3.1) };
+}
+
+/* ── WATER (ripple normal map, animated by UV scroll) ───────────────── */
+function makeWaterNormal(){
+  const S = 256, h = new Float32Array(S*S);
+  for (let y = 0; y < S; y++){
+    for (let x = 0; x < S; x++){
+      const u = x/S, v = y/S;
+      const a = tfbm(u, v, 5, 4);
+      const b = tfbm(u + 0.31, v + 0.77, 11, 3);
+      h[y*S + x] = a*0.6 + b*0.4;
+    }
+  }
+  return makeNormalMap(h, S, 1.5);
+}
+
+const TEX = {
+  stone: makeStone(),
+  wood:  makeWood(),
+  soil:  makeSoil(),
+  water: makeWaterNormal()
+};
+
+/* ══════════════════════════════════════════════════════════════════════
+   3.  PBR MATERIALS
+   ══════════════════════════════════════════════════════════════════════ */
+const MAT = {
+  stone: new THREE.MeshStandardMaterial({
+    map: TEX.stone.map, roughnessMap: TEX.stone.rough, normalMap: TEX.stone.normal,
+    normalScale: new THREE.Vector2(1.15, 1.15),
+    color: 0xffffff, roughness: 1.0, metalness: 0.0, envMapIntensity: 1.0
+  }),
+  stoneDark: new THREE.MeshStandardMaterial({
+    map: TEX.stone.map, roughnessMap: TEX.stone.rough, normalMap: TEX.stone.normal,
+    normalScale: new THREE.Vector2(1.35, 1.35),
+    color: 0x9b968c, roughness: 1.0, metalness: 0.0, envMapIntensity: 0.85
+  }),
+  stoneWarm: new THREE.MeshStandardMaterial({
+    map: TEX.stone.map, roughnessMap: TEX.stone.rough, normalMap: TEX.stone.normal,
+    normalScale: new THREE.Vector2(1.0, 1.0),
+    color: 0xc9b79a, roughness: 1.0, metalness: 0.0, envMapIntensity: 1.0
+  }),
+  wood: new THREE.MeshStandardMaterial({
+    map: TEX.wood.map, normalMap: TEX.wood.normal,
+    normalScale: new THREE.Vector2(0.8, 0.8),
+    color: 0xffffff, roughness: 0.72, metalness: 0.0, envMapIntensity: 0.8
+  }),
+  soil: new THREE.MeshStandardMaterial({
+    map: TEX.soil.map, normalMap: TEX.soil.normal,
+    normalScale: new THREE.Vector2(1.5, 1.5),
+    color: 0xffffff, roughness: 0.97, metalness: 0.0, envMapIntensity: 0.7
+  }),
+  iron: new THREE.MeshStandardMaterial({
+    color: 0x54585e, roughness: 0.38, metalness: 1.0, envMapIntensity: 1.2
+  }),
+  water: new THREE.MeshPhysicalMaterial({
+    color: 0x0a2630, roughness: 0.055, metalness: 0.0,
+    clearcoat: 1.0, clearcoatRoughness: 0.045,
+    normalMap: TEX.water, normalScale: new THREE.Vector2(0.30, 0.30),
+    transparent: true, opacity: 0.9,
+    envMapIntensity: 1.9, side: THREE.DoubleSide
+  }),
+  sail: new THREE.MeshStandardMaterial({
+    color: 0xd9cfb8, roughness: 0.9, metalness: 0.0, side: THREE.DoubleSide,
+    envMapIntensity: 0.75
+  })
+};
+
+/* ══════════════════════════════════════════════════════════════════════
+   4.  GEOMETRY HELPERS  (world-scale UVs so texel density is constant)
+   ══════════════════════════════════════════════════════════════════════ */
+function boxGeo(w, h, d, uvScale = 0.22){
+  const g = new THREE.BoxGeometry(w, h, d);
+  const uv = g.attributes.uv;
+  const dims = [[d,h],[d,h],[w,d],[w,d],[w,h],[w,h]];
+  for (let f = 0; f < 6; f++){
+    const [fw, fh] = dims[f];
+    for (let i = 0; i < 4; i++){
+      const k = f*4 + i;
+      uv.setXY(k, uv.getX(k)*fw*uvScale, uv.getY(k)*fh*uvScale);
+    }
+  }
+  uv.needsUpdate = true;
+  return g;
+}
+
+const root = new THREE.Group();
+scene.add(root);
+
+/* animation system ---------------------------------------------------- */
+const anims = [];
+function registerBase(m){
+  m.userData.base = { p: m.position.clone(), q: m.quaternion.clone(), s: m.scale.clone() };
+}
+function addAnim(mesh, keys){ anims.push({ mesh, keys }); }
+
+function buildIn(mesh, t0, dur = 0.9, drop = 7){
+  const b = mesh.userData.base;
+  addAnim(mesh, [
+    { t: t0,       p: b.p.clone().setY(b.p.y + drop), q: b.q.clone(), s: b.s.clone().multiplyScalar(0.04) },
+    { t: t0 + dur, p: b.p.clone(),                    q: b.q.clone(), s: b.s.clone() }
+  ]);
+}
+function despawn(mesh, t0, dur = 1.5, fall = 17){
+  const b = mesh.userData.base;
+  const e = new THREE.Euler(Math.random()*2-1, Math.random()*2-1, Math.random()*2-1);
+  addAnim(mesh, [
+    { t: t0, p: b.p.clone(), q: b.q.clone(), s: b.s.clone() },
+    { t: t0 + dur,
+      p: b.p.clone().add(new THREE.Vector3((Math.random()-.5)*7, -fall, (Math.random()-.5)*7)),
+      q: b.q.clone().multiply(new THREE.Quaternion().setFromEuler(e)),
+      s: b.s.clone().multiplyScalar(0.03) }
+  ]);
+}
+
+function addBox(w, h, d, x, y, z, rz = 0, mat = MAT.stone, uvS = 0.22, cast = true){
+  const m = new THREE.Mesh(boxGeo(w, h, d, uvS), mat);
+  m.position.set(x, y, z);
+  m.rotation.z = rz;
+  m.castShadow = cast;
+  m.receiveShadow = true;
+  root.add(m);
+  registerBase(m);
+  return m;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   5.  BRIDGE MATHEMATICS
+   ══════════════════════════════════════════════════════════════════════ */
+const BED_Z      = -6.0;
+const WATER_Z    =  0.0;
+const BANK_TOP   =  1.0;
+const BANK_X     = 18.5;
+const SPAN       = 37.0;
+const RISE       =  7.2;
+const SPRING_Z   = BANK_TOP;
+
+const R_IN   = (SPAN*SPAN/4 + RISE*RISE) / (2*RISE);   // 27.37
+const ZC     = SPRING_Z + RISE - R_IN;                 // -19.17
+const THETA  = Math.asin((SPAN/2) / R_IN);             // 42.53°
+const ARCH_T = 1.30;
+const R_OUT  = R_IN + ARCH_T;
+
+const BRIDGE_W  = 9.0;
+const DECK_W    = 9.6;
+const DECK_T    = 1.0;
+const DECK_HALF = 34.0;
+const DECK_CROWN= 10.60;
+const DECK_SAG  =  1.10;
+
+const extradosY = x => {
+  const ax = Math.min(Math.abs(x), R_OUT - 1e-4);
+  return ZC + Math.sqrt(R_OUT*R_OUT - ax*ax);
+};
+const deckTopY = x => DECK_CROWN - DECK_SAG * (x/DECK_HALF)**2;
+const deckBotY = x => deckTopY(x) - DECK_T;
+const spandrelBotY = x =>
+  Math.abs(x) >= R_OUT ? BANK_TOP : Math.max(BANK_TOP, extradosY(x) + 0.10);
+
+/* small flood arches -------------------------------------------------- */
+const SMALL = [];
+for (const sgn of [1, -1]){
+  for (const [xcA, hw, rise] of [[12.5, 2.20, 1.60], [17.5, 1.70, 1.20]]){
+    const Rs = (hw*hw + rise*rise) / (2*rise);
+    const sz = spandrelBotY(sgn * xcA);
+    SMALL.push({ xc: sgn*xcA, hw, rise, springZ: sz, Rs, zc: sz + rise - Rs });
+  }
+}
+function insideSmallArch(x, y){
+  for (const a of SMALL){
+    const dx = x - a.xc;
+    if (Math.abs(dx) <= a.hw + 0.22){
+      const dy = y - a.zc;
+      if (dy > -0.22 && dx*dx + dy*dy <= (a.Rs + 0.58)**2) return a;
+    }
+  }
+  return null;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   6.  TERRAIN · RIVER · BANKS
+   ══════════════════════════════════════════════════════════════════════ */
+{
+  const bed = new THREE.Mesh(new THREE.PlaneGeometry(420, 560, 60, 80), MAT.soil);
+  bed.rotation.x = -Math.PI/2;
+  bed.position.y = BED_Z;
+  // gentle undulation
+  const p = bed.geometry.attributes.position;
+  for (let i = 0; i < p.count; i++){
+    const x = p.getX(i), y = p.getY(i);
+    p.setZ(i, (tfbm((x+210)/420, (y+280)/560, 6, 4) - 0.5) * 1.6);
+  }
+  p.needsUpdate = true;
+  bed.geometry.computeVertexNormals();
+  bed.receiveShadow = true;
+  root.add(bed);
+
+  for (const sgn of [1, -1]){
+    const bank = addBox(92, 7.0, 560, sgn*(BANK_X + 46), BED_Z + 3.5, 0, 0, MAT.soil, 0.06, false);
+    bank.receiveShadow = true;
+    bank.castShadow = false;
+  }
+
+  // scattered boulders along the waterline
+  for (let i = 0; i < 26; i++){
+    const sgn = i % 2 ? 1 : -1;
+    const r = 0.35 + Math.random()*0.85;
+    const g = new THREE.IcosahedronGeometry(r, 0);
+    const m = new THREE.Mesh(g, MAT.stoneDark);
+    m.position.set(sgn*(BANK_X - 0.4 - Math.random()*2.4),
+                   -0.5 + Math.random()*1.6,
+                   (Math.random()-0.5)*300);
+    m.rotation.set(Math.random()*3, Math.random()*3, Math.random()*3);
+    m.castShadow = m.receiveShadow = true;
+    root.add(m);
+  }
+}
+
+/* water --------------------------------------------------------------- */
+const water = new THREE.Mesh(new THREE.PlaneGeometry(37.6, 560, 1, 1), MAT.water);
+water.rotation.x = -Math.PI/2;
+water.position.y = WATER_Z;
+water.receiveShadow = false;
+root.add(water);
+
+/* ══════════════════════════════════════════════════════════════════════
+   7.  STAGE 1 — SLABS ON PILLARS
+   ══════════════════════════════════════════════════════════════════════ */
+const oldBridge = [];
+
+function makePillar(x, topY, tag){
+  const h = topY - BED_Z;
+  const m = addBox(1.6, h, BRIDGE_W*0.85, x, BED_Z + h/2, 0, 0, MAT.stoneDark, 0.30);
+  oldBridge.push(m);
+  buildIn(m, tag, 0.9, 9);
+  return m;
+}
+function makeSlab(x0, x1, y, tag, mat = MAT.stone){
+  const w = Math.abs(x1 - x0);
+  const m = addBox(w*0.985, 0.9, BRIDGE_W*0.95, (x0+x1)/2, y, 0, 0, mat, 0.26);
+  oldBridge.push(m);
+  buildIn(m, tag, 0.85, 7);
+  return m;
+}
+
+for (let i = 0; i < 3; i++) makePillar([-6, 0, 6][i], 4.2, T.slabs + i*0.22);
+
+const crackers = [];
+{
+  const segs = [[-6, 0], [0, 6]];
+  let k = 0;
+  for (const [a, b] of segs) makeSlab(a, b, 4.65, T.slabs + 0.9 + (k++)*0.16);
+
+  // long end spans are split into halves so the outer half can break off
+  for (const sgn of [1, -1]){
+    const a = sgn*6.0, b = sgn*BANK_X, mid = (a + b)/2;
+    makeSlab(a, mid, 4.65, T.slabs + 1.2);
+    const outer = makeSlab(mid, b, 4.65, T.slabs + 1.4);
+    crackers.push({ mesh: outer, sgn });
+  }
+}
+
+/* the crack ----------------------------------------------------------- */
+for (const { mesh, sgn } of crackers){
+  const b = mesh.userData.base;
+  const tip = b.q.clone().multiply(
+    new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), sgn * 0.38));
+  addAnim(mesh, [
+    { t: T.crack,        p: b.p.clone(), q: b.q.clone(), s: b.s.clone() },
+    { t: T.crack + 0.75, p: b.p.clone().add(new THREE.Vector3(0, -0.9, 0)), q: tip, s: b.s.clone() },
+    { t: T.crack + 2.6,  p: b.p.clone().add(new THREE.Vector3(sgn*3, -17, 1.5)),
+      q: tip.clone().multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(1.1, .6, .9))),
+      s: b.s.clone().multiplyScalar(0.05) }
+  ]);
+}
+
+/* more pillars -------------------------------------------------------- */
+for (let i = 0; i < 4; i++) makePillar([-12, -3, 3, 12][i], 4.2, T.morePillars + i*0.24);
+{
+  const pairs = [[-12,-6],[-6,-3],[-3,0],[0,3],[3,6],[6,12]];
+  let k = 0;
+  for (const [a, b] of pairs) makeSlab(a, b, 4.65, T.morePillars + 1.5 + (k++)*0.14);
+  for (const sgn of [1, -1]) makeSlab(sgn*12, sgn*BANK_X, 4.65, T.morePillars + 2.6 + (sgn>0?0:0.2));
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   8.  BOATS
+   ══════════════════════════════════════════════════════════════════════ */
+function makeBoat(withMast, scale = 1){
+  const g = new THREE.Group();
+
+  const shape = new THREE.Shape();
+  shape.moveTo(0, 6);
+  shape.bezierCurveTo(2.4, 3.4, 2.4, -3.4, 0, -6);
+  shape.bezierCurveTo(-2.4, -3.4, -2.4, 3.4, 0, 6);
+
+  const hullGeo = new THREE.ExtrudeGeometry(shape, {
+    depth: 2.2, bevelEnabled: true, bevelThickness: 0.4,
+    bevelSize: 0.35, bevelSegments: 2, curveSegments: 14
+  });
+  hullGeo.rotateX(-Math.PI/2);
+  hullGeo.translate(0, -1.1, 0);
+
+  const hull = new THREE.Mesh(hullGeo, MAT.wood);
+  hull.castShadow = hull.receiveShadow = true;
+  g.add(hull);
+
+  // gunwale
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(5.6, 0.16, 6, 40), MAT.wood);
+  rim.rotation.x = Math.PI/2;
+  rim.scale.set(1, 0.42, 1);
+  rim.position.y = 1.05;
+  rim.castShadow = true;
+  g.add(rim);
+
+  if (withMast){
+    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.2, 6.4, 10), MAT.wood);
+    mast.position.y = 4.4; mast.castShadow = true; g.add(mast);
+
+    const sail = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 4.4), MAT.sail);
+    sail.position.set(0, 4.9, 0.25);
+    sail.castShadow = true;
+    g.add(sail);
+
+    const yard = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 4.9, 8), MAT.wood);
+    yard.rotation.z = Math.PI/2; yard.position.y = 7.05; g.add(yard);
+  }
+
+  g.scale.setScalar(scale);
+  return g;
+}
+
+const boats = [];
+function addBoat(withMast, scale, path){
+  const b = makeBoat(withMast, scale);
+  root.add(b);
+  b.position.set(0, WATER_Z + 0.55*scale, path[0].z);
+  boats.push({ obj: b, path, scale });
+  return b;
+}
+
+// boat 1 — gets blocked by the forest of pillars, later passes under the arch
+addBoat(true, 1.0, [
+  { t: T.boat,        z: -95, y: 0.55 },
+  { t: T.boat + 6.0,  z: -16, y: 0.55 },
+  { t: T.boat + 20.0, z: -16, y: 0.55 },   // waits, blocked
+  { t: 41.0,          z:  16, y: 0.55 },   // now the arch is open
+  { t: 50.0,          z:  95, y: 0.55 }
+]);
+
+// flood skiffs that slip through the side arches
+addBoat(false, 0.55, [
+  { t: T.openArches + 1.5, z: -110, y: 0.30 },
+  { t: T.openArches + 8.0, z:  110, y: 0.30 }
+]);
+addBoat(false, 0.5, [
+  { t: T.openArches + 3.5, z:  110, y: 0.28 },
+  { t: T.openArches + 11.0, z: -110, y: 0.28 }
+]);
+
+/* ══════════════════════════════════════════════════════════════════════
+   9.  DEMOLISH THE OLD BRIDGE
+   ══════════════════════════════════════════════════════════════════════ */
+for (const m of oldBridge) despawn(m, T.crumble + Math.random()*1.6, 1.7, 18);
+
+/* ══════════════════════════════════════════════════════════════════════
+   10. THE ARCH  (wedge-shaped stones / voussoirs)
+   ══════════════════════════════════════════════════════════════════════ */
+const N_VOUSSOIR = 26;
+const voussoirs  = [];
+const rMid = R_IN + ARCH_T/2;
+
+for (let i = 0; i < N_VOUSSOIR; i++){
+  const phi = -THETA + (i + 0.5) * (2*THETA / N_VOUSSOIR);
+  const px  = rMid * Math.sin(phi);
+  const py  = ZC + rMid * Math.cos(phi);
+  const tang = (2*THETA / N_VOUSSOIR) * rMid * 1.07;
+  const jitter = (Math.random() - 0.5) * 0.012;
+
+  const m = addBox(tang, ARCH_T*0.98, BRIDGE_W, px, py, 0, -phi + jitter, MAT.stone, 0.30);
+  voussoirs.push(m);
+}
+
+// build order: from both springings toward the keystone
+{
+  const order = [];
+  let lo = 0, hi = N_VOUSSOIR - 1;
+  while (lo <= hi){
+    if (lo === hi) order.push(lo);
+    else { order.push(hi); order.push(lo); }
+    lo++; hi--;
+  }
+  order.forEach((idx, k) => buildIn(voussoirs[idx], T.arch + k*0.215, 0.7, 10));
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   11. SPANDREL WALLS  (skipping the small-arch openings)
+   ══════════════════════════════════════════════════════════════════════ */
+{
+  const BLOCK_DX = 1.15, BLOCK_DZ = 1.15;
+  let k = 0;
+  for (const sgn of [1, -1]){
+    let x = sgn * 5.0;
+    while (Math.abs(x) < 32.0){
+      const bot = spandrelBotY(x);
+      const top = deckBotY(x);
+      let y = bot;
+      while (y < top - 0.20){
+        const bz  = Math.min(BLOCK_DZ, top - y);
+        const bcy = y + bz/2;
+        if (!insideSmallArch(x, bcy)){
+          const j = (Math.random() - 0.5) * 0.012;
+          const m = addBox(BLOCK_DX*0.96, bz*0.94, BRIDGE_W*0.98,
+                           x, bcy, 0, j, MAT.stone, 0.34);
+          buildIn(m, T.spandrel + k*0.035, 0.7, 6.5);
+          k++;
+        }
+        y += BLOCK_DZ;
+      }
+      x += sgn * BLOCK_DX;
+    }
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   12. ROADWAY  +  APPROACH EMBANKMENTS
+   ══════════════════════════════════════════════════════════════════════ */
+{
+  const DX = 1.7;
+  const n  = Math.round((2*DECK_HALF) / DX);
+  for (let i = 0; i < n; i++){
+    const x = -DECK_HALF + (i + 0.5) * DX;
+    const yt = deckTopY(x);
+    const slope = -2 * DECK_SAG * x / (DECK_HALF**2);
+    const m = addBox(DX*1.02, DECK_T, DECK_W, x, yt - DECK_T/2, 0,
+                     Math.atan(slope), MAT.stoneWarm, 0.30);
+    buildIn(m, T.deck + i*0.09, 0.8, 7.5);
+  }
+
+  // abutments / approach fill so the road meets the bank
+  for (const sgn of [1, -1]){
+    for (let i = 0; i < 5; i++){
+      const x0 = sgn * (BANK_X + i*3.2);
+      const x1 = sgn * (BANK_X + (i+1)*3.2);
+      const topY = deckBotY((x0 + x1)/2);
+      const h = topY - BANK_TOP;
+      if (h <= 0.2) continue;
+      const m = addBox(Math.abs(x1-x0)*0.98, h, DECK_W*0.98,
+                       (x0+x1)/2, BANK_TOP + h/2, 0, 0, MAT.stoneDark, 0.26);
+      buildIn(m, T.deck + 1.0 + i*0.14, 0.9, 8);
+    }
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   13. RAILINGS
+   ══════════════════════════════════════════════════════════════════════ */
+{
+  const STEP = 3.4;
+  const n = Math.floor((2*(DECK_HALF - 1.5)) / STEP);
+  let k = 0;
+  for (const sgn of [1, -1]){
+    let prevX = null;
+    for (let i = 0; i <= n; i++){
+      const x = -DECK_HALF + 1.5 + i*STEP;
+      const yt = deckTopY(x);
+      const z  = sgn * (DECK_W/2 - 0.15);
+
+      const post = addBox(0.30, 1.75, 0.30, x, yt + 0.85, z, 0, MAT.stoneWarm, 1.1);
+      buildIn(post, T.railings + k*0.075, 0.6, 4.5); k++;
+
+      if (prevX !== null){
+        const xm = (prevX + x)/2;
+        const ym = (deckTopY(prevX) + yt)/2 + 1.58;
+        const len = Math.abs(x - prevX) * 1.02;
+        const ang = Math.atan2(yt - deckTopY(prevX), x - prevX);
+        const rail = addBox(len, 0.30, 0.30, xm, ym, z, ang, MAT.stoneWarm, 1.1);
+        buildIn(rail, T.railings + k*0.075, 0.6, 4.5); k++;
+      }
+      prevX = x;
+    }
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   14. SMALL ARCHES  (voussoirs + removable filler plugs)
+   ══════════════════════════════════════════════════════════════════════ */
+const plugs = [];
+for (const a of SMALL){
+  const th = Math.asin(Math.min(0.999, a.hw / a.Rs));
+  const nv = 14, ring = 0.46;
+
+  for (let i = 0; i < nv; i++){
+    const phi = -th + (i + 0.5) * (2*th / nv);
+    const rr  = a.Rs + ring/2;
+    const px  = a.xc + rr * Math.sin(phi);
+    const py  = a.zc + rr * Math.cos(phi);
+    const tang = (2*th / nv) * rr * 1.12;
+    const m = addBox(tang, ring, BRIDGE_W*0.98, px, py, 0, -phi, MAT.stone, 0.42);
+    buildIn(m, T.spandrel + 0.6 + i*0.045, 0.6, 6);
+  }
+
+  // filler blocks that are knocked out when the flood comes
+  const ncol = 4, w = 2*a.hw / ncol;
+  for (let i = 0; i < ncol; i++){
+    const cx = a.xc - a.hw + (i + 0.5) * w;
+    const xL = cx - w/2, xR = cx + w/2;
+    const topL = a.zc + Math.sqrt(Math.max(0, a.Rs*a.Rs - (xL - a.xc)**2));
+    const topR = a.zc + Math.sqrt(Math.max(0, a.Rs*a.Rs - (xR - a.xc)**2));
+    const topY = Math.min(topL, topR) - 0.10;
+    const h = topY - a.springZ;
+    if (h <= 0.25) continue;
+    const m = addBox(w*0.94, h*0.96, BRIDGE_W*0.98,
+                     cx, a.springZ + h/2, 0, 0, MAT.stoneDark, 0.34);
+    buildIn(m, T.deck + 0.8 + i*0.12, 0.7, 6);
+    plugs.push(m);
+  }
+}
+for (let i = 0; i < plugs.length; i++) despawn(plugs[i], T.openArches + i*0.13, 1.3, 11);
+
+/* ══════════════════════════════════════════════════════════════════════
+   15. FLOOD  (water level rise)
+   ══════════════════════════════════════════════════════════════════════ */
+const FLOOD_Y = 4.25;
+function waterLevelAt(t){
+  if (t <= T.flood) return WATER_Z;
+  const u = Math.min(1, (t - T.flood) / 7.0);
+  const e = u*u*(3 - 2*u);
+  return WATER_Z + e * (FLOOD_Y - WATER_Z);
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   16. CAMERA CHOREOGRAPHY
+   ══════════════════════════════════════════════════════════════════════ */
+const CAM_KEYS = [
+  { t:  0.0, pos: [  6, 26, -92], tgt: [ 0,  5, 0] },
+  { t:  7.0, pos: [ -2, 10, -46], tgt: [ 0,  4, 0] },
+  { t: 12.0, pos: [ 12,  6, -30], tgt: [ 0,  5, 0] },
+  { t: 18.0, pos: [-16, 11, -42], tgt: [ 0,  5, 0] },
+  { t: 24.0, pos: [  2, 32, -60], tgt: [ 0,  5, 0] },
+  { t: 30.0, pos: [  0,  8, -35], tgt: [ 0,  6, 0] },
+  { t: 37.5, pos: [ -8, 12, -47], tgt: [ 0,  6, 0] },
+  { t: 44.0, pos: [ 26, 17, -52], tgt: [ 0,  7, 0] },
+  { t: 50.0, pos: [  6,  4, -29], tgt: [ 0,  6, 0] },
+  { t: 56.0, pos: [ 38, 20, -62], tgt: [ 0,  5, 0] },
+  { t: 60.0, pos: [ 30, 34, -96], tgt: [ 0,  4, 0] }
+];
+
+const camPos = new THREE.Vector3(), camTgt = new THREE.Vector3();
+const _pA = new THREE.Vector3(), _pB = new THREE.Vector3();
+const _tA = new THREE.Vector3(), _tB = new THREE.Vector3();
+
+function updateCamera(t){
+  const K = CAM_KEYS;
+  if (t <= K[0].t){ camPos.set(...K[0].pos); camTgt.set(...K[0].tgt); }
+  else if (t >= K[K.length-1].t){
+    camPos.set(...K[K.length-1].pos); camTgt.set(...K[K.length-1].tgt);
+  } else {
+    let i = 0;
+    while (i < K.length - 2 && t > K[i+1].t) i++;
+    const A = K[i], B = K[i+1];
+    let u = (t - A.t) / (B.t - A.t);
+    u = u*u*(3 - 2*u);
+    _pA.set(...A.pos); _pB.set(...B.pos);
+    _tA.set(...A.tgt); _tB.set(...B.tgt);
+    camPos.lerpVectors(_pA, _pB, u);
+    camTgt.lerpVectors(_tA, _tB, u);
+  }
+  // subtle handheld drift
+  const b = t * 0.55;
+  camPos.x += Math.sin(b*0.9) * 0.30 + Math.sin(b*2.3) * 0.10;
+  camPos.y += Math.sin(b*1.3 + 1.7) * 0.24;
+  camera.position.copy(camPos);
+  camera.lookAt(camTgt);
+  camera.rotation.z += Math.sin(b*0.7) * 0.0045;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   17. ANIMATION UPDATER
+   ══════════════════════════════════════════════════════════════════════ */
+const easeOut = u => 1 - Math.pow(1 - u, 3);
+
+function updateAnims(t){
+  for (const a of anims){
+    const K = a.keys;
+    if (t < K[0].t){ a.mesh.visible = false; continue; }
+    a.mesh.visible = true;
+
+    if (t >= K[K.length-1].t){
+      const L = K[K.length-1];
+      a.mesh.position.copy(L.p);
+      a.mesh.quaternion.copy(L.q);
+      a.mesh.scale.copy(L.s);
+      continue;
+    }
+    let i = 0;
+    while (i < K.length - 2 && t > K[i+1].t) i++;
+    const A = K[i], B = K[i+1];
+    const u = easeOut((t - A.t) / (B.t - A.t));
+    a.mesh.position.lerpVectors(A.p, B.p, u);
+    a.mesh.quaternion.slerpQuaternions(A.q, B.q, u);
+    a.mesh.scale.lerpVectors(A.s, B.s, u);
+  }
+}
+
+function updateBoats(t){
+  for (const b of boats){
+    const P = b.path;
+    const o = b.obj;
+    if (t < P[0].t){ o.visible = false; continue; }
+    o.visible = true;
+    if (t >= P[P.length-1].t){
+      o.position.z = P[P.length-1].z;
+      o.position.y = waterLevelAt(t) + P[P.length-1].y;
+    } else {
+      let i = 0;
+      while (i < P.length - 2 && t > P[i+1].t) i++;
+      const A = P[i], B = P[i+1];
+      const u = (t - A.t) / (B.t - A.t);
+      o.position.z = A.z + (B.z - A.z) * u;
+      o.position.y = waterLevelAt(t) + A.y + (B.y - A.y) * u;
+    }
+    // bob on the swell
+    o.position.y += Math.sin(t*1.9 + b.scale*13) * 0.11;
+    o.rotation.z  = Math.sin(t*1.35 + b.scale*7) * 0.022;
+    o.rotation.x  = Math.sin(t*1.6 + b.scale*3) * 0.015;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   18. CAPTIONS  (from the narration)
+   ══════════════════════════════════════════════════════════════════════ */
+const CAPTIONS = [
+  { t:  0.0, text: "Place a few stone slabs across a river, support them with pillars…" },
+  { t:  2.6, text: "…congratulations, you've made yourself a bridge." },
+  { t:  8.6, text: "But cross a wider river and those longer slabs can crack under the weight." },
+  { t: 13.6, text: "So you add more pillars to reduce the distance between them." },
+  { t: 19.0, text: "Problem solved — except your brilliant design has left the boats with almost nowhere to squeeze through." },
+  { t: 25.2, text: "You need a bigger opening without one enormous slab spanning it." },
+  { t: 28.6, text: "So you arrange wedge-shaped stones into an arch…" },
+  { t: 36.2, text: "…pressed together, the stones transfer the load toward the banks, leaving a clear passage underneath." },
+  { t: 40.6, text: "Now the boats can pass — but anyone pushing a cart over that steep bridge feels like they're climbing a mountain." },
+  { t: 44.6, text: "So you give the arch a lower, gentler curve, build a roadway above it, and add railings along the edges." },
+  { t: 49.2, text: "Then a flood arrives. Water rises above the main opening and pushes against the solid sections on either side." },
+  { t: 54.6, text: "So you give the floodwater more ways through — two smaller arches above each end, four extra openings." },
+  { t: 58.0, text: "The Zhaozhou Bridge — a stone arch design that has stood for more than a thousand years." }
+];
+const captionEl = document.getElementById('caption');
+let lastCaption = -1;
+function updateCaption(t){
+  let idx = 0;
+  for (let i = 0; i < CAPTIONS.length; i++) if (t >= CAPTIONS[i].t) idx = i;
+  if (idx !== lastCaption){
+    lastCaption = idx;
+    captionEl.style.opacity = '0';
+    setTimeout(() => { captionEl.textContent = CAPTIONS[idx].text; captionEl.style.opacity = '1'; }, 220);
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   19. PLAYBACK CONTROLS
+   ══════════════════════════════════════════════════════════════════════ */
+let time = 0, playing = true, lastT = performance.now();
+const playBtn   = document.getElementById('play');
+const playIcon  = document.getElementById('playIcon');
+const scrub     = document.getElementById('scrub');
+const timeLabel = document.getElementById('time');
+
+const ICON_PLAY  = 'M8 5v14l11-7z';
+const ICON_PAUSE = 'M6 5h4v14H6zm8 0h4v14h-4z';
+
+playBtn.addEventListener('click', () => {
+  playing = !playing;
+  playIcon.innerHTML = `<path d="${playing ? ICON_PAUSE : ICON_PLAY}"/>`;
+});
+
+scrub.addEventListener('input', () => {
+  time = (scrub.value / 1000) * T.END;
+  renderFrame(time);
+});
+
+function fmt(s){
+  const m = Math.floor(s / 60);
+  const r = Math.floor(s % 60).toString().padStart(2, '0');
+  return `${m}:${r}`;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   20. RENDER LOOP
+   ══════════════════════════════════════════════════════════════════════ */
+function renderFrame(t){
+  updateAnims(t);
+
+  // water level + ripple scroll
+  water.position.y = waterLevelAt(t);
+  TEX.water.offset.x = t * 0.013;
+  TEX.water.offset.y = t * 0.026;
+
+  updateBoats(t);
+  updateCamera(t);
+
+  // gentle sun drift for a living sky
+  sun.position.set(59 + Math.sin(t*0.03)*8, 93, -49 + Math.cos(t*0.03)*8);
+  sun.target.position.set(0, 5, 0);
+  sun.target.updateMatrixWorld();
+
+  renderer.render(scene, camera);
+}
+
+function loop(now){
+  const dt = Math.min(0.05, (now - lastT) / 1000);
+  lastT = now;
+
+  if (playing){
+    time += dt;
+    if (time > T.END) time = 0;
+  }
+
+  scrub.value = (time / T.END) * 1000;
+  timeLabel.textContent = `${fmt(time)} / ${fmt(T.END)}`;
+  updateCaption(time);
+  renderFrame(time);
+
+  renderer.setAnimationLoop(loop);
+}
+
+/* resize -------------------------------------------------------------- */
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+/* ══════════════════════════════════════════════════════════════════════
+   21. START
+   ══════════════════════════════════════════════════════════════════════ */
+renderFrame(0);
+renderer.compile(scene, camera);
+
+const loader = document.getElementById('loader');
+loader.classList.add('done');
+setTimeout(() => loader.remove(), 800);
+
+renderer.setAnimationLoop(loop);
+</script>
+</body>
+</html>
