@@ -1,0 +1,1550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>RDR2 Snow Engine - Dynamic Displacement (Fixed)</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #0d1b2a; cursor: crosshair; }
+        canvas { display: block; position: fixed; left: 0; top: 0; width: 100%; height: 100%; }
+        #loading {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            color: #a0c4ff; font-family: monospace; font-size: 20px; pointer-events: none;
+            text-shadow: 1px 1px 2px black; text-align: center;
+        }
+        #info {
+            position: absolute; bottom: 20px; left: 20px; color: #a0c4ff;
+            font-family: monospace; font-size: 14px; pointer-events: none;
+            text-shadow: 1px 1px 2px black; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 5px;
+        }
+        #crosshair {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            color: rgba(255, 255, 255, 0.6); font-size: 20px; pointer-events: none;
+            font-weight: bold; text-shadow: 0 0 2px black;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="glCanvas"></canvas>
+    <div id="crosshair">+</div>
+    <div id="loading">Generating Alpine Mountains...<br>(This may take a moment)</div>
+    <div id="info">WASD to Walk | Mouse Drag to Look | Walk to carve trenches in the snow</div>
+    <select id="modeSel" style="position:absolute; top:20px; left:20px; z-index:10;
+            font-family:monospace; font-size:14px; padding:6px 8px; border-radius:5px;
+            background:rgba(0,0,0,0.55); color:#cfe6ff; border:1px solid #3a5a7a;">
+        <option value="mountain">Mountain (deep snow)</option>
+        <option value="paved">Paved road</option>
+    </select>
+
+    <script>
+        // ==========================================
+        // SnowEngine v1.0.0 - RDR2-style procedural snow.
+        // Raw WebGL 1 + hand-written GLSL, no external libraries.
+        // UMD: window.SnowEngine (script tag) or module.exports (CommonJS).
+        // ==========================================
+        (function (root, factory) {
+            if (typeof module === 'object' && module.exports) module.exports = factory();
+            else if (typeof define === 'function' && define.amd) define([], factory);
+            else root.SnowEngine = factory();
+        })(typeof self !== 'undefined' ? self : this, function () {
+            'use strict';
+
+            function createSnowEngine(options) {
+                options = options || {};
+
+                // ==========================================
+                // 1. MATRIX MATH (FROM SCRATCH)
+                // ==========================================
+                const mat4 = {
+            create: () => new Float32Array(16),
+            identity: (out) => {
+                out[0]=1; out[1]=0; out[2]=0; out[3]=0;
+                out[4]=0; out[5]=1; out[6]=0; out[7]=0;
+                out[8]=0; out[9]=0; out[10]=1; out[11]=0;
+                out[12]=0; out[13]=0; out[14]=0; out[15]=1;
+                return out;
+            },
+            perspective: (out, fovy, aspect, near, far) => {
+                const f = 1.0 / Math.tan(fovy / 2);
+                out[0]=f/aspect; out[1]=0; out[2]=0; out[3]=0;
+                out[4]=0; out[5]=f; out[6]=0; out[7]=0;
+                out[8]=0; out[9]=0; out[10]=(far+near)/(near-far); out[11]=-1;
+                out[12]=0; out[13]=0; out[14]=(2*far*near)/(near-far); out[15]=0;
+                return out;
+            },
+            lookAt: (out, eye, center, up) => {
+                let z = [eye[0]-center[0], eye[1]-center[1], eye[2]-center[2]];
+                let len = Math.hypot(z[0], z[1], z[2]);
+                z = [z[0]/len, z[1]/len, z[2]/len];
+                let x = [up[1]*z[2] - up[2]*z[1], up[2]*z[0] - up[0]*z[2], up[0]*z[1] - up[1]*z[0]];
+                len = Math.hypot(x[0], x[1], x[2]);
+                x = [x[0]/len, x[1]/len, x[2]/len];
+                let y = [z[1]*x[2] - z[2]*x[1], z[2]*x[0] - z[0]*x[2], z[0]*x[1] - z[1]*x[0]];
+                out[0]=x[0]; out[1]=y[0]; out[2]=z[0]; out[3]=0;
+                out[4]=x[1]; out[5]=y[1]; out[6]=z[1]; out[7]=0;
+                out[8]=x[2]; out[9]=y[2]; out[10]=z[2]; out[11]=0;
+                out[12]=-(x[0]*eye[0]+x[1]*eye[1]+x[2]*eye[2]);
+                out[13]=-(y[0]*eye[0]+y[1]*eye[1]+y[2]*eye[2]);
+                out[14]=-(z[0]*eye[0]+z[1]*eye[1]+z[2]*eye[2]);
+                out[15]=1;
+                return out;
+            },
+            multiply: (out, a, b) => {
+                let a00=a[0], a01=a[1], a02=a[2], a03=a[3];
+                let a10=a[4], a11=a[5], a12=a[6], a13=a[7];
+                let a20=a[8], a21=a[9], a22=a[10], a23=a[11];
+                let a30=a[12], a31=a[13], a32=a[14], a33=a[15];
+                for (let i = 0; i < 4; i++) {
+                    let b0=b[i*4], b1=b[i*4+1], b2=b[i*4+2], b3=b[i*4+3];
+                    out[i*4] = b0*a00 + b1*a10 + b2*a20 + b3*a30;
+                    out[i*4+1] = b0*a01 + b1*a11 + b2*a21 + b3*a31;
+                    out[i*4+2] = b0*a02 + b1*a12 + b2*a22 + b3*a32;
+                    out[i*4+3] = b0*a03 + b1*a13 + b2*a23 + b3*a33;
+                }
+                return out;
+            },
+            translate: (out, a, v) => {
+                let x=v[0], y=v[1], z=v[2];
+                let a00=a[0], a01=a[1], a02=a[2], a03=a[3];
+                let a10=a[4], a11=a[5], a12=a[6], a13=a[7];
+                let a20=a[8], a21=a[9], a22=a[10], a23=a[11];
+                out[0]=a00; out[1]=a01; out[2]=a02; out[3]=a03;
+                out[4]=a10; out[5]=a11; out[6]=a12; out[7]=a13;
+                out[8]=a20; out[9]=a21; out[10]=a22; out[11]=a23;
+                out[12]=a00*x + a10*y + a20*z + a[12];
+                out[13]=a01*x + a11*y + a21*z + a[13];
+                out[14]=a02*x + a12*y + a22*z + a[14];
+                out[15]=a03*x + a13*y + a23*z + a[15];
+                return out;
+            },
+            scale: (out, a, v) => {
+                let x=v[0], y=v[1], z=v[2];
+                out[0]=a[0]*x; out[1]=a[1]*x; out[2]=a[2]*x; out[3]=a[3]*x;
+                out[4]=a[4]*y; out[5]=a[5]*y; out[6]=a[6]*y; out[7]=a[7]*y;
+                out[8]=a[8]*z; out[9]=a[9]*z; out[10]=a[10]*z; out[11]=a[11]*z;
+                out[12]=a[12]; out[13]=a[13]; out[14]=a[14]; out[15]=a[15];
+                return out;
+            },
+            // Post-multiply a rotation about X: out = a * Rx(rad)
+            rotateX: (out, a, rad) => {
+                const s = Math.sin(rad), c = Math.cos(rad);
+                const a10=a[4], a11=a[5], a12=a[6], a13=a[7];
+                const a20=a[8], a21=a[9], a22=a[10], a23=a[11];
+                if (a !== out) {
+                    out[0]=a[0]; out[1]=a[1]; out[2]=a[2]; out[3]=a[3];
+                    out[12]=a[12]; out[13]=a[13]; out[14]=a[14]; out[15]=a[15];
+                }
+                out[4]=a10*c + a20*s; out[5]=a11*c + a21*s; out[6]=a12*c + a22*s; out[7]=a13*c + a23*s;
+                out[8]=a20*c - a10*s; out[9]=a21*c - a11*s; out[10]=a22*c - a12*s; out[11]=a23*c - a13*s;
+                return out;
+            },
+            // Post-multiply a rotation about Y: out = a * Ry(rad)
+            rotateY: (out, a, rad) => {
+                const s = Math.sin(rad), c = Math.cos(rad);
+                const a00=a[0], a01=a[1], a02=a[2], a03=a[3];
+                const a20=a[8], a21=a[9], a22=a[10], a23=a[11];
+                if (a !== out) {
+                    out[4]=a[4]; out[5]=a[5]; out[6]=a[6]; out[7]=a[7];
+                    out[12]=a[12]; out[13]=a[13]; out[14]=a[14]; out[15]=a[15];
+                }
+                out[0]=a00*c - a20*s; out[1]=a01*c - a21*s; out[2]=a02*c - a22*s; out[3]=a03*c - a23*s;
+                out[8]=a00*s + a20*c; out[9]=a01*s + a21*c; out[10]=a02*s + a22*c; out[11]=a03*s + a23*c;
+                return out;
+            },
+            // Transform a point by a mat4 (returns [x, y, z])
+            xform: (m, x, y, z) => {
+                const w = m[3]*x + m[7]*y + m[11]*z + m[15];
+                const iw = w !== 0 ? 1 / w : 1;
+                return [ (m[0]*x + m[4]*y + m[8]*z  + m[12]) * iw,
+                         (m[1]*x + m[5]*y + m[9]*z  + m[13]) * iw,
+                         (m[2]*x + m[6]*y + m[10]*z + m[14]) * iw ];
+            }
+        };
+
+        // ==========================================
+        // 2. WEBGL SETUP
+        // ==========================================
+        const canvas = document.getElementById('glCanvas');
+        const gl = canvas.getContext('webgl', { antialias: true, alpha: false });
+        if (!gl) { alert("WebGL not supported"); }
+
+        // Only extension we truly need: 32-bit indices for the big meshes.
+        // (NO OES_standard_derivatives anymore - crumble normals are computed
+        //  per-vertex in the vertex shader instead of with dFdx/dFdy.)
+        gl.getExtension('OES_element_index_uint');
+
+        // NOTE: shaders now FAIL LOUDLY with the GLSL log instead of returning
+        // null and crashing later with "attachShader ... not a WebGLShader".
+        function createShader(type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                const log = gl.getShaderInfoLog(shader);
+                console.error(log, "\n--- shader source ---\n", source);
+                throw new Error("Shader compile failed:\n" + log);
+            }
+            return shader;
+        }
+
+        function createProgram(vsSource, fsSource) {
+            const vs = createShader(gl.VERTEX_SHADER, vsSource);
+            const fs = createShader(gl.FRAGMENT_SHADER, fsSource);
+            const program = gl.createProgram();
+            gl.attachShader(program, vs);
+            gl.attachShader(program, fs);
+            gl.linkProgram(program);
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                const log = gl.getProgramInfoLog(program);
+                console.error(log);
+                throw new Error("Program link failed:\n" + log);
+            }
+            return program;
+        }
+
+        // Disable every vertex-attrib array, then enable exactly the ones a
+        // draw needs. Prevents stale enabled arrays from an earlier program
+        // breaking later drawElements calls.
+        function setupAttribs(specs) {
+            for (let i = 0; i < 16; i++) gl.disableVertexAttribArray(i);
+            for (const s of specs) {
+                const loc = gl.getAttribLocation(s[0].__prog || s[0], s[1]);
+                void loc;
+            }
+        }
+        function bindAttribs(prog, specs) {
+            for (let i = 0; i < 16; i++) gl.disableVertexAttribArray(i);
+            for (const [name, buffer, size] of specs) {
+                const loc = gl.getAttribLocation(prog, name);
+                if (loc < 0) continue;
+                gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+                gl.enableVertexAttribArray(loc);
+                gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0);
+            }
+        }
+
+        // ==========================================
+        // 3. NOISE, TERRAIN AND TUNING CONSTANTS
+        // ==========================================
+        const FBO_SIZE      = 1024;   // footprint render-target resolution
+        const WORLD_SIZE    = 800;    // world is WORLD_SIZE x WORLD_SIZE metres
+        const TRENCH_DEPTH  = 0.25;   // metres each FOOTPRINT presses the snow down (per-foot dent)
+        const PAINT_RADIUS  = 0.0013; // boot dent radius in UV (~1.0 m — reads as one boot, not a trench)
+
+        function fract(x) { return x - Math.floor(x); }
+        function hash(n) { return fract(Math.sin(n) * 43758.5453123); }
+        function noise2D(x, y) {
+            let i = Math.floor(x), j = Math.floor(y);
+            let fx = fract(x), fy = fract(y);
+            let u = fx * fx * (3.0 - 2.0 * fx), v = fy * fy * (3.0 - 2.0 * fy);
+            let a = hash(i + j * 57.0), b = hash(i + 1.0 + j * 57.0);
+            let c = hash(i + (j + 1.0) * 57.0), d = hash(i + 1.0 + (j + 1.0) * 57.0);
+            return a * (1.0 - u) * (1.0 - v) + b * u * (1.0 - v) + c * (1.0 - u) * v + d * u * v;
+        }
+        function fbm(x, y) {
+            let value = 0.0, amplitude = 1.0, frequency = 1.0;
+            for (let i = 0; i < 5; i++) {
+                value += amplitude * noise2D(x * frequency, y * frequency);
+                frequency *= 2.0; amplitude *= 0.5;
+            }
+            return value;
+        }
+
+        // World mode: 'mountain' (deep curved snow) or 'paved' (a graded road
+        // carved THROUGH the same mountains — the mountains themselves stay).
+        let worldMode = 'mountain';
+        const ROAD_HALF = 7.0;   // half-width of the flat roadbed (metres)
+        const ROAD_FADE = 6.0;   // metres of soft blend from road to mountain
+
+        // Curved, real terrain: broad domes + gentle hills + additive swell so
+        // slopes read as rolling snow, not hard polygon creases.
+        function mountainHeight(x, z) {
+            const warpX = fbm(x * 0.008, z * 0.008) * 24.0;
+            const warpZ = fbm(x * 0.008 + 5.2, z * 0.008 + 1.3) * 24.0;
+
+            let h  = fbm((x + warpX) * 0.004, (z + warpZ) * 0.004) * 55.0;   // broad domes
+            h     += fbm((x + warpX) * 0.013, (z + warpZ) * 0.013) * 16.0;   // rolling hills
+            h     += Math.sin(x * 0.006) * Math.cos(z * 0.006) * 6.0;        // additive swell
+
+            const distToCenter = Math.hypot(x, z);
+            const spawnFlatten = Math.max(0, 1.0 - (distToCenter / 50.0));
+            h = h * (1.0 - spawnFlatten) + (-5.0) * spawnFlatten;
+            return h;
+        }
+
+        // 1 inside the road corridor, 0 out on the mountains, soft in between.
+        // Depends only on |x|, so it can be reused in the shader to tint asphalt.
+        function roadMask(x) {
+            const t = (Math.abs(x) - ROAD_HALF) / ROAD_FADE;
+            const c = Math.min(1, Math.max(0, t));
+            return c * c * (3.0 - 2.0 * c);   // smoothstep(0,1,c)
+        }
+
+        function getTerrainHeight(x, z) {
+            const h = mountainHeight(x, z);
+            if (worldMode !== 'paved') return h;
+
+            // A gentle graded roadbed that winds uphill along +z. Because it is
+            // independent of the mountain noise, blending it into a corridor
+            // carves a smooth cut through the peaks (cut banks at the edges).
+            const roadH = -4.4 + z * 0.018;
+            return h * roadMask(x) + roadH * (1.0 - roadMask(x));
+        }
+
+        // ==========================================
+        // 4. SHADERS
+        // ==========================================
+
+        // --- SKY ---
+        const skyVS = `attribute vec2 aPosition; varying vec2 vUv;
+            void main() { vUv = aPosition * 0.5 + 0.5; gl_Position = vec4(aPosition, 0.999, 1.0); }`;
+        const skyFS = `precision highp float; varying vec2 vUv;
+            void main() {
+                vec3 topColor = vec3(0.1, 0.3, 0.8);
+                vec3 bottomColor = vec3(0.8, 0.9, 1.0);
+                float mixFactor = smoothstep(0.0, 0.8, vUv.y);
+                vec3 color = mix(bottomColor, topColor, mixFactor);
+                vec2 sunPos = vec2(0.3, 0.7);
+                float sunDist = length(vUv - sunPos);
+                color += vec3(1.0, 1.0, 0.9) * (smoothstep(0.4, 0.0, sunDist) * 2.0
+                                              + smoothstep(0.05, 0.0, sunDist) * 5.0);
+                float cloud = sin(vUv.x * 15.0) * cos(vUv.y * 25.0) * 0.05;
+                gl_FragColor = vec4(color + cloud, 1.0);
+            }`;
+
+        // --- TERRAIN VERTEX SHADER ---------------------------------------
+        // Samples the footprint render-target (vertex texture fetch) to push
+        // the ground down, AND computes the "crumble" gradient here, so the
+        // fragment shader needs no dFdx/dFdy and no GL_OES_standard_derivatives.
+        const terrainVS = `
+            attribute vec3 aPosition;
+            attribute vec3 aNormal;
+            uniform mat4 uProjection;
+            uniform mat4 uView;
+            uniform mat4 uModel;
+            uniform sampler2D uFootprintMap;
+            uniform float uPaved;           // 1 = paved road (no snow trench)
+            varying vec3 vWorldPos;
+            varying vec3 vNormal;
+            varying float vSnowDepth;
+            varying vec2 vCrumble;
+
+            const float TRENCH_DEPTH = ${TRENCH_DEPTH.toFixed(3)};
+            const float TEXEL = ${(1.0 / FBO_SIZE).toFixed(8)};
+            const float WSIZE = ${WORLD_SIZE.toFixed(1)};
+
+            void main() {
+                vec4 worldPos = uModel * vec4(aPosition, 1.0);
+                vec3 N = normalize(mat3(uModel) * aNormal);
+
+                // RDR2 dynamic snow displacement (render target). Disabled on paved roads.
+                vec2 uv = (worldPos.xz + WSIZE * 0.5) / WSIZE;
+                float footprint = texture2D(uFootprintMap, uv).r;   // 1 = untouched
+                float snowDepth = (1.0 - footprint) * TRENCH_DEPTH * (1.0 - uPaved);
+                worldPos.y -= snowDepth;
+
+                // "Crumble" normal gradient, computed per-vertex (extension-free)
+                float fR = texture2D(uFootprintMap, uv + vec2(TEXEL, 0.0)).r;
+                float fU = texture2D(uFootprintMap, uv + vec2(0.0, TEXEL)).r;
+                vCrumble = clamp(vec2(footprint - fR, footprint - fU) * 40.0, -3.0, 3.0) * (1.0 - uPaved);
+
+                vWorldPos = worldPos.xyz;
+                vNormal = N;
+                vSnowDepth = snowDepth;
+                gl_Position = uProjection * uView * worldPos;
+            }`;
+
+        // --- TERRAIN FRAGMENT SHADER -------------------------------------
+        // vSnowDepth / vCrumble are BOTH declared here (that was error #2).
+        const terrainFS = `precision highp float;
+            varying vec3 vWorldPos;
+            varying vec3 vNormal;
+            varying float vSnowDepth;   // <-- was missing
+            varying vec2 vCrumble;      // <-- was missing
+            uniform vec3 uCameraPos;
+            uniform vec3 uLightDir;
+            uniform vec3 uLightColor;
+            uniform vec3 uAmbientColor;
+            uniform float uPaved;
+            const float PI = 3.14159265359;
+            const float ROAD_HALF = ${ROAD_HALF.toFixed(3)};
+            const float ROAD_FADE = ${ROAD_FADE.toFixed(3)};
+
+            float DistributionGGX(vec3 N, vec3 H, float roughness) {
+                float a = roughness * roughness; float a2 = a * a;
+                float NdotH = max(dot(N, H), 0.0); float NdotH2 = NdotH * NdotH;
+                float denom = (NdotH2 * (a2 - 1.0) + 1.0);
+                return a2 / max(PI * denom * denom, 0.001);
+            }
+            float GeometrySchlickGGX(float NdotV, float roughness) {
+                float r = roughness + 1.0; float k = (r * r) / 8.0;
+                return NdotV / max(NdotV * (1.0 - k) + k, 0.001);
+            }
+            float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness) {
+                return GeometrySchlickGGX(max(dot(N, V), 0.0), roughness) *
+                       GeometrySchlickGGX(max(dot(N, L), 0.0), roughness);
+            }
+            vec3 fresnelSchlick(float cosTheta, vec3 F0) {
+                return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+            }
+
+            void main() {
+                vec3 N = normalize(vNormal);
+                vec3 V = normalize(uCameraPos - vWorldPos);
+                vec3 L = normalize(-uLightDir);
+                vec3 H = normalize(V + L);
+
+                // Crumble normal on the trench walls (gradient came from VS)
+                float trenchFactor = smoothstep(0.0, 0.2, vSnowDepth);
+                N = normalize(N + vec3(vCrumble.x, 0.0, vCrumble.y) * trenchFactor);
+
+                float NdotL = max(dot(N, L), 0.0);
+                float slope = dot(N, vec3(0.0, 1.0, 0.0));
+                float snowAmount = smoothstep(0.4, 0.8, slope);
+
+                vec3 snowColor  = vec3(0.95, 0.98, 1.0);
+                vec3 trenchColor = vec3(0.72, 0.77, 0.86);   // compacted snow
+                vec3 albedo = mix(snowColor, trenchColor, trenchFactor);
+
+                // Paved road: only the corridor (|x| near 0) turns to asphalt;
+                // the surrounding mountains stay snow. roadFac = 1 on the
+                // mountain, 0 on the road — the inverse of the CPU roadMask().
+                float ax = abs(vWorldPos.x);
+                float rm = clamp((ax - ROAD_HALF) / ROAD_FADE, 0.0, 1.0);
+                float roadFac = uPaved * (rm * rm * (3.0 - 2.0 * rm));
+                vec3 asphalt = vec3(0.10, 0.105, 0.115);
+                albedo = mix(albedo, asphalt, 1.0 - roadFac);
+                snowAmount *= roadFac;
+
+                float roughness = mix(0.9, 0.72, trenchFactor);
+                roughness = mix(roughness, 0.85, 1.0 - roadFac);   // worn asphalt on road
+                vec3 F0 = vec3(0.04);
+
+                float NDF = DistributionGGX(N, H, roughness);
+                float G   = GeometrySmith(N, V, L, roughness);
+                vec3  F   = fresnelSchlick(max(dot(H, V), 0.0), F0);
+                vec3 specular = (NDF * G * F) / (4.0 * max(dot(N, V), 0.0) * NdotL + 0.001);
+                vec3 kD = vec3(1.0) - F;
+
+                vec3 color = (kD * albedo / PI + specular) * uLightColor * NdotL;
+                color += snowColor * NdotL * snowAmount * 0.3 * uLightColor;  // snow SSS glow
+                color += uAmbientColor * albedo;
+
+                float dist = length(uCameraPos - vWorldPos);
+                float fogFactor = clamp(exp(-dist * 0.0015), 0.0, 1.0);
+                gl_FragColor = vec4(mix(vec3(0.85, 0.9, 1.0), color, fogFactor), 1.0);
+            }`;
+
+        // --- OBJECTS (TREES, ROCKS & SNOWMAN) ---
+        const objectVS = `
+            attribute vec3 aPosition;
+            attribute vec3 aNormal;
+            attribute vec3 aColor;
+            uniform mat4 uProjection;
+            uniform mat4 uView;
+            uniform mat4 uModel;
+            varying vec3 vWorldPos;
+            varying vec3 vNormal;
+            varying vec3 vColor;
+            void main() {
+                vec4 worldPos = uModel * vec4(aPosition, 1.0);
+                vWorldPos = worldPos.xyz;
+                vNormal = normalize(mat3(uModel) * aNormal);
+                vColor = aColor;
+                gl_Position = uProjection * uView * worldPos;
+            }`;
+        const objectFS = `precision highp float;
+            varying vec3 vWorldPos;
+            varying vec3 vNormal;
+            varying vec3 vColor;
+            uniform vec3 uCameraPos;
+            uniform vec3 uLightDir;
+            uniform vec3 uLightColor;
+            uniform vec3 uAmbientColor;
+            uniform vec3 uColor;
+            uniform float uRoughness;
+            uniform float uUseColor;   // 1 => tint by per-vertex aColor, 0 => flat uColor
+            void main() {
+                vec3 N = normalize(vNormal);
+                vec3 V = normalize(uCameraPos - vWorldPos);
+                vec3 L = normalize(-uLightDir);
+                float NdotL = max(dot(N, L), 0.0);
+                vec3 base = (uUseColor > 0.5) ? uColor * vColor : uColor;
+                vec3 color = base * NdotL * uLightColor + uAmbientColor * base;
+                vec3 H = normalize(V + L);
+                color += vec3(pow(max(dot(N, H), 0.0), 32.0) * (1.0 - uRoughness) * 0.5);
+                float dist = length(uCameraPos - vWorldPos);
+                gl_FragColor = vec4(mix(vec3(0.85, 0.9, 1.0), color,
+                                        clamp(exp(-dist * 0.0015), 0.0, 1.0)), 1.0);
+            }`;
+
+        // --- BLIZZARD SNOW (soft, lit, wakes around the player) ---
+        const snowVS = `
+            attribute vec3 aPosition;
+            attribute float aRandom;
+            uniform mat4 uProjection;
+            uniform mat4 uView;
+            uniform float uTime;
+            uniform vec3 uCameraPos;
+            uniform float uPlayerSpeed;
+            varying float vAlpha;
+            varying float vSize;
+            void main() {
+                vec3 pos = aPosition;
+                float t = uTime * 0.8 + aRandom * 100.0;
+                float windX = sin(t) * 0.2 + cos(t * 0.3) * 0.2;
+                float windZ = cos(t * 0.8) * 0.2 + sin(t * 0.5) * 0.2;
+                pos.x += windX * 10.0; pos.z += windZ * 10.0;
+                pos.y -= mod(uTime * 3.0 + aRandom * 40.0, 40.0);
+
+                float distX = pos.x - uCameraPos.x;
+                float distZ = pos.z - uCameraPos.z;
+                pos.x = uCameraPos.x + mod(distX + 25.0, 50.0) - 25.0;
+                pos.z = uCameraPos.z + mod(distZ + 25.0, 50.0) - 25.0;
+                pos.y = uCameraPos.y + mod(pos.y - uCameraPos.y + 20.0, 40.0) - 20.0;
+
+                vec3 toPlayer = pos - uCameraPos;
+                float distToPlayer = length(toPlayer);
+                if (distToPlayer < 4.0) {
+                    pos += normalize(toPlayer) * (4.0 - distToPlayer) * uPlayerSpeed * 2.0;
+                }
+
+                vec4 mvPos = uView * vec4(pos, 1.0);
+                gl_Position = uProjection * mvPos;
+                vSize = (15.0 / -mvPos.z) * (0.5 + aRandom * 1.5);
+                gl_PointSize = clamp(vSize, 1.0, 12.0);
+                vAlpha = clamp(1.0 - (-mvPos.z / 30.0), 0.0, 1.0);
+            }`;
+        const snowFS = `precision highp float; varying float vAlpha;
+            void main() {
+                vec2 coord = gl_PointCoord - vec2(0.5);
+                float dist = length(coord);
+                if (dist > 0.5) discard;
+                gl_FragColor = vec4(vec3(0.95, 0.98, 1.0),
+                                    smoothstep(0.5, 0.1, dist) * vAlpha * 0.3);
+            }`;
+
+        // --- FOOTSTEP KICKUP ---
+        const kickupVS = `
+            attribute vec3 aPosition;
+            attribute float aLife;
+            uniform mat4 uProjection;
+            uniform mat4 uView;
+            varying float vAlpha;
+            void main() {
+                vec4 mvPos = uView * vec4(aPosition, 1.0);
+                gl_Position = uProjection * mvPos;
+                gl_PointSize = clamp((100.0 / -mvPos.z) * (0.5 + aLife), 1.0, 20.0);
+                vAlpha = aLife;
+            }`;
+        const kickupFS = `precision highp float; varying float vAlpha;
+            void main() {
+                vec2 coord = gl_PointCoord - vec2(0.5);
+                float dist = length(coord);
+                if (dist > 0.5) discard;
+                gl_FragColor = vec4(vec3(1.0), smoothstep(0.5, 0.0, dist) * vAlpha * 0.8);
+            }`;
+
+        // --- FIRST-PERSON LEGS (skinned, snow-caked, view-space attached) ---
+        // Each bone carries root + 3 basis vectors. A vertex is placed as
+        //   worldPos = root + X*off.x + Y*off.y + Z*off.z
+        // so geometry stays authored in natural bone-local space.
+        // Bones: 0=L thigh, 1=L shin, 2=L foot, 3=R thigh, 4=R shin, 5=R foot
+        const legVS = `
+            attribute vec3 aOffset;    // bone-local position
+            attribute vec3 aNormal;
+            attribute float aBone;
+            attribute vec3 aTint;
+            uniform mat4 uProjection;
+            uniform mat4 uView;
+            uniform vec3 uLegRoot[6];
+            uniform vec3 uLegX[6];
+            uniform vec3 uLegY[6];
+            uniform vec3 uLegZ[6];
+            varying vec3 vWorldPos;
+            varying vec3 vNormal;
+            varying vec3 vTint;
+            void main() {
+                int bi = int(aBone + 0.5);
+                vec3 root = uLegRoot[0], ex = uLegX[0], ey = uLegY[0], ez = uLegZ[0];
+                if (bi == 1)      { root = uLegRoot[1]; ex = uLegX[1]; ey = uLegY[1]; ez = uLegZ[1]; }
+                else if (bi == 2) { root = uLegRoot[2]; ex = uLegX[2]; ey = uLegY[2]; ez = uLegZ[2]; }
+                else if (bi == 3) { root = uLegRoot[3]; ex = uLegX[3]; ey = uLegY[3]; ez = uLegZ[3]; }
+                else if (bi == 4) { root = uLegRoot[4]; ex = uLegX[4]; ey = uLegY[4]; ez = uLegZ[4]; }
+                else if (bi == 5) { root = uLegRoot[5]; ex = uLegX[5]; ey = uLegY[5]; ez = uLegZ[5]; }
+
+                vec3 worldPos = root + ex * aOffset.x + ey * aOffset.y + ez * aOffset.z;
+                vNormal = normalize(ex * aNormal.x + ey * aNormal.y + ez * aNormal.z);
+                vWorldPos = worldPos;
+                vTint = aTint;
+                gl_Position = uProjection * uView * vec4(worldPos, 1.0);
+            }`;
+        const legFS = `precision highp float;
+            varying vec3 vWorldPos;
+            varying vec3 vNormal;
+            varying vec3 vTint;
+            uniform vec3 uCameraPos;
+            uniform vec3 uLightDir;
+            uniform vec3 uLightColor;
+            uniform vec3 uAmbientColor;
+            void main() {
+                vec3 N = normalize(vNormal);
+                vec3 V = normalize(uCameraPos - vWorldPos);
+                vec3 L = normalize(-uLightDir);
+                float NdotL = max(dot(N, L), 0.0);
+                vec3 color = vTint * NdotL * uLightColor + uAmbientColor * vTint * 0.6;
+                vec3 H = normalize(V + L);
+                // wet trouser sheen
+                color += vec3(pow(max(dot(N, H), 0.0), 24.0)) * 0.18;
+                float dist = length(uCameraPos - vWorldPos);
+                gl_FragColor = vec4(mix(vec3(0.85, 0.9, 1.0), color,
+                                        clamp(exp(-dist * 0.0015), 0.0, 1.0)), 1.0);
+            }`;
+
+        // --- FOOTPRINT PAINT (renders into the FBO) ---
+        const paintVS = `attribute vec2 aPosition; varying vec2 vUv;
+            void main() { vUv = aPosition * 0.5 + 0.5; gl_Position = vec4(aPosition, 0.0, 1.0); }`;
+        const paintFS = `precision highp float; varying vec2 vUv;
+            uniform vec2 uStamps[4];
+            uniform float uStampCount;
+            uniform float uPaintRadius;
+            void main() {
+                float brush = 0.0;
+                for (int i = 0; i < 4; i++) {
+                    if (float(i) >= uStampCount) break;
+                    float d = length(vUv - uStamps[i]);
+                    brush = max(brush, smoothstep(uPaintRadius, uPaintRadius * 0.4, d));
+                }
+                // elongated: squash along the walk direction handled by radius only
+                gl_FragColor = vec4(vec3(1.0 - brush), 1.0);
+            }`;
+
+        // ==========================================
+        // 5. PROGRAMS + GEOMETRY
+        // ==========================================
+        const terrainProgram = createProgram(terrainVS, terrainFS);
+        const objectProgram  = createProgram(objectVS, objectFS);
+        const snowProgram    = createProgram(snowVS, snowFS);
+        const kickupProgram  = createProgram(kickupVS, kickupFS);
+        const skyProgram     = createProgram(skyVS, skyFS);
+        const paintProgram   = createProgram(paintVS, paintFS);
+        const legProgram     = createProgram(legVS, legFS);
+
+        function createBuffer(data, type) {
+            const buffer = gl.createBuffer();
+            gl.bindBuffer(type, buffer);
+            gl.bufferData(type, new Float32Array(data), gl.STATIC_DRAW);
+            return buffer;
+        }
+
+        // --- FOOTPRINT RENDER TARGET (RDR2 dynamic snow displacement) ---
+        const footprintTex = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, footprintTex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, FBO_SIZE, FBO_SIZE, 0,
+                      gl.RGBA, gl.UNSIGNED_BYTE, null);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+        const footprintFBO = gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, footprintFBO);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0,
+                                gl.TEXTURE_2D, footprintTex, 0);
+        if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+            console.error("Footprint FBO is incomplete!");
+        }
+        gl.viewport(0, 0, FBO_SIZE, FBO_SIZE);
+        gl.clearColor(1.0, 1.0, 1.0, 1.0);   // white = untouched snow
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+        // --- TERRAIN + FOREST + ROCKS ------------------------------------
+        // The world is rebuilt whenever the mode changes, because vertex
+        // positions depend on worldMode. Buffers are created once and simply
+        // re-uploaded by buildWorld().
+        const TERRAIN_SIZE = WORLD_SIZE, TERRAIN_SEGS = 250;
+        const terrainVBO = gl.createBuffer();
+        const terrainNBO = gl.createBuffer();
+        const terrainIBO = gl.createBuffer();
+        let terrainIndexCount = 0;
+
+        const treeVBO = gl.createBuffer();
+        const treeNBO = gl.createBuffer();
+        const treeCBO = gl.createBuffer();
+        const treeIBO = gl.createBuffer();
+        let treeIndexCount = 0;
+
+        const rockVBO = gl.createBuffer();
+        const rockNBO = gl.createBuffer();
+        const rockIBO = gl.createBuffer();
+        let rockIndexCount = 0;
+
+        function uploadIndexed(VBO, NBO, IBO, verts, norms, indices) {
+            gl.bindBuffer(gl.ARRAY_BUFFER, VBO);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.STATIC_DRAW);
+            gl.bindBuffer(gl.ARRAY_BUFFER, NBO);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(norms), gl.STATIC_DRAW);
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, IBO);
+            gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(indices), gl.STATIC_DRAW);
+            return indices.length;
+        }
+
+        // Flat-shaded triangle: one face normal shared by all three corners, so
+        // rocky facets each catch the light independently (angular, not smooth).
+        function pushFlatTri(V, N, I, off, a, b, c) {
+            const e1x=b[0]-a[0], e1y=b[1]-a[1], e1z=b[2]-a[2];
+            const e2x=c[0]-a[0], e2y=c[1]-a[1], e2z=c[2]-a[2];
+            let nx = e1y*e2z - e1z*e2y, ny = e1z*e2x - e1x*e2z, nz = e1x*e2y - e1y*e2x;
+            const l = Math.hypot(nx, ny, nz) || 1; nx/=l; ny/=l; nz/=l;
+            V.push(a[0],a[1],a[2], b[0],b[1],b[2], c[0],c[1],c[2]);
+            N.push(nx,ny,nz, nx,ny,nz, nx,ny,nz);
+            I.push(off, off+1, off+2);
+            return off + 3;
+        }
+
+        function buildWorld() {
+            // ---- TERRAIN with area-weighted SMOOTH normals (curved shading) ----
+            const terrainVerts = [];
+            const N = TERRAIN_SEGS + 1;
+            for (let z = 0; z < N; z++) {
+                for (let x = 0; x < N; x++) {
+                    const px = (x / TERRAIN_SEGS - 0.5) * TERRAIN_SIZE;
+                    const pz = (z / TERRAIN_SEGS - 0.5) * TERRAIN_SIZE;
+                    terrainVerts.push(px, getTerrainHeight(px, pz), pz);
+                }
+            }
+            const terrainIndices = [];
+            for (let z = 0; z < TERRAIN_SEGS; z++) {
+                for (let x = 0; x < TERRAIN_SEGS; x++) {
+                    const a = z * N + x, b = a + 1;
+                    const c = (z + 1) * N + x, d = c + 1;
+                    terrainIndices.push(a, b, c, b, d, c);
+                }
+            }
+            // Accumulate per-face normals (magnitude = 2*area, so this weights by
+            // area) onto each shared vertex, then normalize -> continuous,
+            // curved surface instead of hard polygon "lines".
+            const terrainNorms = new Float32Array(N * N * 3);
+            for (let i = 0; i < terrainIndices.length; i += 3) {
+                const ia = terrainIndices[i]*3, ib = terrainIndices[i+1]*3, ic = terrainIndices[i+2]*3;
+                const ax=terrainVerts[ia], ay=terrainVerts[ia+1], az=terrainVerts[ia+2];
+                const bx=terrainVerts[ib], by=terrainVerts[ib+1], bz=terrainVerts[ib+2];
+                const cx=terrainVerts[ic], cy=terrainVerts[ic+1], cz=terrainVerts[ic+2];
+                const e1x=bx-ax, e1y=by-ay, e1z=bz-az;
+                const e2x=cx-ax, e2y=cy-ay, e2z=cz-az;
+                const nx = e1y*e2z - e1z*e2y, ny = e1z*e2x - e1x*e2z, nz = e1x*e2y - e1y*e2x;
+                terrainNorms[ia]+=nx; terrainNorms[ia+1]+=ny; terrainNorms[ia+2]+=nz;
+                terrainNorms[ib]+=nx; terrainNorms[ib+1]+=ny; terrainNorms[ib+2]+=nz;
+                terrainNorms[ic]+=nx; terrainNorms[ic+1]+=ny; terrainNorms[ic+2]+=nz;
+            }
+            for (let i = 0; i < terrainNorms.length; i += 3) {
+                const l = Math.hypot(terrainNorms[i], terrainNorms[i+1], terrainNorms[i+2]) || 1;
+                terrainNorms[i]/=l; terrainNorms[i+1]/=l; terrainNorms[i+2]/=l;
+            }
+            terrainIndexCount = uploadIndexed(terrainVBO, terrainNBO, terrainIBO,
+                                              terrainVerts, terrainNorms, terrainIndices);
+
+
+            // ---- FOREST (mountain mode only, one merged VBO + color buffer) --
+            // Trees are coloured per-vertex: brown trunk, dark-green conifer
+            // skirts, white snow caps. They are spread on a JITTERED GRID so
+            // the forest is even (no clumps / gaps) rather than pure-random.
+            const allTreeVerts = [], allTreeNorms = [], allTreeColors = [], allTreeIndices = [];
+            let treeIndexOffset = 0;
+            function addConeToTree(radius, height, segments, cx, cy, cz, col) {
+                // apex
+                allTreeVerts.push(cx, cy + height, cz); allTreeNorms.push(0, 1, 0);
+                allTreeColors.push(col[0], col[1], col[2]);
+                // base ring
+                for (let i = 0; i <= segments; i++) {
+                    const angle = (i / segments) * Math.PI * 2;
+                    allTreeVerts.push(cx + Math.cos(angle) * radius, cy, cz + Math.sin(angle) * radius);
+                    allTreeNorms.push(Math.cos(angle), 0.5, Math.sin(angle));
+                    allTreeColors.push(col[0], col[1], col[2]);
+                }
+                for (let i = 0; i < segments; i++) {
+                    allTreeIndices.push(treeIndexOffset, treeIndexOffset + 1 + i, treeIndexOffset + 2 + i);
+                }
+                treeIndexOffset += segments + 2;
+            }
+            function addCylinderToTree(radius, height, segments, cx, cy, cz, col) {
+                for (let i = 0; i <= segments; i++) {
+                    const angle = (i / segments) * Math.PI * 2;
+                    const nx = Math.cos(angle), nz = Math.sin(angle);
+                    allTreeVerts.push(cx + nx * radius, cy, cz + nz * radius);
+                    allTreeVerts.push(cx + nx * radius, cy + height, cz + nz * radius);
+                    allTreeNorms.push(nx, 0, nz, nx, 0, nz);
+                    allTreeColors.push(col[0], col[1], col[2], col[0], col[1], col[2]);
+                }
+                for (let i = 0; i < segments; i++) {
+                    const a = treeIndexOffset + i * 2;
+                    allTreeIndices.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+                }
+                treeIndexOffset += (segments + 1) * 2;
+            }
+            const TRUNK_COL = [0.30, 0.18, 0.09];
+            const NEEDLE_COL = [0.09, 0.34, 0.15];
+            const SNOWCAP_COL = [0.95, 0.98, 1.0];
+            function addConifer(tx, ty, tz, scale, rot) {
+                const cxo = Math.cos(rot) * 0.6, czo = -Math.sin(rot) * 0.6; // slight lean
+                // trunk
+                addCylinderToTree(0.28 * scale, 2.6 * scale, 6,
+                                  tx, ty, tz, TRUNK_COL);
+                // 5 tiers: widest at the bottom, tapering to the top (conifer)
+                const TIERS = 5;
+                for (let i = 0; i < TIERS; i++) {
+                    const f = i / (TIERS - 1);            // 0 at base .. 1 at top
+                    const layerY = ty + (1.3 + i * 1.55) * scale;
+                    const r = (4.3 - 3.1 * f) * scale;    // radius shrinks going up
+                    const h = 2.5 * scale;
+                    // green skirt
+                    addConeToTree(r, h, 9, tx + cxo * f, layerY, tz + czo * f, NEEDLE_COL);
+                    // snow cap resting on this tier (shorter, slightly narrower)
+                    addConeToTree(r * 0.9, h * 0.55, 9,
+                                  tx + cxo * f, layerY + h * 0.45, tz + czo * f, SNOWCAP_COL);
+                }
+            }
+            if (worldMode === 'mountain') {
+                // jittered grid => even spacing across the whole map
+                const GRID = 15, span = WORLD_SIZE - 60, cell = span / GRID;
+                for (let gx = 0; gx < GRID; gx++) {
+                    for (let gz = 0; gz < GRID; gz++) {
+                        const tx = -span * 0.5 + (gx + 0.5) * cell + (Math.random() - 0.5) * cell * 0.9;
+                        const tz = -span * 0.5 + (gz + 0.5) * cell + (Math.random() - 0.5) * cell * 0.9;
+                        if (Math.hypot(tx, tz) < 22) continue;           // keep spawn clearing
+                        if (roadMask(tx) < 0.6) continue;                // keep off the road
+                        const ty = getTerrainHeight(tx, tz);
+                        if (ty > 55.0) continue;                         // above the tree line
+                        const scale = 1.4 + Math.random() * 2.6;
+                        addConifer(tx, ty, tz, scale, Math.random() * Math.PI);
+                    }
+                }
+            }
+            treeIndexCount = uploadIndexed(treeVBO, treeNBO, treeIBO,
+                                          allTreeVerts, allTreeNorms, allTreeIndices);
+            gl.bindBuffer(gl.ARRAY_BUFFER, treeCBO);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(allTreeColors), gl.STATIC_DRAW);
+
+            // ---- ROCKS (mountain mode only) ----
+            // Procedural boulders: an icosphere-ish blob whose vertices are
+            // radially jittered, then flat-shaded so each facet catches light
+            // separately, like broken stone.
+            const rockVerts = [], rockNorms = [], rockIndices = [];
+            let rockOffset = 0;
+            function addRock(cx, cy, cz, size, rot) {
+                const LON = 7, LAT = 5;
+                const grid = [];
+                for (let la = 0; la <= LAT; la++) {
+                    const phi = (la / LAT) * Math.PI;
+                    const row = [];
+                    for (let lo = 0; lo <= LON; lo++) {
+                        const theta = (lo / LON) * Math.PI * 2;
+                        let dx = Math.sin(phi) * Math.cos(theta);
+                        let dy = Math.cos(phi);
+                        let dz = Math.sin(phi) * Math.sin(theta);
+                        // stable radial jitter per (rock,lat,lon)
+                        const j = 0.68 + 0.62 * noise2D(lo * 3.1 + rot * 10.0, la * 2.7 + rot * 5.0);
+                        dx *= j; dy *= j * (0.75 + 0.3 * noise2D(lo * 1.7 + rot, la * 1.3));
+                        dz *= j;
+                        row.push([cx + dx * size, cy + dy * size, cz + dz * size]);
+                    }
+                    grid.push(row);
+                }
+                for (let la = 0; la < LAT; la++) {
+                    for (let lo = 0; lo < LON; lo++) {
+                        const a = grid[la][lo], b = grid[la][lo + 1];
+                        const c = grid[la + 1][lo], d = grid[la + 1][lo + 1];
+                        rockOffset = pushFlatTri(rockVerts, rockNorms, rockIndices, rockOffset, a, c, b);
+                        rockOffset = pushFlatTri(rockVerts, rockNorms, rockIndices, rockOffset, b, c, d);
+                    }
+                }
+            }
+            if (worldMode === 'mountain') {
+                for (let r = 0; r < 260; r++) {
+                    const rx = (Math.random() - 0.5) * (WORLD_SIZE - 30);
+                    const rz = (Math.random() - 0.5) * (WORLD_SIZE - 30);
+                    if (Math.hypot(rx, rz) < 12) continue;          // keep spawn clear
+                    const ry = getTerrainHeight(rx, rz);
+                    const size = 0.6 + Math.random() * 2.6;
+                    // sink the boulder so its base meets the snow surface
+                    addRock(rx, ry + size * 0.45, rz, size, Math.random() * 10.0);
+                }
+            }
+            rockIndexCount = uploadIndexed(rockVBO, rockNBO, rockIBO,
+                                           rockVerts, rockNorms, rockIndices);
+
+            // ---- clear old footprints when the world shape changes ----
+            gl.bindFramebuffer(gl.FRAMEBUFFER, footprintFBO);
+            gl.viewport(0, 0, FBO_SIZE, FBO_SIZE);
+            gl.clearColor(1.0, 1.0, 1.0, 1.0);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        }
+
+        buildWorld();
+
+        // --- SNOWMAN ---
+        function createSphere(radius, segments) {
+            const verts = [], norms = [], inds = [];
+            for (let y = 0; y <= segments; y++) {
+                for (let x = 0; x <= segments; x++) {
+                    const u = x / segments, v = y / segments;
+                    const theta = u * Math.PI * 2, phi = v * Math.PI;
+                    const px = radius * Math.sin(phi) * Math.cos(theta);
+                    const py = radius * Math.cos(phi);
+                    const pz = radius * Math.sin(phi) * Math.sin(theta);
+                    verts.push(px, py, pz); norms.push(px / radius, py / radius, pz / radius);
+                }
+            }
+            for (let y = 0; y < segments; y++) {
+                for (let x = 0; x < segments; x++) {
+                    const a = y * (segments + 1) + x;
+                    inds.push(a, a + 1, a + segments + 1,
+                              a + 1, a + segments + 2, a + segments + 1);
+                }
+            }
+            return { verts, norms, inds };
+        }
+        const sphereData = createSphere(1.0, 24);
+        const sphereVBO = createBuffer(sphereData.verts, gl.ARRAY_BUFFER);
+        const sphereNBO = createBuffer(sphereData.norms, gl.ARRAY_BUFFER);
+        const sphereIBO = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, sphereIBO);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(sphereData.inds), gl.STATIC_DRAW);
+        const sCount = sphereData.inds.length;
+        const snowmanParts = [
+            { vbo: sphereVBO, nbo: sphereNBO, ibo: sphereIBO, count: sCount, color: [0.95,0.98,1.0], pos: [0,-1.5,-15], scale: [2.5,2.5,2.5], rough: 0.9 },
+            { vbo: sphereVBO, nbo: sphereNBO, ibo: sphereIBO, count: sCount, color: [0.95,0.98,1.0], pos: [0, 1.5,-15], scale: [1.8,1.8,1.8], rough: 0.9 },
+            { vbo: sphereVBO, nbo: sphereNBO, ibo: sphereIBO, count: sCount, color: [0.95,0.98,1.0], pos: [0, 3.5,-15], scale: [1.2,1.2,1.2], rough: 0.9 },
+            { vbo: sphereVBO, nbo: sphereNBO, ibo: sphereIBO, count: sCount, color: [0.1,0.1,0.1],   pos: [-0.4,3.8,-14.0], scale: [0.1,0.1,0.1], rough: 0.2 },
+            { vbo: sphereVBO, nbo: sphereNBO, ibo: sphereIBO, count: sCount, color: [0.1,0.1,0.1],   pos: [ 0.4,3.8,-14.0], scale: [0.1,0.1,0.1], rough: 0.2 },
+            { vbo: sphereVBO, nbo: sphereNBO, ibo: sphereIBO, count: sCount, color: [1.0,0.4,0.0],   pos: [0,3.5,-13.8], scale: [0.15,0.4,0.15], rough: 0.5 },
+            { vbo: sphereVBO, nbo: sphereNBO, ibo: sphereIBO, count: sCount, color: [0.1,0.1,0.1],   pos: [0,2.0,-13.1], scale: [0.15,0.15,0.15], rough: 0.2 },
+            { vbo: sphereVBO, nbo: sphereNBO, ibo: sphereIBO, count: sCount, color: [0.1,0.1,0.1],   pos: [0,1.0,-12.7], scale: [0.15,0.15,0.15], rough: 0.2 },
+            { vbo: sphereVBO, nbo: sphereNBO, ibo: sphereIBO, count: sCount, color: [0.1,0.1,0.1],   pos: [0,0.0,-12.2], scale: [0.15,0.15,0.15], rough: 0.2 },
+            { vbo: sphereVBO, nbo: sphereNBO, ibo: sphereIBO, count: sCount, color: [0.05,0.05,0.05],pos: [0,4.6,-15], scale: [1.0,0.1,1.0], rough: 0.8 },
+            { vbo: sphereVBO, nbo: sphereNBO, ibo: sphereIBO, count: sCount, color: [0.05,0.05,0.05],pos: [0,5.2,-15], scale: [0.7,0.8,0.7], rough: 0.8 },
+        ];
+
+        // --- FIRST-PERSON LEG GEOMETRY -----------------------------------
+        // One merged, skinned mesh: thigh -> shin -> boot, per leg.
+        // Geometry is authored in bone-local space (y down from the joint),
+        // so the shader just needs root + 3 basis vectors per bone.
+        // Bones: 0=L thigh, 1=L shin, 2=L foot, 3=R thigh, 4=R shin, 5=R foot
+        const LEG_THIGH = 0.44, LEG_SHIN = 0.42;
+        const legV = [], legN = [], legB = [], legT = [], legI = [];
+        let legIdx = 0;
+
+        function pushVert(x, y, z, nx, ny, nz, bone, tint) {
+            legV.push(x, y, z);
+            legN.push(nx, ny, nz);
+            legB.push(bone);
+            legT.push(tint[0], tint[1], tint[2]);
+            return legIdx++;
+        }
+
+        function addLimb(boneId, rTop, rBot, len, segs, cx, tint) {
+            const base = legIdx;
+            for (let i = 0; i <= segs; i++) {
+                const a = (i / segs) * Math.PI * 2;
+                const nx = Math.cos(a), nz = Math.sin(a);
+                // top ring (joint, y = 0) then bottom ring (y = -len)
+                pushVert(cx + nx * rTop, 0,   nz * rTop, nx, 0, nz, boneId, tint);
+                pushVert(cx + nx * rBot, -len, nz * rBot, nx, 0, nz, boneId, tint);
+            }
+            for (let i = 0; i < segs; i++) {
+                const a = base + i * 2, b = a + 1, c = a + 2, d = a + 3;
+                legI.push(a, c, b, b, c, d);
+            }
+            // cap the bottom so the trouser cuff reads as a closed tube
+            const capBase = legIdx;
+            pushVert(cx, -len, 0, 0, -1, 0, boneId, tint);
+            for (let i = 0; i < segs; i++) {
+                legI.push(capBase, base + (i + 1) * 2 + 1, base + i * 2 + 1);
+            }
+        }
+
+        function addBoot(boneId, cx, tint) {
+            // slab-ish boot in foot-bone space: sole at y = -0.18, toe to +Z
+            const h = 0.18, w = 0.11, len = 0.30;
+            const b = [
+                [cx - w,  0,    -len * 0.35], [cx + w,  0,    -len * 0.35],
+                [cx - w,  0,     len],        [cx + w,  0,     len],
+                [cx - w, -h,    -len * 0.35], [cx + w, -h,    -len * 0.35],
+                [cx - w, -h,     len],        [cx + w, -h,     len],
+            ];
+            const quad = (p0, p1, p2, p3, n) => {
+                const s = legIdx;
+                for (const p of [p0, p1, p2, p3]) {
+                    pushVert(p[0], p[1], p[2], n[0], n[1], n[2], boneId, tint);
+                }
+                legI.push(s, s + 1, s + 2, s + 1, s + 3, s + 2);
+            };
+            quad(b[0], b[1], b[4], b[5], [0, 0, -1]);   // heel
+            quad(b[1], b[3], b[5], b[7], [1, 0, 0]);    // outer
+            quad(b[3], b[2], b[7], b[6], [0, 0, 1]);    // toe
+            quad(b[2], b[0], b[6], b[4], [-1, 0, 0]);   // inner
+            quad(b[0], b[1], b[2], b[3], [0, 1, 0]);    // top (catches snow)
+            quad(b[4], b[5], b[6], b[7], [0, -1, 0]);   // sole
+        }
+
+        const TROUSER = [0.17, 0.19, 0.24];   // dark waxed cotton
+        const BOOTCOL = [0.10, 0.07, 0.05];   // muddy leather
+        for (let side = 0; side < 2; side++) {
+            const cx = side === 0 ? -0.115 : 0.115;
+            const bThigh = side * 3, bShin = side * 3 + 1, bFoot = side * 3 + 2;
+            addLimb(bThigh, 0.115, 0.098, LEG_THIGH, 10, cx, TROUSER);
+            addLimb(bShin,  0.098, 0.078, LEG_SHIN,  10, cx, TROUSER);
+            addBoot(bFoot, cx, BOOTCOL);
+        }
+        const legVBO = createBuffer(legV, gl.ARRAY_BUFFER);
+        const legNBO = createBuffer(legN, gl.ARRAY_BUFFER);
+        const legBBO = createBuffer(legB, gl.ARRAY_BUFFER);
+        const legTBO = createBuffer(legT, gl.ARRAY_BUFFER);
+        const legIBO = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, legIBO);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(legI), gl.STATIC_DRAW);
+        const legIndexCount = legI.length;
+
+        // --- BLIZZARD PARTICLES ---
+        const MAX_SNOW = 30000;
+        const snowPositions = new Float32Array(MAX_SNOW * 3);
+        const snowRandoms = new Float32Array(MAX_SNOW);
+        for (let i = 0; i < MAX_SNOW; i++) {
+            snowPositions[i*3]   = (Math.random() - 0.5) * 100;
+            snowPositions[i*3+1] = (Math.random() - 0.5) * 40;
+            snowPositions[i*3+2] = (Math.random() - 0.5) * 100;
+            snowRandoms[i] = Math.random();
+        }
+        const snowPosBuffer = createBuffer(snowPositions, gl.ARRAY_BUFFER);
+        const snowRandBuffer = createBuffer(snowRandoms, gl.ARRAY_BUFFER);
+
+        // --- FOOTSTEP KICKUP (CPU sim) ---
+        const MAX_KICKUP = 200;
+        const kickupPositions = new Float32Array(MAX_KICKUP * 3);
+        const kickupLives = new Float32Array(MAX_KICKUP);
+        const kickupVels = new Float32Array(MAX_KICKUP * 3);
+        let kickupIndex = 0;
+        const kickupPosBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, kickupPosBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, kickupPositions, gl.DYNAMIC_DRAW);
+        const kickupLifeBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, kickupLifeBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, kickupLives, gl.DYNAMIC_DRAW);
+
+        function spawnKickup(x, y, z, dirX, dirZ) {
+            for (let i = 0; i < 5; i++) {
+                const idx = kickupIndex; kickupIndex = (kickupIndex + 1) % MAX_KICKUP;
+                kickupPositions[idx*3]   = x + (Math.random() - 0.5) * 0.5;
+                kickupPositions[idx*3+1] = y + 0.1;
+                kickupPositions[idx*3+2] = z + (Math.random() - 0.5) * 0.5;
+                kickupVels[idx*3]   = dirX * (0.5 + Math.random()) + (Math.random() - 0.5) * 2.0;
+                kickupVels[idx*3+1] = 1.0 + Math.random() * 2.0;
+                kickupVels[idx*3+2] = dirZ * (0.5 + Math.random()) + (Math.random() - 0.5) * 2.0;
+                kickupLives[idx] = 1.0;
+            }
+        }
+
+        const skyVBO   = createBuffer([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1], gl.ARRAY_BUFFER);
+        const paintVBO = createBuffer([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1], gl.ARRAY_BUFFER);
+
+        // ==========================================
+        // 6. FIRST-PERSON CONTROLS
+        // ==========================================
+        let playerPos = [0, 0, 0];
+        let yaw = 0, pitch = 0;
+        let keys = {};
+        let isDragging = false, lastMouseX = 0, lastMouseY = 0;
+        let moveSpeed = 0.3;
+        let bobTimer = 0;
+        let currentSpeed = 0;
+        let snowDepth = 0.3;
+        // basis vectors, recomputed each frame and shared with solveLegs()
+        let forwardX = 0, forwardZ = 1, rightX = 1, rightZ = 0;
+        let moveX = 0, moveZ = 0;    // current walk direction (0,0 when idle)
+        let trenchOffset = 0.0;     // smoothed body sink (tracks how deep boots submerse)
+        let sinkBlend = 0.0;        // 0 = boots resting on the surface, 1 = pressing in
+        let hasWalked = false;      // (kept for reference; trench is now per-foot)
+
+        // ---- leg animation state ----
+        // Each foot runs its own continuously-advancing gait phase (NEVER reset);
+        // the stance foot therefore drifts backward with every step. The snow it
+        // presses into stays as a persistent per-foot stamp (see the paint pass),
+        // so you carve one hole per foot instead of one trench under the body.
+        const legState = [
+            { phase: 0.0,        side: -1, wasPlanted: false, planted: false },
+            { phase: Math.PI,    side:  1, wasPlanted: false, planted: false },
+        ];
+        const legRootArr = new Float32Array(18);   // 6 vec3 joint positions
+        const legXArr = new Float32Array(18);      // 6 vec3 bone "right" axes
+        const legYArr = new Float32Array(18);      // 6 vec3 bone "down" axes
+        const legZArr = new Float32Array(18);      // 6 vec3 bone "forward" axes
+        const stampList = [];  // footprint stamps queued for this frame
+        const footWorld = [[0, 0], [0, 0]];  // live sole XZ per leg (front + back) for per-foot dents
+
+        function setBone(i, root, ex, ey, ez) {
+            legRootArr[i*3+0]=root[0]; legRootArr[i*3+1]=root[1]; legRootArr[i*3+2]=root[2];
+            legXArr[i*3+0]=ex[0]; legXArr[i*3+1]=ex[1]; legXArr[i*3+2]=ex[2];
+            legYArr[i*3+0]=ey[0]; legYArr[i*3+1]=ey[1]; legYArr[i*3+2]=ey[2];
+            legZArr[i*3+0]=ez[0]; legZArr[i*3+1]=ez[1]; legZArr[i*3+2]=ez[2];
+        }
+
+        window.addEventListener('keydown', e => keys[e.code] = true);
+        window.addEventListener('keyup',   e => keys[e.code] = false);
+        canvas.addEventListener('mousedown', e => {
+            isDragging = true; lastMouseX = e.clientX; lastMouseY = e.clientY;
+        });
+        window.addEventListener('mousemove', e => {
+            if (!isDragging) return;
+            yaw   -= (e.clientX - lastMouseX) * 0.003;
+            pitch -= (e.clientY - lastMouseY) * 0.003;
+            pitch = Math.max(-1.5, Math.min(1.5, pitch));
+            lastMouseX = e.clientX; lastMouseY = e.clientY;
+        });
+        window.addEventListener('mouseup', () => isDragging = false);
+        canvas.addEventListener('wheel', e => {
+            moveSpeed += e.deltaY * 0.001;
+            moveSpeed = Math.max(0.1, Math.min(1.5, moveSpeed));
+        });
+
+        // ==========================================
+        // 7. RENDER LOOP
+        // ==========================================
+
+        // ---- tiny vector helpers for the leg IK ----
+        const vAdd  = (a,b) => [a[0]+b[0], a[1]+b[1], a[2]+b[2]];
+        const vSub  = (a,b) => [a[0]-b[0], a[1]-b[1], a[2]-b[2]];
+        const vMul  = (a,s) => [a[0]*s, a[1]*s, a[2]*s];
+        const vLen  = (a)   => Math.hypot(a[0], a[1], a[2]);
+        const vNorm = (a)   => { const l = vLen(a) || 1; return [a[0]/l, a[1]/l, a[2]/l]; };
+        const vDot  = (a,b) => a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
+        const vCross= (a,b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+        // Rodrigues rotation of v about unit axis by ang
+        function rotAxis(v, axis, ang) {
+            const c = Math.cos(ang), s = Math.sin(ang);
+            const d = vDot(axis, v);
+            const k = vCross(axis, v);
+            return [ v[0]*c + k[0]*s + axis[0]*d*(1-c),
+                     v[1]*c + k[1]*s + axis[1]*d*(1-c),
+                     v[2]*c + k[2]*s + axis[2]*d*(1-c) ];
+        }
+
+        const HIP_OFFSET = 0.125;         // lateral distance hip->leg
+        const FOOT_SINK  = 0.55;          // how far the boot sinks into the powder
+        const BOOT_H     = 0.18;          // sole height below the ankle (matches mesh)
+        const LEG_REACH_F = 0.94;         // fraction of full extension at rest
+
+        // Solves both legs and writes world-space bone frames into
+        // legRootArr / legXArr / legYArr / legZArr. Spawns a snow plume +
+        // footprint stamp on each heel strike.
+        function solveLegs(dt) {
+            const camY = playerPos[1];
+            const fwd  = [forwardX, 0, forwardZ];
+            const rgt  = [rightX, 0, rightZ];
+            const up   = [0, 1, 0];
+
+            // Derive the hip height from the actual leg length so the feet always
+            // reach the snow with a natural bend, instead of floating or locking.
+            const legReach = (LEG_THIGH + LEG_SHIN) * LEG_REACH_F;
+            const groundRef = getTerrainHeight(playerPos[0], playerPos[2])
+                              - trenchOffset + snowDepth * FOOT_SINK;
+            const hipY = groundRef + legReach;
+            const hipW = [playerPos[0], Math.min(camY - 0.55, hipY), playerPos[2]];
+
+            const speedN  = Math.min(1, currentSpeed / 0.55);
+            const stride  = Math.min(0.62, 0.10 + currentSpeed * 1.5);   // foot travel
+            const liftMax = 0.10 + snowDepth * 0.09 + speedN * 0.06;    // high-step
+            const plants  = [];
+
+            for (let i = 0; i < 2; i++) {
+                const L = legState[i];
+                const s = Math.sin(L.phase);
+                const footAlong = Math.cos(L.phase) * stride;   // +Z = forward
+                const lift      = Math.max(0, -s) * liftMax;    // lifted during swing
+
+                // heel strike: the swing foot comes back down onto the snow
+                const nowPlanted = s >= 0;
+                L.planted = nowPlanted;
+                if (nowPlanted && !L.wasPlanted) plants.push(i);
+                L.wasPlanted = nowPlanted;
+
+                // ---- foot target in leg-local space (x right, y up, z forward) ----
+                const sway = Math.sin(L.phase * 2.0) * 0.025;
+
+                // world-space target: place X/Z beside the hip along the stride,
+                // then sample the snow surface there so the foot lands on the ground.
+                const tw = vAdd(hipW, vAdd(vMul(rgt, L.side * HIP_OFFSET + sway),
+                                           vMul(fwd, footAlong)));
+                const groundY = getTerrainHeight(tw[0], tw[2]);
+                // A planted foot SUBMERGES: the sole sinks FOOT_SINK*snowDepth below
+                // the snow surface, so the ankle sits that far down too. While the
+                // foot is swinging it high-steps back up over the powder (+lift),
+                // and a fraction of the sink still applies so the boot stays in snow
+                // at the low point instead of hovering.
+                const sink   = snowDepth * FOOT_SINK * (nowPlanted ? 1.0 : 0.35);
+                const ankleY = groundY - sink + BOOT_H + lift;
+                // IK solves to the ANKLE, and the sole hangs BOOT_H below it.
+                tw[1] = ankleY;
+
+                // ---- two-bone IK in world space ----
+                const toFootW = vNorm(vSub(tw, hipW));
+                const L1 = LEG_THIGH, L2 = LEG_SHIN;
+                let d = vLen(vSub(tw, hipW));
+                const dMin = Math.abs(L1 - L2) + 0.02, dMax = (L1 + L2) * 0.995;
+                d = Math.max(dMin, Math.min(dMax, d));
+                const Ftarget = vAdd(hipW, vMul(toFootW, d));
+
+                const cosHip = (L1*L1 + d*d - L2*L2) / (2 * L1 * d);
+                const aHip   = Math.acos(Math.max(-1, Math.min(1, cosHip)));
+
+                // knee pole: forward + slightly outward, orthogonal to the limb
+                let pole = vNorm([L.side * 0.55, 0.0, 1.0]);
+                pole = vNorm(vSub(pole, vMul(toFootW, vDot(pole, toFootW))));
+                if (!isFinite(pole[0]) || vLen(pole) < 0.1) pole = [0, 0, 1];
+
+                const thighDir = vNorm(rotAxis(toFootW, pole, -aHip));
+                const kneeW    = vAdd(hipW, vMul(thighDir, L1));
+                const shinDir  = vNorm(vSub(Ftarget, kneeW));
+                const ankleW   = vAdd(kneeW, vMul(shinDir, L2));
+
+                // ---- build orthonormal bone frames ----
+                // ey = bone's own "down" axis, ez = knee bend direction,
+                // ex = sideways. Geometry is authored with -Y along the bone.
+                const thighY = vMul(thighDir, -1);
+                const thighZ = vNorm(pole);
+                const thighX = vNorm(vCross(thighY, thighZ));
+
+                const shinY = vMul(shinDir, -1);
+                const shinX = vNorm(vCross(shinY, thighZ));
+                const shinZ = vNorm(vCross(shinX, shinY));
+
+                // foot: sole roughly level with the ground, toe along travel
+                const footY = vNorm(vMul(toFootW, -1));
+                const toeDir = vNorm([moveX !== 0 || moveZ !== 0 ? moveX : forwardX,
+                                      0,
+                                      moveX !== 0 || moveZ !== 0 ? moveZ : forwardZ]);
+                let footZ = vNorm(vSub(toeDir, vMul(footY, vDot(toeDir, footY))));
+                if (!isFinite(footZ[0]) || vLen(footZ) < 0.1) footZ = [0, 0, 1];
+                const footX = vNorm(vCross(footY, footZ));
+
+                const b = i * 3;
+                setBone(b,     hipW,   thighX, thighY, thighZ);
+                setBone(b + 1, kneeW,  shinX,  shinY,  shinZ);
+                setBone(b + 2, ankleW, footX,  footY,  footZ);
+
+                // Live sole position: the ankle sits BOOT_H above the ground,
+                // so drop to the sole and remember its XZ for the per-foot dent.
+                const sole = vSub(ankleW, vMul(footY, BOOT_H));
+                footWorld[i][0] = sole[0];
+                footWorld[i][1] = sole[2];
+            }
+
+            // ---- snow plume + footprint stamp on each heel strike ----
+            for (const p of plants) {
+                const b = p * 3 + 2;
+                const fx = legRootArr[b*3+0], fy = legRootArr[b*3+1], fz = legRootArr[b*3+2];
+                spawnKickup(fx, fy + 0.05, fz, forwardX, forwardZ);
+                stampList.push([fx, fz]);
+            }
+        }
+        document.getElementById('loading').style.display = 'none';
+        let then = 0;
+
+        function render(nowMs) {
+            nowMs *= 0.001;
+            const deltaTime = Math.min(0.1, nowMs - then);
+            then = nowMs;
+
+            // ---------- movement ----------
+            forwardX = Math.sin(yaw); forwardZ = Math.cos(yaw);
+            rightX   = Math.cos(yaw); rightZ   = -Math.sin(yaw);
+            let dx = 0, dz = 0;
+            if (keys['KeyW'] || keys['ArrowUp'])    { dx += forwardX; dz += forwardZ; }
+            if (keys['KeyS'] || keys['ArrowDown'])  { dx -= forwardX; dz -= forwardZ; }
+            if (keys['KeyA'] || keys['ArrowLeft'])  { dx -= rightX;   dz -= rightZ;   }
+            if (keys['KeyD'] || keys['ArrowRight']) { dx += rightX;   dz += rightZ;   }
+
+            const len = Math.hypot(dx, dz);
+            let moving = false;
+            currentSpeed = 0;
+            moveX = 0; moveZ = 0;
+            if (len > 0) {
+                dx /= len; dz /= len;
+                moveX = dx; moveZ = dz;
+                playerPos[0] += dx * moveSpeed;
+                playerPos[2] += dz * moveSpeed;
+                moving = true;
+                hasWalked = true;
+                currentSpeed = moveSpeed * (1.0 - snowDepth * 0.4);
+                bobTimer += deltaTime * 15.0 * (1.0 + snowDepth);
+            } else {
+                bobTimer *= 0.9;
+            }
+
+            // keep the player inside the 800 m world (CLAMP_TO_EDGE on the map)
+            const LIMIT = WORLD_SIZE * 0.5 - 10;
+            playerPos[0] = Math.max(-LIMIT, Math.min(LIMIT, playerPos[0]));
+            playerPos[2] = Math.max(-LIMIT, Math.min(LIMIT, playerPos[2]));
+
+            // ---------- IK / high-step ----------
+            const terrainHeight = getTerrainHeight(playerPos[0], playerPos[2]);
+            snowDepth = worldMode === 'paved'
+                        ? 0.0
+                        : 0.3 + fbm(playerPos[0] * 0.05, playerPos[2] * 0.05) * 0.5;
+
+            // The snow dents are now per-foot (paint pass above), so there is no
+            // persistent body trench. The eye only settles down while you are
+            // actually walking, and by the same amount a boot presses into the
+            // powder (FOOT_SINK * snowDepth) — so the body sinks WITH the feet.
+            // Stop moving and it eases back onto the surface.
+            const footPress = snowDepth * FOOT_SINK;
+            const targetTrench = moving ? footPress : 0.0;
+            trenchOffset += (targetTrench - trenchOffset) * Math.min(1, deltaTime * 6.0);
+
+            playerPos[1] = terrainHeight - trenchOffset + snowDepth + 1.7;
+            const bobOffset = Math.sin(bobTimer) * (0.05 + snowDepth * 0.1) *
+                              (currentSpeed > 0 ? 1 : 0);
+
+            const cameraPos = [playerPos[0], playerPos[1] + bobOffset, playerPos[2]];
+            const lookDir = [Math.sin(yaw) * Math.cos(pitch),
+                             Math.sin(pitch),
+                             Math.cos(yaw) * Math.cos(pitch)];
+
+            // ---- advance the gait and solve both legs (before the matrices) ----
+            stampList.length = 0;
+            const gaitRate = 1.6 + currentSpeed * 7.0;      // steps per second
+            for (const L of legState) {
+                L.phase += deltaTime * gaitRate * Math.PI;
+                if (L.phase > Math.PI * 4) L.phase -= Math.PI * 4;
+            }
+            solveLegs(deltaTime);
+            const cameraTarget = [cameraPos[0] + lookDir[0],
+                                  cameraPos[1] + lookDir[1],
+                                  cameraPos[2] + lookDir[2]];
+
+            const projectionMatrix = mat4.create();
+            const viewMatrix = mat4.create();
+            const modelMatrix = mat4.create();
+            mat4.perspective(projectionMatrix, Math.PI / 3,
+                             canvas.width / canvas.height, 0.1, 1000);
+            mat4.lookAt(viewMatrix, cameraPos, cameraTarget, [0, 1, 0]);
+            mat4.identity(modelMatrix);
+
+            const lightDir    = [0.3, 0.8, 0.5];
+            const lightColor  = [1.0, 1.0, 0.95];
+            const ambientColor = [0.4, 0.5, 0.7];
+
+            // ======== PASS 1: dent the snow under EACH boot (per-leg) ========
+            // While walking we stamp both live sole positions — the front foot and
+            // the back foot — at boot size, so the trail is two parallel dents that
+            // follow the gait, not one big body trench. When idle we fall back to the
+            // heel-strike stamps so a single plant still leaves a print.
+            const doStamp = (moving || stampList.length > 0) && worldMode !== 'paved';
+            if (doStamp) {
+                const uvStamps = new Float32Array(8);
+                let n = 0;
+                if (moving) {
+                    // two live dents: current position of each foot (front + back)
+                    for (let i = 0; i < 2 && n < 4; i++) {
+                        uvStamps[n*2]   = (footWorld[i][0] + WORLD_SIZE * 0.5) / WORLD_SIZE;
+                        uvStamps[n*2+1] = (footWorld[i][1] + WORLD_SIZE * 0.5) / WORLD_SIZE;
+                        n++;
+                    }
+                }
+                // idle heel-strikes (and any overflow slots) still stamp a print
+                for (const st of stampList) {
+                    if (n >= 4) break;
+                    uvStamps[n*2]   = (st[0] + WORLD_SIZE * 0.5) / WORLD_SIZE;
+                    uvStamps[n*2+1] = (st[1] + WORLD_SIZE * 0.5) / WORLD_SIZE;
+                    n++;
+                }
+
+                gl.bindFramebuffer(gl.FRAMEBUFFER, footprintFBO);
+                gl.viewport(0, 0, FBO_SIZE, FBO_SIZE);
+                gl.useProgram(paintProgram);
+                gl.uniform2fv(gl.getUniformLocation(paintProgram, "uStamps"), uvStamps);
+                gl.uniform1f(gl.getUniformLocation(paintProgram, "uStampCount"), n);
+                // boot-sized brush so each dent reads as one foot
+                gl.uniform1f(gl.getUniformLocation(paintProgram, "uPaintRadius"), PAINT_RADIUS);
+                bindAttribs(paintProgram, [["aPosition", paintVBO, 2]]);
+                gl.disable(gl.DEPTH_TEST);
+                gl.enable(gl.BLEND);
+                gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+                gl.drawArrays(gl.TRIANGLES, 0, 6);
+                gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+                gl.viewport(0, 0, canvas.width, canvas.height);
+                gl.enable(gl.DEPTH_TEST);
+            }
+
+            // ======== PASS 2: draw the scene ========
+            // blend stays ON for the whole scene (particles need it!)
+            gl.viewport(0, 0, canvas.width, canvas.height);
+            gl.enable(gl.BLEND);
+            gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+            gl.clearColor(0.1, 0.15, 0.25, 1.0);
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+            // 1. SKY
+            gl.useProgram(skyProgram);
+            gl.depthMask(false);
+            bindAttribs(skyProgram, [["aPosition", skyVBO, 2]]);
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+            gl.depthMask(true);
+
+            // 2. TERRAIN (dynamic displacement + crumble normals)
+            gl.useProgram(terrainProgram);
+            gl.uniformMatrix4fv(gl.getUniformLocation(terrainProgram, "uProjection"), false, projectionMatrix);
+            gl.uniformMatrix4fv(gl.getUniformLocation(terrainProgram, "uView"), false, viewMatrix);
+            gl.uniformMatrix4fv(gl.getUniformLocation(terrainProgram, "uModel"), false, modelMatrix);
+            gl.uniform3fv(gl.getUniformLocation(terrainProgram, "uCameraPos"), cameraPos);
+            gl.uniform3fv(gl.getUniformLocation(terrainProgram, "uLightDir"), lightDir);
+            gl.uniform3fv(gl.getUniformLocation(terrainProgram, "uLightColor"), lightColor);
+            gl.uniform3fv(gl.getUniformLocation(terrainProgram, "uAmbientColor"), ambientColor);
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, footprintTex);
+            gl.uniform1i(gl.getUniformLocation(terrainProgram, "uFootprintMap"), 0);
+            gl.uniform1f(gl.getUniformLocation(terrainProgram, "uPaved"),
+                         worldMode === 'paved' ? 1.0 : 0.0);
+            bindAttribs(terrainProgram, [["aPosition", terrainVBO, 3],
+                                         ["aNormal",   terrainNBO, 3]]);
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, terrainIBO);
+            gl.drawElements(gl.TRIANGLES, terrainIndexCount, gl.UNSIGNED_INT, 0);
+
+            // 3. FOREST + SNOWMAN
+            gl.useProgram(objectProgram);
+            gl.uniformMatrix4fv(gl.getUniformLocation(objectProgram, "uProjection"), false, projectionMatrix);
+            gl.uniformMatrix4fv(gl.getUniformLocation(objectProgram, "uView"), false, viewMatrix);
+            gl.uniformMatrix4fv(gl.getUniformLocation(objectProgram, "uModel"), false, modelMatrix);
+            gl.uniform3fv(gl.getUniformLocation(objectProgram, "uCameraPos"), cameraPos);
+            gl.uniform3fv(gl.getUniformLocation(objectProgram, "uLightDir"), lightDir);
+            gl.uniform3fv(gl.getUniformLocation(objectProgram, "uLightColor"), lightColor);
+            gl.uniform3fv(gl.getUniformLocation(objectProgram, "uAmbientColor"), ambientColor);
+            const uColorLoc = gl.getUniformLocation(objectProgram, "uColor");
+            const uRoughLoc = gl.getUniformLocation(objectProgram, "uRoughness");
+            const uUseColorLoc = gl.getUniformLocation(objectProgram, "uUseColor");
+
+            // FOREST — per-vertex colours (trunk / needles / snow caps)
+            bindAttribs(objectProgram, [["aPosition", treeVBO, 3], ["aNormal", treeNBO, 3],
+                                        ["aColor", treeCBO, 3]]);
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, treeIBO);
+            gl.uniform1f(uUseColorLoc, 1.0);
+            gl.uniform3fv(uColorLoc, [1.0, 1.0, 1.0]);   // white => keep baked vertex colours
+            gl.uniform1f(uRoughLoc, 0.9);
+            gl.drawElements(gl.TRIANGLES, treeIndexCount, gl.UNSIGNED_INT, 0);
+
+            // 3b. ROCKS (mountain mode) — flat grey stone
+            if (worldMode === 'mountain') {
+                bindAttribs(objectProgram, [["aPosition", rockVBO, 3], ["aNormal", rockNBO, 3]]);
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, rockIBO);
+                gl.uniform1f(uUseColorLoc, 0.0);
+                gl.uniform3fv(uColorLoc, [0.34, 0.33, 0.31]);   // grey stone
+                gl.uniform1f(uRoughLoc, 0.95);
+                gl.drawElements(gl.TRIANGLES, rockIndexCount, gl.UNSIGNED_INT, 0);
+            }
+
+            for (const part of snowmanParts) {
+                mat4.identity(modelMatrix);
+                mat4.translate(modelMatrix, modelMatrix, part.pos);
+                mat4.scale(modelMatrix, modelMatrix, part.scale);
+                gl.uniformMatrix4fv(gl.getUniformLocation(objectProgram, "uModel"), false, modelMatrix);
+                gl.uniform1f(uUseColorLoc, 0.0);
+                gl.uniform3fv(uColorLoc, part.color);
+                gl.uniform1f(uRoughLoc, part.rough);
+                bindAttribs(objectProgram, [["aPosition", part.vbo, 3], ["aNormal", part.nbo, 3]]);
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, part.ibo);
+                gl.drawElements(gl.TRIANGLES, part.count, gl.UNSIGNED_INT, 0);
+            }
+
+            // 3b. FIRST-PERSON LEGS (drawn before the transparent snow)
+            gl.useProgram(legProgram);
+            gl.uniformMatrix4fv(gl.getUniformLocation(legProgram, "uProjection"), false, projectionMatrix);
+            gl.uniformMatrix4fv(gl.getUniformLocation(legProgram, "uView"), false, viewMatrix);
+            gl.uniform3fv(gl.getUniformLocation(legProgram, "uLegRoot"), legRootArr);
+            gl.uniform3fv(gl.getUniformLocation(legProgram, "uLegX"), legXArr);
+            gl.uniform3fv(gl.getUniformLocation(legProgram, "uLegY"), legYArr);
+            gl.uniform3fv(gl.getUniformLocation(legProgram, "uLegZ"), legZArr);
+            gl.uniform3fv(gl.getUniformLocation(legProgram, "uCameraPos"), cameraPos);
+            gl.uniform3fv(gl.getUniformLocation(legProgram, "uLightDir"), lightDir);
+            gl.uniform3fv(gl.getUniformLocation(legProgram, "uLightColor"), lightColor);
+            gl.uniform3fv(gl.getUniformLocation(legProgram, "uAmbientColor"), ambientColor);
+            bindAttribs(legProgram, [["aOffset", legVBO, 3],
+                                     ["aNormal",  legNBO, 3],
+                                     ["aBone",    legBBO, 1],
+                                     ["aTint",    legTBO, 3]]);
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, legIBO);
+            gl.drawElements(gl.TRIANGLES, legIndexCount, gl.UNSIGNED_INT, 0);
+
+            // 4. BLIZZARD SNOW
+            gl.useProgram(snowProgram);
+            gl.uniformMatrix4fv(gl.getUniformLocation(snowProgram, "uProjection"), false, projectionMatrix);
+            gl.uniformMatrix4fv(gl.getUniformLocation(snowProgram, "uView"), false, viewMatrix);
+            gl.uniform1f(gl.getUniformLocation(snowProgram, "uTime"), nowMs);
+            gl.uniform3fv(gl.getUniformLocation(snowProgram, "uCameraPos"), cameraPos);
+            gl.uniform1f(gl.getUniformLocation(snowProgram, "uPlayerSpeed"),
+                         currentSpeed > 0 ? 1.0 : 0.0);
+            bindAttribs(snowProgram, [["aPosition", snowPosBuffer, 3],
+                                      ["aRandom",   snowRandBuffer, 1]]);
+            gl.drawArrays(gl.POINTS, 0, MAX_SNOW);
+
+            // 5. FOOTSTEP KICKUP
+            for (let i = 0; i < MAX_KICKUP; i++) {
+                if (kickupLives[i] > 0) {
+                    kickupLives[i] = Math.max(0, kickupLives[i] - deltaTime * 2.0);
+                    kickupVels[i*3+1] -= deltaTime * 9.8;
+                    kickupPositions[i*3]   += kickupVels[i*3]   * deltaTime * 10.0;
+                    kickupPositions[i*3+1] += kickupVels[i*3+1] * deltaTime * 10.0;
+                    kickupPositions[i*3+2] += kickupVels[i*3+2] * deltaTime * 10.0;
+                }
+            }
+            gl.bindBuffer(gl.ARRAY_BUFFER, kickupPosBuffer);
+            gl.bufferSubData(gl.ARRAY_BUFFER, 0, kickupPositions);
+            gl.bindBuffer(gl.ARRAY_BUFFER, kickupLifeBuffer);
+            gl.bufferSubData(gl.ARRAY_BUFFER, 0, kickupLives);
+
+            gl.useProgram(kickupProgram);
+            gl.uniformMatrix4fv(gl.getUniformLocation(kickupProgram, "uProjection"), false, projectionMatrix);
+            gl.uniformMatrix4fv(gl.getUniformLocation(kickupProgram, "uView"), false, viewMatrix);
+            bindAttribs(kickupProgram, [["aPosition", kickupPosBuffer, 3],
+                                        ["aLife",     kickupLifeBuffer, 1]]);
+            gl.drawArrays(gl.POINTS, 0, MAX_KICKUP);
+
+            requestAnimationFrame(render);
+        }
+
+        function resize() {
+            canvas.width = canvas.clientWidth || window.innerWidth;
+            canvas.height = canvas.clientHeight || window.innerHeight;
+            gl.viewport(0, 0, canvas.width, canvas.height);
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // World-mode toggle: paved road <-> mountain. Rebuilds terrain, forest
+        // and rocks (their geometry depends on worldMode) and clears footprints.
+        const modeSel = document.getElementById('modeSel');
+        if (modeSel) {
+            modeSel.addEventListener('change', () => {
+                worldMode = modeSel.value === 'paved' ? 'paved' : 'mountain';
+                buildWorld();
+            });
+        }
+
+        requestAnimationFrame(render);
+
+        // Show the engine once the first frame has rendered.
+        setTimeout(() => {
+            document.getElementById('loading').style.display = 'none';
+        }, 100);
+
+        // (Optional) keep an instance handle for debugging from the console.
+        return {};
+    } // end createSnowEngine
+
+    // ---- page bootstrap: instantiate the engine from the page's elements ----
+    createSnowEngine({});
+
+    return {};
+}); // end UMD factory
+    </script>
+</body>
+</html>

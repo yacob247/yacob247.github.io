@@ -1,0 +1,2157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Procedural Volcano — PBR / WebGL2</title>
+<style>
+  html,body{margin:0;padding:0;height:100%;background:#05070a;overflow:hidden;
+            font-family:ui-monospace,Menlo,Consolas,monospace;color:#c9d1d9}
+  canvas{display:block;width:100vw;height:100vh;cursor:grab}
+  canvas:active{cursor:grabbing}
+  #hud{position:fixed;left:14px;bottom:12px;font-size:11px;line-height:1.7;
+       letter-spacing:.06em;opacity:.62;pointer-events:none;text-shadow:0 1px 3px #000}
+  #hud b{color:#ff8a3d;font-weight:600}
+  #title{position:fixed;left:14px;top:12px;font-size:12px;letter-spacing:.28em;
+         opacity:.5;text-transform:uppercase;pointer-events:none;text-shadow:0 1px 3px #000}
+  #err{position:fixed;inset:0;display:none;place-items:center;text-align:center;
+       padding:40px;font-size:14px;line-height:1.8}
+  #panel{position:fixed;right:14px;top:12px;font-size:11px;letter-spacing:.05em;
+         background:rgba(8,10,14,.72);border:1px solid rgba(255,138,61,.35);
+         border-radius:8px;padding:10px 12px;line-height:1.9;color:#c9d1d9;
+         backdrop-filter:blur(4px);z-index:5}
+  #panel label{display:flex;align-items:center;gap:7px;cursor:pointer;user-select:none}
+  #panel input[type=checkbox]{accent-color:#ff8a3d;width:14px;height:14px;cursor:pointer}
+  #panel .note{margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,.12);
+               font-size:10px;opacity:.65;line-height:1.6}
+  #panel b{color:#ff8a3d}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="title">Volcano · Procedural PBR</div>
+<div id="panel">
+  <label><input type="checkbox" id="cb2" checked> <b>2nd volcano</b></label>
+  <label><input type="checkbox" id="cb3"> <b>3rd volcano</b></label>
+  <div class="note">each volcano: 5 dug lava rivers → ring canal<br>→ pumper + factory per river · industry district between</div>
+</div>
+<div id="hud">
+  drag&nbsp;<b>orbit</b> &nbsp;·&nbsp; wheel&nbsp;<b>zoom</b> &nbsp;·&nbsp; double-click&nbsp;<b>auto-rotate</b><br>
+  no textures · no libraries · pure WebGL2
+</div>
+<div id="err"></div>
+
+<script>
+"use strict";
+/* ============================================================================
+   PROCEDURAL VOLCANO  —  everything generated at runtime
+   ---------------------------------------------------------------------------
+   · Terrain     : GPU heightfield from ridged/value fBm + analytic crater
+   · Material    : Cook-Torrance PBR (GGX + Smith + Schlick), procedural
+                   albedo / roughness / normal (finite-difference micro-bump)
+   · Lava        : animated domain-warped fBm, blackbody emission, churning
+                   surface normals, crust plates, bubbles
+   · Lava rivers : advected ridged channels carved into the cone flanks
+   · Lighting    : sun + hemisphere sky IBL approx + lava point light (flicker)
+   · Atmosphere  : analytic sky, exponential height fog
+   · Particles   : instanced billboards — smoke plume + embers
+   · Post        : HDR MSAA target -> bright pass -> separable gaussian bloom
+                   -> ACES filmic tonemap + vignette + grain
+   ========================================================================== */
+
+const canvas = document.getElementById('gl');
+const gl = canvas.getContext('webgl2', {
+  antialias: false, alpha: false, depth: true, stencil: false,
+  powerPreference: 'high-performance', preserveDrawingBuffer: false
+});
+
+if (!gl) {
+  const e = document.getElementById('err');
+  e.style.display = 'grid';
+  e.innerHTML = 'WebGL2 is required.<br>Please open this in a modern desktop browser.';
+  throw new Error('no webgl2');
+}
+
+/* ---------------------------------------------------------------------------
+   0.  CAPABILITIES
+   ------------------------------------------------------------------------ */
+const extCBF   = gl.getExtension('EXT_color_buffer_float');
+const HDR_FMT  = extCBF ? gl.RGBA16F    : gl.RGBA8;
+const HDR_TYPE = extCBF ? gl.HALF_FLOAT : gl.UNSIGNED_BYTE;
+const MAX_SAMPLES = gl.getParameter(gl.MAX_SAMPLES) || 0;
+const MSAA = Math.min(4, MAX_SAMPLES);
+
+const DPR_CAP = 1.75;
+
+/* ---------------------------------------------------------------------------
+   1.  TINY MATH
+   ------------------------------------------------------------------------ */
+const M4 = {
+  perspective(out, fovy, aspect, near, far) {
+    const f = 1 / Math.tan(fovy / 2), nf = 1 / (near - far);
+    out[0]=f/aspect; out[1]=0; out[2]=0;               out[3]=0;
+    out[4]=0;        out[5]=f; out[6]=0;               out[7]=0;
+    out[8]=0;        out[9]=0; out[10]=(far+near)*nf;  out[11]=-1;
+    out[12]=0;       out[13]=0;out[14]=2*far*near*nf;  out[15]=0;
+    return out;
+  },
+  lookAt(out, eye, center, up) {
+    let zx=eye[0]-center[0], zy=eye[1]-center[1], zz=eye[2]-center[2];
+    let l = Math.hypot(zx,zy,zz) || 1; zx/=l; zy/=l; zz/=l;
+    let xx = up[1]*zz - up[2]*zy,
+        xy = up[2]*zx - up[0]*zz,
+        xz = up[0]*zy - up[1]*zx;
+    l = Math.hypot(xx,xy,xz);
+    if (l < 1e-6) { xx=1; xy=0; xz=0; } else { l=1/l; xx*=l; xy*=l; xz*=l; }
+    const yx = zy*xz - zz*xy, yy = zz*xx - zx*xz, yz = zx*xy - zy*xx;
+    out[0]=xx; out[1]=yx; out[2]=zx; out[3]=0;
+    out[4]=xy; out[5]=yy; out[6]=zy; out[7]=0;
+    out[8]=xz; out[9]=yz; out[10]=zz; out[11]=0;
+    out[12]=-(xx*eye[0]+xy*eye[1]+xz*eye[2]);
+    out[13]=-(yx*eye[0]+yy*eye[1]+yz*eye[2]);
+    out[14]=-(zx*eye[0]+zy*eye[1]+zz*eye[2]);
+    out[15]=1;
+    return out;
+  }
+};
+const v3 = {
+  sub:(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]],
+  cross:(a,b)=>[a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]],
+  norm:a=>{const l=Math.hypot(a[0],a[1],a[2])||1;return [a[0]/l,a[1]/l,a[2]/l];}
+};
+
+/* ---------------------------------------------------------------------------
+   2.  SHADER PLUMBING
+   ------------------------------------------------------------------------ */
+function compile(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    const log = gl.getShaderInfoLog(s);
+    const numbered = src.split('\n').map((l,i)=>String(i+1).padStart(4)+' | '+l).join('\n');
+    console.error(log + '\n' + numbered);
+    throw new Error('Shader compile failed: ' + log);
+  }
+  return s;
+}
+function program(vsSrc, fsSrc, label) {
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, vsSrc));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fsSrc));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+    console.error(label, gl.getProgramInfoLog(p));
+    throw new Error('Link failed: ' + label);
+  }
+  const u = {};
+  const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) {
+    const info = gl.getActiveUniform(p, i);
+    u[info.name.replace('[0]', '')] = gl.getUniformLocation(p, info.name);
+  }
+  return { p, u, label };
+}
+
+/* ---------------------------------------------------------------------------
+   3.  GLSL LIBRARY  (noise · blackbody · PBR · tonemap)
+   ------------------------------------------------------------------------ */
+const GLSL_NOISE = `
+float hash21(vec2 p){
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+float vnoise(vec2 p){
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f*f*(3.0 - 2.0*f);
+  float a = hash21(i);
+  float b = hash21(i + vec2(1.0, 0.0));
+  float c = hash21(i + vec2(0.0, 1.0));
+  float d = hash21(i + vec2(1.0, 1.0));
+  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+float fbm(vec2 p){
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 5; i++){
+    s += a * vnoise(p);
+    p = p * 2.03 + 17.3;
+    a *= 0.5;
+  }
+  return s;
+}
+float fbm3(vec2 p){
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 3; i++){
+    s += a * vnoise(p);
+    p = p * 2.03 + 17.3;
+    a *= 0.5;
+  }
+  return s;
+}
+float ridged(vec2 p){
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 5; i++){
+    float n = 1.0 - abs(vnoise(p) * 2.0 - 1.0);
+    n *= n;
+    s += a * n;
+    p = p * 2.07 + 11.7;
+    a *= 0.5;
+  }
+  return s;
+}
+`;
+
+const GLSL_COMMON = `
+const float PI = 3.141592653589793;
+
+/* --- incandescent colour ramp (approximate blackbody) ------------------- */
+vec3 blackbody(float t){
+  t = clamp(t, 0.0, 1.0);
+  vec3 c = mix(vec3(0.28, 0.012, 0.0), vec3(0.90, 0.09, 0.005), smoothstep(0.00, 0.28, t));
+  c = mix(c, vec3(1.00, 0.30, 0.02), smoothstep(0.28, 0.52, t));
+  c = mix(c, vec3(1.00, 0.58, 0.10), smoothstep(0.52, 0.74, t));
+  c = mix(c, vec3(1.00, 0.82, 0.36), smoothstep(0.74, 0.90, t));
+  c = mix(c, vec3(1.00, 0.97, 0.82), smoothstep(0.90, 1.00, t));
+  return c;
+}
+
+/* --- Cook-Torrance ------------------------------------------------------ */
+float D_GGX(float NoH, float a){
+  float a2 = a * a;
+  float d  = NoH * NoH * (a2 - 1.0) + 1.0;
+  return a2 / (PI * d * d + 1e-7);
+}
+float G_schlick(float NoX, float k){
+  return NoX / (NoX * (1.0 - k) + k + 1e-7);
+}
+float G_smith(float NoV, float NoL, float rough){
+  float k = (rough + 1.0) * (rough + 1.0) * 0.125;
+  return G_schlick(NoV, k) * G_schlick(NoL, k);
+}
+vec3 F_schlick(float u, vec3 f0){
+  return f0 + (1.0 - f0) * pow(1.0 - u, 5.0);
+}
+vec3 F_schlick_rough(float u, vec3 f0, float rough){
+  return f0 + (max(vec3(1.0 - rough), f0) - f0) * pow(1.0 - u, 5.0);
+}
+
+/* --- full BRDF for one analytic light ----------------------------------- */
+vec3 brdf(vec3 N, vec3 V, vec3 L, vec3 albedo, float rough, float metal, vec3 F0){
+  vec3 H  = normalize(V + L);
+  float NoV = max(dot(N, V), 1e-4);
+  float NoL = max(dot(N, L), 0.0);
+  float NoH = max(dot(N, H), 0.0);
+  float VoH = max(dot(V, H), 0.0);
+  float a   = rough * rough;
+  float D   = D_GGX(NoH, a);
+  float G   = G_smith(NoV, NoL, rough);
+  vec3  F   = F_schlick(VoH, F0);
+  vec3  spec = (D * G * F) / (4.0 * NoV * NoL + 1e-4);
+  vec3  kd   = (vec3(1.0) - F) * (1.0 - metal);
+  return (kd * albedo / PI + spec) * NoL;
+}
+
+/* --- ACES filmic -------------------------------------------------------- */
+vec3 aces(vec3 x){
+  const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
+  return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+}
+`;
+
+/* ---------------------------------------------------------------------------
+   3b.  LAYOUT  (single source of truth: geometry + GLSL constants)
+   ------------------------------------------------------------------------ */
+const LAYOUT = {
+  ringR: 24.0,       // radius of the collector ring canal / node pads
+  chanStart: 7.0,    // where a dug channel leaves the flank
+  trenchW: 1.5,      // gaussian half-width of any dug canal
+  trenchD: 1.6,      // carve depth
+  padR: 8.0,         // industry pad radius at each channel node
+  distR: 10.0,       // shared industry district radius
+  padY: 0.18,        // flattened industry platform height
+  chanN: 5,          // rivers per volcano (matches 5 flank gullies)
+  distOffset: 22.0,  // district pushed sideways off the volcano line
+  maxPair: 80.0      // max volcano separation for a shared district
+};
+const VOLC_DEF = [
+  { x:  0.0, z:  0.0, s: 1.00, base: 0.7409 },   // main (base aligns 5 gullies)
+  { x: -52.0, z: 34.0, s: 0.78, base: 1.150 },
+  { x: 48.0, z: -40.0, s: 0.72, base: -0.620 }
+];
+
+/* multi-volcano uniforms + dug-canal / platform masks (VS + FS + buildings) */
+const GLSL_VOLC = `
+const float TAU     = 6.2831853;
+const float CH_N    = ${LAYOUT.chanN.toFixed(1)};
+const float CH_START= ${LAYOUT.chanStart.toFixed(3)};
+const float RING_R  = ${LAYOUT.ringR.toFixed(3)};
+const float TRENCH_W= ${LAYOUT.trenchW.toFixed(3)};
+const float TRENCH_D= ${LAYOUT.trenchD.toFixed(3)};
+const float PAD_R   = ${LAYOUT.padR.toFixed(3)};
+const float DIST_R  = ${LAYOUT.distR.toFixed(3)};
+const float PAD_Y   = ${LAYOUT.padY.toFixed(3)};
+
+uniform vec4  uVolc[3];      /* centre.xz, scale, — */
+uniform float uVolcBase[3];  /* channel base angle  */
+uniform int   uVolcN;
+uniform vec4  uTrunk[6];     /* trunk canal segments a.xz b.xz */
+uniform int   uTrunkN;
+uniform vec4  uDist[4];      /* industry districts centre.xz radius */
+uniform int   uDistN;
+
+float segDist(vec2 p, vec2 a, vec2 b){
+  vec2 pa = p - a, ba = b - a;
+  float t = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0);
+  return length(pa - ba * t);
+}
+/* everything dug into the ground: 5 radial rivers + ring + trunks */
+float trenchMask(vec2 p){
+  float m = 0.0;
+  for (int i = 0; i < 3; i++){
+    if (i >= uVolcN) break;
+    vec2 c = uVolc[i].xy;
+    float dr = abs(length(p - c) - RING_R);
+    m = max(m, exp(-pow(dr / TRENCH_W, 2.0)));
+    for (int k = 0; k < 5; k++){
+      float a = uVolcBase[i] + float(k) * (TAU / CH_N);
+      vec2 d = vec2(cos(a), sin(a));
+      m = max(m, exp(-pow(segDist(p, c + d * CH_START, c + d * RING_R) / TRENCH_W, 2.0)));
+    }
+  }
+  for (int t = 0; t < 6; t++){
+    if (t >= uTrunkN) break;
+    m = max(m, exp(-pow(segDist(p, uTrunk[t].xy, uTrunk[t].zw) / TRENCH_W, 2.0)));
+  }
+  return m;
+}
+/* flat industry ground: node pads + shared districts */
+float platformMask(vec2 p){
+  float m = 0.0;
+  for (int i = 0; i < 3; i++){
+    if (i >= uVolcN) break;
+    for (int k = 0; k < 5; k++){
+      float a = uVolcBase[i] + float(k) * (TAU / CH_N);
+      vec2 n = uVolc[i].xy + vec2(cos(a), sin(a)) * RING_R;
+      m = max(m, smoothstep(PAD_R + 5.0, PAD_R + 1.5, length(p - n)));
+    }
+  }
+  for (int d = 0; d < 4; d++){
+    if (d >= uDistN) break;
+    m = max(m, smoothstep(uDist[d].z + 4.0, uDist[d].z + 1.0, length(p - uDist[d].xy)));
+  }
+  return m;
+}
+`;
+
+/* Terrain height function — shared by VS and (indirectly) material logic */
+const GLSL_TERRAIN = `
+${GLSL_VOLC}
+float terrainHeight(vec2 p){
+  float h = 0.0;
+  float nr = 1e5;                 /* distance to nearest volcano */
+
+  /* ---- stratovolcano cones (additive, scaled) ---- */
+  for (int i = 0; i < 3; i++){
+    if (i >= uVolcN) break;
+    float s = uVolc[i].z;
+    vec2  q = p - uVolc[i].xy;
+    float r  = length(q);
+    float rn = r / s;
+    nr = min(nr, r);
+
+    float cone   = 12.5 * s * exp(-pow(rn / 13.0, 1.7));
+    float crater = 10.5 * s * exp(-pow(rn / 5.6,  2.2));
+    float hv = cone - crater;
+
+    float detailMask = exp(-pow(rn / 15.0, 2.0)) * smoothstep(2.6, 7.5, rn);
+
+    /* radial lava gullies — phase tied to channel base angle (5 aligned) */
+    float ang = atan(q.y, q.x);
+    float g1  = abs(sin((ang - uVolcBase[i]) * 2.5));
+    float g2  = abs(sin(ang * 3.7 - 1.9 + float(i) * 2.1));
+    float chan = exp(-pow(g1 / 0.13, 2.0)) + 0.8 * exp(-pow(g2 / 0.10, 2.0));
+    chan *= smoothstep(3.0, 6.5, rn) * smoothstep(26.0, 12.0, rn);
+    hv -= chan * 1.15 * s;
+
+    /* craggy ridged rock + fine breakup */
+    hv += (ridged(q * 0.40) - 0.35) * 2.05 * detailMask;
+    hv += (fbm(q * 1.50) - 0.50) * 0.50 * detailMask;
+
+    /* flat magma-chamber crater floor */
+    hv = mix(hv, 2.2 * s, (1.0 - smoothstep(0.0, 6.0, rn)) * 0.85);
+
+    h += hv;
+  }
+
+  /* rolling ash plain beyond the edifices */
+  h += (fbm(p * 0.05) - 0.5) * 2.6 * smoothstep(10.0, 34.0, nr);
+  h -= smoothstep(55.0, 92.0, length(p)) * 2.5;
+
+  /* industry platforms (pads + districts), then dug canals cut through them */
+  h = mix(h, PAD_Y, platformMask(p));
+  h -= trenchMask(p) * TRENCH_D;
+
+  return h;
+}
+`;
+
+/* ---------------------------------------------------------------------------
+   4.  GEOMETRY
+   ------------------------------------------------------------------------ */
+
+/* ---- terrain: radially-warped grid (dense at the volcano) --------------- */
+const GRID = 320, EXTENT = 92;
+const TERRAIN_VERT_COUNT = (GRID + 1) * (GRID + 1);
+const terrainPos = new Float32Array(TERRAIN_VERT_COUNT * 2);
+{
+  let k = 0;
+  for (let j = 0; j <= GRID; j++) {
+    const v = (j / GRID) * 2 - 1;
+    const z = Math.sign(v) * Math.pow(Math.abs(v), 2.0) * EXTENT;
+    for (let i = 0; i <= GRID; i++) {
+      const u = (i / GRID) * 2 - 1;
+      const x = Math.sign(u) * Math.pow(Math.abs(u), 2.0) * EXTENT;
+      terrainPos[k++] = x;
+      terrainPos[k++] = z;
+    }
+  }
+}
+const terrainIdx = new Uint32Array(GRID * GRID * 6);
+{
+  let q = 0;
+  for (let j = 0; j < GRID; j++) {
+    for (let i = 0; i < GRID; i++) {
+      const a = j * (GRID + 1) + i;
+      const b = a + 1;
+      const c = a + (GRID + 1);
+      const d = c + 1;
+      terrainIdx[q++] = a; terrainIdx[q++] = c; terrainIdx[q++] = b;
+      terrainIdx[q++] = b; terrainIdx[q++] = c; terrainIdx[q++] = d;
+    }
+  }
+}
+
+/* ---- lava lake: polar disc --------------------------------------------- */
+const LAVA_R = 5.65, LAVA_Y = 5.5;
+const LR_RINGS = 44, LR_SEGS = 144;
+const lavaVerts = [];
+const lavaIdx   = [];
+{
+  // centre vertex
+  lavaVerts.push(0, 0);
+  for (let ri = 1; ri <= LR_RINGS; ri++) {
+    const r = LAVA_R * (ri / LR_RINGS);
+    for (let si = 0; si < LR_SEGS; si++) {
+      const a = (si / LR_SEGS) * Math.PI * 2;
+      lavaVerts.push(Math.cos(a) * r, Math.sin(a) * r);
+    }
+  }
+  const ringStart = (ri) => 1 + (ri - 1) * LR_SEGS;
+  // fan
+  for (let si = 0; si < LR_SEGS; si++) {
+    const a = 0;
+    const b = ringStart(1) + si;
+    const c = ringStart(1) + ((si + 1) % LR_SEGS);
+    lavaIdx.push(a, c, b);
+  }
+  // quads
+  for (let ri = 1; ri < LR_RINGS; ri++) {
+    for (let si = 0; si < LR_SEGS; si++) {
+      const s2 = (si + 1) % LR_SEGS;
+      const A = ringStart(ri) + si;
+      const B = ringStart(ri + 1) + si;
+      const C = ringStart(ri) + s2;
+      const D = ringStart(ri + 1) + s2;
+      lavaIdx.push(A, C, B);
+      lavaIdx.push(B, C, D);
+    }
+  }
+}
+const lavaPosArr = new Float32Array(lavaVerts);
+const lavaIdxArr = new Uint32Array(lavaIdx);
+
+/* ---- industry layout: channels → pumper + factory + shared districts ---- */
+const cb2 = document.getElementById('cb2');
+const cb3 = document.getElementById('cb3');
+
+let activeIdx  = [0, 1];
+let trunkList  = [];   /* [ax,az,bx,bz] segments */
+let distList   = [];   /* {x,z,r,ux,uz} */
+const bVerts   = [];   /* interleaved building verts: pos3 nrm3 col3 emis3 */
+
+const ZERO3 = [0, 0, 0];
+const COL_DARK  = [0.155, 0.158, 0.175];
+const COL_STEEL = [0.46, 0.47, 0.50];
+const COL_TANK  = [0.55, 0.53, 0.50];
+const COL_HALLS = [[0.32, 0.30, 0.31], [0.26, 0.30, 0.33],
+                   [0.35, 0.32, 0.27], [0.30, 0.27, 0.25]];
+const EMIS_WIN     = [2.2, 1.5, 0.55];
+const EMIS_FURNACE = [3.6, 1.2, 0.25];
+const EMIS_INTAKE  = [3.4, 1.05, 0.20];
+
+function bPush(px, py, pz, n, c, e) {
+  bVerts.push(px, py, pz, n[0], n[1], n[2], c[0], c[1], c[2], e[0], e[1], e[2]);
+}
+function bQuad(a, b, c, d, n, col, emis) {
+  bPush(a[0], a[1], a[2], n, col, emis);
+  bPush(b[0], b[1], b[2], n, col, emis);
+  bPush(c[0], c[1], c[2], n, col, emis);
+  bPush(a[0], a[1], a[2], n, col, emis);
+  bPush(c[0], c[1], c[2], n, col, emis);
+  bPush(d[0], d[1], d[2], n, col, emis);
+}
+function rot2(x, z, cs, sn) { return [x * cs - z * sn, x * sn + z * cs]; }
+
+/* axis-aligned-in-local-frame box; yaw rotates local x/z; yb = bottom */
+function pushBox(cx, yb, cz, sx, sy, sz, yaw, col, emis) {
+  const cs = Math.cos(yaw), sn = Math.sin(yaw);
+  const hx = sx / 2, hy = sy / 2, hz = sz / 2, cy = yb + hy;
+  const P = (lx, ly, lz) => { const w = rot2(lx, lz, cs, sn); return [cx + w[0], cy + ly, cz + w[1]]; };
+  const N = (nx, ny, nz) => { const w = rot2(nx, nz, cs, sn); return [w[0], ny, w[1]]; };
+  /* +x */ bQuad(P(hx,-hy,-hz), P(hx,-hy, hz), P(hx, hy, hz), P(hx, hy,-hz), N(1,0,0), col, emis);
+  /* -x */ bQuad(P(-hx,-hy, hz), P(-hx,-hy,-hz), P(-hx, hy,-hz), P(-hx, hy, hz), N(-1,0,0), col, emis);
+  /* +z */ bQuad(P(-hx,-hy, hz), P( hx,-hy, hz), P( hx, hy, hz), P(-hx, hy, hz), N(0,0,1), col, emis);
+  /* -z */ bQuad(P( hx,-hy,-hz), P(-hx,-hy,-hz), P(-hx, hy,-hz), P( hx, hy,-hz), N(0,0,-1), col, emis);
+  /* top */ bQuad(P(-hx, hy,-hz), P(-hx, hy, hz), P( hx, hy, hz), P( hx, hy,-hz), N(0,1,0), col, emis);
+}
+/* vertical cylinder, yb = bottom (no bottom cap) */
+function pushCyl(cx, yb, cz, r, h, segs, col, emis) {
+  for (let i = 0; i < segs; i++) {
+    const a0 = (i / segs) * Math.PI * 2, a1 = ((i + 1) / segs) * Math.PI * 2;
+    const c0 = Math.cos(a0), s0 = Math.sin(a0), c1 = Math.cos(a1), s1 = Math.sin(a1);
+    bQuad([cx + c0 * r, yb, cz + s0 * r],
+          [cx + c1 * r, yb, cz + s1 * r],
+          [cx + c1 * r, yb + h, cz + s1 * r],
+          [cx + c0 * r, yb + h, cz + s0 * r],
+          [(c0 + c1) / 2, 0, (s0 + s1) / 2], col, emis);
+    /* top fan */
+    bPush(cx, yb + h, cz, [0, 1, 0], col, emis);
+    bPush(cx + c0 * r, yb + h, cz + s0 * r, [0, 1, 0], col, emis);
+    bPush(cx + c1 * r, yb + h, cz + s1 * r, [0, 1, 0], col, emis);
+  }
+}
+/* window grids on the two long (local ±z) faces of a hall */
+function pushWindows(cx, yb, cz, sx, sy, sz, yaw, cols, rows) {
+  const cs = Math.cos(yaw), sn = Math.sin(yaw);
+  const P = (lx, ly, lz) => { const w = rot2(lx, lz, cs, sn); return [cx + w[0], yb + ly, cz + w[1]]; };
+  const Np = (lz) => { const w = rot2(0, lz, cs, sn); return [w[0], 0, w[1]]; };
+  const w = (sx / (cols + 1)) * 0.60, h = (sy / (rows + 1)) * 0.52;
+  for (let side = -1; side <= 1; side += 2) {
+    const fz = side * (sz / 2 + 0.035);
+    for (let c = 0; c < cols; c++) {
+      const lx = -sx / 2 + sx * (c + 1) / (cols + 1);
+      for (let r = 0; r < rows; r++) {
+        const ly = sy * (r + 1) / (rows + 1);
+        const n = Np(side);
+        const q = [P(lx - w / 2, ly - h / 2, fz), P(lx + w / 2, ly - h / 2, fz),
+                   P(lx + w / 2, ly + h / 2, fz), P(lx - w / 2, ly + h / 2, fz)];
+        bQuad(q[0], q[1], q[2], q[3], n, ZERO3, EMIS_WIN);
+      }
+    }
+  }
+}
+
+/* pumper: plinth + tank + cabin + glowing lava intake, straddling a canal */
+function pushPumper(x, z, yaw, yBase) {
+  pushBox(x, yBase, z, 3.2, 0.35, 3.2, yaw, COL_DARK, ZERO3);
+  pushCyl(x, yBase + 0.35, z, 1.05, 2.4, 10, COL_TANK, ZERO3);
+  pushCyl(x, yBase + 2.3, z, 1.08, 0.30, 10, COL_DARK, ZERO3);      /* cap band  */
+  const t = rot2(-1.9, 0, Math.cos(yaw), Math.sin(yaw));            /* cabin side */
+  pushBox(x + t[0], yBase, z + t[1], 1.5, 1.5, 1.3, yaw, COL_DARK, ZERO3);
+  pushWindows(x + t[0], yBase, z + t[1], 1.5, 1.5, 1.3, yaw, 1, 1);
+  /* glowing intake where the canal meets the pumper */
+  pushBox(x, yBase - 0.95, z, 2.3, 0.08, 2.0, yaw + Math.PI / 2, ZERO3, EMIS_INTAKE);
+}
+
+/* factory hall + roof trim + chimney + lit windows */
+function pushFactory(x, z, yaw, yBase, ci, sx, sy, sz) {
+  const col = COL_HALLS[ci % COL_HALLS.length];
+  pushBox(x, yBase, z, sx, sy, sz, yaw, col, ZERO3);
+  pushBox(x, yBase + sy, z, sx + 0.15, 0.18, sz + 0.15, yaw, COL_DARK, ZERO3);
+  const ch = rot2(sx / 2 - 0.7, sz / 2 - 0.6, Math.cos(yaw), Math.sin(yaw));
+  pushCyl(x + ch[0], yBase + sy + 0.18, z + ch[1], 0.42, sy * 1.05, 8, [0.22, 0.22, 0.24], ZERO3);
+  pushWindows(x, yBase, z, sx, sy, sz, yaw, Math.max(3, Math.round(sx)), 2);
+}
+
+/* assemble the whole industry mesh for the current toggle state */
+function rebuildLayout() {
+  activeIdx = [0];
+  if (cb2.checked) activeIdx.push(1);
+  if (cb3.checked && cb2.checked) activeIdx.push(2);
+
+  trunkList = [];
+  distList  = [];
+  bVerts.length = 0;
+
+  const N = LAYOUT.ringR, R = LAYOUT.distR;
+
+  /* ---- shared industry districts between close volcano pairs ---- */
+  for (let a = 0; a < activeIdx.length; a++) {
+    for (let b = a + 1; b < activeIdx.length; b++) {
+      const va = VOLC_DEF[activeIdx[a]], vb = VOLC_DEF[activeIdx[b]];
+      const dx = vb.x - va.x, dz = vb.z - va.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist > LAYOUT.maxPair) continue;
+      const ux = dx / dist, uz = dz / dist;
+      const px = -uz, pz = ux;                       /* perpendicular */
+      const D = { x: (va.x + vb.x) / 2 + px * LAYOUT.distOffset,
+                  z: (va.z + vb.z) / 2 + pz * LAYOUT.distOffset,
+                  r: R, ux, uz, ends: [] };
+      distList.push(D);
+      /* trunk canal: ring of each volcano → its pumper at the district */
+      for (const v of [va, vb]) {
+        const vx = D.x - v.x, vz = D.z - v.z;
+        const vl = Math.hypot(vx, vz), wux = vx / vl, wuz = vz / vl;
+        const bx = D.x - wux * 6.0, bz = D.z - wuz * 6.0;
+        trunkList.push(v.x + wux * N, v.z + wuz * N, bx, bz);
+        D.ends.push({ x: bx, z: bz, yaw: Math.atan2(vz, vx) });
+      }
+    }
+  }
+
+  const y = LAYOUT.padY;
+
+  /* ---- per-volcano node industry: one pumper + one factory per river ---- */
+  for (let n = 0; n < activeIdx.length; n++) {
+    const v = VOLC_DEF[activeIdx[n]];
+    for (let k = 0; k < LAYOUT.chanN; k++) {
+      const a  = v.base + k * (Math.PI * 2 / LAYOUT.chanN);
+      const dx = Math.cos(a), dz = Math.sin(a);
+      const nx = v.x + dx * N, nz = v.z + dz * N;
+      pushPumper(nx, nz, a, y);                       /* astride ring junction */
+      pushFactory(nx + dx * 5.0, nz + dz * 5.0, a, y, k + n, 4.6, 3.2, 3.6);
+    }
+  }
+
+  /* ---- shared district: foundry + factory row + pumper + storage ---- */
+  for (let d = 0; d < distList.length; d++) {
+    const D = distList[d];
+    const th = Math.atan2(D.uz, D.ux);
+    const L = (u, v) => [D.x + D.ux * u - D.uz * v, D.z + D.uz * u + D.ux * v];
+
+    /* foundry hall with furnace doors on both trunk sides */
+    let q = L(1.5, 0);
+    pushFactory(q[0], q[1], th, y, d, 7.0, 4.5, 5.0);
+    for (const s of [-1, 1]) {
+      q = L(1.5 + s * 3.55, 0);
+      pushBox(q[0], y + 0.9, q[1], 0.10, 2.2, 2.4, th, COL_DARK, EMIS_FURNACE);
+    }
+    /* two chimneys behind the foundry */
+    for (const s of [-1, 1]) {
+      q = L(3.7, s * 1.8);
+      pushCyl(q[0], y + 4.68, q[1], 0.55, 8.0, 10, [0.24, 0.24, 0.26], ZERO3);
+    }
+    /* row of four factories, spaced apart */
+    const spots = [[-2, -6], [-2, 6], [5.5, -5.5], [5.5, 5.5]];
+    for (let f = 0; f < spots.length; f++) {
+      q = L(spots[f][0], spots[f][1]);
+      pushFactory(q[0], q[1], th, y, f + d + 1, 4.6, 3.0, 3.4);
+    }
+    /* big pumpers where the trunk canals arrive (one per feeding volcano) */
+    for (const e of D.ends) pushPumper(e.x, e.z, e.yaw, y);
+    /* storage tanks */
+    for (const s of [-1, 1]) {
+      q = L(-7.5, s * 4.0);
+      pushCyl(q[0], y, q[1], 1.3, 3.0, 12, COL_TANK, ZERO3);
+      pushCyl(q[0], y + 3.0, q[1], 1.33, 0.25, 12, COL_DARK, ZERO3);
+    }
+  }
+
+  /* ---- upload mesh ---- */
+  gl.bindBuffer(gl.ARRAY_BUFFER, bldVBO);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(bVerts), gl.STATIC_DRAW);
+  bldCount = (bVerts.length / 12) | 0;
+
+  /* ---- camera framing ---- */
+  let cx = 0, cz = 0;
+  for (const i of activeIdx) { cx += VOLC_DEF[i].x; cz += VOLC_DEF[i].z; }
+  cx /= activeIdx.length; cz /= activeIdx.length;
+  cam.target = [cx, 4.5, cz];
+  const need = activeIdx.length > 2 ? 96 : activeIdx.length > 1 ? 78 : 46;
+  if (cam.dist < need) cam.dist = need;
+}
+
+/* ---- fullscreen triangle-pair ------------------------------------------ */
+const fsQuad = new Float32Array([
+  -1,-1,  1,-1,  -1, 1,
+  -1, 1,  1,-1,   1, 1
+]);
+
+/* ---- unit billboard quad (instanced particles) ------------------------- */
+const billboardQuad = new Float32Array([
+  -0.5,-0.5,   0.5,-0.5,  -0.5,0.5,   0.5,0.5
+]);
+
+/* ---------------------------------------------------------------------------
+   5.  VAOs / BUFFERS
+   ------------------------------------------------------------------------ */
+function makeBuf(target, data, usage) {
+  const b = gl.createBuffer();
+  gl.bindBuffer(target, b);
+  gl.bufferData(target, data, usage || gl.STATIC_DRAW);
+  return b;
+}
+
+/* terrain */
+const terrainVAO = gl.createVertexArray();
+gl.bindVertexArray(terrainVAO);
+{
+  const vb = makeBuf(gl.ARRAY_BUFFER, terrainPos);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  const ib = gl.createBuffer();
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, terrainIdx, gl.STATIC_DRAW);
+}
+gl.bindVertexArray(null);
+
+/* lava */
+const lavaVAO = gl.createVertexArray();
+gl.bindVertexArray(lavaVAO);
+{
+  makeBuf(gl.ARRAY_BUFFER, lavaPosArr);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  const ib = gl.createBuffer();
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, lavaIdxArr, gl.STATIC_DRAW);
+}
+gl.bindVertexArray(null);
+
+/* buildings (industry) */
+const bldVAO = gl.createVertexArray();
+const bldVBO = gl.createBuffer();
+let bldCount = 0;
+gl.bindVertexArray(bldVAO);
+gl.bindBuffer(gl.ARRAY_BUFFER, bldVBO);
+{
+  const stride = 48;
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, stride, 0);
+  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, stride, 12);
+  gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 3, gl.FLOAT, false, stride, 24);
+  gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 3, gl.FLOAT, false, stride, 36);
+}
+gl.bindVertexArray(null);
+
+/* fullscreen */
+const fsVAO = gl.createVertexArray();
+gl.bindVertexArray(fsVAO);
+{
+  makeBuf(gl.ARRAY_BUFFER, fsQuad);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+}
+gl.bindVertexArray(null);
+
+/* ---------------------------------------------------------------------------
+   6.  PROGRAMS
+   ------------------------------------------------------------------------ */
+
+/* ---------------------------- SKY --------------------------------------- */
+const SKY_VS = `#version 300 es
+precision highp float;
+layout(location=0) in vec2 aPos;
+out vec2 vUV;
+void main(){ vUV = aPos * 0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }`;
+
+const SKY_FS = `#version 300 es
+precision highp float;
+in vec2 vUV;
+out vec4 fragColor;
+
+uniform vec3  uCamPos;
+uniform vec3  uForward, uRight, uUp;
+uniform float uTanHalf, uAspect;
+uniform vec3  uSunDir;
+
+${GLSL_COMMON}
+
+vec3 skyRadiance(vec3 d, vec3 sun){
+  float h = clamp(d.y, -0.25, 1.0);
+
+  vec3 zenith  = vec3(0.030, 0.055, 0.135);
+  vec3 horizon = vec3(0.42,  0.24,  0.16);
+  vec3 col = mix(horizon, zenith, pow(clamp(h, 0.0, 1.0), 0.52));
+
+  /* ground / ash haze below the horizon */
+  col = mix(vec3(0.055, 0.042, 0.040), col, smoothstep(-0.16, 0.015, d.y));
+
+  /* warm volcanic haze band near the horizon */
+  col += vec3(0.30, 0.11, 0.03) * exp(-abs(d.y) * 9.0) * 0.55;
+
+  /* sun */
+  float sd = max(dot(d, sun), 0.0);
+  col += vec3(1.00, 0.48, 0.18) * pow(sd, 5.0)  * 0.55;
+  col += vec3(1.00, 0.72, 0.42) * pow(sd, 90.0) * 2.20;
+  col += vec3(1.00, 0.88, 0.68) * pow(sd, 2400.0) * 22.0;
+
+  return col;
+}
+
+void main(){
+  vec2 ndc = vUV * 2.0 - 1.0;
+  vec3 dir = normalize(uForward
+                     + uRight * (ndc.x * uAspect * uTanHalf)
+                     + uUp    * (ndc.y * uTanHalf));
+  fragColor = vec4(skyRadiance(dir, uSunDir), 1.0);
+}`;
+
+const PROG_SKY = program(SKY_VS, SKY_FS, 'sky');
+
+/* ---------------------------- TERRAIN ----------------------------------- */
+const TERRAIN_VS = `#version 300 es
+precision highp float;
+precision highp int;
+layout(location=0) in vec2 aXZ;
+
+uniform mat4 uVP;
+
+out vec3 vWorld;
+out vec3 vNormal;
+
+${GLSL_NOISE}
+${GLSL_TERRAIN}
+
+void main(){
+  vec2 p = aXZ;
+
+  const float e = 0.28;
+  vec3 P  = vec3(p.x,      terrainHeight(p),                        p.y);
+  vec3 Px = vec3(p.x + e,  terrainHeight(p + vec2(e, 0.0)),         p.y);
+  vec3 Pz = vec3(p.x,      terrainHeight(p + vec2(0.0, e)),         p.y + e);
+
+  vNormal = normalize(cross(Pz - P, Px - P));
+  vWorld  = P;
+  gl_Position = uVP * vec4(P, 1.0);
+}`;
+
+const TERRAIN_FS = `#version 300 es
+precision highp float;
+precision highp int;
+in vec3 vWorld;
+in vec3 vNormal;
+out vec4 fragColor;
+
+uniform vec3  uCamPos;
+uniform vec3  uSunDir;
+uniform vec3  uSunColor;
+uniform vec3  uLavaP[3];
+uniform vec3  uLavaColor;
+uniform float uLavaIntensity;
+uniform float uTime;
+
+${GLSL_NOISE}
+${GLSL_COMMON}
+${GLSL_VOLC}
+
+/* micro relief -> per-pixel normal perturbation */
+float microH(vec2 p){
+  return (fbm3(p * 3.10) - 0.5) * 0.13 + (vnoise(p * 11.0) - 0.5) * 0.035;
+}
+vec3 perturbNormal(vec2 p, vec3 N){
+  const float e = 0.075;
+  float hL = microH(p - vec2(e, 0.0));
+  float hR = microH(p + vec2(e, 0.0));
+  float hD = microH(p - vec2(0.0, e));
+  float hU = microH(p + vec2(0.0, e));
+  float dx = (hR - hL) / (2.0 * e);
+  float dz = (hU - hD) / (2.0 * e);
+  vec3 T = normalize(vec3(1.0, 0.0, 0.0) - N * N.x + vec3(1e-6));
+  vec3 B = normalize(vec3(0.0, 0.0, 1.0) - N * N.z + vec3(1e-6));
+  return normalize(N - T * dx * 0.55 - B * dz * 0.55);
+}
+
+void main(){
+  vec2 p = vWorld.xz;
+  float height = vWorld.y;
+
+  /* ---------- nearest volcano (drives crater material) ---------- */
+  int   ni = 0;
+  float nr = 1e5;
+  for (int i = 0; i < 3; i++){
+    if (i >= uVolcN) break;
+    float d = length(p - uVolc[i].xy);
+    if (d < nr){ nr = d; ni = i; }
+  }
+  vec2  cN = uVolc[ni].xy;
+  float sN = uVolc[ni].z;
+  float bN = uVolcBase[ni];
+  vec2  qN = p - cN;
+  float r  = nr;          /* world distance to nearest cone   */
+  float rn = nr / sN;     /* normalised (crater-scaled) radius */
+
+  /* ---------- base normal ---------- */
+  vec3 N = normalize(vNormal);
+  N = perturbNormal(p, N);
+  vec3 V = normalize(uCamPos - vWorld);
+
+  /* ---------- procedural material ---------- */
+  float nBig   = fbm(p * 0.32);
+  float nMid   = fbm(p * 2.10 + 31.7);
+  float nSmall = vnoise(p * 13.0);
+
+  /* basalt */
+  vec3 rock = mix(vec3(0.030, 0.028, 0.028), vec3(0.115, 0.100, 0.093), nBig);
+  rock = mix(rock, vec3(0.075, 0.062, 0.058), nMid * 0.65);
+  rock *= 0.75 + 0.5 * nSmall;
+
+  /* ash fall on flat upper slopes */
+  float alt   = smoothstep(2.5, 8.5, height);
+  float flatness = smoothstep(0.55, 0.96, N.y);
+  float ash   = clamp(alt * flatness * (0.35 + 0.75 * nMid), 0.0, 1.0);
+  vec3  ashCol = vec3(0.285, 0.268, 0.255) * (0.55 + 0.75 * nSmall);
+  vec3  albedo = mix(rock, ashCol, ash * 0.85);
+
+  /* sulphur / fumarole staining near the rim */
+  float sulf = smoothstep(0.58, 0.86, fbm(p * 0.85 + 7.1))
+             * smoothstep(4.5, 9.0, height) * (1.0 - 0.6 * ash);
+  albedo = mix(albedo, vec3(0.42, 0.37, 0.13), sulf * 0.55);
+
+  float roughness = clamp(0.94 - 0.22 * ash + 0.07 * nSmall, 0.38, 1.0);
+  float metallic  = 0.0;
+
+  /* ---------- lava rivers & glowing fissures ---------- */
+  vec2  dir  = normalize(qN + vec2(1e-5));
+  float flank = exp(-pow(rn / 15.0, 2.0));
+
+  /* carved radial channels — phase matches terrainHeight (aligned to base) */
+  float ang  = atan(qN.y, qN.x);
+  float g1   = abs(sin((ang - bN) * 2.5));
+  float g2   = abs(sin(ang * 3.7 - 1.9 + float(ni) * 2.1));
+  float chan = exp(-pow(g1 / 0.13, 2.0)) + 0.8 * exp(-pow(g2 / 0.10, 2.0));
+  chan *= smoothstep(3.0, 6.5, rn) * smoothstep(26.0, 12.0, rn);
+
+  /* flowing melt inside the channels */
+  float flowN  = fbm(p * 0.75 - dir * uTime * 0.30);
+  float river  = chan * smoothstep(0.30, 0.78, flowN);
+  river *= 0.65 + 0.45 * sin(uTime * 1.3 + rn * 2.1 + nMid * 6.0);
+
+  /* thin fissure network */
+  float cf1 = ridged(p * 0.80 - dir * uTime * 0.11);
+  float cf2 = ridged(p * 1.85 - dir * uTime * 0.26);
+  float fissure = smoothstep(0.80, 0.985, mix(cf1, cf2, 0.45));
+  fissure *= flank * smoothstep(2.0, 5.0, rn) * (1.0 - smoothstep(20.0, 34.0, rn));
+
+  /* dug canals: 5 radial rivers + ring + trunks carry glowing melt */
+  float tm    = trenchMask(p);
+  float flowC = smoothstep(0.28, 0.82, fbm(p * 0.9 - dir * uTime * 0.45 + 4.7));
+  float canal = tm * (0.55 + 0.65 * flowC)
+              * (0.80 + 0.35 * sin(uTime * 2.3 + rn * 1.7 + nBig * 7.0));
+
+  float heat = clamp(river * 1.15 + fissure * 0.85 + canal, 0.0, 1.0);
+  heat *= 0.72 + 0.42 * sin(uTime * 2.1 + rn * 3.3 + nBig * 9.0);
+  heat  = clamp(heat, 0.0, 1.0);
+
+  /* ---------- industry platforms (concrete / asphalt) ---------- */
+  float pm = platformMask(p);
+  vec3  concrete = mix(vec3(0.105, 0.105, 0.112), vec3(0.165, 0.160, 0.155), nMid);
+  concrete *= 0.80 + 0.45 * nSmall;
+  albedo    = mix(albedo, concrete, pm * (1.0 - tm * 0.85));
+  roughness = mix(roughness, 0.85, pm * (1.0 - tm * 0.6));
+  ash       = mix(ash, 0.0, pm);
+
+  /* crust where lava is exposed */
+  albedo    = mix(albedo, vec3(0.045, 0.020, 0.014), heat * 0.7);
+  roughness = mix(roughness, 0.55, heat * 0.6);
+
+  vec3 emissive = blackbody(clamp(heat * 1.35, 0.0, 1.0)) * pow(heat, 1.35) * 9.0;
+
+  /* proximity glow right at the crater lip */
+  float lipGlow = exp(-pow((rn - 5.9) / 1.6, 2.0)) * (0.35 + 0.4 * nMid);
+  emissive += vec3(1.0, 0.28, 0.04) * lipGlow * 0.55;
+
+  /* ---------- lighting ---------- */
+  vec3 F0 = mix(vec3(0.045), albedo, metallic);
+
+  vec3 Lo = vec3(0.0);
+
+  /* sun */
+  Lo += brdf(N, V, uSunDir, albedo, roughness, metallic, F0) * uSunColor;
+
+  /* lava point lights (one per active volcano) */
+  for (int i = 0; i < 3; i++){
+    if (i >= uVolcN) break;
+    vec3  toL  = uLavaP[i] - vWorld;
+    float d2   = dot(toL, toL);
+    vec3  L    = toL * inversesqrt(max(d2, 1e-4));
+    float att  = 1.0 / (1.0 + d2 * 0.020);
+    Lo += brdf(N, V, L, albedo, roughness, metallic, F0)
+        * uLavaColor * uLavaIntensity * att;
+  }
+
+  /* ---------- ambient (hemisphere IBL approximation) ---------- */
+  float ndv = max(dot(N, V), 0.0);
+  vec3  up  = N * 0.5 + 0.5;
+  vec3  skyAmb = mix(vec3(0.035, 0.032, 0.036), vec3(0.085, 0.115, 0.20), up.y);
+  skyAmb += vec3(0.22, 0.075, 0.02) * pow(1.0 - clamp(up.y, 0.0, 1.0), 3.0);
+
+  vec3 Famb  = F_schlick_rough(ndv, F0, roughness);
+  vec3 kdAmb = (vec3(1.0) - Famb) * (1.0 - metallic);
+
+  float ao = clamp(0.45 + 0.55 * N.y, 0.30, 1.0);
+  /* darken the crater interior */
+  ao *= mix(0.55, 1.0, smoothstep(4.0, 12.0, rn));
+
+  vec3 ambient = kdAmb * albedo * skyAmb * ao
+               + Famb * skyAmb * 0.55 * ao;
+
+  vec3 color = ambient + Lo + emissive;
+
+  /* ---------- height fog ---------- */
+  float dist = length(uCamPos - vWorld);
+  float fogDensity = 0.0055;
+  float fogH = exp(-max(height, -1.0) * 0.055);
+  float fog  = 1.0 - exp(-dist * fogDensity * fogH * (1.0 + 0.9 * (1.0 - N.y)));
+  fog = clamp(fog, 0.0, 0.92);
+
+  vec3 fogCol = mix(vec3(0.30, 0.17, 0.12), vec3(0.06, 0.08, 0.15), 0.35);
+  fogCol += vec3(0.35, 0.12, 0.03) * exp(-abs(uCamPos.y - height) * 0.02) * 0.3;
+
+  color = mix(color, fogCol, fog);
+
+  fragColor = vec4(color, 1.0);
+}`;
+
+const PROG_TERRAIN = program(TERRAIN_VS, TERRAIN_FS, 'terrain');
+
+/* ---------------------------- LAVA -------------------------------------- */
+const LAVA_VS = `#version 300 es
+precision highp float;
+layout(location=0) in vec2 aXZ;
+
+uniform mat4  uVP;
+uniform float uTime;
+uniform float uLevel;
+uniform vec2  uCenter;
+uniform float uScale;
+
+out vec3 vWorld;
+
+${GLSL_NOISE}
+
+float lavaH(vec2 p, float t){
+  float h = 0.0;
+  h += sin(p.x * 1.30 + t * 1.10) * 0.055;
+  h += sin(p.y * 1.70 - t * 1.40) * 0.045;
+  h += (fbm(p * 1.20 + vec2(t * 0.15, -t * 0.11)) - 0.5) * 0.26;
+  h += (fbm3(p * 3.00 - vec2(t * 0.40,  t * 0.30)) - 0.5) * 0.11;
+  return h;
+}
+
+void main(){
+  vec2 xz = aXZ * uScale;
+  float y = uLevel + lavaH(aXZ, uTime) * uScale;
+  vWorld  = vec3(xz.x + uCenter.x, y, xz.y + uCenter.y);
+  gl_Position = uVP * vec4(vWorld, 1.0);
+}`;
+
+const LAVA_FS = `#version 300 es
+precision highp float;
+in vec3 vWorld;
+out vec4 fragColor;
+
+uniform vec3  uCamPos;
+uniform vec3  uSunDir;
+uniform vec3  uSunColor;
+uniform float uTime;
+uniform vec3  uLavaColor;
+uniform float uLavaIntensity;
+uniform vec2  uCenter;
+uniform float uScale;
+
+${GLSL_NOISE}
+${GLSL_COMMON}
+
+float lavaH(vec2 p, float t){
+  float h = 0.0;
+  h += sin(p.x * 1.30 + t * 1.10) * 0.055;
+  h += sin(p.y * 1.70 - t * 1.40) * 0.045;
+  h += (fbm(p * 1.20 + vec2(t * 0.15, -t * 0.11)) - 0.5) * 0.26;
+  h += (fbm3(p * 3.00 - vec2(t * 0.40,  t * 0.30)) - 0.5) * 0.11;
+  return h;
+}
+
+void main(){
+  vec2  p = (vWorld.xz - uCenter) / uScale;
+  float r = length(p);
+  float t = uTime;
+
+  /* ---- surface normal by finite differences ---- */
+  const float e = 0.09;
+  float hL = lavaH(p - vec2(e, 0.0), t);
+  float hR = lavaH(p + vec2(e, 0.0), t);
+  float hD = lavaH(p - vec2(0.0, e), t);
+  float hU = lavaH(p + vec2(0.0, e), t);
+  vec3 N = normalize(vec3(hL - hR, 2.0 * e, hD - hU));
+  vec3 V = normalize(uCamPos - vWorld);
+
+  /* ---- advected temperature field (lava flows outward) ---- */
+  vec2 dir = normalize(p + vec2(1e-5));
+  vec2 q1  = p * 1.05 - dir * t * 0.22;
+  vec2 q2  = p * 2.30 - dir * t * 0.44 + 13.0;
+
+  float t1 = fbm(q1);
+  float t2 = ridged(q2);
+  float t3 = fbm(q2 * 0.55 + 4.0);
+
+  float temp = t1 * 0.55 + t2 * 0.48 + t3 * 0.22;
+  temp += smoothstep(6.0, 1.0, r) * 0.42;                 /* hotter mid-lake   */
+  temp += 0.12 * sin(t * 0.9 + r * 4.0);
+  temp  = clamp(temp, 0.0, 1.4);
+
+  /* crust plates floating on the melt */
+  float plates = smoothstep(0.42, 0.72, t2 * 0.6 + t3 * 0.6);
+  float molten = smoothstep(0.48, 0.92, temp) * (0.55 + 0.55 * (1.0 - plates));
+  molten = clamp(molten, 0.0, 1.0);
+
+  /* bubbles bursting */
+  float bub = vnoise(q1 * 6.5) ;
+  float bubbles = smoothstep(0.86, 0.99, bub)
+                * smoothstep(0.5, 0.95, 0.5 + 0.5 * sin(t * 3.0 + bub * 60.0));
+
+  /* ---- material ---- */
+  vec3 crustCol = vec3(0.030, 0.022, 0.020);
+  vec3 hotCol   = blackbody(clamp(temp * 0.95, 0.0, 1.0));
+
+  vec3 albedo = mix(crustCol, vec3(0.16, 0.045, 0.015), molten);
+  float rough = mix(0.92, 0.24, molten);
+  float metal = 0.0;
+
+  vec3 F0 = vec3(0.045);
+  vec3 Lo = vec3(0.0);
+  Lo += brdf(N, V, uSunDir, albedo, rough, metal, F0) * uSunColor * 0.75;
+
+  /* ---- emission ---- */
+  vec3 emissive = hotCol * pow(molten, 1.25) * 14.0;
+  emissive += vec3(0.55, 0.055, 0.005) * (1.0 - molten) * 0.55;   /* dull glow  */
+  emissive += vec3(1.0, 0.85, 0.5) * bubbles * molten * 6.0;
+
+  /* rim fresnel — hot rock is very bright at grazing angles */
+  float fres = pow(1.0 - max(dot(N, V), 0.0), 3.0);
+  emissive += hotCol * fres * molten * 3.5;
+
+  vec3 color = emissive + Lo;
+
+  /* gentle fog so the lake sits in the atmosphere */
+  float dist = length(uCamPos - vWorld);
+  float fog  = 1.0 - exp(-dist * 0.0055 * exp(-vWorld.y * 0.055));
+  color = mix(color, vec3(0.28, 0.15, 0.11), clamp(fog, 0.0, 0.85));
+
+  fragColor = vec4(color, 1.0);
+}`;
+
+const PROG_LAVA = program(LAVA_VS, LAVA_FS, 'lava');
+
+/* ---------------------------- INDUSTRY BUILDINGS ------------------------- */
+const BLD_VS = `#version 300 es
+precision highp float;
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec3 aNrm;
+layout(location=2) in vec3 aCol;
+layout(location=3) in vec3 aEmis;
+
+uniform mat4 uVP;
+
+out vec3 vW;
+out vec3 vN;
+out vec3 vC;
+out vec3 vE;
+
+void main(){
+  vW = aPos; vN = aNrm; vC = aCol; vE = aEmis;
+  gl_Position = uVP * vec4(aPos, 1.0);
+}`;
+
+const BLD_FS = `#version 300 es
+precision highp float;
+precision highp int;
+in vec3 vW;
+in vec3 vN;
+in vec3 vC;
+in vec3 vE;
+out vec4 fragColor;
+
+uniform vec3  uCamPos;
+uniform vec3  uSunDir;
+uniform vec3  uSunColor;
+uniform vec3  uLavaP[3];
+uniform vec3  uLavaColor;
+uniform float uLavaIntensity;
+uniform int   uVolcN;
+
+${GLSL_COMMON}
+
+void main(){
+  vec3 N = normalize(vN);
+  vec3 V = normalize(uCamPos - vW);
+  vec3 albedo = vC;
+  float rough = 0.62, metal = 0.10;
+  vec3 F0 = mix(vec3(0.05), albedo, metal);
+
+  vec3 Lo = brdf(N, V, uSunDir, albedo, rough, metal, F0) * uSunColor;
+
+  /* warm lava lights from every active volcano */
+  for (int i = 0; i < 3; i++){
+    if (i >= uVolcN) break;
+    vec3  toL = uLavaP[i] - vW;
+    float d2  = dot(toL, toL);
+    vec3  L   = toL * inversesqrt(max(d2, 1e-4));
+    float att = 1.0 / (1.0 + d2 * 0.020);
+    Lo += brdf(N, V, L, albedo, rough, metal, F0)
+        * uLavaColor * uLavaIntensity * att;
+  }
+
+  vec3 up = N * 0.5 + 0.5;
+  vec3 skyAmb = mix(vec3(0.040, 0.037, 0.042), vec3(0.090, 0.120, 0.200), up.y);
+  skyAmb += vec3(0.20, 0.07, 0.02) * pow(1.0 - clamp(up.y, 0.0, 1.0), 3.0);
+  float ao = clamp(0.50 + 0.50 * N.y, 0.35, 1.0);
+
+  vec3 color = albedo * skyAmb * 1.25 * ao + Lo + vE;
+
+  float dist = length(uCamPos - vW);
+  float fogH = exp(-max(vW.y, -1.0) * 0.055);
+  float fog  = clamp(1.0 - exp(-dist * 0.0055 * fogH), 0.0, 0.92);
+  color = mix(color, vec3(0.30, 0.17, 0.14), fog);
+
+  fragColor = vec4(color, 1.0);
+}`;
+
+const PROG_BLD = program(BLD_VS, BLD_FS, 'buildings');
+
+/* ---------------------------- PARTICLES --------------------------------- */
+const PART_VS = `#version 300 es
+precision highp float;
+layout(location=0) in vec2  aCorner;
+layout(location=1) in vec3  aCenter;
+layout(location=2) in vec4  aParams;   /* life, seed, size, rotation */
+
+uniform mat4  uVP;
+uniform vec3  uRight;
+uniform vec3  uUp;
+uniform float uSizeScale;
+
+out vec2  vUV;
+out float vLife;
+out float vSeed;
+out float vHeight;
+
+void main(){
+  float c = cos(aParams.w), s = sin(aParams.w);
+  vec2 corner = vec2(aCorner.x * c - aCorner.y * s,
+                     aCorner.x * s + aCorner.y * c);
+
+  float sz = aParams.z * uSizeScale;
+  vec3 wp = aCenter + (uRight * corner.x + uUp * corner.y) * sz;
+
+  vUV     = aCorner;
+  vLife   = aParams.x;
+  vSeed   = aParams.y;
+  vHeight = wp.y;
+
+  gl_Position = uVP * vec4(wp, 1.0);
+}`;
+
+const EMBER_FS = `#version 300 es
+precision highp float;
+in vec2  vUV;
+in float vLife;
+in float vSeed;
+in float vHeight;
+out vec4 fragColor;
+
+uniform float uTime;
+
+${GLSL_NOISE}
+${GLSL_COMMON}
+
+void main(){
+  float d = length(vUV) * 2.0;
+  if (d > 1.0) discard;
+
+  float core = smoothstep(1.0, 0.0, d);
+  float a = pow(core, 2.6);
+
+  float flick = 0.72 + 0.55 * sin(uTime * (14.0 + vSeed * 22.0) + vSeed * 90.0);
+  a *= flick;
+
+  float heat = clamp(vLife * 1.25, 0.0, 1.0);
+  vec3  col  = blackbody(0.25 + heat * 0.75);
+
+  /* embers cool as they rise */
+  float cool = exp(-max(vHeight - 5.5, 0.0) * 0.13);
+  col = mix(vec3(0.6, 0.05, 0.0), col, cool);
+
+  a *= smoothstep(0.0, 0.22, vLife);
+
+  fragColor = vec4(col * a * 2.4, a);
+}`;
+
+const SMOKE_FS = `#version 300 es
+precision highp float;
+in vec2  vUV;
+in float vLife;
+in float vSeed;
+in float vHeight;
+out vec4 fragColor;
+
+uniform float uTime;
+
+${GLSL_NOISE}
+${GLSL_COMMON}
+
+void main(){
+  float d = length(vUV) * 2.0;
+  if (d > 1.0) discard;
+
+  float soft = smoothstep(1.0, 0.15, d);
+
+  /* procedural puffiness */
+  float n = fbm(vUV * 2.6 + vec2(vSeed * 31.0, vSeed * 17.0) + uTime * 0.05);
+  n = n * 0.7 + 0.45 * vnoise(vUV * 6.0 - uTime * 0.08 + vSeed * 9.0);
+
+  float a = soft * (0.28 + 0.95 * n);
+  a *= smoothstep(0.0, 0.18, vLife) * smoothstep(0.0, 0.35, 1.0 - vLife + 0.15);
+  a = clamp(a, 0.0, 1.0) * 0.55;
+
+  /* lit from below by the lava lake */
+  float warm = exp(-max(vHeight - 5.5, 0.0) * 0.12);
+  vec3 dark  = vec3(0.085, 0.075, 0.078);
+  vec3 lit   = vec3(0.72, 0.30, 0.09);
+  vec3 col   = mix(dark, lit, warm * 0.85);
+
+  /* slight rim light from the sun */
+  col += vec3(0.30, 0.20, 0.14) * pow(1.0 - d, 3.0) * 0.35;
+
+  fragColor = vec4(col, a);
+}`;
+
+const PROG_EMBER = program(PART_VS, EMBER_FS, 'ember');
+const PROG_SMOKE = program(PART_VS, SMOKE_FS, 'smoke');
+
+/* ---------------------------- POST -------------------------------------- */
+const BRIGHT_FS = `#version 300 es
+precision highp float;
+in vec2 vUV;
+out vec4 fragColor;
+uniform sampler2D uScene;
+uniform float uThreshold;
+uniform float uKnee;
+void main(){
+  vec3 c = texture(uScene, vUV).rgb;
+  float l = max(max(c.r, c.g), c.b);
+  float soft = clamp(l - uThreshold + uKnee, 0.0, 2.0 * uKnee);
+  soft = soft * soft / (4.0 * uKnee + 1e-4);
+  float contrib = max(soft, l - uThreshold) / max(l, 1e-4);
+  fragColor = vec4(c * contrib, 1.0);
+}`;
+
+const BLUR_FS = `#version 300 es
+precision highp float;
+in vec2 vUV;
+out vec4 fragColor;
+uniform sampler2D uTex;
+uniform vec2 uDir;          /* texel-sized direction */
+void main(){
+  float w[5];
+  w[0] = 0.2270270270;
+  w[1] = 0.1945945946;
+  w[2] = 0.1216216216;
+  w[3] = 0.0540540541;
+  w[4] = 0.0162162162;
+  vec3 sum = texture(uTex, vUV).rgb * w[0];
+  for (int i = 1; i < 5; i++){
+    vec2 o = uDir * float(i);
+    sum += texture(uTex, vUV + o).rgb * w[i];
+    sum += texture(uTex, vUV - o).rgb * w[i];
+  }
+  fragColor = vec4(sum, 1.0);
+}`;
+
+const COMPOSITE_FS = `#version 300 es
+precision highp float;
+in vec2 vUV;
+out vec4 fragColor;
+uniform sampler2D uScene;
+uniform sampler2D uBloom;
+uniform float uExposure;
+uniform float uBloomStrength;
+uniform float uTime;
+uniform vec2  uResolution;
+
+${GLSL_COMMON}
+
+float hash12(vec2 p){
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+void main(){
+  vec3 scene = texture(uScene, vUV).rgb;
+  vec3 bloom = texture(uBloom, vUV).rgb;
+
+  vec3 c = scene + bloom * uBloomStrength;
+
+  c *= uExposure;
+  c = aces(c);
+  c = pow(c, vec3(1.0 / 2.2));
+
+  /* vignette */
+  vec2 q = (vUV - 0.5) * vec2(uResolution.x / uResolution.y, 1.0);
+  float vig = smoothstep(1.05, 0.28, length(q) * 1.35);
+  c *= mix(0.42, 1.0, vig);
+
+  /* film grain */
+  float g = hash12(vUV * uResolution + fract(uTime) * 137.0) - 0.5;
+  c += g * 0.020;
+
+  /* subtle warm lift in the shadows (volcanic haze) */
+  c += vec3(0.020, 0.008, 0.004) * (1.0 - smoothstep(0.0, 0.35, dot(c, vec3(0.333))));
+
+  fragColor = vec4(c, 1.0);
+}`;
+
+const PROG_BRIGHT    = program(SKY_VS, BRIGHT_FS, 'bright');
+const PROG_BLUR      = program(SKY_VS, BLUR_FS, 'blur');
+const PROG_COMPOSITE = program(SKY_VS, COMPOSITE_FS, 'composite');
+
+/* ---------------------------------------------------------------------------
+   7.  RENDER TARGETS
+   ------------------------------------------------------------------------ */
+function createTex(w, h, internal, type) {
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, internal, w, h, 0, gl.RGBA, type, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return t;
+}
+
+function createSceneTarget(w, h, samples) {
+  const rt = { w, h, samples };
+  rt.tex = createTex(w, h, HDR_FMT, HDR_TYPE);
+
+  rt.fbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, rt.fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, rt.tex, 0);
+
+  if (samples > 0) {
+    rt.msFBO = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, rt.msFBO);
+
+    rt.msColor = gl.createRenderbuffer();
+    gl.bindRenderbuffer(gl.RENDERBUFFER, rt.msColor);
+    gl.renderbufferStorageMultisample(gl.RENDERBUFFER, samples, HDR_FMT, w, h);
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, rt.msColor);
+
+    rt.msDepth = gl.createRenderbuffer();
+    gl.bindRenderbuffer(gl.RENDERBUFFER, rt.msDepth);
+    gl.renderbufferStorageMultisample(gl.RENDERBUFFER, samples, gl.DEPTH_COMPONENT24, w, h);
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, rt.msDepth);
+  } else {
+    rt.depth = gl.createRenderbuffer();
+    gl.bindRenderbuffer(gl.RENDERBUFFER, rt.depth);
+    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, w, h);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, rt.fbo);
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, rt.depth);
+  }
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  return rt;
+}
+
+function createBloomTarget(w, h) {
+  const rt = { w, h };
+  rt.tex = createTex(w, h, HDR_FMT, HDR_TYPE);
+  rt.fbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, rt.fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, rt.tex, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  return rt;
+}
+
+let sceneRT = null, brightRT = null, blurA = null, blurB = null;
+
+function allocateTargets() {
+  const w = canvas.width, h = canvas.height;
+  if (sceneRT) {
+    gl.deleteFramebuffer(sceneRT.fbo);
+    gl.deleteTexture(sceneRT.tex);
+    if (sceneRT.msFBO) {
+      gl.deleteFramebuffer(sceneRT.msFBO);
+      gl.deleteRenderbuffer(sceneRT.msColor);
+      gl.deleteRenderbuffer(sceneRT.msDepth);
+    }
+    if (sceneRT.depth) gl.deleteRenderbuffer(sceneRT.depth);
+  }
+  if (brightRT) { gl.deleteFramebuffer(brightRT.fbo); gl.deleteTexture(brightRT.tex); }
+  if (blurA)    { gl.deleteFramebuffer(blurA.fbo);    gl.deleteTexture(blurA.tex); }
+  if (blurB)    { gl.deleteFramebuffer(blurB.fbo);    gl.deleteTexture(blurB.tex); }
+
+  sceneRT  = createSceneTarget(w, h, MSAA);
+  const bw = Math.max(1, w >> 2), bh = Math.max(1, h >> 2);
+  brightRT = createBloomTarget(bw, bh);
+  blurA    = createBloomTarget(bw, bh);
+  blurB    = createBloomTarget(bw, bh);
+}
+
+/* ---------------------------------------------------------------------------
+   8.  PARTICLES
+   ------------------------------------------------------------------------ */
+const LAVA_POS = [0, LAVA_Y, 0];
+const SUN = (() => {
+  const el = 0.20, az = 2.15;
+  return v3.norm([Math.cos(el) * Math.cos(az), Math.sin(el), Math.cos(el) * Math.sin(az)]);
+})();
+
+function makeParticleSet(count) {
+  const P = {
+    count,
+    pos:     new Float32Array(count * 3),
+    vel:     new Float32Array(count * 3),
+    life:    new Float32Array(count),
+    maxLife: new Float32Array(count),
+    size:    new Float32Array(count),
+    seed:    new Float32Array(count),
+    rot:     new Float32Array(count),
+    rotV:    new Float32Array(count),
+    hy:      new Float32Array(count),   /* home lava level of its volcano */
+    data:    new Float32Array(count * 4),
+    vbo:     gl.createBuffer(),
+    vao:     null
+  };
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, P.vbo);
+  gl.bufferData(gl.ARRAY_BUFFER, P.data, gl.DYNAMIC_DRAW);
+
+  P.vao = gl.createVertexArray();
+  gl.bindVertexArray(P.vao);
+
+  const qb = makeBuf(gl.ARRAY_BUFFER, billboardQuad);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  gl.vertexAttribDivisor(0, 0);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, P.vbo);
+  gl.enableVertexAttribArray(1);
+  gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 16, 0);
+  gl.vertexAttribDivisor(1, 1);
+  gl.enableVertexAttribArray(2);
+  gl.vertexAttribPointer(2, 4, gl.FLOAT, false, 16, 12);
+  gl.vertexAttribDivisor(2, 1);
+
+  gl.bindVertexArray(null);
+  return P;
+}
+
+const EMBER_COUNT = 520;
+const SMOKE_COUNT = 220;
+const embers = makeParticleSet(EMBER_COUNT);
+const smoke  = makeParticleSet(SMOKE_COUNT);
+const smokeOrder = new Uint16Array(SMOKE_COUNT);
+const smokeDist  = new Float32Array(SMOKE_COUNT);
+
+function respawnEmber(i, initial) {
+  const v  = VOLC_DEF[activeIdx[(Math.random() * activeIdx.length) | 0]];
+  const lv = LAVA_Y * v.s;
+  const a  = Math.random() * Math.PI * 2;
+  const rr = Math.sqrt(Math.random()) * (LAVA_R * v.s * 0.85);
+  const i3 = i * 3;
+
+  embers.pos[i3]     = v.x + Math.cos(a) * rr;
+  embers.pos[i3 + 1] = lv + 0.1;
+  embers.pos[i3 + 2] = v.z + Math.sin(a) * rr;
+  embers.hy[i]       = lv;
+
+  const sp = 2.0 + Math.random() * 5.0;
+  embers.vel[i3]     = Math.cos(a) * (0.25 + Math.random() * 0.9);
+  embers.vel[i3 + 1] = sp;
+  embers.vel[i3 + 2] = Math.sin(a) * (0.25 + Math.random() * 0.9);
+
+  embers.maxLife[i] = 2.0 + Math.random() * 4.5;
+  embers.life[i]    = initial ? Math.random() : 1.0;
+  embers.size[i]    = 0.055 + Math.random() * 0.13;
+  embers.seed[i]    = Math.random();
+  embers.rot[i]     = Math.random() * 6.283;
+  embers.rotV[i]    = (Math.random() - 0.5) * 4.0;
+}
+
+function respawnSmoke(i, initial) {
+  const v  = VOLC_DEF[activeIdx[(Math.random() * activeIdx.length) | 0]];
+  const lv = LAVA_Y * v.s;
+  const a  = Math.random() * Math.PI * 2;
+  const rr = Math.sqrt(Math.random()) * (LAVA_R * v.s * 0.9);
+  const i3 = i * 3;
+
+  smoke.pos[i3]     = v.x + Math.cos(a) * rr;
+  smoke.pos[i3 + 1] = lv + 0.4 + Math.random() * 2.0;
+  smoke.pos[i3 + 2] = v.z + Math.sin(a) * rr;
+  smoke.hy[i]       = lv;
+
+  smoke.vel[i3]     = (Math.random() - 0.5) * 0.5;
+  smoke.vel[i3 + 1] = 1.0 + Math.random() * 1.9;
+  smoke.vel[i3 + 2] = (Math.random() - 0.5) * 0.5;
+
+  smoke.maxLife[i] = 9.0 + Math.random() * 9.0;
+  smoke.life[i]    = initial ? Math.random() : 1.0;
+  smoke.size[i]    = 2.0 + Math.random() * 3.4;
+  smoke.seed[i]    = Math.random();
+  smoke.rot[i]     = Math.random() * 6.283;
+  smoke.rotV[i]    = (Math.random() - 0.5) * 0.35;
+}
+
+for (let i = 0; i < EMBER_COUNT; i++) respawnEmber(i, true);
+for (let i = 0; i < SMOKE_COUNT; i++) respawnSmoke(i, true);
+
+function updateEmbers(dt, time) {
+  const P = embers;
+  const wind = [0.55, 0, 0.32];
+  for (let i = 0; i < P.count; i++) {
+    const i3 = i * 3;
+    P.life[i] -= dt / P.maxLife[i];
+    if (P.life[i] <= 0) { respawnEmber(i, false); continue; }
+
+    /* buoyancy decays with altitude */
+    const alt = Math.max(P.pos[i3 + 1] - P.hy[i], 0);
+    const buoy = 3.2 * Math.exp(-alt * 0.09);
+    P.vel[i3 + 1] += buoy * dt;
+
+    /* turbulent drift */
+    const s = P.seed[i];
+    P.vel[i3]     += Math.sin(time * 1.7 + s * 40.0) * 0.9 * dt;
+    P.vel[i3 + 2] += Math.cos(time * 1.3 + s * 55.0) * 0.9 * dt;
+
+    /* wind */
+    P.vel[i3]     += wind[0] * dt * 0.8;
+    P.vel[i3 + 2] += wind[2] * dt * 0.8;
+
+    /* drag */
+    const drag = 1.0 - Math.min(0.85 * dt * (1.0 + alt * 0.03), 0.6);
+    P.vel[i3] *= drag; P.vel[i3 + 1] *= drag; P.vel[i3 + 2] *= drag;
+
+    P.pos[i3]     += P.vel[i3]     * dt;
+    P.pos[i3 + 1] += P.vel[i3 + 1] * dt;
+    P.pos[i3 + 2] += P.vel[i3 + 2] * dt;
+
+    P.rot[i] += P.rotV[i] * dt;
+  }
+  /* pack */
+  for (let i = 0; i < P.count; i++) {
+    const i4 = i * 4;
+    P.data[i4]     = P.life[i];
+    P.data[i4 + 1] = P.seed[i];
+    P.data[i4 + 2] = P.size[i] * (1.0 + (1.0 - P.life[i]) * 0.6);
+    P.data[i4 + 3] = P.rot[i];
+  }
+  gl.bindBuffer(gl.ARRAY_BUFFER, P.vbo);
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, P.data);
+}
+
+function updateSmoke(dt, time, camPos) {
+  const P = smoke;
+  const wind = [0.75, 0, 0.42];
+  for (let i = 0; i < P.count; i++) {
+    const i3 = i * 3;
+    P.life[i] -= dt / P.maxLife[i];
+    if (P.life[i] <= 0) { respawnSmoke(i, false); continue; }
+
+    const alt = Math.max(P.pos[i3 + 1] - P.hy[i], 0);
+    const buoy = 2.6 * Math.exp(-alt * 0.045);
+    P.vel[i3 + 1] += buoy * dt;
+
+    const s = P.seed[i];
+    P.vel[i3]     += Math.sin(time * 0.55 + s * 33.0) * 0.35 * dt;
+    P.vel[i3 + 2] += Math.cos(time * 0.47 + s * 51.0) * 0.35 * dt;
+
+    /* wind grows with altitude */
+    const wf = 0.35 + alt * 0.035;
+    P.vel[i3]     += wind[0] * dt * wf;
+    P.vel[i3 + 2] += wind[2] * dt * wf;
+
+    const drag = 1.0 - Math.min(0.5 * dt, 0.4);
+    P.vel[i3] *= drag; P.vel[i3 + 1] *= drag; P.vel[i3 + 2] *= drag;
+
+    P.pos[i3]     += P.vel[i3]     * dt;
+    P.pos[i3 + 1] += P.vel[i3 + 1] * dt;
+    P.pos[i3 + 2] += P.vel[i3 + 2] * dt;
+
+    P.rot[i] += P.rotV[i] * dt;
+
+    /* distance for sorting */
+    const dx = P.pos[i3] - camPos[0];
+    const dy = P.pos[i3 + 1] - camPos[1];
+    const dz = P.pos[i3 + 2] - camPos[2];
+    smokeDist[i] = dx * dx + dy * dy + dz * dz;
+    smokeOrder[i] = i;
+  }
+
+  /* back-to-front sort (simple insertion for ~200 elements is fine) */
+  const n = P.count;
+  for (let i = 1; i < n; i++) {
+    const key = smokeOrder[i];
+    const d   = smokeDist[key];
+    let j = i - 1;
+    while (j >= 0 && smokeDist[smokeOrder[j]] < d) {
+      smokeOrder[j + 1] = smokeOrder[j];
+      j--;
+    }
+    smokeOrder[j + 1] = key;
+  }
+
+  for (let k = 0; k < n; k++) {
+    const i  = smokeOrder[k];
+    const i4 = k * 4;
+    P.data[i4]     = P.life[i];
+    P.data[i4 + 1] = P.seed[i];
+    P.data[i4 + 2] = P.size[i] * (0.55 + (1.0 - P.life[i]) * 1.35);
+    P.data[i4 + 3] = P.rot[i];
+  }
+  gl.bindBuffer(gl.ARRAY_BUFFER, P.vbo);
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, P.data);
+}
+
+/* ---------------------------------------------------------------------------
+   9.  CAMERA + INPUT
+   ------------------------------------------------------------------------ */
+const cam = {
+  theta: 0.85,
+  phi: 1.02,
+  dist: 46,
+  target: [0, 4.5, 0],
+  autoRotate: true,
+  eye: [0, 0, 0]
+};
+
+let dragging = false, lastX = 0, lastY = 0;
+
+canvas.addEventListener('pointerdown', (e) => {
+  dragging = true; lastX = e.clientX; lastY = e.clientY;
+  canvas.setPointerCapture(e.pointerId);
+  cam.autoRotate = false;
+});
+canvas.addEventListener('pointerup', (e) => {
+  dragging = false;
+  try { canvas.releasePointerCapture(e.pointerId); } catch (_) {}
+});
+canvas.addEventListener('pointermove', (e) => {
+  if (!dragging) return;
+  const dx = e.clientX - lastX, dy = e.clientY - lastY;
+  lastX = e.clientX; lastY = e.clientY;
+  cam.theta -= dx * 0.005;
+  cam.phi   -= dy * 0.005;
+  cam.phi = Math.max(0.22, Math.min(1.45, cam.phi));
+});
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  cam.dist *= Math.pow(1.0012, e.deltaY);
+  cam.dist = Math.max(16, Math.min(170, cam.dist));
+}, { passive: false });
+canvas.addEventListener('dblclick', () => { cam.autoRotate = !cam.autoRotate; });
+
+/* touch pinch */
+let pinchDist = 0;
+canvas.addEventListener('touchmove', (e) => {
+  if (e.touches.length === 2) {
+    const a = e.touches[0], b = e.touches[1];
+    const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    if (pinchDist > 0) {
+      cam.dist *= pinchDist / d;
+      cam.dist = Math.max(16, Math.min(170, cam.dist));
+    }
+    pinchDist = d;
+  }
+}, { passive: true });
+canvas.addEventListener('touchend', () => { pinchDist = 0; });
+
+function updateCamera(dt) {
+  if (cam.autoRotate && !dragging) cam.theta += dt * 0.045;
+
+  const sp = Math.sin(cam.phi), cp = Math.cos(cam.phi);
+  cam.eye[0] = cam.target[0] + cam.dist * sp * Math.cos(cam.theta);
+  cam.eye[1] = cam.target[1] + cam.dist * cp;
+  cam.eye[2] = cam.target[2] + cam.dist * sp * Math.sin(cam.theta);
+
+  /* never dip below the ash plain */
+  if (cam.eye[1] < 1.5) cam.eye[1] = 1.5;
+}
+
+/* ---------------------------------------------------------------------------
+   10.  RESIZE
+   ------------------------------------------------------------------------ */
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, DPR_CAP);
+  const w = Math.max(2, Math.floor(canvas.clientWidth * dpr));
+  const h = Math.max(2, Math.floor(canvas.clientHeight * dpr));
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w;
+    canvas.height = h;
+    allocateTargets();
+  }
+}
+window.addEventListener('resize', resize);
+
+/* ---------------------------------------------------------------------------
+   11.  RENDER HELPERS
+   ------------------------------------------------------------------------ */
+const matProj = new Float32Array(16);
+const matView = new Float32Array(16);
+const matVP   = new Float32Array(16);
+
+function multiply4(out, a, b) {
+  for (let i = 0; i < 4; i++) {
+    const ai0 = a[i], ai1 = a[i + 4], ai2 = a[i + 8], ai3 = a[i + 12];
+    out[i]      = ai0 * b[0]  + ai1 * b[1]  + ai2 * b[2]  + ai3 * b[3];
+    out[i + 4]  = ai0 * b[4]  + ai1 * b[5]  + ai2 * b[6]  + ai3 * b[7];
+    out[i + 8]  = ai0 * b[8]  + ai1 * b[9]  + ai2 * b[10] + ai3 * b[11];
+    out[i + 12] = ai0 * b[12] + ai1 * b[13] + ai2 * b[14] + ai3 * b[15];
+  }
+  return out;
+}
+
+function drawFullscreen(progObj) {
+  gl.useProgram(progObj.p);
+  gl.bindVertexArray(fsVAO);
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
+}
+
+/* ---------------------------------------------------------------------------
+   12.  MAIN LOOP
+   ------------------------------------------------------------------------ */
+let lastTime = performance.now();
+let simTime  = 0;
+let camRight = [1, 0, 0];
+let camUp    = [0, 1, 0];
+let camForward = [0, 0, -1];
+
+const SUN_COLOR   = [1.00, 0.60, 0.32];
+const SUN_INT     = 2.35;
+const LAVA_COLOR  = [1.00, 0.42, 0.10];
+
+/* ---- multi-volcano / industry uniform packing ---- */
+const volcArr  = new Float32Array(12);
+const baseArr  = new Float32Array(3);
+const trunkArr = new Float32Array(24);
+const distArr  = new Float32Array(16);
+const lavaPArr = new Float32Array(9);
+
+function updateLayoutUniforms() {
+  for (let i = 0; i < 3; i++) {
+    const on = i < activeIdx.length;
+    const v = on ? VOLC_DEF[activeIdx[i]] : VOLC_DEF[0];
+    volcArr[i * 4]     = v.x;
+    volcArr[i * 4 + 1] = v.z;
+    volcArr[i * 4 + 2] = on ? v.s : 1.0;
+    volcArr[i * 4 + 3] = 0.0;
+    baseArr[i] = v.base;
+    lavaPArr[i * 3]     = v.x;
+    lavaPArr[i * 3 + 1] = LAVA_Y * (on ? v.s : 1.0);
+    lavaPArr[i * 3 + 2] = v.z;
+  }
+  trunkArr.fill(0);
+  for (let i = 0; i < trunkList.length && i < 24; i++) trunkArr[i] = trunkList[i];
+  distArr.fill(0);
+  for (let i = 0; i < distList.length && i < 4; i++) {
+    distArr[i * 4]     = distList[i].x;
+    distArr[i * 4 + 1] = distList[i].z;
+    distArr[i * 4 + 2] = distList[i].r;
+    distArr[i * 4 + 3] = 0.0;
+  }
+}
+
+function setVolcUniforms(P) {
+  const u = P.u;
+  if (u.uVolc)     gl.uniform4fv(u.uVolc, volcArr);
+  if (u.uVolcBase) gl.uniform1fv(u.uVolcBase, baseArr);
+  if (u.uVolcN)    gl.uniform1i(u.uVolcN, activeIdx.length);
+  if (u.uTrunk)    gl.uniform4fv(u.uTrunk, trunkArr);
+  if (u.uTrunkN)   gl.uniform1i(u.uTrunkN, Math.min(6, (trunkList.length / 4) | 0));
+  if (u.uDist)     gl.uniform4fv(u.uDist, distArr);
+  if (u.uDistN)    gl.uniform1i(u.uDistN, distList.length);
+  if (u.uLavaP)    gl.uniform3fv(u.uLavaP, lavaPArr);
+}
+
+function frame(now) {
+  const dtRaw = (now - lastTime) / 1000;
+  lastTime = now;
+  const dt = Math.min(dtRaw, 0.05);
+  simTime += dt;
+
+  resize();
+  updateCamera(dt);
+  updateLayoutUniforms();
+
+  /* --- matrices --- */
+  const aspect = canvas.width / canvas.height;
+  const fovy = 46 * Math.PI / 180;
+  M4.perspective(matProj, fovy, aspect, 0.35, 420);
+  M4.lookAt(matView, cam.eye, cam.target, [0, 1, 0]);
+  multiply4(matVP, matProj, matView);
+
+  camForward = v3.norm(v3.sub(cam.target, cam.eye));
+  camRight   = v3.norm(v3.cross(camForward, [0, 1, 0]));
+  camUp      = v3.cross(camRight, camForward);
+
+  /* --- particle sim --- */
+  updateEmbers(dt, simTime);
+  updateSmoke(dt, simTime, cam.eye);
+
+  /* lava flicker */
+  const flick = 0.82
+    + 0.13 * Math.sin(simTime * 2.7)
+    + 0.09 * Math.sin(simTime * 6.1 + 1.7)
+    + 0.06 * Math.sin(simTime * 11.3);
+  const lavaIntensity = 15.0 * flick;
+
+  /* ======================================================================
+     PASS 1 — scene into MSAA HDR target
+     ==================================================================== */
+  const renderFBO = MSAA > 0 ? sceneRT.msFBO : sceneRT.fbo;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, renderFBO);
+  gl.viewport(0, 0, sceneRT.w, sceneRT.h);
+
+  gl.clearColor(0.0, 0.0, 0.0, 1.0);
+  gl.clearDepth(1.0);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+  /* ---- sky (no depth) ---- */
+  gl.disable(gl.DEPTH_TEST);
+  gl.depthMask(false);
+  gl.disable(gl.BLEND);
+  {
+    const P = PROG_SKY;
+    gl.useProgram(P.p);
+    gl.uniform3fv(P.u.uCamPos, cam.eye);
+    gl.uniform3fv(P.u.uForward, camForward);
+    gl.uniform3fv(P.u.uRight, camRight);
+    gl.uniform3fv(P.u.uUp, camUp);
+    gl.uniform1f(P.u.uTanHalf, Math.tan(fovy * 0.5));
+    gl.uniform1f(P.u.uAspect, aspect);
+    gl.uniform3fv(P.u.uSunDir, SUN);
+    gl.bindVertexArray(fsVAO);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+  }
+
+  /* ---- opaque ---- */
+  gl.enable(gl.DEPTH_TEST);
+  gl.depthFunc(gl.LEQUAL);
+  gl.depthMask(true);
+  gl.enable(gl.CULL_FACE);
+  gl.cullFace(gl.BACK);
+  gl.disable(gl.BLEND);
+
+  /* terrain */
+  {
+    const P = PROG_TERRAIN;
+    gl.useProgram(P.p);
+    gl.uniformMatrix4fv(P.u.uVP, false, matVP);
+    gl.uniform3fv(P.u.uCamPos, cam.eye);
+    gl.uniform3fv(P.u.uSunDir, SUN);
+    gl.uniform3f(P.u.uSunColor, SUN_COLOR[0] * SUN_INT, SUN_COLOR[1] * SUN_INT, SUN_COLOR[2] * SUN_INT);
+    setVolcUniforms(P);
+    gl.uniform3fv(P.u.uLavaColor, LAVA_COLOR);
+    gl.uniform1f(P.u.uLavaIntensity, lavaIntensity);
+    gl.uniform1f(P.u.uTime, simTime);
+
+    gl.bindVertexArray(terrainVAO);
+    gl.drawElements(gl.TRIANGLES, terrainIdx.length, gl.UNSIGNED_INT, 0);
+  }
+
+  /* lava lakes — one draw per active volcano */
+  {
+    const P = PROG_LAVA;
+    gl.useProgram(P.p);
+    gl.uniformMatrix4fv(P.u.uVP, false, matVP);
+    gl.uniform3fv(P.u.uCamPos, cam.eye);
+    gl.uniform3fv(P.u.uSunDir, SUN);
+    gl.uniform3f(P.u.uSunColor, SUN_COLOR[0] * SUN_INT, SUN_COLOR[1] * SUN_INT, SUN_COLOR[2] * SUN_INT);
+    gl.uniform1f(P.u.uTime, simTime);
+    gl.uniform3fv(P.u.uLavaColor, LAVA_COLOR);
+    gl.uniform1f(P.u.uLavaIntensity, lavaIntensity);
+
+    gl.bindVertexArray(lavaVAO);
+    for (let i = 0; i < activeIdx.length; i++) {
+      const v = VOLC_DEF[activeIdx[i]];
+      gl.uniform2f(P.u.uCenter, v.x, v.z);
+      gl.uniform1f(P.u.uScale, v.s);
+      gl.uniform1f(P.u.uLevel, LAVA_Y * v.s);
+      gl.drawElements(gl.TRIANGLES, lavaIdxArr.length, gl.UNSIGNED_INT, 0);
+    }
+  }
+
+  /* industry buildings: factories, pumpers, tanks */
+  if (bldCount > 0) {
+    const P = PROG_BLD;
+    gl.useProgram(P.p);
+    gl.uniformMatrix4fv(P.u.uVP, false, matVP);
+    gl.uniform3fv(P.u.uCamPos, cam.eye);
+    gl.uniform3fv(P.u.uSunDir, SUN);
+    gl.uniform3f(P.u.uSunColor, SUN_COLOR[0] * SUN_INT, SUN_COLOR[1] * SUN_INT, SUN_COLOR[2] * SUN_INT);
+    setVolcUniforms(P);
+    gl.uniform3fv(P.u.uLavaColor, LAVA_COLOR);
+    gl.uniform1f(P.u.uLavaIntensity, lavaIntensity);
+
+    gl.disable(gl.CULL_FACE);
+    gl.bindVertexArray(bldVAO);
+    gl.drawArrays(gl.TRIANGLES, 0, bldCount);
+    gl.enable(gl.CULL_FACE);
+  }
+
+  /* ---- smoke (alpha blended, sorted, depth-test on / write off) ---- */
+  gl.disable(gl.CULL_FACE);
+  gl.depthMask(false);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  {
+    const P = PROG_SMOKE;
+    gl.useProgram(P.p);
+    gl.uniformMatrix4fv(P.u.uVP, false, matVP);
+    gl.uniform3fv(P.u.uRight, camRight);
+    gl.uniform3fv(P.u.uUp, camUp);
+    gl.uniform1f(P.u.uSizeScale, 1.0);
+    gl.uniform1f(P.u.uTime, simTime);
+
+    gl.bindVertexArray(smoke.vao);
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, SMOKE_COUNT);
+  }
+
+  /* ---- embers (additive) ---- */
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+  {
+    const P = PROG_EMBER;
+    gl.useProgram(P.p);
+    gl.uniformMatrix4fv(P.u.uVP, false, matVP);
+    gl.uniform3fv(P.u.uRight, camRight);
+    gl.uniform3fv(P.u.uUp, camUp);
+    gl.uniform1f(P.u.uSizeScale, 1.0);
+    gl.uniform1f(P.u.uTime, simTime);
+
+    gl.bindVertexArray(embers.vao);
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, EMBER_COUNT);
+  }
+
+  gl.depthMask(true);
+  gl.disable(gl.BLEND);
+
+  /* ---- resolve MSAA ---- */
+  if (MSAA > 0) {
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, sceneRT.msFBO);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, sceneRT.fbo);
+    gl.blitFramebuffer(0, 0, sceneRT.w, sceneRT.h,
+                       0, 0, sceneRT.w, sceneRT.h,
+                       gl.COLOR_BUFFER_BIT, gl.NEAREST);
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+  }
+
+  /* ======================================================================
+     PASS 2 — bright pass
+     ==================================================================== */
+  gl.bindFramebuffer(gl.FRAMEBUFFER, brightRT.fbo);
+  gl.viewport(0, 0, brightRT.w, brightRT.h);
+  gl.disable(gl.DEPTH_TEST);
+  gl.disable(gl.BLEND);
+  {
+    const P = PROG_BRIGHT;
+    gl.useProgram(P.p);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, sceneRT.tex);
+    gl.uniform1i(P.u.uScene, 0);
+    gl.uniform1f(P.u.uThreshold, 0.85);
+    gl.uniform1f(P.u.uKnee, 0.45);
+    gl.bindVertexArray(fsVAO);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+  }
+
+  /* ======================================================================
+     PASS 3 — separable gaussian bloom (ping-pong)
+     ==================================================================== */
+  const bw = brightRT.w, bh = brightRT.h;
+  let srcTex = brightRT.tex;
+
+  for (let i = 0; i < 3; i++) {
+    const radius = 1.0 + i * 1.6;
+
+    /* horizontal */
+    gl.bindFramebuffer(gl.FRAMEBUFFER, blurA.fbo);
+    gl.viewport(0, 0, bw, bh);
+    {
+      const P = PROG_BLUR;
+      gl.useProgram(P.p);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, srcTex);
+      gl.uniform1i(P.u.uTex, 0);
+      gl.uniform2f(P.u.uDir, radius / bw, 0);
+      gl.bindVertexArray(fsVAO);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+    }
+
+    /* vertical */
+    gl.bindFramebuffer(gl.FRAMEBUFFER, blurB.fbo);
+    {
+      const P = PROG_BLUR;
+      gl.useProgram(P.p);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, blurA.tex);
+      gl.uniform1i(P.u.uTex, 0);
+      gl.uniform2f(P.u.uDir, 0, radius / bh);
+      gl.bindVertexArray(fsVAO);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+    }
+    srcTex = blurB.tex;
+  }
+
+  /* ======================================================================
+     PASS 4 — composite + tonemap to screen
+     ==================================================================== */
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  {
+    const P = PROG_COMPOSITE;
+    gl.useProgram(P.p);
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, sceneRT.tex);
+    gl.uniform1i(P.u.uScene, 0);
+
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, blurB.tex);
+    gl.uniform1i(P.u.uBloom, 1);
+
+    gl.uniform1f(P.u.uExposure, 1.05);
+    gl.uniform1f(P.u.uBloomStrength, 0.85);
+    gl.uniform1f(P.u.uTime, simTime);
+    gl.uniform2f(P.u.uResolution, canvas.width, canvas.height);
+
+    gl.bindVertexArray(fsVAO);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+  }
+
+  gl.bindVertexArray(null);
+  requestAnimationFrame(frame);
+}
+
+/* ---------------------------------------------------------------------------
+   13.  BOOT
+   ------------------------------------------------------------------------ */
+function respawnAll() {
+  for (let i = 0; i < EMBER_COUNT; i++) respawnEmber(i, true);
+  for (let i = 0; i < SMOKE_COUNT; i++) respawnSmoke(i, true);
+}
+function onToggle() {
+  if (!cb2.checked) cb3.checked = false;
+  rebuildLayout();
+  respawnAll();
+}
+cb2.addEventListener('change', onToggle);
+cb3.addEventListener('change', onToggle);
+
+rebuildLayout();
+respawnAll();
+resize();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
