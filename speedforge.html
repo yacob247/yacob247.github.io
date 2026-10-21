@@ -241,7 +241,7 @@
       <input type="url" id="dlUrl" placeholder="https://example.com/bigfile.iso   ·   or paste an archive.org/details/… item" spellcheck="false">
       <select id="archiveSelect" style="display:none;margin-top:10px"></select>
 
-          <div class="settings">
+      <div class="settings">
         <label>Connections
           <select id="concurrency">
             <option value="4">4</option>
@@ -253,7 +253,6 @@
         <label><input type="checkbox" id="fsaChk"> Save to disk (for files &gt;2 GB, Chrome/Edge)</label>
       </div>
 
-      <!-- ▼▼▼ INSERT THE NEW BOOKMARKLET BLOCK HERE ▼▼▼ -->
       <div class="dragZone" style="margin-top:16px">
         <a id="dragDlBookmarklet" class="dragBtn" href="javascript:void(0)" draggable="true"
            onclick="alert('⬇ Drag me to your bookmarks bar — don\'t click!'); return false;">
@@ -267,9 +266,7 @@
       <div class="btnrow">
         <button class="btn ghost" id="copyDlBm">📋 Copy download bookmarklet code</button>
       </div>
-      <!-- ▲▲▲ END INSERT ▲▲▲ -->
 
-     
       <div class="btnrow">
         <button class="btn" id="dlBtn">▶ Watch ad &amp; download</button>
         <button class="btn danger" id="dlCancel" disabled>✕ Cancel</button>
@@ -377,72 +374,122 @@ function saveBlob(blob, filename) {
 function hasRealContent(el) {
   return [...el.children].some(c => {
     if (c.tagName === 'SCRIPT') return false;
+    if (c.tagName === 'IFRAME') return true;
     if (c.classList && (c.classList.contains('adFallback') || c.classList.contains('__sfFallback'))) return false;
     return true;
   });
 }
 
 /* ═══════════════════════════════════════════════════════════
-   AD INJECTION — HilltopAds Video Slider
+   AD INJECTION — HilltopAds Video Slider (sandboxed iframe)
+   Runs in an inline sandboxed iframe (srcdoc) — no extra file.
    ═══════════════════════════════════════════════════════════ */
-function injectVideoSlider(container) {
-  const id = '__sfad' + Math.random().toString(36).slice(2, 10);
-  container.id = id;
-  const s = document.createElement('script');
-  s.textContent =
-    '(function(){var d=document,s=d.createElement("script");' +
-    's.settings={};' +
-    's.src="' + VIDEO_SLIDER_SRC + '";' +
-    's.async=true;s.referrerPolicy="no-referrer-when-downgrade";' +
-    'var t=document.getElementById("' + id + '");' +
-    'if(t)t.appendChild(s)})();';
-  container.appendChild(s);
+function createAdIframe(container) {
+  container.innerHTML = '';
+  const slider = VIDEO_SLIDER_SRC.startsWith('//') ? 'https:' + VIDEO_SLIDER_SRC : VIDEO_SLIDER_SRC;
+  const iframe = document.createElement('iframe');
+  // Everything is inline (srcdoc) — no separate sandbox.html file needed.
+  iframe.srcdoc =
+    '<!doctype html><html><head><meta charset="utf-8">' +
+    '<style>html,body{margin:0;height:100%;background:#0a1018;display:flex;align-items:center;justify-content:center}</style>' +
+    '</head><body><script async src="' + slider + '"><\/script></body></html>';
+  iframe.style.cssText = 'width:100%;height:100%;min-height:180px;border:0;background:#0a1018;';
+  iframe.setAttribute('sandbox', 'allow-scripts allow-popups allow-popups-to-escape-sandbox');
+  iframe.setAttribute('referrerpolicy', 'no-referrer-when-downgrade');
+  container.appendChild(iframe);
 }
 
 /* ═══════════════════════════════════════════════════════════
-   AD INJECTION — HilltopAds VAST
+   AD INJECTION — VAST video (fetch XML → play the mp4)
+   Handles wrappers, https upgrade, fallback files, impressions.
    ═══════════════════════════════════════════════════════════ */
-async function loadVastAd(container) {
-  let xml = null;
-  const sources = [
-    { url: VAST_TAG, mode: 'cors' },
-    { url: 'https://corsproxy.io/?' + encodeURIComponent(VAST_TAG) },
-    { url: 'https://api.allorigins.win/raw?url=' + encodeURIComponent(VAST_TAG) }
-  ];
-  for (const src of sources) {
-    try {
-      const r = await fetch(src.url, { mode: src.mode || 'cors' });
-      if (r.ok) { xml = await r.text(); break; }
-    } catch {}
-  }
-  if (!xml) return false;
-
-  let doc;
+async function fetchText(url, ms = 7000) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), ms);
   try {
-    doc = new DOMParser().parseFromString(xml, 'application/xml');
-    if (doc.querySelector('parsererror')) return false;
-  } catch { return false; }
+    const r = await fetch(url, { signal: ctl.signal });
+    if (!r.ok) return null;
+    return await r.text();
+  } catch { return null; }
+  finally { clearTimeout(timer); }
+}
 
-  doc.querySelectorAll('Impression').forEach(imp => {
-    const u = (imp.textContent || '').trim();
-    if (u) { try { new Image().src = u; } catch {} }
-  });
+async function fetchVastXml(url) {
+  // Try direct first, then CORS proxies (most ad servers block direct browser fetches)
+  const tries = [
+    url,
+    'https://corsproxy.io/?' + encodeURIComponent(url),
+    'https://api.allorigins.win/raw?url=' + encodeURIComponent(url)
+  ];
+  for (const u of tries) {
+    const txt = await fetchText(u);
+    if (!txt || !txt.includes('<VAST')) continue;
+    const doc = new DOMParser().parseFromString(txt.trim(), 'application/xml');
+    if (!doc.querySelector('parsererror')) return doc;
+  }
+  return null;
+}
 
-  const mp4s = [...doc.querySelectorAll('MediaFile')].filter(m => {
-    const t = (m.getAttribute('type') || '').toLowerCase();
-    return t.includes('mp4') && (m.textContent || '').trim();
-  });
-  if (!mp4s.length) return false;
-  mp4s.sort((a, b) =>
-    parseInt(b.getAttribute('bitrate') || 0) - parseInt(a.getAttribute('bitrate') || 0));
+function firePixels(list) {
+  list.forEach(u => { try { new Image().src = u; } catch {} });
+}
+
+async function loadVastAd(container) {
+  const impressions = [];
+  const tracking = { start: [], complete: [] };
+  let doc = await fetchVastXml(VAST_TAG);
+
+  // Follow wrapper chain (max 4 hops)
+  for (let hop = 0; doc && hop < 4; hop++) {
+    doc.querySelectorAll('Impression').forEach(n => {
+      const u = (n.textContent || '').trim(); if (u) impressions.push(u);
+    });
+    doc.querySelectorAll('Tracking').forEach(n => {
+      const ev = n.getAttribute('event'), u = (n.textContent || '').trim();
+      if (u && tracking[ev]) tracking[ev].push(u);
+    });
+    const wrap = doc.querySelector('VASTAdTagURI');
+    if (!wrap) break;
+    doc = await fetchVastXml((wrap.textContent || '').trim());
+  }
+  if (!doc) return false;
+
+  // Pick playable files: mp4/webm, best bitrate first
+  const files = [...doc.querySelectorAll('MediaFile')]
+    .map(m => ({
+      url: (m.textContent || '').trim().replace(/^http:\/\//i, 'https://'),
+      type: (m.getAttribute('type') || '').toLowerCase(),
+      bitrate: parseInt(m.getAttribute('bitrate') || 0)
+    }))
+    .filter(f => f.url && /mp4|webm/.test(f.type || f.url))
+    .sort((a, b) => b.bitrate - a.bitrate);
+  if (!files.length) return false;
+
+  // User may have closed the ad already
+  if (!adModal.classList.contains('open')) return false;
 
   const video = document.createElement('video');
-  video.src = mp4s[0].textContent.trim();
-  video.autoplay = true;
   video.muted = true;
+  video.autoplay = true;
   video.playsInline = true;
+  video.controls = false;
   video.style.cssText = 'width:100%;max-height:240px;object-fit:contain;border-radius:8px;background:#000';
-  video.addEventListener('error', () => { container.style.display = 'none'; });
+
+  let idx = 0;
+  video.addEventListener('error', () => {
+    idx++;
+    if (idx < files.length) { video.src = files[idx].url; video.play().catch(() => {}); }
+    else { container.innerHTML = ''; container.style.display = 'none'; }
+  });
+  let started = false;
+  video.addEventListener('playing', () => {
+    if (started) return; started = true;
+    firePixels(impressions); firePixels(tracking.start);
+  });
+  video.addEventListener('ended', () => firePixels(tracking.complete));
+
+  video.src = files[0].url;
+  container.innerHTML = '';
   container.appendChild(video);
   container.style.display = 'flex';
   video.play().catch(() => {});
@@ -472,7 +519,7 @@ function showAd(seconds, onContinue) {
     adBtn.disabled = true;
     adBtn.textContent = 'Please wait…';
 
-    injectVideoSlider(vsSlot);
+    createAdIframe(vsSlot);
     loadVastAd(vastSlot);
 
     const checkTimer = setTimeout(() => {
@@ -1068,7 +1115,9 @@ dlCancel.addEventListener('click', () => {
   if (dlAbort) dlAbort.abort();
 });
 
-/* ═══ Download bookmarklet + ?dl= prefill ═══ */
+/* ═══════════════════════════════════════════════════════════
+   Download bookmarklet + ?dl= prefill
+   ═══════════════════════════════════════════════════════════ */
 function buildDownloadBookmarklet() {
   const base = location.origin + location.pathname;
   return "javascript:(function(){var u=location.href;" +
