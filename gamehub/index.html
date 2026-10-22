@@ -653,8 +653,6 @@
     let activeSubcategory = null;
     let searchTerm = '';
     let isLoading = false;
-    let currentPage = 1;
-    const PAGE_SIZE = 100;                     // games per API request
     let hasMore = true;
     allGames = allGames.filter(g => !isBlocked(g));
 
@@ -692,44 +690,7 @@
     }
 
     // ================================================================
-    // 4. FETCH GAMES FROM GAMEDISTRIBUTION JSON FEED
-    // ================================================================
-    async function fetchGameDistributionGames(page = 1) {
-      const url = `https://catalog.api.gamedistribution.com/api/v2.0/rss/All/?collection=All&categories=All&tags=All&subType=All&type=All&mobile=All&rewarded=all&amount=${PAGE_SIZE}&page=${page}&format=json`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error('GameDistribution feed error');
-      const data = await res.json();
-
-      // Normalise each item
-      return data.map(item => {
-        const md5 = item.Md5;
-        const title = item.Title;
-        const categories = item.Category || [];
-        const tags = item.Tag || [];
-        const category = categories[0] || 'Other';
-        const subcategory = categories[1] || 'General';
-        const thumbnail = (item.Asset && item.Asset[0]) ? item.Asset[0] : '';
-
-        // Build embed URL – see GitHub docs for pattern
-        const gameUrl = item.Url;  // e.g. https://html5.gamedistribution.com/{md5}/
-        const embedUrl = `https://embed.gamedistribution.com/?url=${encodeURIComponent(gameUrl)}&width=800&height=600&gdpr-tracking=1&gdpr-targeting=1`;
-
-        return {
-          id: `gd-${md5}`,
-          name: title,
-          category: category,
-          subcategory: subcategory,
-          thumbnail: thumbnail,
-          embedUrl: embedUrl,
-          description: item.Description || '',
-          tags: tags.slice(0, 5),
-          provider: 'GameDistribution'
-        };
-      });
-    }
-
-    // ================================================================
-    // 4b. FETCH GAMES FROM GAMEMONETIZE JSON FEED (auto-builds the whole catalog)
+    // 4. FETCH GAMES FROM GAMEMONETIZE JSON FEED (auto-builds the whole catalog)
     // ================================================================
     // Same feed you copied from the RSS builder: format=0 is JSON, page=1,2,3... gives more games.
     const GM_FEED = 'https://gamemonetize.com/feed.php?format=0&num=50&page=';
@@ -777,35 +738,28 @@
     // ================================================================
     // 5. LOAD MORE (pagination)
     // ================================================================
-    let gdMore = true, gmMore = true, gmPage = 1;
+    let gmPage = 1;
     async function loadMoreGames() {
       if (isLoading || !hasMore) return;
       isLoading = true;
       renderLoading();
-
-      // Each source loads independently, so one failing never blocks the other
-      const jobs = [];
-      if (gdMore) jobs.push(fetchGameDistributionGames(currentPage).then(g => ({ src: 'gd', g })).catch(err => ({ src: 'gd', err })));
-      if (gmMore) jobs.push(fetchGameMonetizeGames(gmPage).then(g => ({ src: 'gm', g })).catch(err => ({ src: 'gm', err })));
-
-      const results = await Promise.all(jobs);
-      const have = new Set(allGames.map(g => g.id));
-      results.forEach(r => {
-        if (r.err || !r.g.length) {
-          if (r.err) console.error(r.src + ' feed failed:', r.err);
-          if (r.src === 'gd') gdMore = false; else gmMore = false;   // empty page / error = end of that feed
-          return;
+      try {
+        const batch = await fetchGameMonetizeGames(gmPage);
+        if (!batch.length) {
+          hasMore = false;                     // empty page = end of the feed
+        } else {
+          const have = new Set(allGames.map(g => g.id));
+          allGames = allGames.concat(batch.filter(g => !have.has(g.id) && !isBlocked(g)));
+          gmPage++;
         }
-        const fresh = r.g.filter(g => !have.has(g.id) && !isBlocked(g));
-        fresh.forEach(g => have.add(g.id));
-        allGames = allGames.concat(fresh);
-        if (r.src === 'gd') currentPage++; else gmPage++;
-      });
-      hasMore = gdMore || gmMore;
-
-      isLoading = false;
-      firstLoaded = true;
-      renderAll();
+      } catch (err) {
+        console.error('GameMonetize feed failed:', err);
+        hasMore = false;
+      } finally {
+        isLoading = false;
+        firstLoaded = true;
+        renderAll();
+      }
     }
 
     // ================================================================
@@ -960,14 +914,10 @@
     const gameFrame = $('gameFrame'), stage = $('pvStage'), preroll = $('preroll'), skipBtn = $('skipBtn');
     let prerollTimer = null, currentGame = null;
 
-    function gdEmbed(md5) {
-      return `https://embed.gamedistribution.com/?url=${encodeURIComponent('https://html5.gamedistribution.com/' + md5 + '/')}&width=800&height=600&gdpr-tracking=1&gdpr-targeting=1`;
-    }
     function findGame(id) {
       let g = allGames.find(x => x.id === id);
       if (g) return g;
       try { g = JSON.parse(sessionStorage.getItem('gh_game_' + id)); } catch (e) {}
-      if (!g && id.startsWith('gd-')) g = { id, name: 'Game', category: 'Games', subcategory: 'General', embedUrl: gdEmbed(id.slice(3)), tags: [], provider: 'GameDistribution' };
       return g && !isBlocked(g) ? g : null;
     }
     function promoHTML(p, kind) {
@@ -1059,13 +1009,13 @@
     });
 
     // ================================================================
-    // 9. INIT – fetch the first batch of GameDistribution games
+    // 9. INIT – fetch the first batch of GameMonetize games
     // ================================================================
     (async function init() {
       // Render static games immediately
       renderAll();
       route();
-      // Then load first 100 GameDistribution games
+      // Then load the first page of the GameMonetize feed
       await loadMoreGames();
     })();
   </script>
