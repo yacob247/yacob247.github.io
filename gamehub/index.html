@@ -729,29 +729,83 @@
     }
 
     // ================================================================
+    // 4b. FETCH GAMES FROM GAMEMONETIZE JSON FEED (auto-builds the whole catalog)
+    // ================================================================
+    // Same feed you copied from the RSS builder: format=0 is JSON, page=1,2,3... gives more games.
+    const GM_FEED = 'https://gamemonetize.com/feed.php?format=0&num=50&page=';
+    // Only used if the browser blocks the direct request (CORS). Swap for your own proxy if you have one.
+    const GM_PROXY = 'https://corsproxy.io/?url=';
+
+    // Feed text contains HTML entities (&rsquo; &eacute;), stray <a> tags and markdown; make it plain text
+    function cleanText(s) {
+      const t = document.createElement('textarea');
+      t.innerHTML = String(s || '');
+      return t.value.replace(/<[^>]*>/g, ' ').replace(/[*#]+/g, '').replace(/\s+/g, ' ').trim();
+    }
+    async function fetchJSONWithFallback(url) {
+      try {
+        const r = await fetch(url);
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return await r.json();
+      } catch (e) {
+        const r = await fetch(GM_PROXY + encodeURIComponent(url));
+        if (!r.ok) throw new Error('GameMonetize feed error');
+        return await r.json();
+      }
+    }
+    async function fetchGameMonetizeGames(page = 1) {
+      const data = await fetchJSONWithFallback(GM_FEED + page);
+      if (!Array.isArray(data)) return [];
+      return data.filter(it => it && it.url && it.title).map(it => {
+        const category = cleanText(it.category) || 'Other';
+        const tags = String(it.tags || '').split(',').map(t => cleanText(t)).filter(Boolean);
+        const sub = tags.find(t => t.toLowerCase() !== category.toLowerCase() && !/^\d+\s*player/i.test(t)) || 'General';
+        return {
+          id: 'gm-' + it.id,
+          name: cleanText(it.title),
+          category: category,
+          subcategory: sub,
+          thumbnail: it.thumb || '',
+          embedUrl: it.url,              // direct game URL, goes straight into the iframe
+          description: cleanText(it.description).slice(0, 320),
+          tags: tags.slice(0, 5),
+          provider: 'GameMonetize'
+        };
+      });
+    }
+
+    // ================================================================
     // 5. LOAD MORE (pagination)
     // ================================================================
+    let gdMore = true, gmMore = true, gmPage = 1;
     async function loadMoreGames() {
       if (isLoading || !hasMore) return;
       isLoading = true;
       renderLoading();
 
-      try {
-        const newGames = await fetchGameDistributionGames(currentPage);
-        if (newGames.length === 0) {
-          hasMore = false;
-        } else {
-          allGames = allGames.concat(newGames.filter(g => !isBlocked(g)));
-          currentPage++;
+      // Each source loads independently, so one failing never blocks the other
+      const jobs = [];
+      if (gdMore) jobs.push(fetchGameDistributionGames(currentPage).then(g => ({ src: 'gd', g })).catch(err => ({ src: 'gd', err })));
+      if (gmMore) jobs.push(fetchGameMonetizeGames(gmPage).then(g => ({ src: 'gm', g })).catch(err => ({ src: 'gm', err })));
+
+      const results = await Promise.all(jobs);
+      const have = new Set(allGames.map(g => g.id));
+      results.forEach(r => {
+        if (r.err || !r.g.length) {
+          if (r.err) console.error(r.src + ' feed failed:', r.err);
+          if (r.src === 'gd') gdMore = false; else gmMore = false;   // empty page / error = end of that feed
+          return;
         }
-      } catch (err) {
-        console.error(err);
-        hasMore = false; // stop on error
-      } finally {
-        isLoading = false;
-        firstLoaded = true;
-        renderAll();
-      }
+        const fresh = r.g.filter(g => !have.has(g.id) && !isBlocked(g));
+        fresh.forEach(g => have.add(g.id));
+        allGames = allGames.concat(fresh);
+        if (r.src === 'gd') currentPage++; else gmPage++;
+      });
+      hasMore = gdMore || gmMore;
+
+      isLoading = false;
+      firstLoaded = true;
+      renderAll();
     }
 
     // ================================================================
