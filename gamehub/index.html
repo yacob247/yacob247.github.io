@@ -927,6 +927,11 @@ body.modal-open { overflow: hidden; }
 .acct-info { flex: 1; min-width: 0; }
 .acct-info h4 { font-size: .92rem; font-weight: 700; color: #e5e7eb; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .acct-info small { font-size: .72rem; color: #94a3b8; }
+ .acct-end { position: relative; width: 28px; height: 28px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+.acct-rowdel { position: absolute; inset: 0; margin: auto; width: 30px; height: 30px; padding: 0; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; background: transparent; border: 1.5px solid #ff6b6b; color: #ff6b6b; opacity: 0; transform: scale(.7); pointer-events: none; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); transition: opacity .15s, transform .15s, background .2s, box-shadow .2s, color .2s, border-color .2s; }
+.acct-row:hover .acct-rowdel { opacity: 1; transform: scale(1); pointer-events: auto; }
+.acct-rowdel:hover { background: linear-gradient(135deg, rgba(255,107,107,.38), rgba(255,60,60,.14)); border-color: rgba(255,150,150,.9); color: #ffd6d6; box-shadow: 0 0 16px rgba(255,80,80,.45), inset 0 1px 0 rgba(255,255,255,.35), inset 0 -6px 10px rgba(255,60,60,.12); }
+.acct-row:hover .acct-check { opacity: 0; }
 .acct-check {
   width: 24px; height: 24px; border-radius: 50%;
   background: linear-gradient(135deg, #ff7a1a, #ea3333);
@@ -1019,7 +1024,34 @@ body.modal-open { overflow: hidden; }
 @keyframes svParticle { 0% { opacity: 1; transform: translate(-50%,-50%) scale(1) rotate(0); } 70% { opacity: 1; } 100% { opacity: 0; transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(.3) rotate(var(--rot)); } }
 .sv-screen-flash { position: fixed; inset: 0; pointer-events: none; z-index: 999; background: radial-gradient(circle at center, #ff7a1a44, transparent 70%); animation: svFlash .6s ease-out forwards; }
 @keyframes svFlash { 0% { opacity: 0; } 30% { opacity: 1; } 100% { opacity: 0; } }
+/* ===== ACCOUNT + DELETE BIN (appears on hover) ===== */
+.acct-wrap { position: relative; display: inline-flex; align-items: center; gap: 6px; }
 
+.acct-del {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; padding: 0;
+  border-radius: 50%;
+  border: 1px solid #ff4d4d55;
+  background: #2a0f0f;
+  color: #ff6b6b;
+  cursor: pointer;
+  opacity: 0; visibility: hidden; transform: scale(.7);
+  pointer-events: none;
+  transition: opacity .18s, transform .18s, visibility .18s, background .18s, box-shadow .18s;
+}
+.acct-wrap.signed-in:hover .acct-del,
+.acct-del:focus-visible {
+  opacity: 1; visibility: visible; transform: scale(1); pointer-events: auto;
+}
+.acct-del:hover {
+  background: linear-gradient(135deg, #ff2d2d, #b91c1c);
+  color: #fff; border-color: transparent;
+  box-shadow: 0 0 16px #ff2d2daa;
+}
+/* touch devices have no hover → always show the bin when signed in */
+@media (hover: none) {
+  .acct-wrap.signed-in .acct-del { opacity: 1; visibility: visible; transform: none; pointer-events: auto; }
+}
   </style>
 </head>
 <body>
@@ -1077,8 +1109,21 @@ body.modal-open { overflow: hidden; }
           </svg>Install App
         </a>
       </div>
-      <div class="nav-r"><button id="navSearch"><span style="display:inline-flex; align-items:center; margin-right:6px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg></span> Search games</button><a class="signin" id="signinBtn" href="#" title="">Pick account</a></div>
-    </div>
+<div class="nav-r">
+  <button id="navSearch"><span style="display:inline-flex; align-items:center; margin-right:6px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg></span> Search games</button>
+
+  <div class="acct-wrap" id="acctWrap">
+    <a class="signin" id="signinBtn" href="#" title="">Sign in ⇥</a>
+    <button class="acct-del" id="delAcctBtn" type="button" title="Delete account" aria-label="Delete account">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="3 6 5 6 21 6"></polyline>
+        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
+        <path d="M10 11v6"></path><path d="M14 11v6"></path>
+        <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path>
+      </svg>
+    </button>
+  </div>
+</div>    </div>
   </header>
 
   <div id="home">
@@ -1194,6 +1239,12 @@ body.modal-open { overflow: hidden; }
     // ================================================================
     // 1b. YOUR OWN PROMOS (edit these!)  +  CONTENT FILTER
     // ================================================================
+  const asArray = v =>
+  Array.isArray(v) ? v
+  : v == null ? []
+  : typeof v === 'object' ? Object.keys(v)
+  : [v];
+  
     function promoArt(t, s, c1, c2, w, h) {
       const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${c1}"/><stop offset="1" stop-color="${c2}"/></linearGradient></defs><rect width="100%" height="100%" fill="url(#g)"/><text x="50%" y="48%" text-anchor="middle" font-family="Segoe UI,sans-serif" font-weight="800" font-size="${h/6}" fill="#fff">${t}</text><text x="50%" y="66%" text-anchor="middle" font-family="Segoe UI,sans-serif" font-size="${h/12}" fill="#ffffffcc">${s}</text></svg>`;
       return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
@@ -1363,10 +1414,10 @@ if (rw) {
         try { ids = await window.__idb.getSaves(slot); } catch (e) { ids = []; }
       }
       likes = {};
-      ids.forEach(id => likes[id] = 1);
+      asArray(ids).forEach(id => likes[id] = 1);
       let lids = [];
       if (slot) { try { lids = await window.__idb.getSaves('later:' + slot); } catch (e) { lids = []; } }
-      later = {}; lids.forEach(id => later[id] = 1);
+      later = {}; asArray(lids).forEach(id => later[id] = 1);
       if (activeCategory === '__liked' || activeCategory === '__later') renderGrid(true);
       if (currentGame && currentGame.id) {
         updateSaveBtn(); updateLaterBtn();
@@ -1781,6 +1832,64 @@ if (rw) {
   await loadRewrites();
   loadAllGames();
 })();
+
+// ---------- local wipe (IndexedDB + storage) ----------
+async function wipeLocalData() {
+  // If you keep a global DB handle, close it first so deleteDatabase isn't blocked:
+  // try { window.__db?.close?.(); } catch {}
+
+  try { localStorage.clear(); }   catch {}
+  try { sessionStorage.clear(); } catch {}
+
+  const del = name => new Promise(resolve => {
+    const req = indexedDB.deleteDatabase(name);
+    req.onsuccess = req.onerror = req.onblocked = () => resolve(); // resolve on all → never hangs
+  });
+
+  try {
+    if (indexedDB.databases) {                       // Chrome / Edge / Safari / modern FF
+      const dbs = await indexedDB.databases();
+      await Promise.all(dbs.map(d => d.name ? del(d.name) : null));
+    } else {                                          // old Firefox fallback
+      await Promise.all(['saves','gamehub','gamenetic'].map(del)); // ← put your real DB names here
+    }
+  } catch (e) { console.warn('IndexedDB wipe:', e); }
+}
+
+// ---------- delete account ----------
+const acctWrap = document.getElementById('acctWrap');
+const delBtn   = document.getElementById('delAcctBtn');
+
+onAuthStateChanged(auth, user => acctWrap.classList.toggle('signed-in', !!user));
+
+delBtn.addEventListener('click', async e => {
+  e.preventDefault();
+  const user = auth.currentUser;
+  if (!user) return;
+
+  if (!confirm(`Delete ${user.email || 'your account'}?\n\nThis removes your account and ALL local save data. It cannot be undone.`)) return;
+
+  try {
+    await deleteUser(user);                 // delete the Firebase account
+  } catch (err) {
+    if (err.code !== 'auth/requires-recent-login') {
+      alert('Delete failed: ' + err.code);
+      return;
+    }
+    // Firebase wants a fresh sign-in — do it, then retry
+    try {
+      await signInWithPopup(auth, provider);
+      await deleteUser(auth.currentUser);
+    } catch (e2) {
+      if (e2.code !== 'auth/popup-closed-by-user' && e2.code !== 'auth/cancelled-popup-request')
+        alert('Delete failed: ' + e2.code);
+      return;
+    }
+  }
+
+  await wipeLocalData();                    // only wipe AFTER the account is really gone
+  alert('Your account and all local saves have been deleted.');
+});
   </script>
 <script type="module">
   // ============================================================
@@ -1803,19 +1912,20 @@ if (rw) {
   function tx(store, mode, fn) {
     return openDB().then(db => new Promise((res, rej) => {
       const t = db.transaction(store, mode), s = t.objectStore(store), out = fn(s);
-      t.oncomplete = () => res(out && out.result !== undefined ? out.result : out);
+      t.oncomplete = () => res(out && 'result' in out ? out.result : out);
       t.onerror    = () => rej(t.error);
     }));
   }
   const listSlots      = () => tx('accounts','readonly',  s => s.getAll()).then(r => r || []);
-  const nextSlot       = async () => String((await listSlots()).length + 1).padStart(2,'0');
+  const nextSlot       = async () => String((await listSlots()).reduce((m, a) => Math.max(m, parseInt(a.slot, 10) || 0), 0) + 1).padStart(2,'0');
+  const deleteSlot     = async slot => { await tx('accounts','readwrite', s => s.delete(slot)); await tx('saves','readwrite', s => s.delete(slot)); await tx('saves','readwrite', s => s.delete('later:' + slot)); };
   const createSlot     = async name => { const slot = await nextSlot(); await tx('accounts','readwrite', s => s.put({ slot, name, createdAt: Date.now() })); return slot; };
   const getCurrentSlot = () => tx('meta','readonly',  s => s.get('current'));
   const setCurrentSlot = slot => tx('meta','readwrite', s => s.put(slot, 'current'));
   const getSaves       = slot => tx('saves','readonly',  s => s.get(slot)).then(v => v || []);
   const setSaves       = (slot, ids) => tx('saves','readwrite', s => s.put(ids, slot));
 
-  window.__idb = { listSlots, createSlot, getCurrentSlot, setCurrentSlot, getSaves, setSaves };
+  window.__idb = { deleteSlot, listSlots, createSlot, getCurrentSlot, setCurrentSlot, getSaves, setSaves };
   window.__saveLikesToIDB = async () => {
     const slot = await getCurrentSlot(); if (!slot) return;
     const likes = window.__getLikes ? window.__getLikes() : {};
@@ -1892,11 +2002,27 @@ if (rw) {
 
       row.appendChild(avatar); row.appendChild(info);
 
+      const end = document.createElement('div');
+      end.className = 'acct-end';
       if (isCur) {
         const chk = document.createElement('div');
         chk.className = 'acct-check'; chk.textContent = '✓';
-        row.appendChild(chk);
+        end.appendChild(chk);
       }
+      const del = document.createElement('button');
+      del.type = 'button'; del.className = 'acct-rowdel'; del.title = 'Delete account'; del.setAttribute('aria-label', 'Delete account');
+      del.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>';
+      del.addEventListener('click', async ev => {
+        ev.stopPropagation();
+        if (!confirm('Delete "' + (a.name || 'Account ' + a.slot) + '" and its saved games?')) return;
+        await deleteSlot(a.slot);
+        if (isCur) { await setCurrentSlot(null); await window.__loadSavesForSlot?.(null); }
+        await renderModal();
+        await refreshButton();
+        window.__refreshGrid?.();
+      });
+      end.appendChild(del);
+      row.appendChild(end);
 
       row.addEventListener('click', async () => {
         if (isCur) return;
