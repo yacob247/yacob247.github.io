@@ -927,6 +927,10 @@ body.modal-open { overflow: hidden; }
 .acct-info { flex: 1; min-width: 0; }
 .acct-info h4 { font-size: .92rem; font-weight: 700; color: #e5e7eb; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .acct-info small { font-size: .72rem; color: #94a3b8; }
+ .acct-avatar img, .hdr-av img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
+.hdr-av { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; margin-right: 4px; vertical-align: middle; background: linear-gradient(135deg, #ff7a1a, #ea3333); color: #fff; font-size: .72rem; font-weight: 800; overflow: hidden; }
+.acct-google { display: flex; align-items: center; gap: 12px; padding: 11px 14px; margin-top: 6px; border-radius: 12px; border: 1px solid #ffffff26; background: #ffffff08; color: #e5e7eb; font-weight: 600; font-size: .88rem; cursor: pointer; transition: all .2s; }
+.acct-google:hover { border-color: #00d4ff; background: #00d4ff14; box-shadow: 0 0 16px #00d4ff44; }
  .acct-end { position: relative; width: 28px; height: 28px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
 .acct-rowdel { position: absolute; inset: 0; margin: auto; width: 30px; height: 30px; padding: 0; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; background: transparent; border: 1.5px solid #ff6b6b; color: #ff6b6b; opacity: 0; transform: scale(.7); pointer-events: none; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); transition: opacity .15s, transform .15s, background .2s, box-shadow .2s, color .2s, border-color .2s; }
 .acct-row:hover .acct-rowdel { opacity: 1; transform: scale(1); pointer-events: auto; }
@@ -1833,63 +1837,6 @@ if (rw) {
   loadAllGames();
 })();
 
-// ---------- local wipe (IndexedDB + storage) ----------
-async function wipeLocalData() {
-  // If you keep a global DB handle, close it first so deleteDatabase isn't blocked:
-  // try { window.__db?.close?.(); } catch {}
-
-  try { localStorage.clear(); }   catch {}
-  try { sessionStorage.clear(); } catch {}
-
-  const del = name => new Promise(resolve => {
-    const req = indexedDB.deleteDatabase(name);
-    req.onsuccess = req.onerror = req.onblocked = () => resolve(); // resolve on all → never hangs
-  });
-
-  try {
-    if (indexedDB.databases) {                       // Chrome / Edge / Safari / modern FF
-      const dbs = await indexedDB.databases();
-      await Promise.all(dbs.map(d => d.name ? del(d.name) : null));
-    } else {                                          // old Firefox fallback
-      await Promise.all(['saves','gamehub','gamenetic'].map(del)); // ← put your real DB names here
-    }
-  } catch (e) { console.warn('IndexedDB wipe:', e); }
-}
-
-// ---------- delete account ----------
-const acctWrap = document.getElementById('acctWrap');
-const delBtn   = document.getElementById('delAcctBtn');
-
-onAuthStateChanged(auth, user => acctWrap.classList.toggle('signed-in', !!user));
-
-delBtn.addEventListener('click', async e => {
-  e.preventDefault();
-  const user = auth.currentUser;
-  if (!user) return;
-
-  if (!confirm(`Delete ${user.email || 'your account'}?\n\nThis removes your account and ALL local save data. It cannot be undone.`)) return;
-
-  try {
-    await deleteUser(user);                 // delete the Firebase account
-  } catch (err) {
-    if (err.code !== 'auth/requires-recent-login') {
-      alert('Delete failed: ' + err.code);
-      return;
-    }
-    // Firebase wants a fresh sign-in — do it, then retry
-    try {
-      await signInWithPopup(auth, provider);
-      await deleteUser(auth.currentUser);
-    } catch (e2) {
-      if (e2.code !== 'auth/popup-closed-by-user' && e2.code !== 'auth/cancelled-popup-request')
-        alert('Delete failed: ' + e2.code);
-      return;
-    }
-  }
-
-  await wipeLocalData();                    // only wipe AFTER the account is really gone
-  alert('Your account and all local saves have been deleted.');
-});
   </script>
 <script type="module">
   // ============================================================
@@ -1919,7 +1866,8 @@ delBtn.addEventListener('click', async e => {
   const listSlots      = () => tx('accounts','readonly',  s => s.getAll()).then(r => r || []);
   const nextSlot       = async () => String((await listSlots()).reduce((m, a) => Math.max(m, parseInt(a.slot, 10) || 0), 0) + 1).padStart(2,'0');
   const deleteSlot     = async slot => { await tx('accounts','readwrite', s => s.delete(slot)); await tx('saves','readwrite', s => s.delete(slot)); await tx('saves','readwrite', s => s.delete('later:' + slot)); };
-  const createSlot     = async name => { const slot = await nextSlot(); await tx('accounts','readwrite', s => s.put({ slot, name, createdAt: Date.now() })); return slot; };
+  const createSlot     = async (name, extra = {}) => { const slot = await nextSlot(); await tx('accounts','readwrite', s => s.put({ slot, name, ...extra, createdAt: Date.now() })); return slot; };
+  const updateSlot     = async (slot, patch) => { const all = await listSlots(); const a = all.find(x => x.slot === slot); if (a) await tx('accounts','readwrite', s => s.put({ ...a, ...patch })); };
   const getCurrentSlot = () => tx('meta','readonly',  s => s.get('current'));
   const setCurrentSlot = slot => tx('meta','readwrite', s => s.put(slot, 'current'));
   const getSaves       = slot => tx('saves','readonly',  s => s.get(slot)).then(v => v || []);
@@ -1931,6 +1879,39 @@ delBtn.addEventListener('click', async e => {
     const likes = window.__getLikes ? window.__getLikes() : {};
     await setSaves(slot, Object.keys(likes).filter(k => likes[k] === 1));
   };
+
+  function paintPhoto(el, url, letter) {
+    const img = document.createElement('img');
+    img.src = url; img.alt = ''; img.referrerPolicy = 'no-referrer';
+    img.onerror = () => { img.remove(); el.textContent = letter; };
+    el.textContent = ''; el.appendChild(img);
+  }
+
+  // ---- Google sign-in (profile photo only; nothing is kept on Firebase) ----
+
+
+  // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+ const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyDLeM4MrsA1Q8zq7_QcQfTJKk049vOVOO4",
+  authDomain: "envizionwork.firebaseapp.com",
+  databaseURL: "https://envizionwork-default-rtdb.firebaseio.com",
+  projectId: "envizionwork",
+  storageBucket: "envizionwork.firebasestorage.app",
+  messagingSenderId: "706251024837",
+  appId: "1:706251024837:web:4c931733d3a9f430a703ac",
+  measurementId: "G-9CL929H67Z"
+};
+  async function googleProfile() {
+    if (!FIREBASE_CONFIG.apiKey) throw 'config';
+    const V = 'https://www.gstatic.com/firebasejs/10.12.2/';
+    const [{ initializeApp, getApps }, au] = await Promise.all([import(V + 'firebase-app.js'), import(V + 'firebase-auth.js')]);
+    const app = getApps().length ? getApps()[0] : initializeApp(FIREBASE_CONFIG);
+    const auth = au.getAuth(app);
+    const u = (await au.signInWithPopup(auth, new au.GoogleAuthProvider())).user;
+    const prof = { name: u.displayName, email: u.email, photo: u.photoURL };
+    try { await au.signOut(auth); } catch (e) {}   // saves stay in IndexedDB only
+    return prof;
+  }
 
   // ============================================================
   // Account modal
@@ -1993,6 +1974,7 @@ delBtn.addEventListener('click', async e => {
       const hue = (parseInt(a.slot, 10) * 67 + 20) % 360;
       avatar.style.background = `linear-gradient(135deg, hsl(${hue} 72% 52%), hsl(${(hue+45)%360} 72% 42%))`;
       avatar.textContent = letter;
+      if (a.photo) paintPhoto(avatar, a.photo, letter);
 
       const info = document.createElement('div');
       info.className = 'acct-info';
@@ -2042,6 +2024,28 @@ delBtn.addEventListener('click', async e => {
     addRow.appendChild(plus); addRow.appendChild(addTxt);
     addRow.addEventListener('click', () => showAddForm(list));
     list.appendChild(addRow);
+
+    const gRow = document.createElement('div');
+    gRow.className = 'acct-google';
+    gRow.innerHTML = '<svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.5 5.4 2.6 13.2l7.9 6.1C12.4 13.6 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.4c-.5 2.9-2.2 5.3-4.6 6.9l7.4 5.7c4.3-4 6.9-9.9 6.9-16.6z"/><path fill="#FBBC05" d="M10.5 28.7A14.5 14.5 0 0 1 9.5 24c0-1.6.3-3.2.9-4.7l-7.9-6.1A24 24 0 0 0 0 24c0 3.9.9 7.5 2.6 10.8l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.4-5.7c-2.1 1.4-4.8 2.3-8.5 2.3-6.3 0-11.6-4.1-13.5-9.8l-7.9 6.1C6.5 42.6 14.6 48 24 48z"/></svg><span>Continue with Google (use my photo)</span>';
+    gRow.addEventListener('click', async () => {
+      try {
+        const prof = await googleProfile();
+        const all2 = await listSlots();
+        const ex = all2.find(x => x.email && x.email === prof.email);
+        let slot;
+        if (ex) { slot = ex.slot; await updateSlot(slot, { name: ex.name || prof.name, photo: prof.photo }); }
+        else slot = await createSlot(prof.name || prof.email || 'Player', { email: prof.email, photo: prof.photo });
+        await setCurrentSlot(slot);
+        await window.__loadSavesForSlot?.(slot);
+        await renderModal();
+        await refreshButton();
+      } catch (err) {
+        if (err === 'config') alert('Google sign-in is not set up yet. Add your Firebase config at FIREBASE_CONFIG in the code.');
+        else if (!/popup-closed|cancelled-popup/.test(String(err && err.code))) alert('Google sign-in failed: ' + ((err && err.code) || err));
+      }
+    });
+    list.appendChild(gRow);
 
     // Games section
     const likes = window.__getLikes ? window.__getLikes() : {};
@@ -2127,6 +2131,8 @@ delBtn.addEventListener('click', async e => {
 
   async function refreshButton() {
     const slot = await getCurrentSlot();
+    const wrap = document.getElementById('acctWrap');
+    if (wrap) wrap.classList.toggle('signed-in', !!slot);
     if (!slot) {
       btn.textContent = 'Sign in ⇥';
       btn.title = 'Click to pick or create an account';
@@ -2134,7 +2140,11 @@ delBtn.addEventListener('click', async e => {
     }
     const all = await listSlots();
     const acc = all.find(a => a.slot === slot);
-    btn.textContent = '👤 ' + (acc?.name || ('Account ' + slot));
+    const nm = acc?.name || ('Account ' + slot);
+    btn.textContent = '';
+    const av = document.createElement('span'); av.className = 'hdr-av'; av.textContent = (nm.trim().charAt(0) || 'P').toUpperCase();
+    if (acc?.photo) paintPhoto(av, acc.photo, av.textContent);
+    btn.appendChild(av); btn.appendChild(document.createTextNode(' ' + nm));
     btn.title = `Slot ${slot} — click to switch`;
   }
 
@@ -2147,6 +2157,16 @@ delBtn.addEventListener('click', async e => {
   // Re-render if catalog finishes loading while modal is open
   window.addEventListener('gamenetic:gamesloaded', () => {
     if (modalEl && modalEl.classList.contains('show')) renderModal();
+  });
+
+  const hdrDel = document.getElementById('delAcctBtn');
+  if (hdrDel) hdrDel.addEventListener('click', async e => {
+    e.preventDefault();
+    const slot = await getCurrentSlot(); if (!slot) return;
+    const acc = (await listSlots()).find(a => a.slot === slot);
+    if (!confirm('Delete "' + (acc?.name || 'Account ' + slot) + '" and its saved games?')) return;
+    await deleteSlot(slot); await setCurrentSlot(null); await window.__loadSavesForSlot?.(null);
+    await refreshButton(); window.__refreshGrid?.();
   });
 
   await refreshButton();
