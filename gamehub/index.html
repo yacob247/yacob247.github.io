@@ -931,6 +931,21 @@ body.modal-open { overflow: hidden; }
 .hdr-av { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; margin-right: 4px; vertical-align: middle; background: linear-gradient(135deg, #ff7a1a, #ea3333); color: #fff; font-size: .72rem; font-weight: 800; overflow: hidden; }
 .acct-google { display: flex; align-items: center; gap: 12px; padding: 11px 14px; margin-top: 6px; border-radius: 12px; border: 1px solid #ffffff26; background: #ffffff08; color: #e5e7eb; font-weight: 600; font-size: .88rem; cursor: pointer; transition: all .2s; }
 .acct-google:hover { border-color: #00d4ff; background: #00d4ff14; box-shadow: 0 0 16px #00d4ff44; }
+ .acct-avatar.editable { cursor: pointer; transition: box-shadow .15s, transform .15s; }
+.acct-avatar.editable:hover { transform: scale(1.08); box-shadow: 0 0 0 2px #00d4ff, 0 0 14px #00d4ff88; }
+.acct-avatar.big { width: 72px; height: 72px; font-size: 1.8rem; margin: 6px auto 4px; }
+.acct-edit { display: flex; flex-direction: column; gap: 10px; padding: 8px 14px 10px; }
+.acct-edit input[type=text] { padding: 10px 12px; border-radius: 8px; border: 1px solid #ffffff26; background: #0a0f1c; color: #fff; outline: none; font-size: .92rem; text-align: center; font-family: inherit; }
+.acct-edit input[type=text]:focus { border-color: #ff7a1a; box-shadow: 0 0 0 3px #ff7a1a33; }
+.acct-edit-row { display: flex; gap: 8px; }
+.acct-edit button { flex: 1; padding: 9px 12px; border-radius: 8px; border: 1px solid #ffffff26; background: #ffffff0a; color: #e5e7eb; font-weight: 700; font-size: .85rem; cursor: pointer; font-family: inherit; transition: all .15s; }
+.acct-edit button:hover { border-color: #00d4ff; background: #00d4ff14; }
+.acct-edit button.primary { background: linear-gradient(135deg, #ff7a1a, #ea3333); border-color: transparent; color: #fff; }
+.acct-gopts { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; border: 1px dashed #ffffff26; font-size: .82rem; color: #cbd5e1; }
+.acct-gopts .gt-title { flex-basis: 100%; font-size: .72rem; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: #ffb066; }
+.acct-gopts label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.acct-gopts button.g { flex: 1 1 100%; }
+.acct-add-form .cam { padding: 9px 12px; background: #ffffff0a; border: 1px solid #ffffff26; }
  .acct-end { position: relative; width: 28px; height: 28px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
 .acct-rowdel { position: absolute; inset: 0; margin: auto; width: 30px; height: 30px; padding: 0; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; background: transparent; border: 1.5px solid #ff6b6b; color: #ff6b6b; opacity: 0; transform: scale(.7); pointer-events: none; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); transition: opacity .15s, transform .15s, background .2s, box-shadow .2s, color .2s, border-color .2s; }
 .acct-row:hover .acct-rowdel { opacity: 1; transform: scale(1); pointer-events: auto; }
@@ -1888,10 +1903,7 @@ if (rw) {
   }
 
   // ---- Google sign-in (profile photo only; nothing is kept on Firebase) ----
-
-
-  // For Firebase JS SDK v7.20.0 and later, measurementId is optional
- const FIREBASE_CONFIG = {
+   const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDLeM4MrsA1Q8zq7_QcQfTJKk049vOVOO4",
   authDomain: "envizionwork.firebaseapp.com",
   databaseURL: "https://envizionwork-default-rtdb.firebaseio.com",
@@ -1911,6 +1923,74 @@ if (rw) {
     const prof = { name: u.displayName, email: u.email, photo: u.photoURL };
     try { await au.signOut(auth); } catch (e) {}   // saves stay in IndexedDB only
     return prof;
+  }
+
+  function fileToAvatar(file) {
+    return new Promise((res, rej) => {
+      const fr = new FileReader();
+      fr.onerror = () => rej('read');
+      fr.onload = () => {
+        const im = new Image();
+        im.onerror = () => rej('image');
+        im.onload = () => {
+          const n = 160, c = document.createElement('canvas'); c.width = c.height = n;
+          const m = Math.min(im.width, im.height), sx = (im.width - m) / 2, sy = (im.height - m) / 2;
+          c.getContext('2d').drawImage(im, sx, sy, m, m, 0, 0, n, n);
+          res(c.toDataURL('image/jpeg', 0.85));
+        };
+        im.src = fr.result;
+      };
+      fr.readAsDataURL(file);
+    });
+  }
+  function pickPhoto() {
+    return new Promise(res => {
+      const f = document.createElement('input'); f.type = 'file'; f.accept = 'image/*';
+      f.onchange = async () => { try { res(f.files[0] ? await fileToAvatar(f.files[0]) : null); } catch (e) { alert('Could not read that image.'); res(null); } };
+      f.click();
+    });
+  }
+  function showEditor(acc) {
+    const o = buildModal();
+    const list = o.querySelector('#acctList');
+    let name = acc.name || '', photo = acc.photo || '';
+    list.innerHTML = '';
+    const box = document.createElement('div'); box.className = 'acct-edit';
+    const av = document.createElement('div'); av.className = 'acct-avatar big';
+    const paint = () => {
+      const letter = ((name.trim().charAt(0)) || 'P').toUpperCase();
+      av.textContent = letter; av.style.background = 'linear-gradient(135deg, hsl(' + ((parseInt(acc.slot, 10) * 67 + 20) % 360) + ' 72% 52%), hsl(' + ((parseInt(acc.slot, 10) * 67 + 65) % 360) + ' 72% 42%))';
+      if (photo) paintPhoto(av, photo, letter);
+    };
+    const inp = document.createElement('input'); inp.type = 'text'; inp.maxLength = 24; inp.value = name; inp.placeholder = 'Account name';
+    inp.addEventListener('input', () => { name = inp.value; if (!photo) paint(); });
+    const mk = (label, cls) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.className = cls || ''; return b; };
+    const up = mk('📷 Upload photo'), rm = mk('Remove photo');
+    up.onclick = async () => { const d = await pickPhoto(); if (d) { photo = d; paint(); } };
+    rm.onclick = () => { photo = ''; paint(); };
+    const g = document.createElement('div'); g.className = 'acct-gopts';
+    g.innerHTML = '<div class="gt-title">Or use your Google account</div><label><input type="checkbox" id="gName" checked> Name</label><label><input type="checkbox" id="gPhoto" checked> Photo</label>';
+    const gb = mk('Continue with Google', 'g'); g.appendChild(gb);
+    gb.onclick = async () => {
+      try {
+        const prof = await googleProfile();
+        if (g.querySelector('#gName').checked && prof.name) { name = prof.name.slice(0, 24); inp.value = name; }
+        if (g.querySelector('#gPhoto').checked && prof.photo) { photo = prof.photo; }
+        acc.email = acc.email || prof.email; paint();
+      } catch (err) {
+        if (err === 'config') alert('Google sign-in is not set up yet. Add your Firebase config at FIREBASE_CONFIG in the code.');
+        else if (!/popup-closed|cancelled-popup/.test(String(err && err.code))) alert('Google sign-in failed: ' + ((err && err.code) || err));
+      }
+    };
+    const row1 = document.createElement('div'); row1.className = 'acct-edit-row'; row1.append(up, rm);
+    const row2 = document.createElement('div'); row2.className = 'acct-edit-row';
+    const save = mk('Save', 'primary'), cancel = mk('Cancel');
+    save.onclick = async () => { await updateSlot(acc.slot, { name: name.trim() || 'Player', photo, email: acc.email }); await renderModal(); await refreshButton(); };
+    cancel.onclick = () => renderModal();
+    row2.append(cancel, save);
+    paint();
+    box.append(av, inp, row1, g, row2);
+    list.appendChild(box);
   }
 
   // ============================================================
@@ -1975,6 +2055,8 @@ if (rw) {
       avatar.style.background = `linear-gradient(135deg, hsl(${hue} 72% 52%), hsl(${(hue+45)%360} 72% 42%))`;
       avatar.textContent = letter;
       if (a.photo) paintPhoto(avatar, a.photo, letter);
+      avatar.classList.add('editable'); avatar.title = 'Edit name & photo';
+      avatar.addEventListener('click', ev => { ev.stopPropagation(); showEditor(a); });
 
       const info = document.createElement('div');
       info.className = 'acct-info';
@@ -2104,13 +2186,18 @@ if (rw) {
     const input = document.createElement('input');
     input.type = 'text'; input.placeholder = 'Account name'; input.maxLength = 24;
 
+    let newPhoto = '';
+    const cam = document.createElement('button');
+    cam.type = 'button'; cam.className = 'cam'; cam.textContent = '📷'; cam.title = 'Upload a photo';
+    cam.onclick = async () => { const d = await pickPhoto(); if (d) { newPhoto = d; cam.textContent = '✓'; } };
+
     const submit = document.createElement('button');
     submit.type = 'button'; submit.textContent = 'Add';
 
     const doSubmit = async () => {
       const name = (input.value || '').trim() || 'Player';
       submit.disabled = true; submit.textContent = '…';
-      const slot = await createSlot(name);
+      const slot = await createSlot(name, newPhoto ? { photo: newPhoto } : {});
       await setCurrentSlot(slot);
       await window.__loadSavesForSlot?.(slot);
       form.remove();
@@ -2124,7 +2211,7 @@ if (rw) {
       if (e.key === 'Escape') form.remove();
     });
 
-    form.appendChild(input); form.appendChild(submit);
+    form.appendChild(input); form.appendChild(cam); form.appendChild(submit);
     list.appendChild(form);
     input.focus();
   }
