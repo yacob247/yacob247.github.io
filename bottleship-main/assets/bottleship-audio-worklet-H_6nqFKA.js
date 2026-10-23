@@ -234,13 +234,13 @@ var DS3DMODE_DISABLE = 2;
 var BottleShipAudioProcessor = class _BottleShipAudioProcessor extends AudioWorkletProcessor {
   static POSITION_REPORT_FRAMES = 1024;
   static POSITION_REPORT_SECONDS = 0.05;
-  // Legacy chunk-based sources (postMessage path â€” kept for encoded audio fallback)
+  // Legacy chunk-based sources (postMessage path — kept for encoded audio fallback)
   sources = /* @__PURE__ */ new Map();
   // SAB ring buffer sources (zero-copy path)
   ringBuffers = /* @__PURE__ */ new Map();
   // Listener SAB (global singleton; whichever audio API the guest uses owns it)
   listenerCtrl = null;
-  // Spatializer scratch â€” reused for every source of every block (no allocation
+  // Spatializer scratch — reused for every source of every block (no allocation
   // inside the render quantum).
   spatialParams = {
     lPosX: 0,
@@ -434,7 +434,7 @@ var BottleShipAudioProcessor = class _BottleShipAudioProcessor extends AudioWork
       }
     };
   }
-  // â”€â”€â”€ Legacy chunk helpers (unchanged) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Legacy chunk helpers (unchanged) ──────────────────────────────────────
   chunkFrames(chunk, channels) {
     return Math.floor(chunk.length / Math.max(1, channels));
   }
@@ -485,7 +485,7 @@ var BottleShipAudioProcessor = class _BottleShipAudioProcessor extends AudioWork
     source.lastReportedTime = now;
     this.port.postMessage({ type: "position", id, positionFrames: currentFrame });
   }
-  // â”€â”€â”€ Ring buffer inline sample reader â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Ring buffer inline sample reader ──────────────────────────────────────
   readSampleFloat(view, byteOffset, bitsPerSample) {
     if (bitsPerSample === 16) {
       return view.getInt16(byteOffset, true) / 32768;
@@ -498,7 +498,7 @@ var BottleShipAudioProcessor = class _BottleShipAudioProcessor extends AudioWork
     }
     return 0;
   }
-  // â”€â”€â”€ Main process() â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Main process() ────────────────────────────────────────────────────────
   process(_inputs, outputs) {
     const output = outputs[0];
     if (!output || output.length === 0) return true;
