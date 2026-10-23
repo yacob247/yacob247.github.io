@@ -14,7 +14,7 @@
   const dayNum = () => Math.floor((Date.now() - new Date().getTimezoneOffset() * 6e4) / DAY);
 
   /* ---------- state ---------- */
-  let S = { streak: 0, last: 0, xp: 0, plays: {}, cats: {}, week: {}, badges: {}, react: {}, seen: {} };
+  let S = { streak: 0, last: 0, xp: 0, plays: {}, cats: {}, week: {}, badges: {}, react: {} };
   try { S = { ...S, ...JSON.parse(localStorage.getItem(KEY) || '{}') }; } catch (e) {}
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} };
 
@@ -46,7 +46,17 @@
 
   function paintBadge() {
     let b = $('#gnpBadge');
-    if (!b) { const nav = $('#nav'); if (!nav) return; b = el('a', { id: 'gnpBadge', class: 'gnp-badge', href: '#', title: 'Your progress' }); nav.append(b); b.onclick = e => { e.preventDefault(); showProfile(); }; }
+    if (!b) {
+      const nav = $('#nav'); if (!nav) return;
+      const host = nav.querySelector('.nav-r') || nav.querySelector('.nav-in') || nav;
+      b = el('a', { id: 'gnpBadge', class: 'gnp-badge', href: '#', title: 'Your progress' });
+      host.prepend(b);
+      b.onclick = e => { e.preventDefault(); showProfile(); };
+      const r = el('a', { id: 'gnpRecent', class: 'gnp-badge', href: '#', title: 'Recently played', text: '🕒 Recent' });
+      r.onclick = e => { e.preventDefault(); showRecent(); };
+      host.prepend(r);
+    }
+    b.style.display = (S.xp > 0 || Object.keys(S.plays).length > 0) ? '' : 'none';
     b.textContent = '🔥 ' + S.streak + '  ·  Lv ' + level();
   }
 
@@ -66,6 +76,28 @@
     document.body.append(o);
   }
 
+  /* ---------- recently played tab ---------- */
+  function showRecent() {
+    const list = games();
+    const rows = Object.entries(S.plays).sort((a, b) => b[1] - a[1]).slice(0, 40)
+      .map(([id, ts]) => [list.find(g => g.id === id), ts]).filter(([g]) => g);
+    const o = el('div', { class: 'gnp-modal' });
+    const card = el('div', { class: 'gnp-card gnp-wide' }, el('h3', { text: '🕒 Recently played' }));
+    if (!rows.length) card.append(el('p', { text: 'Games you play will show up here.' }));
+    else {
+      const grid = el('div', { class: 'gnp-grid' });
+      rows.forEach(([g, ts]) => grid.append(railCard(g, since(ts))));
+      card.append(grid);
+      const clr = el('button', { class: 'gnp-btn', text: 'Clear history' });
+      clr.onclick = () => { S.plays = {}; save(); paintHome(); };
+      card.append(clr);
+    }
+    card.append(el('button', { class: 'gnp-btn', text: 'Close' }));
+    o.append(card);
+    o.onclick = e => { if (e.target === o || e.target.tagName === 'BUTTON') o.remove(); };
+    document.body.append(o);
+  }
+
   /* ---------- track plays ---------- */
   function onPlay(id) {
     const g = games().find(x => x.id === id); if (!g) return;
@@ -75,7 +107,7 @@
     const wk = Math.floor(dayNum() / 7);
     if (S.weekId !== wk) { S.weekId = wk; S.week = {}; }
     if (isNew) S.week[id] = 1;
-    save(); addXP(isNew ? 5 : 1);
+    save(); addXP(isNew ? 5 : 1); paintBadge();
     ACH.forEach(([aid, label, test]) => test() && award(aid, label));
     startBreakTimer(); decoratePlayer(g);
   }
@@ -169,6 +201,9 @@
 .gnp-toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,30px);opacity:0;transition:.35s;background:var(--accent,#7c3aed);color:#fff;padding:10px 18px;border-radius:12px;font:600 14px system-ui;z-index:99999;box-shadow:var(--shadow,0 10px 30px #0008)}
 .gnp-toast.show{opacity:1;transform:translate(-50%,0)}
 #gnpHome,#gnpPlayer{padding:0 16px;max-width:1400px;margin:16px auto;color:var(--text,#f1f5f9)}
+#home.filtering #gnpHome{display:none}
+.gnp-wide{width:min(720px,94vw)}
+.gnp-grid{display:grid;grid-template-columns:repeat(auto-fill,150px);gap:14px;max-height:60vh;overflow:auto;margin-top:12px}
 .gnp-h{font-size:20px;margin:18px 0 10px}
 .gnp-rail{display:flex;gap:12px;overflow-x:auto;padding-bottom:8px;scrollbar-width:thin}
 .gnp-card-g{flex:0 0 150px;text-decoration:none;color:inherit}
@@ -188,6 +223,7 @@
   /* ---------- wire up ---------- */
   const boot = () => { paintBadge(); paintHome(); };
   addEventListener('hashchange', () => {
+    document.querySelectorAll('.gnp-modal').forEach(m => m.remove());
     const m = location.hash.match(/^#\/play\/(.+)$/);
     if (m) onPlay(decodeURIComponent(m[1])); else { clearTimeout(breakT); paintHome(); }
   });
