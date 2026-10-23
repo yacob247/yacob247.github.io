@@ -648,7 +648,7 @@ function buildEditorialPolicy() {
     <h2>Advertising Separation</h2>
     <p>Ads, if enabled, are labeled and kept separate from the main article or tool content. Editorial opinions, grades, and creator notes are not written as paid placements. If sponsored content is ever published, it should be labeled clearly.</p>
     <h2>Corrections</h2>
-    <p>Games, software, platforms, and creator statistics change. Visitors can send corrections to <a href="mailto:envizionupdates@gmail.com">envizionupdates@gmail.com</a> with the page URL and the issue. Substantive corrections should be reviewed and reflected in the page rather than hidden in a comment thread.</p>
+    <p>Games, software, platforms, and creator statistics change. Visitors can send corrections to <a href="mailto:envizionupdates@gmail.com ">envizionupdates@gmail.com </a> with the page URL and the issue. Substantive corrections should be reviewed and reflected in the page rather than hidden in a comment thread.</p>
   </article></main>
   <footer class="footer"><div class="shell footer-links"><span>Envizion Hub <span data-year></span></span><span><a href="about.html">About</a><a href="contact.html">Contact</a><a href="privacy.html">Privacy</a><a href="terms.html">Terms</a></span></div></footer>
   <script src="site-home.js" defer></script>

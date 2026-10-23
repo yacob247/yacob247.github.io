@@ -13,7 +13,7 @@ const firebaseConfig = {
 };
 
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxKxmcEkwjl4GkNnvrEC1ee_hzkD06WyigpO1Ab1jIpgjUqVrDadscTh1bnrec1hSO3/exec';
-const RECIPIENT       = 'envizionupdates@gmail.com';
+const RECIPIENT       = 'envizionupdates@gmail.com ';
 
 const app      = initializeApp(firebaseConfig);
 const auth     = getAuth(app);

@@ -165,7 +165,7 @@
       b.onclick = () => { S.react[g.id] = S.react[g.id] === e ? '' : e; save(); decoratePlayer(g); };
       row.append(b);
     });
-    const REPORT_EMAIL = 'envizionupdates@gmail.com';
+    const REPORT_EMAIL = 'envizionupdates@gmail.com ';
     const body = 'Hi, this game is not working.\n\nGame: ' + g.name + '\nGame ID: ' + g.id +
       '\nLink: ' + location.href + '\nBrowser: ' + navigator.userAgent + '\n\nWhat went wrong:\n';
     const rep = el('a', {
