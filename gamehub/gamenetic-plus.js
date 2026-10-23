@@ -133,7 +133,15 @@
       b.onclick = () => { S.react[g.id] = S.react[g.id] === e ? '' : e; save(); decoratePlayer(g); };
       row.append(b);
     });
-    const rep = el('a', { class: 'gnp-btn', href: 'mailto:envizionupdates@gmail.com?subject=' + encodeURIComponent('Broken game: ' + g.name + ' (' + g.id + ')'), text: '⚠ Broken? Report it' });
+    const REPORT_EMAIL = 'envizionupdates@gmail.com';
+    const body = 'Hi, this game is not working.\n\nGame: ' + g.name + '\nGame ID: ' + g.id +
+      '\nLink: ' + location.href + '\nBrowser: ' + navigator.userAgent + '\n\nWhat went wrong:\n';
+    const rep = el('a', {
+      class: 'gnp-btn', target: '_blank', rel: 'noopener noreferrer', text: '⚠ Broken? Report it',
+      href: 'https://mail.google.com/mail/?view=cm&fs=1&to=' + encodeURIComponent(REPORT_EMAIL) +
+        '&su=' + encodeURIComponent('Broken game: ' + g.name + ' (' + g.id + ')') +
+        '&body=' + encodeURIComponent(body)
+    });
     row.append(rep); box.append(row);
     const sim = similar(g);
     if (sim.length) { const r = el('div', { class: 'gnp-rail' }); sim.forEach(x => r.append(railCard(x))); box.append(el('h2', { class: 'gnp-h', text: 'Games like this' }), r); }
