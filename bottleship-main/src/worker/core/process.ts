@@ -1,0 +1,1213 @@
+
+import { ThunkDispatcher } from './thunking/thunk-dispatcher';
+import { toPlainGuestMemory } from './memory/guest-memory';
+import { PELoader } from './pe-loader';
+import { SystemResourceProvider } from './resources/system-resource-provider';
+import { APIRegistry } from './api-registry';
+import { ThunkMemoryManager } from './thunking/thunk-memory-manager';
+import { AddressSpace, RegionKind, RegionPerms } from './memory/address-space';
+import { Mem } from './memory/mem-accessor';
+import { MAX_ALLOC_BYTES, MEM_LOWMEM_SIZE, MEM_HEAP_BASE } from './cpu/emulator-config';
+import { Logger, LogCategory } from './logger';
+import { GUEST_COMPUTER_NAME } from './guest-identity';
+import {
+    GUEST_NUMBER_OF_PROCESSORS,
+    GUEST_PROCESSOR_ARCHITECTURE,
+    GUEST_PROCESSOR_IDENTIFIER,
+    GUEST_PROCESSOR_LEVEL,
+    GUEST_PROCESSOR_REVISION_STRING,
+} from './guest-cpu-identity';
+import { ModuleRegistry } from './module-registry';
+import { memoryEventBuffer, MemoryEventType } from './memory/memory-event-buffer';
+import { ensureGuestPagesCommitted } from './memory/guest-page-commit';
+import { invalidateGuestCode } from './memory/guest-code';
+import type { PageTableManager } from './memory/page-table-manager';
+import { SEH_SCRATCH_TOTAL_SIZE } from './thunking/seh-layout';
+import { AllocTable } from './memory/alloc-table';
+
+export interface MemoryMetrics {
+    totalAllocated: number;  // Total bytes ever allocated
+    currentBytes: number;    // Currently allocated bytes
+    peakBytes: number;       // Maximum bytes allocated at once
+    allocationCount: number; // Number of active allocations
+}
+
+interface BucketState {
+    base: number;
+    limit: number;
+    next: number;     // guest bump frontier — grows UP from base
+    slabTop?: number; // slab-arena frontier — grows DOWN from limit (HEAP only)
+    everMax: number;  // high-water mark: highest bump frontier ever reached. Anything
+                      // at/above this is virgin territory (guest RAM starts zeroed);
+                      // anything below it that a bump re-hands-out was previously written.
+}
+
+const BUCKET_KINDS: RegionKind[] = ['HEAP', 'HEAP_HIGH', 'SURFACE', 'THUNK_CODE', 'THUNK_DATA'];
+
+/** Both halves of the guest heap. HEAP sub-allocations are covered by the layout bucket and
+ *  are never registered individually (see alloc), so every membership test has to name both. */
+function isHeapBucket(kind: RegionKind | undefined): boolean {
+    return kind === 'HEAP' || kind === 'HEAP_HIGH';
+}
+
+/** Win32 VA allocation granularity — the alignment every image base is stated in. */
+const DLL_IMAGE_GRANULARITY = 0x10000;
+
+/**
+ * Drop v86's compiled blocks for a freshly handed-out executable range.
+ *
+ * A bump allocator re-hands-out addresses whose pages may still carry blocks compiled from a
+ * previous tenant (a freed stub region, a DLL image unloaded and reloaded at the same base),
+ * and the JS write that fills the new allocation is invisible to v86 — see memory/guest-code.
+ * Doing it here means an x86 emitter cannot obtain executable guest memory without the
+ * invalidation happening, whether or not it remembers to ask. That structural guarantee is
+ * the whole reason the chokepoint sits in the allocator, so it cannot hold for some kinds
+ * only: VirtualAlloc hands the guest's own flProtect straight through as `perms` against
+ * kind HEAP, so a guest PAGE_EXECUTE_READWRITE arena IS heap-kind executable memory.
+ * The permission decides, never the bucket.
+ */
+function maybeInvalidateExecutableRange(kind: RegionKind, perms: RegionPerms, addr: number, size: number): void {
+    const executable = perms === 'rx' || perms === 'rwx'
+        || kind === 'THUNK_CODE' || kind === 'CALLBACK_STUB' || kind === 'SPIN_LOOP';
+    if (!executable) return;
+    invalidateGuestCode(addr, size);
+}
+
+export class MemoryManager {
+    constructor(private addressSpace: AddressSpace) {
+        this.bucketState = new Map();
+    }
+
+    // Memory tracking: each live allocation's size and the bucket it came from.
+    private allocs = new AllocTable<RegionKind>();
+    private totalAllocated = 0;
+    private currentBytes = 0;
+    private peakBytes = 0;
+
+    // Free list: bucketKind → sorted array of {addr, size} blocks
+    private freeBlocks: Map<RegionKind, Array<{ addr: number; size: number }>> = new Map();
+    // Released VirtualAlloc-class (≥LARGE_ALLOC_FRESH_THRESHOLD) ranges, kept apart from
+    // the small-block free list. Reused FIRST-FIT BY ADDRESS and zeroed, mirroring real
+    // VirtualAlloc: a same-size realloc sequence lands on the SAME addresses. Games lean
+    // on that determinism — e.g. an engine that re-creates its UI pools on re-entry and
+    // still holds stale pointers into the old (identically re-laid-out) pool.
+    private largeFreeBlocks: Map<RegionKind, Array<{ addr: number; size: number }>> = new Map();
+    private bucketState: Map<RegionKind, BucketState> = new Map();
+
+    // [DIAG] Large-allocation (≥64KB) lifecycle log. VirtualAlloc-class blocks are
+    // rare, so a long ring spans the whole session — unlike the 4K generic
+    // memoryEventBuffer that wraps in milliseconds under heap churn. Each entry
+    // carries a lightweight caller backtrace (__guestBtLite) so an address can be
+    // attributed to its allocator module. Decisive for the D2 Fog-descriptor /
+    // Storm-MPQ overlap: query by address to see the full alloc/free SEQUENCE and
+    // tell UAF-reuse (alloc→free→alloc) from double-hand-out (alloc→alloc, no free)
+    // from corruption (address only ever allocated by one subsystem).
+    private static readonly LARGE_ALLOC_THRESHOLD = 0x10000; // 64KB = VirtualAlloc granularity
+    // NT-heap VirtualAlloc forwarding threshold (~508KB): requests at/above this size
+    // are served from fresh bump space, never from the free list (see allocateInBucket).
+    private static readonly LARGE_ALLOC_FRESH_THRESHOLD = 0x80000;
+    private static readonly LARGE_ALLOC_LOG_SIZE = 4096;
+    /** Attribute each large block to its guest caller. Opt-in: see logLargeEvent. */
+    public static largeAllocBacktraces = false;
+    private largeAllocLog: Array<{ op: 'alloc' | 'free' | 'alias'; addr: number; size: number; time: number; bt: string }> = [];
+    private largeAllocLogIdx = 0;
+
+    private alignUp(value: number, align: number): number {
+        return (value + (align - 1)) & ~(align - 1);
+    }
+
+    // System-object pool — the "system DLL's own heap" for COM objects. Fixed-size
+    // blocks carved from slab arenas (top-down, outside the guest bump frontier) and
+    // recycled via exact-size free stacks. A freed block keeps its bytes until the
+    // next same-size allocation claims it — the same reuse pattern as a real
+    // size-class system heap, which benign use-after-release guests depend on.
+    private static readonly SYS_POOL_ARENA_SIZE = 0x100000; // 1MB, grown on demand
+    private sysPoolArena: { next: number; limit: number } | null = null;
+    private sysPoolFree: Map<number, number[]> = new Map();
+    /** Address-keyed COM pools must expire when this allocator rewinds in place. */
+    systemPoolGeneration = 0;
+
+    allocSystemBlock(size: number): number {
+        const aligned = this.alignUp(size, 16);
+        const free = this.sysPoolFree.get(aligned);
+        if (free && free.length > 0) return free.pop()!;
+        if (!this.sysPoolArena || this.sysPoolArena.next + aligned > this.sysPoolArena.limit) {
+            const arenaSize = Math.max(MemoryManager.SYS_POOL_ARENA_SIZE, this.alignUp(aligned, 0x10000));
+            const base = this.allocSlabArena(arenaSize);
+            this.sysPoolArena = { next: base, limit: base + arenaSize };
+        }
+        const addr = this.sysPoolArena.next;
+        this.sysPoolArena.next += aligned;
+        return addr;
+    }
+
+    /** Return a block from allocSystemBlock to its size-class free stack.
+     *  Intentionally does NOT clear the bytes (see pool comment above). */
+    freeSystemBlock(addr: number, size: number): void {
+        const aligned = this.alignUp(size, 16);
+        let free = this.sysPoolFree.get(aligned);
+        if (!free) { free = []; this.sysPoolFree.set(aligned, free); }
+        free.push(addr >>> 0);
+    }
+
+    /** Record a ≥64KB block lifecycle event with a lightweight caller backtrace. */
+    private logLargeEvent(op: 'alloc' | 'free' | 'alias', addr: number, size: number): void {
+        if (size < MemoryManager.LARGE_ALLOC_THRESHOLD) return;
+        // The ring is cheap and always on; the per-entry backtrace is not — it scans the
+        // guest stack and labels every plausible frame. A title that VirtualAllocs one
+        // 64 KB block per frame (UE1 does) pays that twice a frame for a diagnostic
+        // nobody is reading, so the attribution is opt-in. `largeAllocHistory` reports
+        // when it is off, so an empty `bt` cannot be misread as "no caller found".
+        let bt = '';
+        if (MemoryManager.largeAllocBacktraces) {
+            try { bt = (globalThis as any).__guestBtLite?.() ?? ''; } catch { /* best-effort */ }
+        }
+        const entry = { op, addr: addr >>> 0, size, time: performance.now(), bt };
+        if (this.largeAllocLog.length < MemoryManager.LARGE_ALLOC_LOG_SIZE) {
+            this.largeAllocLog.push(entry);
+        } else {
+            this.largeAllocLog[this.largeAllocLogIdx] = entry;
+            this.largeAllocLogIdx = (this.largeAllocLogIdx + 1) % MemoryManager.LARGE_ALLOC_LOG_SIZE;
+        }
+    }
+
+    /**
+     * Full lifecycle history of large (≥64KB) blocks whose range intersects
+     * [addr-radius, addr+radius], time-sorted. `overlaps` flags entries whose
+     * block actually contains `addr`. Used by the #DE diagnostic to disambiguate
+     * the Fog-descriptor / Storm-MPQ overlap: the alloc/free sequence + per-entry
+     * caller backtrace shows whether the address was freed before reuse (UAF) or
+     * handed out while live (double-hand-out / corruption).
+     */
+    getLargeAllocHistory(addr: number, radius: number = 0x20000): Array<{ op: string; addr: string; size: string; t: string; overlaps: boolean; bt: string }> {
+        const target = addr >>> 0;
+        const lo = Math.max(0, target - radius);
+        const hi = target + radius;
+        return this.largeAllocLog
+            .filter(e => e && e.addr < hi && (e.addr + e.size) > lo)
+            .sort((a, b) => a.time - b.time)
+            .map(e => ({
+                op: e.op,
+                addr: '0x' + e.addr.toString(16),
+                size: '0x' + e.size.toString(16),
+                t: (e.time / 1000).toFixed(3) + 's',
+                overlaps: e.addr <= target && (e.addr + e.size) > target,
+                bt: e.bt,
+            }));
+    }
+
+    private resolveBucketKind(kind?: RegionKind): RegionKind {
+        const requested = kind ?? 'HEAP';
+        if (requested === 'SURFACE') return 'SURFACE';
+        if (requested === 'THUNK_CODE' || requested === 'CALLBACK_STUB' || requested === 'SPIN_LOOP') return 'THUNK_CODE';
+        if (requested === 'THUNK_DATA') return 'THUNK_DATA';
+        return 'HEAP';
+    }
+
+    refreshLayoutBuckets(): void {
+        this.bucketState.clear();
+        for (const kind of BUCKET_KINDS) {
+            const region = this.addressSpace.getLayoutBucket(kind);
+            if (!region || region.size <= 0) continue;
+            const base = this.alignUp(region.base, 8);
+            const limit = region.base + region.size;
+            this.bucketState.set(kind, { base, limit, next: base, slabTop: limit, everMax: base });
+        }
+    }
+
+    /**
+     * May a PE image be mapped at its PREFERRED ImageBase? Windows maps a DLL there
+     * whenever the VA is free and relocates only on conflict, and an image whose .reloc
+     * table does not cover every absolute operand is correct ONLY there — so this is a
+     * correctness question, not a placement preference.
+     *
+     * The layout's fixed buckets belong to us, which leaves two windows able to host a
+     * foreign image: the EXE window below HEAP, and HEAP's UNTOUCHED middle — above the
+     * bump high-water mark and below the slab frontier. There the region both frontiers
+     * already skip (allocateInBucket / allocFromHigh) keeps the hole for good; anywhere
+     * below everMax the guest may already hold live pointers into the range.
+     */
+    canPlaceImageAt(base: number, size: number): boolean {
+        const start = base >>> 0;
+        const span = this.alignUp(size, DLL_IMAGE_GRANULARITY);
+        const end = start + span;
+        if (size <= 0 || start === 0 || (start % DLL_IMAGE_GRANULARITY) !== 0) return false;
+        if (end <= start || end > this.addressSpace.getMemorySize()) return false;
+        if (this.addressSpace.findBlockingRegion(start, span)) return false;
+
+        // EXE window — everything between low memory and the heap.
+        if (start >= MEM_LOWMEM_SIZE && end <= MEM_HEAP_BASE) return true;
+
+        const heap = this.bucketState.get('HEAP');
+        if (!heap) return false;
+        if (start < heap.base || end > heap.limit) return false;
+        const floor = this.alignUp(heap.everMax + DLL_IMAGE_GRANULARITY, DLL_IMAGE_GRANULARITY);
+        const ceiling = heap.slabTop ?? heap.limit;
+        return start >= floor && end <= ceiling;
+    }
+
+    alloc(size: number, kind?: RegionKind, perms?: RegionPerms, alignment?: number): number {
+        // Sanity guard against corrupted/garbage sizes only. The real ceiling is the
+        // bucket's free space (a too-large request fails there → caller gets NULL). A 256MB
+        // cap here under-served guests with >256MB RAM: a legit 300MB GlobalAlloc threw,
+        // LocalAlloc caught it → returned NULL → unchecked guest deref crash (GTA3 New Game).
+        if (size <= 0 || size > MAX_ALLOC_BYTES) {
+            throw new Error(`Invalid allocation size: ${size}`);
+        }
+        const minAlign = alignment ?? 8;
+        const aligned = this.alignUp(size, minAlign);
+        const finalKind = kind ?? 'HEAP';
+        const finalPerms = perms ?? 'rw';
+        const bucketKind = this.resolveBucketKind(finalKind);
+
+        const bucket = this.bucketState.get(bucketKind);
+        if (!bucket) {
+            throw new Error(`MemoryManager: bucket ${bucketKind} is not available`);
+        }
+
+        // A full HEAP spills into HEAP_HIGH when the bundle asked for RAM past the fixed
+        // layout. Only after the low bucket genuinely refuses: keeping allocations low and
+        // contiguous is what makes the bump frontier and the slab arena meet predictably,
+        // and a title that fits in 512MB must behave exactly as it did.
+        let usedBucketKind = bucketKind;
+        let addr = this.allocateInBucket(bucket, aligned, minAlign, bucketKind);
+        if (addr === 0 && bucketKind === 'HEAP') {
+            const high = this.bucketState.get('HEAP_HIGH');
+            if (high) {
+                addr = this.allocateInBucket(high, aligned, minAlign, 'HEAP_HIGH');
+                if (addr !== 0) usedBucketKind = 'HEAP_HIGH';
+            }
+        }
+        if (addr === 0) {
+            // Genuinely out of guest heap — the one case that IS exceptional, so the
+            // message (and its stack) is built once here rather than per allocation.
+            // Both halves are named: after a spill the low bucket's numbers alone say nothing
+            // about how full the one that actually refused was.
+            const describe = (kind: RegionKind, b: BucketState | undefined): string =>
+                b ? `${kind} 0x${b.base.toString(16)}..0x${b.limit.toString(16)} ` +
+                    `next=0x${b.next.toString(16)} slabTop=0x${(b.slabTop ?? b.limit).toString(16)}`
+                  : `${kind} (absent)`;
+            const high = bucketKind === 'HEAP' ? this.bucketState.get('HEAP_HIGH') : undefined;
+            throw new Error(
+                `MemoryManager: ${bucketKind} exhausted (requested 0x${aligned.toString(16)}; ` +
+                `${describe(bucketKind, bucket)}` +
+                `${bucketKind === 'HEAP' ? `; ${describe('HEAP_HIGH', high)}` : ''})`);
+        }
+
+        // [DIAG/SAFETY] Double-hand-out detector: the allocator must never return an
+        // address that is still recorded live. A real heap never hands out a busy block;
+        // a hit here means two owners share a block (overlapping live allocations) → the
+        // classic UAF / pointer high-byte stomp. Always-on, O(1) — logs the colliding
+        // sizes so the next repro pins the mechanism instead of guessing.
+        if (this.allocs.has(addr)) {
+            Logger.error(LogCategory.SYSTEM,
+                `[MemoryManager] DOUBLE-HAND-OUT 0x${addr.toString(16)}: already live ` +
+                `(liveSize=0x${(this.allocs.getSize(addr) ?? 0).toString(16)}, ` +
+                `newReq=0x${aligned.toString(16)}, bucket=${bucketKind}) — overlapping ` +
+                `live allocations → use-after-free.`);
+        }
+
+        // Only register regions for non-HEAP kinds (surfaces, thunk memory, etc.).
+        // Individual HEAP sub-allocations (HeapAlloc etc.) are already covered by the
+        // HEAP layout bucket — registering each one bloats regions[] to 200K+ entries,
+        // making findBlockingRegion and releaseRegion O(n) and killing performance.
+        if (!isHeapBucket(usedBucketKind)) {
+            this.addressSpace.registerRegion({
+                base: addr,
+                size: aligned,
+                perms: finalPerms,
+                kind: finalKind,
+                owner: 'MemoryManager',
+                skipOverlapCheck: true,
+            });
+        }
+
+        this.recordAllocation(addr, aligned);
+        this.allocs.setBucket(addr, usedBucketKind);
+        this.logLargeEvent('alloc', addr, aligned);
+
+        if (isHeapBucket(usedBucketKind) || usedBucketKind === 'SURFACE') {
+            ensureGuestPagesCommitted(addr, aligned);
+        }
+
+        maybeInvalidateExecutableRange(finalKind, finalPerms, addr, aligned);
+
+        return addr;
+    }
+
+    allocSurface(size: number): number {
+        return this.alloc(size, 'SURFACE');
+    }
+
+    /**
+     * Carve from the high end of HEAP (`slabTop` growing down), never touching the
+     * guest bump frontier (`next`). Shared by heap-slab arenas and VirtualAlloc
+     * MEM_TOP_DOWN — both need high VA, segregated from bottom-up HeapAlloc.
+     */
+    allocFromHigh(size: number, alignment: number = 0x10000, bucketKind: RegionKind = 'HEAP'): number {
+        const bucket = this.bucketState.get(bucketKind);
+        if (!bucket) throw new Error(`MemoryManager: ${bucketKind} bucket unavailable for high alloc`);
+        const align = Math.max(alignment, 0x10000) >>> 0; // Win32 allocation granularity
+        const aligned = this.alignUp(size, align);
+        let top = (bucket.slabTop ?? bucket.limit) >>> 0;
+        const next = bucket.next >>> 0;
+        let addr = 0;
+        // Same foreign-region skip the bottom-up frontier does, walking DOWN instead.
+        // Without it a carve here is not just misplaced but destructive: the slab arena
+        // zero-fills what it takes, so a PE image in the way is silently erased.
+        for (let guard = 0; ; guard++) {
+            // Unsigned subtract — if frontiers crossed, treat as OOM (don't wrap).
+            if (top <= next || aligned > (top - next)) {
+                throw new Error(
+                    `MemoryManager: high-end OOM (top=0x${top.toString(16)} next=0x${next.toString(16)} ` +
+                    `need 0x${aligned.toString(16)})`);
+            }
+            addr = ((top - aligned) >>> 0) & ~(align - 1);
+            if (addr < next || ((addr + aligned) >>> 0) > top || (addr + aligned) >>> 0 < addr) {
+                throw new Error(
+                    `MemoryManager: high-end align OOM (top=0x${top.toString(16)} next=0x${next.toString(16)} ` +
+                    `addr=0x${addr.toString(16)} need 0x${aligned.toString(16)})`);
+            }
+            const blocker = this.addressSpace.findBlockingRegion(addr, aligned);
+            if (!blocker) break;
+            if (guard >= 32) {
+                throw new Error(
+                    `MemoryManager: high-end blocked by ${blocker.kind} @ 0x${blocker.base.toString(16)} ` +
+                    `(need 0x${aligned.toString(16)}, gave up after ${guard} skips)`);
+            }
+            Logger.warn(LogCategory.SYSTEM,
+                `[MemoryManager] high-end carve at 0x${addr.toString(16)} blocked by ` +
+                `${blocker.kind} @ 0x${blocker.base.toString(16)}..0x${(blocker.base + blocker.size).toString(16)} ` +
+                `(${blocker.owner ?? 'unnamed'}/${blocker.tag ?? '-'}) — skipping below it`);
+            top = blocker.base >>> 0;
+        }
+        if (this.allocs.has(addr)) {
+            throw new Error(
+                `MemoryManager: high-end collide at 0x${addr.toString(16)} ` +
+                `(liveSize=0x${(this.allocs.getSize(addr) ?? 0).toString(16)})`);
+        }
+        bucket.slabTop = addr;
+        this.recordAllocation(addr, aligned);
+        this.allocs.setBucket(addr, bucketKind);
+        ensureGuestPagesCommitted(addr, aligned);
+        this.logLargeEvent('alloc', addr, aligned);
+        return addr;
+    }
+
+    /** DevTools/harness: HEAP bump vs high (MEM_TOP_DOWN/slab) frontier. */
+    getHighHeapReport(): { next: number; slabTop: number; limit: number; freeHigh: number; freeHighMB: number } | null {
+        const bucket = this.bucketState.get('HEAP');
+        if (!bucket) return null;
+        const next = bucket.next >>> 0;
+        const slabTop = (bucket.slabTop ?? bucket.limit) >>> 0;
+        const freeHigh = slabTop > next ? (slabTop - next) >>> 0 : 0;
+        return {
+            next,
+            slabTop,
+            limit: bucket.limit >>> 0,
+            freeHigh,
+            freeHighMB: +(freeHigh / (1024 * 1024)).toFixed(2),
+        };
+    }
+
+    /**
+     * Kernel32's small-alloc slab ARENA — top-down (see allocFromHigh), so arena growth does
+     * not shift the guest's own allocation addresses. Carved from HEAP_HIGH when that region
+     * exists: sharing one bucket with the guest means every megabyte the arena takes is a
+     * megabyte the guest loses, and a refused grow drops every sub-4KB allocation to the JS
+     * HeapAlloc thunk — alive, but very slow. Falls back to the low HEAP when there is no
+     * high region (default RAM).
+     */
+    allocSlabArena(size: number): number {
+        if (this.bucketState.has('HEAP_HIGH')) {
+            try {
+                return this.allocFromHigh(size, 0x10000, 'HEAP_HIGH');
+            } catch { /* high region full — the low heap is still a valid home */ }
+        }
+        return this.allocFromHigh(size, 0x10000);
+    }
+
+    /**
+     * VirtualAlloc's MEM_TOP_DOWN placement. Win32 treats the flag as a HINT ("allocate at
+     * the highest possible address"), not a constraint: an allocation that fits anywhere
+     * must not fail because the high frontier is full. Prefer HEAP's high end (that is what
+     * keeps these pools segregated from bottom-up HeapAlloc), then HEAP_HIGH's, and only
+     * then the ordinary bump — which spills across both buckets on its own.
+     */
+    allocTopDown(size: number, alignment: number = 0x10000, perms?: RegionPerms): number {
+        // allocFromHigh carves below the frontier without going through alloc(), so the
+        // invalidation chokepoint has to be re-asserted on this path: the guest's own
+        // flProtect arrives here too, and high VA is recycled like any other.
+        const fromHigh = (bucket?: RegionKind): number => {
+            const addr = bucket ? this.allocFromHigh(size, alignment, bucket) : this.allocFromHigh(size, alignment);
+            maybeInvalidateExecutableRange('HEAP', perms ?? 'rw', addr,
+                this.alignUp(size, Math.max(alignment, 0x10000)));
+            return addr;
+        };
+        try { return fromHigh(); } catch { /* HEAP high end full */ }
+        if (this.bucketState.has('HEAP_HIGH')) {
+            try { return fromHigh('HEAP_HIGH'); } catch { /* also full */ }
+        }
+        return this.alloc(size, 'HEAP', perms, alignment);
+    }
+
+    allocAt(addr: number, size: number, kind?: RegionKind, perms?: RegionPerms): number {
+        const aligned = this.alignUp(size, 8);
+        const finalKind = kind ?? 'HEAP';
+        const finalPerms = perms ?? 'rw';
+        const bucketKind = this.resolveBucketKind(finalKind);
+        const bucket = this.bucketState.get(bucketKind);
+        if (!bucket) {
+            throw new Error(`MemoryManager: bucket ${bucketKind} is not available`);
+        }
+
+        if (addr < bucket.base || addr + aligned > bucket.limit) {
+            throw new Error(`MemoryManager: allocAt out of bucket bounds (0x${addr.toString(16)} size=0x${aligned.toString(16)})`);
+        }
+
+        const existingSize = this.allocs.getSize(addr);
+        if (existingSize !== undefined && existingSize >= aligned) {
+            if (bucketKind === 'HEAP' || bucketKind === 'SURFACE') {
+                ensureGuestPagesCommitted(addr, aligned);
+            }
+            return addr;
+        }
+
+        this.addressSpace.registerRegion({
+            base: addr,
+            size: aligned,
+            perms: finalPerms,
+            kind: finalKind,
+            owner: 'MemoryManager',
+            skipOverlapCheck: true,
+        });
+
+        bucket.next = Math.max(bucket.next, addr + aligned);
+        this.recordAllocation(addr, aligned);
+        this.allocs.setBucket(addr, bucketKind);
+        this.logLargeEvent('alloc', addr, aligned);
+        if (bucketKind === 'HEAP' || bucketKind === 'SURFACE') {
+            ensureGuestPagesCommitted(addr, aligned);
+        }
+        maybeInvalidateExecutableRange(finalKind, finalPerms, addr, aligned);
+        return addr;
+    }
+
+    free(ptr: number): void {
+        const size = this.allocs.getSize(ptr);
+        if (size === undefined) return;
+
+        // HEAP allocs are not registered in addressSpace.regions (skipped in alloc),
+        // so skip releaseRegion for them to avoid O(n) scan of a non-existent entry.
+        const bucketKind = this.allocs.getBucket(ptr);
+        if (!isHeapBucket(bucketKind)) {
+            this.addressSpace.releaseRegion(ptr);
+        }
+        this.currentBytes -= size;
+        this.allocs.deleteSize(ptr);
+
+        if (bucketKind) {
+            this.allocs.deleteBucket(ptr);
+            const bucket = this.bucketState.get(bucketKind);
+            // MEM_TOP_DOWN / slab frontier: LIFO free at slabTop rejoins the high zone
+            // instead of the bottom-up free lists (keeps high VA available for TOP_DOWN).
+            if (bucket && isHeapBucket(bucketKind) && bucket.slabTop !== undefined &&
+                (bucket.slabTop >>> 0) === (ptr >>> 0)) {
+                bucket.slabTop = (ptr + size) >>> 0;
+            } else if (size >= MemoryManager.LARGE_ALLOC_FRESH_THRESHOLD) {
+                // VirtualAlloc-class blocks release into their own list, never the
+                // small-block free list (see allocateLargeFromReleased).
+                this.releaseLargeBlock(bucketKind, ptr, size);
+            } else {
+                this.releaseToFreeList(bucketKind, ptr, size);
+            }
+        }
+        this.logLargeEvent('free', ptr, size);
+
+        memoryEventBuffer.recordEvent(MemoryEventType.FREE, ptr, size, 'MemoryManager.free');
+    }
+
+    /**
+     * Return a block to its bucket's free list with three invariants:
+     *   1. **Sorted by address ascending** — O(log n) insert + O(1) neighbor lookup.
+     *   2. **Coalesce with immediate neighbors** — avoids death-by-fragmentation when
+     *      games alloc/free same-size textures in interleaved order.
+     *   3. **Retreat bump pointer** — if the (possibly coalesced) block ends at
+     *      `bucket.next`, reclaim it directly into the bump arena and don't store it.
+     *      Handles the runaway case where `used` keeps climbing even though frees
+     *      outnumber allocs (NB scene transitions create transient per-frame
+     *      surfaces; free list ends up with a tall stack of same-size chunks but
+     *      bump marched past all of them).
+     *
+     * Called from `free()` and from the pre-waste/post-waste split path in the
+     * allocator — both must funnel through here to keep invariants consistent.
+     */
+    private releaseToFreeList(bucketKind: RegionKind, addr: number, size: number): void {
+        if (size <= 0) return;
+        let list = this.freeBlocks.get(bucketKind);
+        if (!list) {
+            list = [];
+            this.freeBlocks.set(bucketKind, list);
+        }
+
+        // Binary-search insertion point (sorted by addr ascending).
+        let lo = 0, hi = list.length;
+        while (lo < hi) {
+            const mid = (lo + hi) >>> 1;
+            if (list[mid].addr < addr) lo = mid + 1;
+            else hi = mid;
+        }
+
+        // [DIAG/SAFETY] Double-free / overlap detector: a block must not already be in the
+        // free list, nor fall inside an existing free block. A hit means the SAME block is
+        // about to be free-listed twice → two later allocs return it → overlapping live
+        // allocations → UAF (the Morrowind UpdateLights pointer stomp). Self-heal: refuse
+        // the second push so the corruption can't proceed, and log it loudly with the
+        // colliding entries so the next repro names the path.
+        if (lo < list.length && list[lo].addr === addr) {
+            Logger.error(LogCategory.SYSTEM,
+                `[MemoryManager] DOUBLE-FREE into ${bucketKind} free-list: 0x${addr.toString(16)} ` +
+                `(size=0x${size.toString(16)}) is already free (existingSize=0x${list[lo].size.toString(16)}) ` +
+                `— refusing re-push to avoid a double-hand-out UAF.`);
+            return;
+        }
+        if (lo > 0 && list[lo - 1].addr + list[lo - 1].size > addr) {
+            Logger.error(LogCategory.SYSTEM,
+                `[MemoryManager] FREE-LIST OVERLAP in ${bucketKind}: freeing 0x${addr.toString(16)} ` +
+                `(size=0x${size.toString(16)}) overlaps existing free block 0x${list[lo - 1].addr.toString(16)} ` +
+                `(size=0x${list[lo - 1].size.toString(16)}) — refusing to avoid corruption.`);
+            return;
+        }
+
+        let mergedAddr = addr;
+        let mergedSize = size;
+
+        // Coalesce with right neighbour if adjacent.
+        if (lo < list.length && list[lo].addr === mergedAddr + mergedSize) {
+            mergedSize += list[lo].size;
+            list.splice(lo, 1);
+        }
+        // Coalesce with left neighbour if adjacent.
+        if (lo > 0 && list[lo - 1].addr + list[lo - 1].size === mergedAddr) {
+            mergedAddr = list[lo - 1].addr;
+            mergedSize += list[lo - 1].size;
+            list.splice(lo - 1, 1);
+            lo -= 1;
+        }
+
+        const bucket = this.bucketState.get(bucketKind);
+        if (bucket && mergedAddr + mergedSize === bucket.next) {
+            // Block is right at the bump frontier — retreat rather than storing.
+            // May expose further absorbable blocks below; repeat until the top
+            // of the sorted free list no longer touches `bucket.next`.
+            bucket.next = mergedAddr;
+            while (list.length > 0) {
+                const top = list[list.length - 1];
+                if (top.addr + top.size === bucket.next) {
+                    bucket.next = top.addr;
+                    list.pop();
+                } else {
+                    break;
+                }
+            }
+        } else {
+            list.splice(lo, 0, { addr: mergedAddr, size: mergedSize });
+        }
+    }
+
+    getMetrics(): MemoryMetrics {
+        return {
+            totalAllocated: this.totalAllocated,
+            currentBytes: this.currentBytes,
+            peakBytes: this.peakBytes,
+            allocationCount: this.allocs.size,
+        };
+    }
+
+    getSize(ptr: number): number | undefined {
+        return this.allocs.getSize(ptr);
+    }
+
+    /**
+     * Current bump frontier (`next`) of a layout bucket, or undefined if the bucket
+     * doesn't exist. Everything at/above this within the bucket's reserved span is
+     * virgin territory that was never handed out; every live allocation sits below it
+     * (the frontier only retreats when the block at the top is freed). VirtualQuery
+     * uses it to tell a live SURFACE pixel buffer from the vast unallocated reserved
+     * pool, so a page-walker skips the empty tail in one MEM_FREE step.
+     */
+    getBucketFrontier(kind: RegionKind): number | undefined {
+        return this.bucketState.get(kind)?.next;
+    }
+
+    /**
+     * Snapshot of live HEAP-bucket allocations for a faithful HeapWalk.
+     *
+     * Third-party heap managers that coexist with the Win32 heap (SmartHeap/Shw32
+     * in Blade of Darkness) validate a free()'d pointer that isn't in their own
+     * pool by walking the OS heap via GetProcessHeaps + HeapWalk — "is this a raw
+     * HeapAlloc block?". Our buffers (Miles audio buffers, SmartHeap-delegated
+     * large blocks) all come from this allocator's HEAP bucket, so enumerating
+     * them here lets that validation succeed instead of raising MEM_BAD_POINTER.
+     *
+     * Returned newest-first (MRU): linear walkers looking for a freshly-freed
+     * buffer find it near the front, so the common case stays cheap even when the
+     * live set is large. Slab roots are reported as single large blocks, which
+     * also covers (by containment) any small sub-allocations carved out of them.
+     */
+    snapshotHeapAllocations(): Array<{ addr: number; size: number }> {
+        const out: Array<{ addr: number; size: number }> = [];
+        for (const { addr, size, bucket } of this.allocs.entriesByInsertion()) {
+            if (isHeapBucket(bucket)) out.push({ addr, size });
+        }
+        out.reverse();
+        return out;
+    }
+
+    /**
+     * Per-bucket stats for the DevTools diagnostic `getMemReport()`.
+     * Cheap to compute: all counters are maintained incrementally.
+     *
+     * `used`     = bump frontier (next - base) — how far the arena has grown.
+     * `liveUsed` = used minus interior free blocks — what's actually held.
+     *              Gap between the two is fragmentation; big gap → many small
+     *              allocs live past large allocs that were freed but can't be
+     *              retreated into the bump.
+     */
+    /**
+     * Per-bucket occupancy. `free` is what a BUMP allocation can actually still take:
+     * HEAP's slab arena grows DOWN from `limit`, so limit-next overstates the headroom by
+     * the whole arena — and an exhaustion reported next to a large `free` reads as an
+     * allocator bug instead of the collision it is.
+     */
+    getBucketStats(): Array<{ kind: string; base: number; limit: number; next: number; slabTop: number; used: number; liveUsed: number; free: number; freeBlocks: number; freeBytes: number }> {
+        const rows: Array<{ kind: string; base: number; limit: number; next: number; slabTop: number; used: number; liveUsed: number; free: number; freeBlocks: number; freeBytes: number }> = [];
+        for (const [kind, state] of this.bucketState.entries()) {
+            const used = state.next - state.base;
+            const ceiling = state.slabTop ?? state.limit;
+            const list = this.freeBlocks.get(kind);
+            // Both free pools: a large block goes to largeFreeBlocks, not freeBlocks, and
+            // counting only the small one reports a reuse failure (bump and live climbing
+            // together) as genuine demand — the exact reading heapBuckets exists to make.
+            let freeBytes = 0;
+            for (const b of this.largeFreeBlocks.get(kind) ?? []) freeBytes += b.size;
+            if (list) {
+                for (let i = 0; i < list.length; i++) freeBytes += list[i].size;
+            }
+            rows.push({
+                kind,
+                base: state.base,
+                limit: state.limit,
+                next: state.next,
+                slabTop: ceiling,
+                used,
+                liveUsed: used - freeBytes,
+                free: Math.max(0, ceiling - state.next),
+                freeBlocks: list?.length ?? 0,
+                freeBytes,
+            });
+        }
+        return rows;
+    }
+
+    /** Register a page-aligned alias so VirtualFree can find VirtualAlloc blocks. */
+    registerAlias(alignedAddr: number, size: number): void {
+        this.allocs.setSize(alignedAddr, size);
+        this.logLargeEvent('alias', alignedAddr, size);
+    }
+
+    reset(): void {
+        this.allocs.clear();
+        this.freeBlocks.clear();
+        this.largeFreeBlocks.clear();
+        this.sysPoolArena = null;
+        this.sysPoolFree.clear();
+        this.systemPoolGeneration++;
+        this.totalAllocated = 0;
+        this.currentBytes = 0;
+        this.peakBytes = 0;
+        this.largeAllocLog = [];
+        this.largeAllocLogIdx = 0;
+        this.refreshLayoutBuckets();
+    }
+
+    /** Release a VirtualAlloc-class range into the large list (sorted, coalescing
+     *  ONLY with adjacent large ranges — never merged into the small free list). */
+    private releaseLargeBlock(bucketKind: RegionKind, addr: number, size: number): void {
+        let list = this.largeFreeBlocks.get(bucketKind);
+        if (!list) { list = []; this.largeFreeBlocks.set(bucketKind, list); }
+        let lo = 0, hi = list.length;
+        while (lo < hi) {
+            const mid = (lo + hi) >>> 1;
+            if (list[mid].addr < addr) lo = mid + 1; else hi = mid;
+        }
+        // Coalesce with neighbors when contiguous.
+        if (lo > 0 && list[lo - 1].addr + list[lo - 1].size === addr) {
+            list[lo - 1].size += size;
+            if (lo < list.length && list[lo - 1].addr + list[lo - 1].size === list[lo].addr) {
+                list[lo - 1].size += list[lo].size;
+                list.splice(lo, 1);
+            }
+            return;
+        }
+        if (lo < list.length && addr + size === list[lo].addr) {
+            list[lo].addr = addr;
+            list[lo].size += size;
+            return;
+        }
+        list.splice(lo, 0, { addr, size });
+    }
+
+    /** First-fit (lowest address) over released VirtualAlloc-class ranges. Returns the
+     *  zeroed head of the first range that fits, or 0. Address-ordered first-fit is the
+     *  real VirtualAlloc search order — a same-size release/re-allocate sequence yields
+     *  the SAME base address, which stale-pointer-holding games depend on. */
+    private allocateLargeFromReleased(bucketKind: RegionKind, size: number, alignment: number): number {
+        const list = this.largeFreeBlocks.get(bucketKind);
+        if (!list || list.length === 0) return 0;
+        for (let i = 0; i < list.length; i++) {
+            const block = list[i];
+            const alignedAddr = this.alignUp(block.addr, alignment);
+            const usable = block.size - (alignedAddr - block.addr);
+            if (usable < size) continue;
+            const preWaste = alignedAddr - block.addr;
+            const tailStart = alignedAddr + size;
+            const tailSize = block.addr + block.size - tailStart;
+            list.splice(i, 1);
+            if (preWaste >= 16) this.releaseLargeBlock(bucketKind, block.addr, preWaste);
+            if (tailSize >= 16) this.releaseLargeBlock(bucketKind, tailStart, tailSize);
+            // Fresh-commit contract: VirtualAlloc'd pages always read zero.
+            this.addressSpace.fill(alignedAddr, size, 0);
+            return alignedAddr;
+        }
+        return 0;
+    }
+
+    /** Best-fit carve from the small free list, rejecting blocks whose leftover
+     *  exceeds maxWaste. Returns the zeroed allocation address, or 0 if no block
+     *  qualifies. Carves from the TAIL of the block, not the head: correct programs
+     *  can't tell the difference, but it preserves the HEAD bytes of a freed block —
+     *  where a use-after-free ghost's vtable/header live. Real Windows heaps
+     *  segregate reuse by size class, so a freed object's start typically survives
+     *  until a same-class allocation claims it; games with benign UAFs (an engine
+     *  list still holding a deleted object) rely on that. */
+    private carveFromFreeList(bucketKind: RegionKind, size: number, alignment: number, maxWaste: number): number {
+        const list = this.freeBlocks.get(bucketKind);
+        if (!list || list.length === 0) return 0;
+        let bestIdx = -1;
+        let bestWaste = Infinity;
+        for (let i = 0; i < list.length; i++) {
+            const block = list[i];
+            const alignedAddr = this.alignUp(block.addr, alignment);
+            const usable = block.size - (alignedAddr - block.addr);
+            if (usable >= size) {
+                const waste = usable - size;
+                if (waste < bestWaste && waste <= maxWaste) {
+                    bestWaste = waste;
+                    bestIdx = i;
+                }
+            }
+        }
+        if (bestIdx < 0) return 0;
+        const block = list[bestIdx];
+        list.splice(bestIdx, 1);
+        let alignedAddr = (block.addr + block.size - size) & ~(alignment - 1);
+        if (alignedAddr < block.addr) alignedAddr = this.alignUp(block.addr, alignment);
+        const preWaste = alignedAddr - block.addr;
+        const tailStart = alignedAddr + size;
+        const tailSize = block.addr + block.size - tailStart;
+        // Push back unused head (now the bulk of an oversized block) and any
+        // tail alignment slack. Threshold: 16 bytes — smaller fragments not
+        // worth tracking and would inflate the free-list search cost.
+        if (preWaste >= 16) {
+            this.releaseToFreeList(bucketKind, block.addr, preWaste);
+        }
+        if (tailSize >= 16) {
+            this.releaseToFreeList(bucketKind, tailStart, tailSize);
+        }
+        // Hand out zeroed memory. Strictly, Win32 HeapAlloc without HEAP_ZERO_MEMORY
+        // leaves a reused block dirty — but this best-fit free list reuses far more
+        // aggressively than the real heap (which prefers per-size-class fresh commits,
+        // whose pages come zeroed via the VirtualAlloc/MEM_COMMIT guarantee). A guest
+        // that reads a just-allocated field expecting the zero a fresh commit would
+        // have given (a very common pattern) otherwise sees our stale reuse as
+        // garbage. Zeroing matches that observable fresh-memory contract and is
+        // safe: correct code never relies on reused-dirty.
+        this.addressSpace.fill(alignedAddr, size, 0);
+        return alignedAddr;
+    }
+
+    /**
+     * Carve `size` out of `bucket`, or return 0 when it cannot be served.
+     *
+     * A SENTINEL, not an exception: exhaustion is a NORMAL, per-allocation outcome once a
+     * bucket fills (the HEAP→HEAP_HIGH spill hits it on every call), and building an Error with a
+     * captured stack per allocation costs more than the allocation itself. Both exits below
+     * are reached only AFTER the free list, the released-large list and bucket expansion have
+     * all been tried, so 0 really does mean "nothing in this bucket can serve it".
+     */
+    private allocateInBucket(bucket: BucketState, size: number, alignment: number = 8, bucketKind?: RegionKind): number {
+        // Try free list first: find a block that fits (best-fit), then SPLIT the
+        // remainder back into the list so oversized freed blocks aren't consumed whole.
+        // Large requests (≥512KB) never reuse free-list blocks — bump-allocate fresh.
+        // Real NT heaps forward allocations above the VirtualAlloc threshold straight
+        // to VirtualAlloc: fresh zeroed pages that never land on freed heap blocks
+        // (which may still hold use-after-free ghosts games benignly touch).
+        // LIFO large churn (video buffers) is reclaimed by the bump-retreat coalescing,
+        // so this does not grow the bucket for the common alloc→free→alloc pattern.
+        const reuseFreeList = size < MemoryManager.LARGE_ALLOC_FRESH_THRESHOLD;
+        if (bucketKind && reuseFreeList) {
+            // Size-class gate: only reuse a block reasonably CLOSE to the request
+            // (waste ≤ max(4KB, size/4)). Real Windows heaps serve reuse from
+            // per-size-class lists — a 64KB buffer never lands mid-way into a
+            // coalesced multi-hundred-KB hole full of freed (but still ghost-
+            // referenced) objects. Oversized holes wait for a similar-sized
+            // request; small requests carve only near-fit blocks.
+            const reused = this.carveFromFreeList(bucketKind, size, alignment, Math.max(0x1000, size >> 2));
+            if (reused !== 0) return reused;
+        }
+
+        // VirtualAlloc-class requests: first try the released-large list (first-fit by
+        // address, zeroed — see largeFreeBlocks), then fall back to fresh space ABOVE
+        // the high-water mark. Never the small free list and never a retreated frontier:
+        // serving a big buffer from freed heap space lands it on (and re-zeroes) blocks
+        // still ghost-referenced by UAF games — real VirtualAlloc never reuses heap
+        // holes. The skipped bump range goes back to the free list for small requests.
+        if (!reuseFreeList && bucketKind) {
+            const reused = this.allocateLargeFromReleased(bucketKind, size, alignment);
+            if (reused !== 0) return reused;
+            if (bucket.everMax > bucket.next) {
+                const skipped = bucket.everMax - bucket.next;
+                if (skipped >= 16) this.releaseToFreeList(bucketKind, bucket.next, skipped);
+                bucket.next = bucket.everMax;
+            }
+        }
+        let alignedStart = this.alignUp(bucket.next, alignment);
+
+        // Skip over any PE-image or other foreign regions that already occupy this range.
+        // This handles large EXEs (e.g. ImageBase=0x400000, sizeOfImage>12MB) whose
+        // mapped region overlaps MEM_HEAP_BASE (0x1000000).
+        for (let guard = 0; guard < 32; guard++) {
+            const blocker = this.addressSpace.findBlockingRegion(alignedStart, size);
+            if (!blocker) break;
+            alignedStart = this.alignUp(blocker.base + blocker.size, alignment);
+        }
+
+        // Guest allocations grow UP and must never enter the slab-arena region (which
+        // grows DOWN from limit). Once a slab arena exists (slabTop < limit), the guest
+        // ceiling is slabTop, not limit — growing past it would overwrite slab blocks
+        // (and vice-versa). Expanding the bucket can't help (the slab sits at the top),
+        // so this is a genuine OOM at the slab boundary rather than a silent corruption.
+        const guestCeiling = bucket.slabTop ?? bucket.limit;
+        if (bucket.slabTop !== undefined && bucket.slabTop < bucket.limit &&
+            alignedStart + size > guestCeiling) {
+            return 0;
+        }
+        if (alignedStart + size > bucket.limit) {
+            const bucketKind = this.getBucketKindByState(bucket);
+            const needed = alignedStart + size - bucket.base;
+            const growthIncrement = 64 * 1024 * 1024;
+            const newSize = Math.max(needed, bucket.limit - bucket.base + growthIncrement);
+
+            Logger.log(LogCategory.SYSTEM,
+                `[MemoryManager] Bucket overflow detected for ${bucketKind}: ` +
+                `need 0x${size.toString(16)} at 0x${alignedStart.toString(16)}, ` +
+                `limit 0x${bucket.limit.toString(16)}. Attempting expansion...`);
+
+            const expandedSize = this.addressSpace.expandLayoutBucket(bucketKind, newSize);
+            if (expandedSize === 0) {
+                // Last resort before OOM: any fitting hole (ignoring the size-class
+                // gate) beats a spurious overflow. Try the small free list any-fit,
+                // then released VirtualAlloc-class ranges.
+                return this.carveFromFreeList(bucketKind, size, alignment, Infinity)
+                    || this.allocateLargeFromReleased(bucketKind, size, alignment);
+            }
+
+            bucket.limit = bucket.base + expandedSize;
+            Logger.log(LogCategory.SYSTEM,
+                `[MemoryManager] Bucket ${bucketKind} expanded successfully to 0x${bucket.limit.toString(16)}`);
+        }
+
+        const address = alignedStart;
+        bucket.next = address + size;
+
+        // Faithful Win32 fresh-memory semantics. Real Windows guarantees freshly-committed
+        // pages read as zero (the VirtualAlloc/MEM_COMMIT contract that heap segment growth
+        // relies on), while reused freed blocks stay dirty (HeapAlloc without HEAP_ZERO_MEMORY).
+        // Guest RAM starts zeroed, so virgin territory at/above the high-water mark is already
+        // zero. But releaseToFreeList retreats `next` when a freed block abuts the frontier, so
+        // a later bump can re-hand-out that now-dirty range below the high-water mark — those
+        // must be re-zeroed so every fresh bump allocation reads as zero, matching hardware.
+        // (Free-list reuse is zeroed at its own return site above for the same reason.)
+        if (address < bucket.everMax) {
+            this.addressSpace.fill(address, size, 0);
+        }
+        if (bucket.next > bucket.everMax) bucket.everMax = bucket.next;
+
+        return address;
+    }
+
+    private getBucketKindByState(bucket: BucketState): RegionKind {
+        for (const [kind, state] of this.bucketState.entries()) {
+            if (state.base === bucket.base && state.limit === bucket.limit) {
+                return kind;
+            }
+        }
+        return 'HEAP';
+    }
+
+    private recordAllocation(address: number, size: number): void {
+        this.allocs.setSize(address, size);
+        this.currentBytes += size;
+        this.totalAllocated += size;
+        this.peakBytes = Math.max(this.peakBytes, this.currentBytes);
+
+        memoryEventBuffer.recordEvent(MemoryEventType.ALLOC, address, size, 'MemoryManager.alloc');
+    }
+
+    private getMemory(): Uint8Array {
+        return this.addressSpace.getMemory();
+    }
+}
+export class Process {
+    resourceProvider = SystemResourceProvider.getInstance();
+    addressSpace: AddressSpace;
+    memory: MemoryManager;
+    loader: PELoader;
+    dispatcher: ThunkDispatcher; // Will be set after init
+    thunkGenerator: any;
+    thunkMemoryManager: ThunkMemoryManager; // Memory manager for thunk system
+    moduleRegistry: ModuleRegistry; // Registry for loaded PE modules (EXE + DLLs)
+    pageTableManager: PageTableManager | null = null; // x86 page tables for virtual memory protection
+
+    // Canvas for rendering backends
+    canvas: OffscreenCanvas | null = null;
+
+    // Loaded modules by name (kernel32, user32, etc.)
+    modules: Map<string, any> = new Map();
+
+    // Environment variables
+    environment: Map<string, string> = new Map();
+
+    // Last error code (set by SetLastError, read by GetLastError)
+    lastError: number = 0;
+
+    // Bumped on every reset() that regenerates thunk memory. Caches that store
+    // thunk-stub addresses (e.g. kernel32's GetProcAddress cache) compare against
+    // this so they self-invalidate after an in-place reset — the Process object
+    // identity stays the same across reset(), so identity alone can't detect it.
+    resetGeneration: number = 0;
+
+    constructor(
+        private getMemory: () => Uint8Array,
+        public v86: any,
+        thunkGenerator: any,
+        apiRegistry: APIRegistry
+    ) {
+        this.getMemory = getMemory;
+        this.addressSpace = new AddressSpace(getMemory);
+        this.memory = new MemoryManager(this.addressSpace);
+        Mem.bind(getMemory);
+        this.initializeMemoryLayout();
+        this.memory.refreshLayoutBuckets();
+        // Log memory map at boot for observability
+        this.addressSpace.logMap();
+        this.moduleRegistry = new ModuleRegistry();
+        this.loader = new PELoader(getMemory, thunkGenerator, apiRegistry);
+        this.loader.setModuleRegistry(this.moduleRegistry);
+        this.dispatcher = new ThunkDispatcher(v86, thunkGenerator);
+        this.thunkGenerator = thunkGenerator;
+        this.thunkMemoryManager = new ThunkMemoryManager();
+
+        // Initialize thunk memory manager before dispatcher initialization
+        // This allocates memory regions for callback stubs, spin loops, and thunk stubs
+        // Do NOT compute checksums yet - callback stubs/thunks not written
+        this.thunkMemoryManager.initialize(this.memory, getMemory, { skipChecksums: true }).catch(err => {
+            Logger.error(LogCategory.SYSTEM, `Failed to initialize thunk memory: ${err}`);
+        });
+
+        this.setDefaultEnvironment();
+
+        // Initialize callback manager for x86 callback invocation (WndProc, etc.)
+        // Pass thunk memory manager to dispatcher so it can use dynamic addresses
+        this.dispatcher.initializeCallbackManager(getMemory, this.thunkMemoryManager);
+
+        // Initialize thunk generator with dynamic base address
+        const regions = this.thunkMemoryManager.getRegions();
+        this.thunkGenerator.setBaseAddress(regions.thunkGeneratorBase);
+        // Materialize the shared "missing import" UD2 trap (guarded — memory may not be
+        // ready this early; pe-loader re-ensures it lazily before patching IATs).
+        this.thunkGenerator.writeTrapStub(getMemory());
+
+        // Allocate SEH scratch area in THUNK_DATA for hardware exception dispatch.
+        // Used by the SEH dispatch stub to pass EXCEPTION_RECORD, CONTEXT, and frame list
+        // between JS (#PF handler) and x86 (native SEH handler execution).
+        const sehScratchAddr = this.memory.alloc(SEH_SCRATCH_TOTAL_SIZE, 'THUNK_DATA');
+        this.thunkMemoryManager.setSehScratchAddr(sehScratchAddr, SEH_SCRATCH_TOTAL_SIZE);
+        this.dispatcher.updateSehScratchAddr(sehScratchAddr);
+        const sehRegions = this.thunkMemoryManager.getRegions();
+        Logger.log(LogCategory.SYSTEM,
+            `SEH scratch area allocated at 0x${sehScratchAddr.toString(16)} ` +
+            `(size=0x${SEH_SCRATCH_TOTAL_SIZE.toString(16)}, ` +
+            `stack=0x${sehRegions.sehStackBase.toString(16)}..0x${sehRegions.sehStackTop.toString(16)})`);
+
+        // Now compute checksums AFTER all code is written
+        // This must be done in background to avoid blocking constructor
+        Promise.all([
+            // Wait a bit for callback manager to finish writing stubs
+            new Promise(resolve => setTimeout(resolve, 100)),
+        ]).then(() => {
+            return this.thunkMemoryManager.computeChecksums(getMemory);
+        }).catch(err => {
+            Logger.error(LogCategory.SYSTEM, `Failed to compute thunk checksums: ${err}`);
+        });
+
+        this.setupProtectedMode();
+    }
+
+    /**
+     * Guest RAM for HLE consumers, normalized to a PLAIN Uint8Array.
+     *
+     * v86 hands out a Proxy (growth-transparent, but ~25x per element: 162.6ns vs 6.4ns
+     * measured by `dbg.memBench`). Asking every caller to remember `toPlainGuestMemory`
+     * does not scale — of 114 call sites only 4 did, and the misses are invisible in review
+     * and enormous in a profile: a 38 KB/frame scan cost 10.3 ms through the Proxy and
+     * 0.30 ms through a plain view. So the accessor normalizes; nobody downstream has to know.
+     *
+     * The hazard the Proxy exists for — a stored reference detaching when WASM memory grows —
+     * is therefore the CALLER's to avoid: re-fetch per use and never keep the result past the
+     * turn (toPlainGuestMemory re-wraps on buffer identity, so each fetch yields a live view).
+     * Enforced by tools/validate-guest-memory-views.ts — as a comment alone this did not hold.
+     */
+    getCurrentMemory(): Uint8Array {
+        return toPlainGuestMemory(this.getMemory());
+    }
+
+    allocateMemory(size: number): number {
+        return this.memory.alloc(size);
+    }
+
+    allocateSurface(size: number): number {
+        return this.memory.allocSurface(size);
+    }
+
+    private setupProtectedMode() {
+        // NOTE: Mode switch is now handled by the bootloader (bootloader.ts)
+        // The bootloader correctly transitions from real mode to protected mode
+        // using proper x86 instructions (CLI, LGDT, LIDT, MOV CR0, far JMP)
+        // 
+        // Previous manual CPU state patching was causing conflicts with the bootloader
+        // because v86 was left in an inconsistent state (part real mode, part protected mode)
+        Logger.log(LogCategory.SYSTEM, "Protected mode setup deferred to bootloader");
+    }
+
+    getModule(name: string) {
+        return this.modules.get(name.toLowerCase());
+    }
+
+    private initializeMemoryLayout(): void {
+        // The layout spans the RAM v86 was actually created with — EMU_MEMORY_SIZE is the
+        // DEFAULT for that, not a ceiling on it. Clamping to it would leave RAM past the
+        // default addressable by the guest but owned by no bucket.
+        this.addressSpace.initializeLayout(this.getMemory().length);
+        Mem.sync();
+    }
+
+    registerModule(name: string, instance: any) {
+        this.modules.set(name.toLowerCase(), instance);
+    }
+
+    /**
+     * Reset process state - clear memory, dispatcher state, and restore default environment
+     */
+    async reset(): Promise<void> {
+        this.dispatcher.callbackManager?.cancelDirectCalls();
+        // --- Zero out memory regions ---
+        const mem = this.getMemory();
+        if (mem) {
+            const totalMemory = mem.length;
+            // Clear HEAP, THUNK regions, and also LOW_MEM to remove any stale spin loops
+            // SURFACE/ROM too: region buckets are rebuilt empty, but mem8 bytes linger
+            // across an in-worker game switch (stale pixels / residual image bytes).
+            const clearKinds = new Set<RegionKind>([
+                "LOW_MEM", "HEAP", "HEAP_HIGH", "THUNK_CODE", "CALLBACK_STUB", "SPIN_LOOP", "THUNK_DATA",
+                "SURFACE", "ROM",
+            ]);
+            const regions = this.addressSpace.getRegions();
+            for (const region of regions) {
+                if (!clearKinds.has(region.kind)) continue;
+                const start = region.base;
+                if (start >= totalMemory) continue;
+                const end = Math.min(region.base + region.size, totalMemory);
+                const size = end - start;
+                if (size > 0) {
+                    this.addressSpace.fill(start, size, 0);
+                }
+            }
+        }
+
+        this.addressSpace.reset();
+        this.initializeMemoryLayout();
+
+        this.memory.reset();
+        // Modules map is kept to avoid re-registration overhead, individual modules are reset via System.reset()
+        this.dispatcher.reset();
+        this.thunkGenerator.reset();
+        this.thunkMemoryManager.reset();
+        // Thunk stubs are regenerated below — bump the generation so address-keyed
+        // caches (kernel32 GetProcAddress) drop stale pre-reset stub addresses.
+        this.resetGeneration++;
+        this.moduleRegistry.reset();
+        this.loader.resetCaches();
+
+        // Re-initialize thunk memory manager after reset
+        // Refresh buckets AGAIN before thunk initialization to ensure clean state
+        this.memory.refreshLayoutBuckets();
+
+        // Must await to ensure regions are allocated before using them
+        await this.thunkMemoryManager.initialize(this.memory, this.getMemory);
+        const thunkRegions = this.thunkMemoryManager.getRegions();
+        this.thunkGenerator.setBaseAddress(thunkRegions.thunkGeneratorBase);
+        // Re-materialize the missing-import UD2 trap (see initialization path above).
+        this.thunkGenerator.writeTrapStub(this.getMemory());
+
+        // Re-initialize callback manager to update spinLoopAddress after memory layout change
+        // Without this, async thunks redirect to stale/old spinLoop addresses causing infinite loops
+        this.dispatcher.initializeCallbackManager(this.getMemory, this.thunkMemoryManager);
+
+        // Re-allocate SEH scratch area after reset
+        const sehScratchAddr = this.memory.alloc(SEH_SCRATCH_TOTAL_SIZE, 'THUNK_DATA');
+        this.thunkMemoryManager.setSehScratchAddr(sehScratchAddr, SEH_SCRATCH_TOTAL_SIZE);
+        this.dispatcher.updateSehScratchAddr(sehScratchAddr);
+
+        // Restore default environment
+        this.environment.clear();
+        this.setDefaultEnvironment();
+
+        this.lastError = 0;
+
+        Logger.log(LogCategory.SYSTEM, "Process reset");
+    }
+
+    /**
+     * The environment block a fresh NT process inherits. The PROCESSOR_* set is not decoration:
+     * build tools, script hosts and a fair number of engine launchers read %PROCESSOR_IDENTIFIER%
+     * or %PROCESSOR_LEVEL% instead of calling CPUID, and an absent variable reads as "unknown CPU"
+     * — the same wrong branch a wrong value would pick. Derived from guest-cpu-identity so this
+     * cannot drift away from CPUID and GetSystemInfo.
+     */
+    private setDefaultEnvironment(): void {
+        this.environment.set("PATH", "C:\\WINDOWS\\SYSTEM32;C:\\WINDOWS;C:\\");
+        this.environment.set("SYSTEMROOT", "C:\\WINDOWS");
+        this.environment.set("WINDIR", "C:\\WINDOWS");
+        this.environment.set("TEMP", "C:\\TEMP");
+        this.environment.set("TMP", "C:\\TEMP");
+        this.environment.set("USERNAME", "BottleShip");
+        this.environment.set("COMPUTERNAME", GUEST_COMPUTER_NAME);
+        this.environment.set("NUMBER_OF_PROCESSORS", String(GUEST_NUMBER_OF_PROCESSORS));
+        this.environment.set("PROCESSOR_ARCHITECTURE", GUEST_PROCESSOR_ARCHITECTURE);
+        this.environment.set("PROCESSOR_IDENTIFIER", GUEST_PROCESSOR_IDENTIFIER);
+        this.environment.set("PROCESSOR_LEVEL", String(GUEST_PROCESSOR_LEVEL));
+        this.environment.set("PROCESSOR_REVISION", GUEST_PROCESSOR_REVISION_STRING);
+    }
+}

@@ -1,0 +1,255 @@
+/**
+ * HarnessService — the worker-side command dispatcher (the REAL harness logic
+ * location). The page facade and CLI are dumb transports; all authority
+ * lives here next to the state it reads (memory, scheduler, VFS, registry, render).
+ *
+ * Contract: a `harness_rpc {id,cmd,args,opts}` is dispatched to a registered
+ * handler; the handler's return value (a POJO) is posted back as
+ * `harness_reply {id,ok,result}`; a thrown value becomes `{id,ok,error}` with a
+ * stable code. Per-call timeout + cancel are enforced here, not in handlers.
+ *
+ * Handlers are registered by the cmds/* modules via commands.ts (no import-time
+ * cycles: cmd modules only depend on the HarnessService *type*; the singleton +
+ * registration wiring lives in commands.ts).
+ */
+
+import {
+    HARNESS_REPLY,
+    HarnessError,
+    HarnessErrorCode,
+    toErrorPayload,
+    type HarnessRequest,
+    type HarnessCallOpts,
+    type HarnessReply,
+} from "./rpc";
+import { harnessBus } from "./event-bus";
+
+/** Context handed to every command handler. */
+export interface HarnessCtx {
+    /** The request id of the call — also the ambient event runId during dispatch. */
+    readonly runId: number;
+    /** Aborts when the call times out or is cancelled; handlers may honor it. */
+    readonly signal: AbortSignal;
+    /** Per-call options as sent by the caller. */
+    readonly opts: HarnessCallOpts;
+    /** Convenience: emit a harness event correlated to this call. */
+    emit(event: string, data: unknown): void;
+}
+
+export type HarnessHandler = (args: unknown[], ctx: HarnessCtx) => unknown | Promise<unknown>;
+
+interface InFlight {
+    controller: AbortController;
+    timer: ReturnType<typeof setTimeout> | null;
+    /** Waits on guest progress, so a clean exit must end it early. */
+    needsGuest: boolean;
+}
+
+/**
+ * Verbs that only mean anything while the guest is executing: they wait for it to make
+ * progress, hand it input, or judge what it drew. On a crashed guest each one still
+ * "succeeds" — zero presents look like a slow frame, a click lands in a dead queue — so
+ * the run marches on and the crash surfaces much later as a confusing screenshot.
+ * Everything NOT listed here stays available for the post-mortem (report, state, shot,
+ * logs, fs*, break*, textures, …), which is the whole point of stopping here.
+ */
+const NEEDS_LIVE_GUEST = new Set([
+    "tickFrames", "stepFrames", "watchFrames", "waitUntil", "waitForEvent", "waitForControl", "sleep",
+    "click", "clickAt", "clickHold", "clickHere", "key", "keyHold", "type",
+    "move", "moveRelative", "drag", "wheel", "inputSab", "padPlug",
+    "tap", "touchDrag", "longPress", "twoFingerTap", "pinch",
+    "expectDialog", "expectSurfaceNonBlack", "expectThread", "expectFileExists", "expectMessages",
+]);
+
+export class HarnessService {
+    private handlers = new Map<string, HarnessHandler>();
+    private inFlight = new Map<number, InFlight>();
+    /** Set by a fatal fault; every later command fails until the guest is reloaded. */
+    private crashed: HarnessError | null = null;
+    /**
+     * "Has the guest process ended cleanly?" A crash emits a fatal `fault` and latches
+     * `crashed`; a clean ExitProcess emits nothing, so every live-guest verb used to poll
+     * for progress that could never come and pay out its own multi-minute timeout — which
+     * reads as the RPC channel having died. Probed rather than latched so a reload clears
+     * it with no extra bookkeeping.
+     */
+    private guestExited: (() => boolean) | null = null;
+
+    /** Wire the clean-exit probe (worker-side, see cmds/state.ts). */
+    setGuestExitProbe(probe: (() => boolean) | null): void {
+        this.guestExited = probe;
+    }
+
+    private exitedError(): HarnessError | null {
+        let exited = false;
+        try { exited = !!this.guestExited?.(); } catch { return null; }
+        if (!exited) return null;
+        return new HarnessError(
+            "guest process has exited (ExitProcess) — nothing will advance. The post-mortem "
+            + "verbs still answer: report, stubs, state, logs, fs*, childProcesses.",
+            HarnessErrorCode.EXITED,
+        );
+    }
+
+    constructor() {
+        // A fatal guest crash ends every wait NOW. Without this a script that was
+        // parked in tickFrames/waitForEvent sits out its full timeout after the
+        // process is already dead, and reports a TIMEOUT instead of the crash.
+        harnessBus.onLocal("fault", (data) => {
+            const fault = data as { fatal?: boolean; reason?: string } | null;
+            if (!fault?.fatal) return; // per-thread faults leave the process running
+            const err = new HarnessError(
+                `guest crashed: ${fault.reason ?? "unknown"} — see report()`,
+                HarnessErrorCode.CRASHED,
+            );
+            // Latch it. Aborting only the in-flight call leaves a dead guest that every
+            // SUBSEQUENT verb happily "succeeds" against — a click nobody receives, a
+            // tickFrames over presents that stopped — so the crash surfaces as a puzzling
+            // screenshot minutes later instead of as the failing step.
+            this.crashed = err;
+            this.abortAll(err);
+        });
+    }
+
+    /** Clear the crash latch — the guest is being (re)started. */
+    clearCrashLatch(): void {
+        this.crashed = null;
+    }
+
+    /** Abort every in-flight call (crash teardown). */
+    private abortAll(err: HarnessError): void {
+        for (const f of this.inFlight.values()) f.controller.abort(err);
+    }
+
+    /**
+     * A clean exit announces itself to nobody, so a wait already parked when the guest
+     * called ExitProcess has nothing to wake it. Poll — but only while a live-guest verb
+     * is actually parked, so an idle worker pays nothing.
+     */
+    private exitPoll: ReturnType<typeof setInterval> | null = null;
+
+    private watchForExit(): void {
+        const waiting = [...this.inFlight.values()].some((f) => f.needsGuest);
+        if (!waiting) {
+            if (this.exitPoll !== null) { clearInterval(this.exitPoll); this.exitPoll = null; }
+            return;
+        }
+        if (this.exitPoll !== null) return;
+        this.exitPoll = setInterval(() => {
+            const dead = this.exitedError();
+            if (!dead) { this.watchForExit(); return; }
+            for (const f of this.inFlight.values()) if (f.needsGuest) f.controller.abort(dead);
+        }, 250);
+    }
+
+    /** Register a command handler. Re-registration overwrites (last wins). */
+    register(name: string, handler: HarnessHandler): void {
+        this.handlers.set(name, handler);
+    }
+
+    /** Names of all registered commands (for discovery / `help`). */
+    list(): string[] {
+        return [...this.handlers.keys()].sort();
+    }
+
+    has(name: string): boolean {
+        return this.handlers.has(name);
+    }
+
+    /** Cancel an in-flight call (page sent harness_cancel). */
+    cancel(id: number): void {
+        const f = this.inFlight.get(id);
+        if (f) f.controller.abort(new HarnessError("cancelled", HarnessErrorCode.CANCELLED));
+    }
+
+    /** Runs before every verb. A verb reads back-end state as of the last executed command, and
+     *  with deferred execution (`__wbufDefer`) that lags the guest, so every verb is a fence. */
+    private verbFence: (() => void) | null = null;
+    setVerbFence(fence: (() => void) | null): void {
+        this.verbFence = fence;
+    }
+
+    /** Dispatch a harness_rpc message, posting the correlated reply. */
+    async dispatch(msg: HarnessRequest): Promise<void> {
+        const { id, cmd, args, opts } = msg;
+        if (NEEDS_LIVE_GUEST.has(cmd)) {
+            const dead = this.crashed ?? this.exitedError();
+            if (dead) {
+                this.reply({ type: HARNESS_REPLY, id, ok: false, error: toErrorPayload(dead) });
+                return;
+            }
+        }
+        const handler = this.handlers.get(cmd);
+        if (!handler) {
+            this.reply({ type: HARNESS_REPLY, id, ok: false, error: toErrorPayload(new HarnessError(`unknown command: ${cmd}`, HarnessErrorCode.UNKNOWN_CMD)) });
+            return;
+        }
+
+        const controller = new AbortController();
+        const timeoutMs = opts?.timeoutMs ?? undefined;
+        let timer: ReturnType<typeof setTimeout> | null = null;
+        if (timeoutMs === undefined || timeoutMs > 0) {
+            const ms = timeoutMs ?? 60_000;
+            timer = setTimeout(() => {
+                controller.abort(new HarnessError(`timeout after ${ms}ms`, HarnessErrorCode.TIMEOUT));
+            }, ms);
+        }
+        this.inFlight.set(id, { controller, timer, needsGuest: NEEDS_LIVE_GUEST.has(cmd) });
+        this.watchForExit();
+
+        const ctx: HarnessCtx = {
+            runId: id,
+            signal: controller.signal,
+            opts: opts ?? {},
+            emit: (event, data) => harnessBus.emit(event, data, id),
+        };
+
+        // Ambient runId so synchronous events during the handler correlate.
+        const prevRunId = harnessBus.getRunId();
+        harnessBus.setRunId(id);
+        try {
+            this.verbFence?.();
+            const result = await Promise.race([
+                Promise.resolve(handler(Array.isArray(args) ? args : [], ctx)),
+                this.abortPromise(controller.signal),
+            ]);
+            this.reply({ type: HARNESS_REPLY, id, ok: true, result });
+        } catch (err) {
+            this.reply({ type: HARNESS_REPLY, id, ok: false, error: toErrorPayload(err) });
+        } finally {
+            harnessBus.setRunId(prevRunId);
+            const f = this.inFlight.get(id);
+            if (f?.timer) clearTimeout(f.timer);
+            this.inFlight.delete(id);
+            this.watchForExit();
+        }
+    }
+
+    private abortPromise(signal: AbortSignal): Promise<never> {
+        return new Promise((_resolve, reject) => {
+            if (signal.aborted) {
+                reject(signal.reason ?? new HarnessError("aborted", HarnessErrorCode.CANCELLED));
+                return;
+            }
+            signal.addEventListener("abort", () => reject(signal.reason ?? new HarnessError("aborted", HarnessErrorCode.CANCELLED)), { once: true });
+        });
+    }
+
+    private reply(msg: HarnessReply): void {
+        try {
+            (self as unknown as Worker).postMessage(msg);
+        } catch (e) {
+            // Result wasn't structured-cloneable — replace with an error so the
+            // caller's promise still settles instead of hanging forever.
+            (self as unknown as Worker).postMessage({
+                type: HARNESS_REPLY,
+                id: msg.id,
+                ok: false,
+                error: toErrorPayload(new HarnessError(`result not serializable: ${(e as Error).message}`, HarnessErrorCode.INTERNAL)),
+            } satisfies HarnessReply);
+        }
+    }
+}
+
+/** Worker-wide singleton. */
+export const harnessService = new HarnessService();

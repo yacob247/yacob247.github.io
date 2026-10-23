@@ -1,0 +1,464 @@
+#!/usr/bin/env bun
+/**
+ * make-wgb: Create a .wgb bundle from a game directory + metadata flags.
+ *
+ * Unlike pack-wgb (which zips a pre-staged directory), make-wgb accepts a raw
+ * game directory, generates manifest.json and registry.json via JSON.stringify
+ * (guarantees correct backslash escaping), then packs everything in one step.
+ *
+ * Usage:
+ *   bun tools/make-wgb.ts <game-dir> <output.wgb> [options]
+ *
+ * Required:
+ *   <game-dir>      Directory whose contents become rom/ inside the bundle.
+ *   <output.wgb>    Destination .wgb file path.
+ *
+ * Options:
+ *   --order <profile>    Store files in first-access order from a harness .wgb.profile
+ *   --content-addressed  Write a copy named <name>.<sha256>.wgb for immutable hosting
+ *   --name <str>          Display name  (default: basename of game-dir)
+ *   --game-id <str>       Stable container/save key, namespaced "<scheme>:<id>"
+ *                         (gog:<productId> | steam:<appid> | app:<reverse-dns> | byo:<hex>).
+ *                         Default: app:<slug(name)> (with a warning — prefer an explicit id).
+ *   --exe  <str>          Entrypoint exe relative to game-dir (default: auto-detect first .exe)
+ *   --args <str>          Command-line args passed to the exe
+ *   --width  <n>          Screen width  (default: 640)
+ *   --height <n>          Screen height (default: 480)
+ *   --bpp    <n>          Bits per pixel (default: 16)
+ *   --ram    <n>          RAM in MB (default: 64)
+ *   --os     win95|win98|winnt|win2k|winxp  OS version preset (default: win98)
+ *   --reg-hive  HKLM|HKCU      Registry hive for InstallPath key (default: HKLM)
+ *   --reg-path  <str>     Registry key path, backslash-separated (default: none)
+ *   --reg-install <str>   Value data for the install-path key (default: C:\)
+ *   --reg-value <n=v>     Extra REG_SZ value under --reg-path, repeatable:
+ *                         --reg-value "War3CD=D:\\" --reg-value "Program=C:\game.exe".
+ *                         One InstallPath is not enough for an installer that wrote several.
+ *                         Requires --reg-path; a duplicate value name is an error.
+ *   --reg-import <file>   Import a registry file (repeatable) — the keys an installer or a
+ *                         Wine prefix actually wrote. Both dialects: an exported .reg and a
+ *                         Wine prefix's own system.reg/user.reg. A WOW6432Node segment is
+ *                         folded out (the guest is 32-bit, so that IS the key the game
+ *                         reads). Combines with --reg-path, which wins on a shared value.
+ *   --reg-import-under <key>  Keep only imported keys under this subtree, repeatable:
+ *                         --reg-import-under "Software\Electronic Arts". Required in
+ *                         practice for a Wine hive, which is a whole machine's registry.
+ *                         A subtree that matches nothing is an error, not an empty import.
+ *   --reg-name <str>      Value NAME for it (default: InstallPath). Titles differ —
+ *                         GTA III reads HKLM\SOFTWARE\Rockstar Games\GTA 3\InstallDir.
+ *   --cd-path <str>       Guest path the CD-ROM drive (D:\) aliases to, for a title that
+ *                         still checks for its disc. Usually "C:\" (the install root).
+ *   --cd-label <str>      Volume label of that disc, as GetVolumeInformation reports it for
+ *                         D:\ — what a title that checks its disc by label compares against.
+ *   --app-dir-dlls <list> Comma/semicolon-separated DLL names whose copy IN THE GAME
+ *                         DIRECTORY must win over our HLE module, as Windows' search
+ *                         order does (app dir before System32). Required for a game that
+ *                         ships a wrapper/proxy DLL — an ASI loader, a Glide or ddraw
+ *                         shim — which otherwise never executes. Example:
+ *                         --app-dir-dlls "ddraw"
+ *   --working-dir <path>  Guest cwd at boot when it is NOT the entrypoint's folder —
+ *                         an engine module a launcher starts inherits the LAUNCHER's
+ *                         directory and resolves its data paths against it. Example:
+ *                         --working-dir "C:\\" for an exe that lives under Data\.
+ *   --skip-video          Set emulator.skipVideo=true
+ *   --file-times          Stamp each file's mtime into the bundle as its last-write time.
+ *                         Only for a game-dir whose mtimes are the real ones (a copied
+ *                         install, or tools/installer-extract.ts output, which restores
+ *                         the installer's dates); otherwise files carry no date and the
+ *                         bundle does not depend on when they were extracted.
+ *   --codepage <n>       ANSI code page (default: 1252). Use 1251 for Cyrillic
+ *   --oem-codepage <n>   OEM code page (default: 437). Use 866 for Cyrillic OEM
+ *   --lcid <hex>         Locale ID in hex (default: 0409). Use 0419 for Russian
+ *   --create-dirs <list> Comma/semicolon-separated dir paths the INSTALLER created but
+ *                        that store-only ZIP drops (a ZIP has no entry for an empty dir).
+ *                        The worker recreates them at boot (mkdir -p) so the game's own
+ *                        fopen("wb") into e.g. user\rosters succeeds. Backslash or forward
+ *                        slash both work. Example: --create-dirs "user\rosters,user\save\photos"
+ *   --touch-layout <v>   On-screen touch controls for this title: either a preset id
+ *                        (pointer | pointer-rmb | wasd-look | dpad-buttons | pad) or a
+ *                        path to a .json ControlLayout exported from the layout editor.
+ *                        Sets emulator.touch.layout; without it the host auto-detects.
+ *   --touch-mode <m>     auto | direct | trackpad (default auto = follow the guest's
+ *                        relative-mouse intent). Sets emulator.touch.mode.
+ *
+ * Examples:
+ *   bun tools/make-wgb.ts C:/Share/THPS2 E:/wgb/thps2-demo.wgb \
+ *       --name "Tony Hawk's Pro Skater 2 Demo" \
+ *       --exe THawk2.exe \
+ *       --reg-path "Software\Activision\Tony Hawk's Pro Skater 2 Demo"
+ *
+ *   bun tools/make-wgb.ts C:/Share/Quake E:/wgb/quake.wgb \
+ *       --name "Quake" --exe quake.exe --os winnt --width 800 --height 600 --bpp 32
+ */
+
+import { readdirSync, statSync, readFileSync, existsSync } from 'fs';
+import { instantToWallClock } from '@bottleship/formats/zip';
+import { join, basename, extname, resolve } from 'path';
+import { orderFilesByProfile, parseIoProfile } from "@bottleship/formats/wgb/io-profile";
+import { ZipStoreWriter } from './internal/zip-store-writer';
+import { isValidGameId, deriveGameId, KNOWN_GAME_ID_SCHEMES } from '@bottleship/formats/wgb/container-id';
+import { parseRegFile, mergeRegSeeds, type RegSeed } from '@bottleship/formats/reg';
+
+// ---------------------------------------------------------------------------
+// Argument parsing
+// ---------------------------------------------------------------------------
+
+function parseArgs(argv: string[]) {
+    const args = argv.slice(2);
+    if (args.length < 2) {
+        console.error('Usage: bun tools/make-wgb.ts <game-dir> <output.wgb> [options]');
+        console.error('Run with --help for full option list.');
+        process.exit(1);
+    }
+
+    const gameDir  = args[0];
+    const output   = args[1];
+
+    const get = (flag: string) => {
+        const i = args.indexOf(flag);
+        return i !== -1 ? args[i + 1] : undefined;
+    };
+    const has = (flag: string) => args.includes(flag);
+    /** Every occurrence of a repeatable flag, in order. */
+    const getAll = (flag: string) => {
+        const out: string[] = [];
+        for (let i = 0; i < args.length; i++) if (args[i] === flag && args[i + 1] !== undefined) out.push(args[i + 1]);
+        return out;
+    };
+
+    if (has('--help')) {
+        // Print the block comment at the top of this file
+        const src = readFileSync(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'), 'utf8');
+        const match = src.match(/\/\*\*([\s\S]*?)\*\//);
+        if (match) console.log(match[1].replace(/^ \* ?/gm, ''));
+        process.exit(0);
+    }
+
+    return { gameDir, output, get, getAll, has };
+}
+
+// ---------------------------------------------------------------------------
+// OS version presets
+// ---------------------------------------------------------------------------
+
+type OsPreset = { major: number; minor: number; build: number; platformId: number };
+const OS_PRESETS: Record<string, OsPreset> = {
+    win95: { major: 4, minor: 0,  build: 950,  platformId: 1 },
+    win98: { major: 4, minor: 10, build: 2222, platformId: 1 },
+    winnt: { major: 4, minor: 0,  build: 1381, platformId: 2 },
+    win2k: { major: 5, minor: 0,  build: 2195, platformId: 2 },
+    winxp: { major: 5, minor: 1,  build: 2600, platformId: 2 },
+};
+
+// ---------------------------------------------------------------------------
+// Auto-detect entrypoint exe
+// ---------------------------------------------------------------------------
+
+function detectExe(dir: string): string | undefined {
+    // Prefer an exe that is not an installer/uninstaller
+    const SKIP = /^(setup|install|unwise|uninstall|uninst)/i;
+    const exes = readdirSync(dir)
+        .filter(f => extname(f).toLowerCase() === '.exe' && !SKIP.test(f));
+    return exes[0];
+}
+
+// ---------------------------------------------------------------------------
+// Collect game files recursively
+// ---------------------------------------------------------------------------
+
+// Walk the game dir into `out` (zip entries) and record any EMPTY directory into
+// `emptyDirs` (path relative to the game dir, backslash form). A store-only ZIP has
+// no entry for an empty dir, so an installer-created folder like `user\rosters` would
+// vanish silently and the game's fopen("wb") into it would fail (Windows fopen doesn't
+// mkdir parents). We surface these so they can be recreated at boot via createDirs.
+// Only PATHS are collected — a multi-GB bundle must never be assembled in memory; the
+// writer streams each member off disk.
+function collectGameFiles(dir: string, prefix: string, out: Map<string, string>, emptyDirs: Set<string>, rel = '') {
+    const entries = readdirSync(dir);
+    if (entries.length === 0) {
+        if (rel) emptyDirs.add(rel); // deepest empty dir; mkdir -p at boot covers ancestors
+        return;
+    }
+    for (const entry of entries) {
+        const full = join(dir, entry);
+        const zipName = prefix + entry;
+        const childRel = rel ? `${rel}\\${entry}` : entry;
+        if (statSync(full).isDirectory()) {
+            collectGameFiles(full, zipName + '/', out, emptyDirs, childRel);
+        } else {
+            out.set(zipName, full);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
+
+const { gameDir, output, get, getAll, has } = parseArgs(process.argv);
+
+if (!existsSync(gameDir)) {
+    console.error(`Error: game directory not found: ${gameDir}`);
+    process.exit(1);
+}
+
+// Entrypoint
+const exeName = get('--exe') ?? detectExe(gameDir);
+if (!exeName) {
+    console.error('Error: no .exe found in game directory; use --exe <name>');
+    process.exit(1);
+}
+
+// Build manifest — JSON.stringify handles all escaping correctly
+const name       = get('--name') ?? basename(gameDir);
+const args       = get('--args');
+const workingDir = get('--working-dir');
+const width      = parseInt(get('--width')  ?? '640', 10);
+const height     = parseInt(get('--height') ?? '480', 10);
+const bpp        = parseInt(get('--bpp')    ?? '16',  10);
+const ramMB      = parseInt(get('--ram')    ?? '64',  10);
+const osKey      = get('--os') ?? 'win98';
+const osVer      = OS_PRESETS[osKey];
+if (!osVer) {
+    console.error(`Error: unknown --os preset "${osKey}". Valid: ${Object.keys(OS_PRESETS).join(', ')}`);
+    process.exit(1);
+}
+
+// Container identity (WGB v2). Explicit --game-id wins; otherwise derive app:<slug(name)> + warn.
+const entrypoint = `rom/${exeName}`;
+let gameId = get('--game-id');
+if (gameId && !isValidGameId(gameId)) {
+    console.error(`Error: invalid --game-id "${gameId}". Use "<scheme>:<id>" with scheme in {${KNOWN_GAME_ID_SCHEMES.join(', ')}}.`);
+    process.exit(1);
+}
+if (!gameId) {
+    gameId = deriveGameId({ name, entrypoint });
+    console.warn(`⚠ no --game-id given; defaulting to "${gameId}". Prefer an explicit stable id (it is the save key).`);
+}
+
+// Scan the game dir up-front: collect rom/ file entries AND auto-detect empty
+// directories the installer left (ZIP drops them). Explicit --create-dirs are
+// merged on top — belt and suspenders for authors who know the paths.
+const romFiles = new Map<string, string>();
+const emptyDirs = new Set<string>();
+collectGameFiles(gameDir, 'rom/', romFiles, emptyDirs);
+
+const explicitCreateDirs = (get('--create-dirs') ?? '')
+    .split(/[,;]/)
+    .map((d) => d.trim().replace(/\//g, '\\').replace(/^\\+|\\+$/g, ''))
+    .filter((d) => d.length > 0);
+
+const createDirs = [...new Set([...explicitCreateDirs, ...emptyDirs])].sort();
+
+// Where the CD-ROM drive (D:\) points. A retail install still expects its disc — GTA III
+// hunts for a DRIVE_CDROM whose AUDIO\HEAD.WAV opens — so a bundle packed from an install
+// must say which guest path stands in for the disc, usually the install root itself.
+const cdPath = get('--cd-path');
+// The disc's volume label — what a retail title compares GetVolumeInformation against.
+const cdLabel = get('--cd-label');
+
+// DLLs whose game-directory copy must beat our HLE module (Windows' own search order).
+// Wrapper/proxy DLLs a game ships — ASI loaders, Glide/ddraw shims — never execute without it.
+const appDirDlls = (get('--app-dir-dlls') ?? '')
+    .split(/[,;]/)
+    .map((d) => d.trim())
+    .filter((d) => d.length > 0);
+if (emptyDirs.size > 0) {
+    console.log(`  empty dirs: auto-detected ${emptyDirs.size} (added to createDirs): ${[...emptyDirs].sort().join(', ')}`);
+}
+
+// Touch controls (host-side data; the worker only forwards it in bundle_meta).
+// A preset id stays a string; a .json path is parsed here so unreadable or syntactically
+// invalid JSON fails at pack time instead of silently degrading to auto-detect on a phone.
+// SYNTAX only — the layout's SHAPE is not validated, so a well-formed but wrong object
+// still ships.
+const TOUCH_PRESETS = ['pointer', 'pointer-rmb', 'wasd-look', 'dpad-buttons', 'pad'];
+const touchLayoutArg = get('--touch-layout');
+let touchLayout: string | Record<string, unknown> | undefined;
+if (touchLayoutArg) {
+    if (/\.json$/i.test(touchLayoutArg)) {
+        if (!existsSync(touchLayoutArg)) {
+            console.error(`Error: --touch-layout file not found: ${touchLayoutArg}`);
+            process.exit(1);
+        }
+        try {
+            touchLayout = JSON.parse(readFileSync(touchLayoutArg, 'utf8'));
+        } catch (err) {
+            console.error(`Error: --touch-layout "${touchLayoutArg}" is not valid JSON: ${err}`);
+            process.exit(1);
+        }
+    } else if (TOUCH_PRESETS.includes(touchLayoutArg)) {
+        touchLayout = touchLayoutArg;
+    } else {
+        console.error(`Error: unknown --touch-layout "${touchLayoutArg}". Valid presets: ${TOUCH_PRESETS.join(', ')} (or a .json file).`);
+        process.exit(1);
+    }
+}
+const touchModeArg = get('--touch-mode');
+if (touchModeArg && !['auto', 'direct', 'trackpad'].includes(touchModeArg)) {
+    console.error(`Error: unknown --touch-mode "${touchModeArg}". Valid: auto, direct, trackpad.`);
+    process.exit(1);
+}
+const touch = (touchLayout !== undefined || touchModeArg)
+    ? { ...(touchLayout !== undefined ? { layout: touchLayout } : {}), ...(touchModeArg ? { mode: touchModeArg } : {}) }
+    : undefined;
+
+const manifest: Record<string, unknown> = {
+    formatVersion: 2,
+    gameId,
+    name,
+    entrypoint,
+    rom: 'rom',
+    registry: 'registry.json',
+    emulator: {
+        osVersion: osVer,
+        screenResolution: { width, height, bpp },
+        memory: { ram: ramMB * 1024 * 1024 },
+        ...(has('--skip-video') ? { skipVideo: true } : {}),
+        ...(get('--codepage') ? { codepage: parseInt(get('--codepage')!, 10) } : {}),
+        ...(get('--oem-codepage') ? { oemCodepage: parseInt(get('--oem-codepage')!, 10) } : {}),
+        ...(get('--lcid') ? { lcid: parseInt(get('--lcid')!, 16) } : {}),
+        ...(createDirs.length > 0 ? { createDirs } : {}),
+        ...(appDirDlls.length > 0 ? { appDirDlls } : {}),
+        ...(cdPath ? { cdPath } : {}),
+        ...(cdLabel ? { cdLabel } : {}),
+        ...(touch ? { touch } : {}),
+    },
+};
+if (args) (manifest as any).args = args;
+if (workingDir) (manifest.emulator as any).workingDir = workingDir;
+
+// Build registry — JSON.stringify guarantees \\ escaping of backslashes
+const regPath    = get('--reg-path');
+const regHive    = get('--reg-hive') ?? 'HKLM';
+const regInstall = get('--reg-install') ?? 'C:\\';
+
+// Additional REG_SZ values under the same key. One install-path value is not enough for a
+// title whose installer wrote several (Warcraft III reads Program AND War3CD alongside
+// InstallPath, and answers a missing War3CD with a "please insert the disc" modal).
+const extraRegValues = getAll('--reg-value').map((pair) => {
+    const eq = pair.indexOf('=');
+    if (eq <= 0) {
+        console.error(`Error: --reg-value expects NAME=DATA, got "${pair}"`);
+        process.exit(1);
+    }
+    return { name: pair.slice(0, eq), type: 'REG_SZ', data: pair.slice(eq + 1) };
+});
+
+// A drop that came from an installer or a Wine prefix ships its keys as .reg text, which is
+// the authoritative record of what the installer wrote — parse it rather than retype it.
+// Repeatable; the guest is 32-bit, so a WOW6432Node segment folds out (that IS the key the
+// game reads). Imported keys come first so an explicit --reg-path/--reg-value still wins.
+const regImports = getAll('--reg-import');
+// A Wine prefix's hive is the whole machine, not the game: seeding its thousands of COM,
+// font and MIME keys would bury the handful the game reads and hand our registry a
+// machine's worth of state to answer from. Restrict the import to the subtrees named.
+const regUnder = getAll('--reg-import-under').map((k) => k.replace(/\//g, '\\').replace(/^\\+|\\+$/g, '').toLowerCase());
+const underMatch = (path: string): boolean => {
+    if (regUnder.length === 0) return true;
+    const p = path.toLowerCase();
+    return regUnder.some((u) => p === u || p.startsWith(`${u}\\`));
+};
+const importedSeeds: RegSeed[] = [];
+for (const file of regImports) {
+    if (!existsSync(file)) {
+        console.error(`Error: --reg-import "${file}" does not exist.`);
+        process.exit(1);
+    }
+    try {
+        const seeds = parseRegFile(readFileSync(file), {
+            foldWow6432Node: true,
+            // A skip inside a key we are importing has to stay loud; one in the rest of a
+            // whole-machine hive is not ours, and a storm of those hides the one that is.
+            onSkip: (reason, key) => {
+                if (key !== undefined && !underMatch(key.replace(/^HK[A-Z]+\\/, ''))) return;
+                console.warn(`  ${basename(file)}: skipped ${reason}${key ? ` under ${key}` : ''}`);
+            },
+        });
+        const kept = seeds.filter((s) => underMatch(s.path));
+        if (regUnder.length > 0) {
+            console.log(`  ${basename(file)}: ${kept.length} of ${seeds.length} key(s) under the named subtree(s)`);
+        }
+        importedSeeds.push(...kept);
+    } catch (err) {
+        console.error(`Error: --reg-import "${file}": ${err}`);
+        process.exit(1);
+    }
+}
+// A subtree that matched nothing is a typo or the wrong hive, not an empty game key.
+for (const u of regUnder) {
+    if (!importedSeeds.some((s) => underMatch(s.path) && (s.path.toLowerCase() === u || s.path.toLowerCase().startsWith(`${u}\\`)))) {
+        console.error(`Error: --reg-import-under "${u}" matched no key in the imported file(s).`);
+        process.exit(1);
+    }
+}
+
+let registry: unknown;
+if (regPath) {
+    const values = [
+        { name: get('--reg-name') ?? 'InstallPath', type: 'REG_SZ', data: regInstall },
+        ...extraRegValues,
+    ];
+    // Two values under one name means one of them silently never applies, and the game
+    // reads whichever the loader happens to keep — say so at pack time instead.
+    const seen = new Set<string>();
+    for (const v of values) {
+        const key = v.name.toLowerCase();
+        if (seen.has(key)) {
+            console.error(`Error: registry value "${v.name}" given twice under ${regHive}\\${regPath}`);
+            process.exit(1);
+        }
+        seen.add(key);
+    }
+    const own = {
+        root: regHive,
+        path: regPath,          // JS string; JSON.stringify will escape \ → \\
+        values,
+    };
+    registry = importedSeeds.length > 0 ? mergeRegSeeds([...importedSeeds, own]) : own;
+} else {
+    if (extraRegValues.length > 0) {
+        console.error('Error: --reg-value needs --reg-path — there is no key to write it under.');
+        process.exit(1);
+    }
+    // Minimal placeholder so the loader doesn't error on missing registry.json
+    registry = importedSeeds.length > 0 ? mergeRegSeeds(importedSeeds) : { root: 'HKLM', path: 'Software', values: [] };
+}
+
+// Stream the archive straight to disk: manifest + registry first (readability in
+// `wgb list`), then the game files scanned above (romFiles holds paths, not bytes).
+const writer = new ZipStoreWriter(output);
+writer.addBuffer('manifest.json', Buffer.from(JSON.stringify(manifest, null, 2), 'utf8'));
+writer.addBuffer('registry.json', Buffer.from(JSON.stringify(registry, null, 2), 'utf8'));
+const orderProfile = get('--order');
+const orderedFiles = orderProfile ? orderFilesByProfile(romFiles, parseIoProfile(JSON.parse(readFileSync(orderProfile, 'utf8')))) : [...romFiles];
+const fileTimes = has('--file-times');
+for (const [zipName, path] of orderedFiles) {
+    writer.addFile(zipName, path, fileTimes ? instantToWallClock(statSync(path).mtimeMs / 1000) : undefined);
+}
+const { bytes, entries: entryCount } = writer.finish();
+
+if (has('--content-addressed')) {
+    const hasher = new Bun.CryptoHasher("sha256");
+    for await (const chunk of Bun.file(output).stream()) hasher.update(chunk);
+    const addressed = output.replace(/\.wgb$/i, '') + `.${hasher.digest("hex")}.wgb`;
+    await Bun.write(addressed, Bun.file(output));
+    console.log(`Immutable bundle: ${addressed}`);
+}
+
+console.log(`Created ${output} (${entryCount} files, ${(bytes / 1024 / 1024).toFixed(1)} MB)`);
+console.log(`  name:       ${name}`);
+console.log(`  entrypoint: rom/${exeName}`);
+console.log(`  resolution: ${width}x${height}x${bpp}`);
+console.log(`  os:         ${osKey} (${osVer.major}.${osVer.minor}.${osVer.build})`);
+for (const seed of importedSeeds) {
+    console.log(`  registry:   ${seed.root}\\${seed.path} (${seed.values.length} values, imported)`);
+}
+if (regPath) {
+    console.log(`  registry:   ${regHive}\\${regPath}`);
+    for (const v of extraRegValues) console.log(`              ${v.name} = ${v.data}`);
+}
+
+// Ready-to-open dev URL: the dev server (serveWgbFromDisk) streams this file straight
+// off disk via Range — no symlink, no copy into public/. `?game=dev&load=` auto-loads it.
+const bundleUrl = `/__wgb/?path=${encodeURIComponent(resolve(output))}`;
+console.log(`  open (dev): http://localhost:5174/?game=dev&load=${encodeURIComponent(bundleUrl)}`);
