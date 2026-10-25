@@ -226,6 +226,9 @@
     #skipBtn:disabled { opacity: .7; cursor: default; }
     .promo-tag { background: #f59e0b; color: #000; }
 
+    /* ===== SMART THUMBNAIL FIT: whole image always visible ===== */
+    img.tfit { object-fit: contain !important; background-color: #0e1424; background-repeat: no-repeat; background-position: center; background-size: cover; }
+
     /* ===== GAME IDENTITY: cover (big thumbnail) + side icon ===== */
     .pv-cover { position: absolute; inset: 0; z-index: 4; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 24px; background: #05070d; overflow: hidden; transition: opacity .45s ease, visibility .45s; }
     .pv-cover.hide { opacity: 0; visibility: hidden; pointer-events: none; }
@@ -2586,7 +2589,7 @@ body.modal-open { overflow: hidden; }
     tags: ['Business', 'Simulation', 'Management', 'Multiplayer'],
     provider: 'Official site'
   },
-
+ 
   {
     id: 'politics-and-war',
     name: 'Politics and War',
@@ -2785,7 +2788,6 @@ body.modal-open { overflow: hidden; }
   tags: ['Pool', 'Billiards', 'Sports', 'Multiplayer', '3D'],
   provider: 'Miniclip'
 },
-
 
  { id: '2048', name: '2048', category: 'Puzzle', subcategory: 'Tile', thumbnail: '', embedUrl: 'https://www.gamedavinci.com/embed/2048/', description: 'Slide numbered tiles to merge them and reach 2048.', tags: ['Numbers','Logic'], provider: 'GameDavinci' },
       { id: 'arrow-escape', name: 'Arrow Escape', category: 'Puzzle', subcategory: 'Logic', thumbnail: '', embedUrl: 'https://www.gamedavinci.com/embed/arrow-escape/', description: 'Tap arrows to clear the board without collisions.', tags: ['Logic','Casual'], provider: 'GameDavinci' },
@@ -3891,5 +3893,51 @@ if (rw) {
 </script>
 <!-- GTA Vice City added under bus simulator listings -->
 
+<script>
+/* Smart thumbnail fit: any thumbnail (local or from another site) is shown whole.
+   - broken / blocked / tiny images -> swapped for the generated game tile
+   - images whose shape differs from the card -> "contain" over a darkened copy of themselves (no cropping) */
+(function () {
+  const SEL = '.pcard img, .nx img, .acct-games .gt img, .game-thumb, .hslide img';
+  const GRID_ONLY = '.pcard img, .nx img, .acct-games .gt img, .game-thumb';
+  function fallbackFor(img) {
+    const host = img.closest('[data-id]');
+    const id = host && host.dataset.id;
+    let g = null;
+    try { g = (window.__getAllGames ? window.__getAllGames() : []).find(x => x.id === id); } catch (e) {}
+    try { if (g && window.__getThumbnail) return window.__getThumbnail({ ...g, thumbnail: '' }); } catch (e) {}
+    return null;
+  }
+  function useFallback(img) {
+    if (img.dataset.fb) return;
+    const fb = fallbackFor(img);
+    if (!fb) return;
+    img.dataset.fb = '1'; img.classList.remove('tfit'); img.src = fb;
+  }
+  function fit(img) {
+    if (!img.matches || !img.matches(SEL) || img.dataset.fb) return;
+    const w = img.naturalWidth, h = img.naturalHeight;
+    if (!w || !h) return;
+    if (!img.matches(GRID_ONLY)) return;
+    if (w < 48 || h < 48) { useFallback(img); return; }
+    const box = img.getBoundingClientRect();
+    if (!box.width || !box.height) return;
+    const diff = Math.abs(Math.log((w / h) / (box.width / box.height)));
+    if (diff > 0.12) {                       // more than ~12% shape mismatch: don't crop
+      img.classList.add('tfit');
+      if (!/^data:image\/svg/.test(img.currentSrc || img.src)) {
+        const u = (img.currentSrc || img.src).replace(/"/g, '%22');
+        img.style.backgroundImage = 'linear-gradient(rgba(8,10,20,.74),rgba(8,10,20,.74)), url("' + u + '")';
+      }
+    } else { img.classList.remove('tfit'); img.style.backgroundImage = ''; }
+  }
+  document.addEventListener('load', e => { if (e.target && e.target.tagName === 'IMG') fit(e.target); }, true);
+  document.addEventListener('error', e => { const t = e.target; if (t && t.tagName === 'IMG' && t.matches && t.matches(SEL)) useFallback(t); }, true);
+  const scan = root => { if (!root.querySelectorAll) return; (root.matches && root.matches('img') ? [root] : root.querySelectorAll('img')).forEach(i => { if (i.complete) { i.naturalWidth ? fit(i) : (i.getAttribute('src') && i.matches(SEL) && i.complete && i.naturalWidth === 0 && useFallback(i)); } }); };
+  new MutationObserver(ms => ms.forEach(m => m.addedNodes.forEach(n => n.nodeType === 1 && scan(n)))).observe(document.documentElement, { childList: true, subtree: true });
+  window.addEventListener('resize', () => document.querySelectorAll('img.tfit, ' + GRID_ONLY).forEach(i => { if (i.complete) fit(i); }));
+  scan(document);
+})();
+</script>
 <script src="gamenetic-plus.js" defer></script>
 </body></html>
