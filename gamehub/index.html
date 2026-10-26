@@ -2909,6 +2909,24 @@ const ic = '🎮';
     }
 
 let REWRITES = {};
+
+function applyRewrite(game) {
+  if (!game) return game;
+  const raw = String(game.id || '');
+  const candidates = [raw, raw.replace(/^gm-/, '')];
+  let rw = null;
+  for (const k of candidates) { if (REWRITES[k]) { rw = REWRITES[k]; break; } }
+  if (!rw) return game;
+  if (rw.title) game.name = cleanText(rw.title);
+  if (rw.intro) game.description = cleanText(rw.intro);
+  game.howToPlay = cleanText(rw.howToPlay || '');
+  game.modes     = cleanText(rw.modes || '');
+  game.tips      = Array.isArray(rw.tips) ? rw.tips : [];
+  game.features  = Array.isArray(rw.features) ? rw.features : [];
+  game.faq       = Array.isArray(rw.faq) ? rw.faq : [];
+  return game;
+}
+
 async function loadRewrites() {
   try {
     const r = await fetch('rewrites.json', { cache: 'no-cache' });
@@ -2916,11 +2934,30 @@ async function loadRewrites() {
     const data = await r.json();
     if (data && typeof data === 'object' && !Array.isArray(data)) REWRITES = data;
     console.log('rewrites.json loaded:', Object.keys(REWRITES).length, 'entries');
+
+    // Apply to whatever games are already in memory (static ones at boot).
+    allGames.forEach(applyRewrite);
+
+    // Report orphan rewrite keys so you can spot entries that match nothing.
+    const used = new Set();
+    allGames.forEach(g => {
+      const raw = String(g.id || '');
+      if (REWRITES[raw]) used.add(raw);
+      const stripped = raw.replace(/^gm-/, '');
+      if (REWRITES[stripped]) used.add(stripped);
+    });
+    const orphans = Object.keys(REWRITES).filter(k => !used.has(k));
+    if (orphans.length) console.info('rewrites.json: ' + orphans.length + ' key(s) match no game yet', orphans.slice(0, 20));
+
+    if (typeof renderFilters === 'function') renderFilters();
+    if (typeof renderGrid === 'function') renderGrid(true);
+    if (typeof renderRails === 'function') renderRails();
   } catch (e) {
     console.warn('rewrites.json unavailable — using catalog text.', e);
   }
 }
-    async function fetchGameMonetizeGames() {
+
+async function fetchGameMonetizeGames() {
   const r = await fetch('catalog.json', { cache: 'no-cache' });
   const data = await r.json();
   return data.filter(it => it && it.url && it.title).map(it => {
@@ -2928,7 +2965,7 @@ async function loadRewrites() {
     const tags = String(it.tags || '').split(',').map(t => cleanText(t)).filter(Boolean);
     const sub = tags.find(t => t.toLowerCase() !== category.toLowerCase() && !/^\d+\s*player/i.test(t)) || 'General';
 
-    const game = {
+    return applyRewrite({
       id: 'gm-' + it.id,
       name: cleanText(it.title),
       category, subcategory: sub,
@@ -2937,21 +2974,11 @@ async function loadRewrites() {
       description: cleanText(it.description).slice(0, 320),
       tags: tags.slice(0, 5),
       provider: 'GameMonetize'
-    };
-
-  const rw = REWRITES[String(it.id)];
-if (rw) {
-  if (rw.title) game.name = cleanText(rw.title);
-  if (rw.intro) game.description = cleanText(rw.intro);
-  game.howToPlay = cleanText(rw.howToPlay || '');
-  game.modes     = cleanText(rw.modes || '');
-  game.tips      = Array.isArray(rw.tips) ? rw.tips : [];
-  game.features  = Array.isArray(rw.features) ? rw.features : [];
-  game.faq       = Array.isArray(rw.faq) ? rw.faq : [];
-}
-    return game;
+    });
   });
 }
+
+  
 
     // ================================================================
     // 5. LOAD CATALOG
@@ -3474,10 +3501,10 @@ if (rw) {
     // 9. INIT
     // ================================================================
  (async function init() {
+  await loadRewrites();   // load + apply to static games first
   renderFilters();
   renderGrid(true);
-  route();
-  await loadRewrites();
+  route();                // now direct links get rewrites too
   loadAllGames();
 })();
 
