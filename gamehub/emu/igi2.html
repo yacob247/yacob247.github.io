@@ -1,0 +1,1370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, follow">
+<meta name="color-scheme" content="dark">
+<meta name="description" content="IGI 2: Covert Strike — streamed straight to your browser. Pre-flight checks, performance protocol, field manual and troubleshooting for the highest frame rate your machine can give.">
+<title>IGI 2: Covert Strike — Deployment</title>
+
+<!-- MUST be the first script. Registers the worker and reloads once so this page becomes cross-origin isolated. -->
+<script src="../coi-serviceworker.js"></script>
+<script>
+  if (navigator.gpu) {
+    navigator.gpu.requestAdapter({
+      powerPreference: "high-performance"
+    }).then(adapter => {
+      if (adapter) {
+        console.log("WebGPU high-performance adapter secured:", adapter.info);
+      } else {
+        console.warn("WebGPU high-performance adapter not available.");
+      }
+    });
+  } else {
+    console.error("WebGPU is not supported in this browser.");
+  }
+</script>
+
+<style>
+  /* =====================================================================
+     Tokens — tactical olive on deep forest black
+     ===================================================================== */
+  :root {
+    --bg:        #050907;
+    --bg-2:      #070c09;
+    --panel:     #0a120d;
+    --panel-2:   #0d1610;
+    --line:      #18251c;
+    --line-2:    #24372a;
+    --text:      #e2f0e6;
+    --muted:     #7f9a86;
+    --dim:       #4f6656;
+    --accent:    #8fd44a;
+    --accent-2:  #c4f08a;
+    --sunset:    #ff9a4d;
+    --sunset-2:  #ffc07a;
+    --cyan:      #4ddcff;
+    --green:     #3ce08b;
+    --red:       #ff5252;
+    --mono: ui-monospace, "SFMono-Regular", "JetBrains Mono", "Roboto Mono", Consolas, monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body { min-height: 100%; }
+
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    color: var(--text);
+    line-height: 1.6;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background:
+      radial-gradient(1100px 560px at 50% -10%, #0f1c14 0%, #050907 62%),
+      var(--bg);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* faint tactical grid across the page */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(rgba(143, 212, 74, .05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(143, 212, 74, .05) 1px, transparent 1px);
+    background-size: 64px 64px;
+    -webkit-mask-image: radial-gradient(circle at 50% 14%, #000 0%, transparent 76%);
+    mask-image: radial-gradient(circle at 50% 14%, #000 0%, transparent 76%);
+  }
+
+  /* =====================================================================
+     Header
+     ===================================================================== */
+  header {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 11px 20px;
+    background: linear-gradient(180deg, rgba(7, 12, 9, .97), rgba(7, 12, 9, .88));
+    border-bottom: 1px solid var(--line);
+    backdrop-filter: blur(8px);
+  }
+  header::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; bottom: -1px;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent) 22%, var(--sunset) 50%, var(--accent) 78%, transparent);
+    opacity: .6;
+  }
+
+  .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; color: inherit; }
+  .brand img { height: 30px; width: auto; display: block; }
+  .brand .divider { width: 1px; height: 22px; background: var(--line-2); }
+  .brand .tag {
+    font-family: var(--mono);
+    font-size: .63rem;
+    letter-spacing: .22em;
+    text-transform: uppercase;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+  .hdr-right { display: flex; align-items: center; gap: 10px; }
+
+  .hdr-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--line-2);
+    background: rgba(13, 22, 16, .7);
+    font-family: var(--mono);
+    font-size: .63rem;
+    letter-spacing: .15em;
+    text-transform: uppercase;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .hdr-status i {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+    flex: none;
+  }
+  .hdr-status.ok   { color: var(--green);    border-color: rgba(60,224,139,.4);  background: rgba(60,224,139,.07); }
+  .hdr-status.ok i { box-shadow: 0 0 8px var(--green); }
+  .hdr-status.warn { color: var(--sunset-2); border-color: rgba(255,192,122,.4); background: rgba(255,192,122,.07); }
+  .hdr-status.bad  { color: var(--red);      border-color: rgba(255,82,82,.4);   background: rgba(255,82,82,.07); }
+
+  .ghost-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    border: 1px solid var(--line-2);
+    border-radius: 4px;
+    background: rgba(13, 22, 16, .8);
+    color: var(--text);
+    font: 600 .8rem/1 'Segoe UI', system-ui, sans-serif;
+    text-decoration: none;
+    cursor: pointer;
+    transition: border-color .18s, color .18s, box-shadow .18s;
+    white-space: nowrap;
+  }
+  .ghost-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent-2);
+    box-shadow: 0 0 18px -6px var(--accent);
+  }
+
+  /* =====================================================================
+     Layout
+     ===================================================================== */
+  main {
+    position: relative;
+    z-index: 1;
+    flex: 1;
+    width: 100%;
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 24px 20px 56px;
+  }
+
+  /* =====================================================================
+     Hero
+     ===================================================================== */
+  .hero { margin-bottom: 16px; }
+
+  .eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--mono);
+    font-size: .65rem;
+    letter-spacing: .28em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .eyebrow::before {
+    content: "";
+    width: 24px;
+    height: 1px;
+    background: var(--accent);
+  }
+
+  h1 {
+    margin-top: 8px;
+    font-size: clamp(1.9rem, 5vw, 3.1rem);
+    font-weight: 900;
+    letter-spacing: .02em;
+    line-height: 1.02;
+    text-transform: uppercase;
+    background: linear-gradient(180deg, #ffffff 28%, #c4f08a 78%, #8fd44a 130%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  h1 .pre {
+    display: block;
+    font-size: .32em;
+    font-weight: 800;
+    letter-spacing: .34em;
+    color: var(--sunset-2);
+    -webkit-text-fill-color: var(--sunset-2);
+    margin-bottom: 6px;
+  }
+
+  .lede {
+    margin-top: 12px;
+    max-width: 760px;
+    font-size: .95rem;
+    color: var(--muted);
+  }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 10px;
+    border: 1px solid var(--line-2);
+    border-radius: 3px;
+    background: rgba(13, 22, 16, .7);
+    font-family: var(--mono);
+    font-size: .65rem;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .chip::before {
+    content: "";
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    flex: none;
+  }
+  .chip.ok   { color: var(--green);    border-color: rgba(60,224,139,.35);  background: rgba(60,224,139,.07); }
+  .chip.warn { color: var(--sunset-2); border-color: rgba(255,192,122,.35); background: rgba(255,192,122,.07); }
+  .chip.bad  { color: var(--red);      border-color: rgba(255,82,82,.35);   background: rgba(255,82,82,.07); }
+
+  /* =====================================================================
+     Stage
+     ===================================================================== */
+  .stage {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: #000;
+    border: 1px solid var(--line-2);
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow:
+      0 24px 64px -24px #000,
+      0 0 0 1px rgba(143, 212, 74, .08),
+      inset 0 0 70px -34px rgba(143, 212, 74, .5);
+  }
+  .stage:fullscreen {
+    width: 100%;
+    height: 100%;
+    aspect-ratio: auto;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .stage iframe {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    display: block;
+    background: #000;
+  }
+
+  .corners { position: absolute; inset: 0; z-index: 3; pointer-events: none; transition: opacity .55s; }
+  .corners span {
+    position: absolute;
+    width: 26px; height: 26px;
+    border: 2px solid var(--accent);
+    opacity: .85;
+  }
+  .corners span:nth-child(1) { top: 8px;    left: 8px;  border-right: 0; border-bottom: 0; }
+  .corners span:nth-child(2) { top: 8px;    right: 8px; border-left: 0;  border-bottom: 0; }
+  .corners span:nth-child(3) { bottom: 8px; left: 8px;  border-right: 0; border-top: 0; }
+  .corners span:nth-child(4) { bottom: 8px; right: 8px; border-left: 0;  border-top: 0; }
+  .stage.live .corners { opacity: 0; }
+
+  /* =====================================================================
+     Loading overlay
+     ===================================================================== */
+  .status {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding: 28px;
+    text-align: center;
+    background: radial-gradient(circle at 50% 45%, #0c1710 0%, #020403 72%);
+    transition: opacity .4s;
+  }
+  .status.hidden { display: none; }
+
+  .reticle {
+    position: relative;
+    width: 68px;
+    height: 68px;
+    border-radius: 50%;
+    border: 2px dashed var(--accent);
+    opacity: .9;
+    animation: spin 8s linear infinite;
+  }
+  .reticle::before {
+    content: "";
+    position: absolute;
+    inset: 15px;
+    border-radius: 50%;
+    border: 2px solid rgba(77, 220, 255, .3);
+    border-top-color: var(--cyan);
+    animation: spin 1.25s linear infinite reverse;
+  }
+  .status.error .reticle { display: none; }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .status-title {
+    font-family: var(--mono);
+    font-size: .72rem;
+    letter-spacing: .3em;
+    text-transform: uppercase;
+    color: var(--accent-2);
+  }
+
+  .status-msg {
+    max-width: 480px;
+    font-size: .9rem;
+    line-height: 1.65;
+    color: var(--muted);
+  }
+
+  .status-big {
+    font-size: 1.1rem;
+    font-weight: 800;
+    color: var(--text);
+    margin-bottom: 6px;
+  }
+
+  .telemetry {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 16px;
+    margin-top: 4px;
+    font-family: var(--mono);
+    font-size: .61rem;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    color: #3d5245;
+  }
+  .telemetry .t { color: var(--accent-2); }
+
+  /* =====================================================================
+     Controls
+     ===================================================================== */
+  .controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 16px;
+  }
+  .controls .left { display: flex; flex-wrap: wrap; gap: 10px; }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    padding: 11px 20px;
+    border: 1px solid var(--line-2);
+    border-radius: 4px;
+    background: linear-gradient(180deg, #101c14, #080f0b);
+    color: var(--text);
+    font: 700 .78rem/1 'Segoe UI', system-ui, sans-serif;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    text-decoration: none;
+    cursor: pointer;
+    transition: border-color .18s, color .18s, box-shadow .18s, filter .18s, background .18s;
+  }
+  .btn:hover {
+    border-color: #3a5c44;
+    color: #fff;
+    background: linear-gradient(180deg, #14261a, #0a140e);
+    box-shadow: 0 0 20px -10px var(--accent);
+  }
+
+  .btn-primary {
+    color: #0a1405;
+    border-color: transparent;
+    background: linear-gradient(135deg, #c4f08a, #8fd44a 52%, #4f8f1c);
+    box-shadow: 0 8px 26px -12px var(--accent);
+  }
+  .btn-primary:hover {
+    color: #0a1405;
+    filter: brightness(1.07);
+    box-shadow: 0 10px 34px -10px var(--accent);
+  }
+
+  .btn-sm { padding: 7px 13px; font-size: .67rem; letter-spacing: .12em; }
+
+  /* =====================================================================
+     Panels
+     ===================================================================== */
+  .panel {
+    margin-top: 26px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: linear-gradient(180deg, rgba(10, 18, 13, .94), rgba(7, 12, 9, .94));
+    overflow: hidden;
+  }
+
+  .panel-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 13px 18px;
+    border-bottom: 1px solid var(--line);
+    background: rgba(255, 255, 255, .014);
+    flex-wrap: wrap;
+  }
+  .panel-head h2 {
+    font-family: var(--mono);
+    font-size: .71rem;
+    font-weight: 700;
+    letter-spacing: .22em;
+    text-transform: uppercase;
+    color: var(--accent-2);
+    white-space: nowrap;
+  }
+  .panel-head .sub {
+    margin-right: auto;
+    font-size: .76rem;
+    color: var(--muted);
+  }
+
+  .panel-body { padding: 20px 18px; }
+
+  .checks {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(248px, 1fr));
+    gap: 1px;
+    background: var(--line);
+  }
+  .check {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 14px 16px;
+    background: var(--panel);
+  }
+  .check .label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--mono);
+    font-size: .61rem;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .check .label::before {
+    content: "";
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--line-2);
+    flex: none;
+  }
+  .check.ok   .label::before { background: var(--green);  box-shadow: 0 0 8px var(--green); }
+  .check.warn .label::before { background: var(--sunset); box-shadow: 0 0 8px var(--sunset); }
+  .check.bad  .label::before { background: var(--red);    box-shadow: 0 0 8px var(--red); }
+
+  .check .value {
+    font-size: .88rem;
+    font-weight: 600;
+    color: var(--text);
+    overflow-wrap: anywhere;
+  }
+  .check.warn .value { color: var(--sunset-2); }
+  .check.bad  .value { color: #ffb3b3; }
+  .check .note { font-size: .73rem; line-height: 1.45; color: #5d7666; }
+
+  .prose { max-width: 880px; }
+  .prose p { font-size: .92rem; color: #c2d6c8; margin-bottom: 14px; }
+  .prose p:last-child { margin-bottom: 0; }
+  .prose strong { color: #fff; font-weight: 700; }
+  .prose em { color: var(--accent-2); font-style: italic; }
+  .prose h3 {
+    margin: 22px 0 10px;
+    font-family: var(--mono);
+    font-size: .66rem;
+    letter-spacing: .22em;
+    text-transform: uppercase;
+    color: var(--accent-2);
+  }
+  .prose h3:first-child { margin-top: 0; }
+
+  .feature-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 1px;
+    background: var(--line);
+    margin: 18px 0 4px;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .feature {
+    padding: 16px;
+    background: var(--panel);
+  }
+  .feature .ft {
+    font-family: var(--mono);
+    font-size: .62rem;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 6px;
+  }
+  .feature p { font-size: .84rem; color: var(--muted); margin: 0; }
+
+  .steps { list-style: none; display: grid; gap: 14px; }
+  .steps li {
+    display: flex;
+    gap: 13px;
+    font-size: .88rem;
+    line-height: 1.65;
+    color: #c2d6c8;
+  }
+  .steps .num {
+    flex: none;
+    width: 24px;
+    height: 24px;
+    margin-top: 2px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    border: 1px solid rgba(143, 212, 74, .55);
+    color: var(--accent-2);
+    font-family: var(--mono);
+    font-size: .68rem;
+  }
+  .steps strong { color: #fff; font-weight: 700; }
+  .steps em { color: var(--sunset-2); font-style: normal; font-weight: 700; }
+  .steps small { display: block; margin-top: 3px; font-size: .78rem; color: #5d7666; }
+
+  .keys { width: 100%; border-collapse: collapse; }
+  .keys th, .keys td {
+    text-align: left;
+    padding: 10px 14px;
+    font-size: .84rem;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  .keys th {
+    font-family: var(--mono);
+    font-size: .61rem;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 700;
+    background: rgba(255, 255, 255, .014);
+  }
+  .keys td { color: #c2d6c8; }
+  .keys tr:last-child td { border-bottom: 0; }
+  .keys td:first-child { width: 40%; white-space: nowrap; }
+
+  kbd, code {
+    font-family: var(--mono);
+    font-size: .8em;
+    padding: 2px 7px;
+    border-radius: 3px;
+    border: 1px solid var(--line-2);
+    background: rgba(143, 212, 74, .1);
+    color: var(--accent-2);
+    white-space: nowrap;
+  }
+
+  .faq { border-top: 1px solid var(--line); }
+  .faq:first-of-type { border-top: 0; }
+  .faq summary {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 18px;
+    cursor: pointer;
+    font-size: .88rem;
+    font-weight: 700;
+    color: var(--text);
+    list-style: none;
+    transition: background .15s, color .15s;
+  }
+  .faq summary::-webkit-details-marker { display: none; }
+  .faq summary::before {
+    content: "+";
+    font-family: var(--mono);
+    font-size: .95rem;
+    color: var(--accent);
+    width: 14px;
+    flex: none;
+  }
+  .faq[open] summary::before { content: "−"; }
+  .faq summary:hover { background: rgba(255, 255, 255, .025); color: #fff; }
+  .faq .ans {
+    padding: 0 18px 16px 42px;
+    font-size: .86rem;
+    line-height: 1.7;
+    color: var(--muted);
+  }
+  .faq .ans p { margin-bottom: 10px; }
+  .faq .ans p:last-child { margin-bottom: 0; }
+
+  footer {
+    position: relative;
+    z-index: 1;
+    border-top: 1px solid var(--line);
+    background: rgba(7, 12, 9, .7);
+    padding: 22px 20px 30px;
+  }
+  .foot-inner {
+    max-width: 1180px;
+    margin: 0 auto;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px 26px;
+    align-items: flex-start;
+    justify-content: space-between;
+  }
+  .foot-inner p { font-size: .74rem; line-height: 1.7; color: var(--dim); max-width: 640px; }
+  .foot-links { display: flex; gap: 16px; flex-wrap: wrap; }
+  .foot-links a {
+    font-family: var(--mono);
+    font-size: .66rem;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--muted);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    padding-bottom: 2px;
+    transition: color .18s, border-color .18s;
+  }
+  .foot-links a:hover { color: var(--accent-2); border-color: var(--accent); }
+
+  @media (max-width: 700px) {
+    main { padding: 16px 14px 40px; }
+    header { padding: 10px 14px; }
+    .brand img { height: 24px; }
+    .brand .tag, .hdr-status { display: none; }
+    .controls .left { width: 100%; }
+    .controls .left .btn { flex: 1; }
+    .controls > .btn { width: 100%; }
+    .panel-head .sub { width: 100%; order: 3; margin-right: 0; }
+    .keys td:first-child { width: auto; white-space: normal; }
+    .faq .ans { padding-left: 18px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .reticle, .reticle::before { animation: none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <a class="brand" href="../" title="Gamenetic home">
+    <img src="../pagelogo.png" alt="Gamenetic">
+    <span class="divider"></span>
+    <span class="tag">Covert Strike Deployment</span>
+  </a>
+
+  <div class="hdr-right">
+    <span class="hdr-status" id="hdrStatus"><i></i>Scanning</span>
+    <a class="ghost-btn" href="../">← Back to Games</a>
+  </div>
+</header>
+
+<main>
+
+  <section class="hero">
+    <div class="eyebrow">Covert Operations · Project I.G.I. 2</div>
+    <h1>
+      <span class="pre">Project I.G.I.</span>
+      Covert Strike
+    </h1>
+    <p class="lede">
+      One operative. No backup. A stolen nuclear weapon and a trail that runs across borders.
+      <strong>IGI 2: Covert Strike</strong> is a stealth-first tactical shooter — you are outnumbered,
+      outgunned, and the mission is over the moment you get sloppy. Streamed straight into your
+      browser through a WebGPU emulation layer.
+    </p>
+
+    <div class="chips">
+      <span class="chip" id="chipGpu">WebGPU</span>
+      <span class="chip" id="chipIso">Isolation</span>
+      <span class="chip ok" id="chipFpu">FPU Relaxed</span>
+      <span class="chip ok" id="chipCache">Cached after first load</span>
+    </div>
+  </section>
+
+  <div class="stage" id="stage">
+    <iframe
+      id="frame"
+      title="IGI 2: Covert Strike emulator"
+      allow="fullscreen; autoplay; gamepad; accelerometer; cross-origin-isolated; clipboard-write; clipboard-read"
+      allowfullscreen
+    ></iframe>
+
+    <div class="status" id="status">
+      <div class="reticle"></div>
+      <div class="status-title" id="statusTitle">Establishing uplink</div>
+      <div class="status-msg" id="statusText">Preparing deployment…</div>
+      <div class="telemetry">
+        <span id="tElapsed">T+ 00:00</span>
+        <span class="t">Secure context</span>
+        <span class="t">Isolation</span>
+        <span class="t">Asset stream</span>
+      </div>
+    </div>
+
+    <div class="corners"><span></span><span></span><span></span><span></span></div>
+  </div>
+
+  <div class="controls">
+    <div class="left">
+      <button class="btn btn-primary" id="fsBtn" type="button">⛶ Fullscreen</button>
+      <button class="btn" id="reloadBtn" type="button">↻ Redeploy</button>
+    </div>
+    <a class="btn" id="newTabLink" href="#" target="_blank" rel="noopener">
+      Open in new tab ↗
+    </a>
+  </div>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Pre-Flight</h2>
+      <span class="sub">Performance profile — verify before you deploy</span>
+      <button class="btn btn-sm" id="recheckBtn" type="button">Re-scan</button>
+    </div>
+
+    <div class="checks">
+      <div class="check" id="chkGpu">
+        <div class="label">GPU / WebGPU</div>
+        <div class="value">Scanning…</div>
+        <div class="note">Chrome must render with your discrete GPU.</div>
+      </div>
+
+      <div class="check" id="chkIso">
+        <div class="label">Cross-origin isolation</div>
+        <div class="value">Scanning…</div>
+        <div class="note">Required for the threaded renderer and shared memory.</div>
+      </div>
+
+      <div class="check" id="chkSw">
+        <div class="label">COOP / COEP worker</div>
+        <div class="value">Scanning…</div>
+        <div class="note">Injects isolation headers on every request.</div>
+      </div>
+
+      <div class="check" id="chkCpu">
+        <div class="label">CPU threads</div>
+        <div class="value">—</div>
+        <div class="note">More threads means smoother AI and larger maps.</div>
+      </div>
+
+      <div class="check" id="chkMem">
+        <div class="label">Device memory</div>
+        <div class="value">—</div>
+        <div class="note">Close other tabs and apps to free memory.</div>
+      </div>
+
+      <div class="check ok" id="chkFpu">
+        <div class="label">FPU precision</div>
+        <div class="value">Relaxed</div>
+        <div class="note">Keep it Relaxed — it already is by default.</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Briefing</h2>
+      <span class="sub">What you are deploying into</span>
+    </div>
+
+    <div class="panel-body prose">
+      <p>
+        <strong>IGI 2: Covert Strike</strong> puts you back in the boots of David Jones, the former
+        SAS operative from the first Project I.G.I. This time the threat is nuclear — a Russian
+        arms syndicate is selling stolen warheads to the highest bidder, and the only way to stop
+        it is to go in alone, stay invisible, and follow the intelligence wherever it leads.
+      </p>
+
+      <p>
+        What separates IGI 2 from a standard military shooter is that <strong>stealth is the
+        default, not an option</strong>. You are one man against a fortified position. Rushing a
+        room gets you killed. The game rewards patience — crawling through grass, timing patrols,
+        using a silenced weapon and a single well-placed shot from a ridge a kilometre away.
+        When things do go loud, the AI is quick to flank and call for backup, and you will want
+        to break contact before you get surrounded.
+      </p>
+
+      <div class="feature-grid">
+        <div class="feature">
+          <div class="ft">Stealth</div>
+          <p>Line-of-sight, patrol timing and noise matter. Being seen is a failure state, not a combat prompt.</p>
+        </div>
+        <div class="feature">
+          <div class="ft">Sniper</div>
+          <p>Long-range engagements, bullet drop and breath control. The rifle is your primary tool.</p>
+        </div>
+        <div class="feature">
+          <div class="ft">Weapons</div>
+          <p>Real-world firearms with distinct handling. Silenced pistols, assault rifles, SMGs, sniper rigs.</p>
+        </div>
+        <div class="feature">
+          <div class="ft">Missions</div>
+          <p>Large open maps across multiple countries, each with a primary objective and optional intel.</p>
+        </div>
+        <div class="feature">
+          <div class="ft">Checkpoints</div>
+          <p>Autosave points between sectors. Missions are long — learn the route and the patrols.</p>
+        </div>
+        <div class="feature">
+          <div class="ft">AI</div>
+          <p>Guards investigate sound, alert each other and call reinforcements. The heat fades if you break contact.</p>
+        </div>
+      </div>
+
+      <h3>How this deployment works</h3>
+      <p>
+        The game runs inside an emulation layer that renders through <strong>WebGPU</strong> and
+        stores the game package in your browser's cache. The first deployment downloads the full
+        asset set — expect it to take a while on a slower connection. Every deployment after that
+        is served from cache and starts in seconds.
+      </p>
+      <p>
+        Because the emulator needs <strong>cross-origin isolation</strong>, this page registers a
+        small service worker on your first visit and reloads itself once to activate it. That
+        reload is expected — do not close the tab.
+      </p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Performance Protocol</h2>
+      <span class="sub">Do these three things before you judge the frame rate</span>
+    </div>
+
+    <div class="panel-body">
+      <ol class="steps">
+        <li>
+          <span class="num">1</span>
+          <div>
+            <strong>Make Chrome use your fast GPU.</strong>
+            The emulator renders with <em>WebGPU</em>, and Chrome does not always pick your
+            discrete card on its own. On Windows open
+            <kbd>Settings</kbd> → <kbd>System</kbd> → <kbd>Display</kbd> → <kbd>Graphics</kbd>,
+            add <kbd>Chrome</kbd> to the app list and set it to <em>High performance</em>, then
+            restart the browser.
+            <small>Verify it worked by opening <code>chrome://gpu</code> — your dedicated GPU should be listed first.</small>
+          </div>
+        </li>
+        <li>
+          <span class="num">2</span>
+          <div>
+            <strong>Close other tabs and apps.</strong>
+            IGI 2 streams a large asset set into memory and keeps it there. Every spare tab
+            holds GPU memory and CPU time you want back. Discord overlays, recording software and
+            hardware monitors are the usual frame-rate suspects.
+          </div>
+        </li>
+        <li>
+          <span class="num">3</span>
+          <div>
+            <strong>Keep FPU: Relaxed on.</strong>
+            It is already set to <em>Relaxed</em> by default — leave it exactly there. It trades a
+            meaningless amount of floating-point precision for a measurable frame-rate gain.
+          </div>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Field Manual</h2>
+      <span class="sub">Getting the game to listen to you</span>
+    </div>
+
+    <div class="panel-body" style="padding:0">
+      <table class="keys">
+        <thead>
+          <tr><th>Action</th><th>How</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Give the game focus</td>
+            <td>Click once inside the game area. Keyboard, mouse and controller input only reach it when it has focus.</td>
+          </tr>
+          <tr>
+            <td>Fullscreen</td>
+            <td>Press the <strong>Fullscreen</strong> button above the panel, or use the game's own video settings. The button expands the game stage only, so these controls stay outside.</td>
+          </tr>
+          <tr>
+            <td>Controller</td>
+            <td>Connect the pad before the game finishes loading, then press a button once so the browser registers it. Gamepad input is passed straight through to the emulator.</td>
+          </tr>
+          <tr>
+            <td>Staying alive</td>
+            <td>Go prone for accuracy at range, crouch behind cover, and use the binoculars before you commit. IGI 2 is much more forgiving when you see the patrol before it sees you.</td>
+          </tr>
+          <tr>
+            <td>Sniper rifle</td>
+            <td>Hold breath to steady the scope. Bullets drop over distance — aim slightly high at long range.</td>
+          </tr>
+          <tr>
+            <td>Mission restart</td>
+            <td>Autosaves occur between sectors. If a mission goes badly, use the game's own load option to return to the last checkpoint.</td>
+          </tr>
+          <tr>
+            <td>Quit the game</td>
+            <td>Use the game's own exit option. When the emulator shuts down, press <strong>Redeploy</strong> to launch it again.</td>
+          </tr>
+          <tr>
+            <td>Something is broken</td>
+            <td>If the player never appears, use <strong>Open in new tab</strong> — it loads the emulator directly, bypassing this page.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Troubleshooting</h2>
+      <span class="sub">The usual suspects, in order of likelihood</span>
+    </div>
+
+    <details class="faq" open>
+      <summary>The game never loads and the reticle keeps spinning</summary>
+      <div class="ans">
+        <p>
+          Almost always this is cross-origin isolation not being active yet. The page reloads
+          itself once on first visit to activate the service worker — if you closed that tab too
+          early, just reload the page manually.
+        </p>
+        <p>
+          Check the <strong>Cross-origin isolation</strong> card above. It must be green before the
+          emulator can start. If it stays amber, your browser or an extension is blocking service
+          workers — try a normal (not private) window with extensions disabled, or use
+          <strong>Open in new tab</strong>.
+        </p>
+      </div>
+    </details>
+
+    <details class="faq">
+      <summary>It loads but the frame rate is terrible</summary>
+      <div class="ans">
+        <p>
+          Run the three steps in the <strong>Performance Protocol</strong> above. In particular,
+          confirm Chrome is actually using your discrete GPU: open <code>chrome://gpu</code> and
+          check that your dedicated card is the first adapter listed. If it says
+          <em>SwiftShader</em> or <em>software</em>, Chrome has fallen back to CPU rendering and
+          nothing else will fix the frame rate until that is corrected.
+        </p>
+        <p>
+          Then close every other tab and background app, and make sure the game is running in a
+          normal window rather than a throttled background one.
+        </p>
+      </div>
+    </details>
+
+    <details class="faq">
+      <summary>Black screen, but the page thinks it loaded</summary>
+      <div class="ans">
+        <p>
+          Click once inside the black area to give the game focus — some builds render their first
+          frame only after receiving input. If that does nothing, press <strong>Redeploy</strong>.
+        </p>
+        <p>
+          If it happens repeatedly, open <code>chrome://gpu</code> and make sure
+          <strong>WebGPU</strong> is not disabled or blocklisted. Updating Chrome usually resolves
+          it.
+        </p>
+      </div>
+    </details>
+
+    <details class="faq">
+      <summary>Controls do nothing</summary>
+      <div class="ans">
+        <p>
+          The game only receives input while it has focus. Click directly inside the game area once,
+          then try again. If the mouse cursor is captured, press <kbd>Esc</kbd> to release it and
+          click back in.
+        </p>
+        <p>
+          For a controller, connect it before the game finishes loading and press a button once so
+          the browser registers it.
+        </p>
+      </div>
+    </details>
+
+    <details class="faq">
+      <summary>No sound</summary>
+      <div class="ans">
+        <p>
+          Browsers block audio until you interact with the page. Click inside the game once. Also
+          check that the tab is not muted — right-click the tab and confirm
+          <strong>Unmute site</strong> is not showing.
+        </p>
+      </div>
+    </details>
+
+    <details class="faq">
+      <summary>Why does the page reload itself the first time?</summary>
+      <div class="ans">
+        <p>
+          The emulator needs <code>SharedArrayBuffer</code>, which browsers only expose to
+          cross-origin isolated pages. A small service worker (<code>coi-serviceworker.js</code>)
+          adds the required <code>COOP</code> / <code>COEP</code> headers, and the page reloads once
+          so those headers apply. It is a one-time step per browser.
+        </p>
+        <p>
+          The download itself only happens once. The first deployment pulls the full package into
+          your browser cache; after that, launches are served from cache and start in seconds.
+          Clearing site data will force a fresh download.
+        </p>
+      </div>
+    </details>
+
+    <details class="faq">
+      <summary>Does the game need to download every time?</summary>
+      <div class="ans">
+        <p>
+          No. The first deployment downloads the full package into your browser cache. After that,
+          launches are served from cache and start in seconds. Clearing site data will force a fresh
+          download.
+        </p>
+      </div>
+    </details>
+  </section>
+
+</main>
+
+<footer>
+  <div class="foot-inner">
+    <p>
+      IGI 2: Covert Strike and all associated names, marks and content are the property of their
+      respective owners. This page is an independent, non-commercial browser deployment and is not
+      affiliated with or endorsed by Innerloop Studios, Codemasters or Eidos Interactive. A legally
+      owned copy of the game is required.
+    </p>
+    <div class="foot-links">
+      <a href="../">All Games</a>
+      <a href="#" id="topLink">Back to Top</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  'use strict';
+
+  /* =====================================================================
+     Single-game deployment. No registry, no query parameters — this page
+     exists for one build and one build only.
+     ===================================================================== */
+  const GAME_URL  = 'https://envizion.work/bottleship-main/?game=dev&load=https://pub-406a7f3fa4d44f41b5317520aa1aaf4a.r2.dev/IGI2.wgb';
+  const GAME_NAME = 'IGI 2: Covert Strike';
+
+  const $ = (id) => document.getElementById(id);
+
+  const frame     = $('frame');
+  const stage     = $('stage');
+  const statusEl  = $('status');
+  const statusTx  = $('statusText');
+  const statusTl  = $('statusTitle');
+  const elapsedEl = $('tElapsed');
+  const newTab    = $('newTabLink');
+  const fsBtn     = $('fsBtn');
+  const reloadBtn = $('reloadBtn');
+  const recheck   = $('recheckBtn');
+  const topLink   = $('topLink');
+
+  const chipGpu   = $('chipGpu');
+  const chipIso   = $('chipIso');
+  const hdrStatus = $('hdrStatus');
+
+  function setCheck(row, state, valueText) {
+    row.classList.remove('ok', 'warn', 'bad');
+    if (state) row.classList.add(state);
+    if (valueText !== undefined) row.querySelector('.value').textContent = valueText;
+  }
+
+  function setChip(el, state, text) {
+    el.className = 'chip ' + (state || '');
+    el.textContent = text;
+  }
+
+  function setHeader(state, text) {
+    hdrStatus.className = 'hdr-status ' + (state || '');
+    hdrStatus.innerHTML = '<i></i>' + text;
+  }
+
+  let lastGpuOk = false;
+
+  async function checkGpu() {
+    const row = $('chkGpu');
+
+    if (!('gpu' in navigator)) {
+      setCheck(row, 'bad', 'WebGPU not supported');
+      lastGpuOk = false;
+      return false;
+    }
+
+    try {
+      const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+
+      if (!adapter) {
+        setCheck(row, 'bad', 'No adapter returned');
+        lastGpuOk = false;
+        return false;
+      }
+
+      let info = adapter.info;
+      if (!info && typeof adapter.requestAdapterInfo === 'function') {
+        try { info = await adapter.requestAdapterInfo(); } catch (e) { info = null; }
+      }
+      info = info || {};
+
+      const parts = [info.vendor, info.architecture, info.device].filter(Boolean);
+      const label = parts.length ? parts.join(' · ') : 'High-performance adapter ready';
+
+      const soft = /swiftshader|software|basic render/i.test(
+        label + ' ' + (info.description || '')
+      );
+
+      setCheck(row, soft ? 'warn' : 'ok',
+        soft ? 'Software renderer — set Chrome to High performance' : label);
+
+      lastGpuOk = !soft;
+      return !soft;
+    } catch (e) {
+      setCheck(row, 'bad', 'Adapter request failed');
+      lastGpuOk = false;
+      return false;
+    }
+  }
+
+  function checkIso() {
+    const row = $('chkIso');
+    const ok  = window.crossOriginIsolated === true;
+    setCheck(row, ok ? 'ok' : 'warn',
+      ok ? 'Isolated — shared memory available'
+         : 'Not isolated yet — page reloads once');
+    return ok;
+  }
+
+  function checkSw() {
+    const row = $('chkSw');
+    if (!('serviceWorker' in navigator)) {
+      setCheck(row, 'bad', 'Service workers blocked');
+      return false;
+    }
+    if (navigator.serviceWorker.controller) {
+      setCheck(row, 'ok', 'Active — isolation headers injected');
+      return true;
+    }
+    setCheck(row, 'warn', 'Registering…');
+    return false;
+  }
+
+  function checkCpu() {
+    const row = $('chkCpu');
+    const n   = navigator.hardwareConcurrency;
+    if (n) setCheck(row, n >= 4 ? 'ok' : 'warn', n + ' threads');
+    else   setCheck(row, null, 'Not reported');
+  }
+
+  function checkMem() {
+    const row = $('chkMem');
+    const gb  = navigator.deviceMemory;
+    if (gb) {
+      setCheck(row, gb >= 8 ? 'ok' : gb >= 4 ? 'warn' : 'bad', '~' + gb + ' GB');
+    } else {
+      setCheck(row, null, 'Not reported');
+    }
+  }
+
+  async function runChecks() {
+    const gpuOk = await checkGpu();
+    const isoOk = checkIso();
+    checkSw();
+    checkCpu();
+    checkMem();
+
+    setChip(chipGpu, gpuOk ? 'ok' : 'bad', gpuOk ? 'WebGPU ready' : 'WebGPU issue');
+    setChip(chipIso, isoOk ? 'ok' : 'warn', isoOk ? 'Isolated' : 'Isolating…');
+
+    const allGood = gpuOk && isoOk;
+    setHeader(allGood ? 'ok' : 'warn',
+      allGood ? 'Systems nominal' : (!isoOk ? 'Isolating…' : 'Check pre-flight'));
+
+    return { gpuOk, isoOk };
+  }
+
+  const LOAD_LINES = [
+    'Establishing uplink…',
+    'Requesting high-performance GPU…',
+    'Verifying cross-origin isolation…',
+    'Streaming mission terrain…',
+    'Building shader cache…',
+    'Loading weapon and intel data…',
+    'Inserting operative…'
+  ];
+
+  let lineTimer = null;
+  let clockTimer = null;
+  let startedAt = 0;
+
+  function startTelemetry() {
+    startedAt = Date.now();
+
+    let i = 0;
+    lineTimer = setInterval(() => {
+      i = (i + 1) % LOAD_LINES.length;
+      if (!statusEl.classList.contains('hidden') && !statusEl.classList.contains('error')) {
+        statusTx.textContent = LOAD_LINES[i];
+      }
+    }, 2000);
+
+    clockTimer = setInterval(() => {
+      const s = Math.floor((Date.now() - startedAt) / 1000);
+      const mm = String(Math.floor(s / 60)).padStart(2, '0');
+      const ss = String(s % 60).padStart(2, '0');
+      elapsedEl.textContent = 'T+ ' + mm + ':' + ss;
+    }, 1000);
+  }
+
+  function stopTelemetry() {
+    clearInterval(lineTimer);
+    clearInterval(clockTimer);
+  }
+
+  function revealGame() {
+    if (statusEl.classList.contains('hidden')) return;
+    statusEl.classList.add('hidden');
+    stage.classList.add('live');
+    stopTelemetry();
+  }
+
+  newTab.href = GAME_URL;
+  document.title = GAME_NAME + ' — Deployment';
+
+  startTelemetry();
+
+  let started = false;
+
+  function tryStart() {
+    if (started) return true;
+    if (!window.crossOriginIsolated) return false;
+
+    started = true;
+    statusTl.textContent = 'Inserting operative';
+    statusTx.textContent = 'Streaming assets — the first deployment may take a minute.';
+
+    frame.addEventListener('load', revealGame, { once: true });
+    setTimeout(revealGame, 60000);
+
+    frame.src = GAME_URL;
+    return true;
+  }
+
+  if (!tryStart()) {
+    let tries = 0;
+    const iv = setInterval(() => {
+      tries++;
+      if (tryStart()) { clearInterval(iv); return; }
+
+      if (tries >= 25) {
+        clearInterval(iv);
+        stopTelemetry();
+
+        statusEl.classList.add('error');
+        statusTl.textContent = 'Deployment stalled';
+        statusTx.innerHTML =
+          '<div class="status-big">Player could not start</div>' +
+          '<p>Your browser is not reporting cross-origin isolation, which this emulator requires. ' +
+          'Reload this page once, or launch the game directly using the button below.</p>' +
+          '<a class="btn btn-primary" style="margin-top:16px" href="' + GAME_URL + '" ' +
+          'target="_blank" rel="noopener">Open the game in a new tab ↗</a>';
+
+        setHeader('bad', 'Isolation blocked');
+      }
+    }, 200);
+  }
+
+  fsBtn.addEventListener('click', () => {
+    if (document.fullscreenElement || document.webkitFullscreenElement) {
+      (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    } else {
+      const rq = stage.requestFullscreen || stage.webkitRequestFullscreen;
+      if (rq) rq.call(stage);
+    }
+  });
+
+  reloadBtn.addEventListener('click', () => location.reload());
+
+  recheck.addEventListener('click', () => {
+    recheck.textContent = 'Scanning…';
+    runChecks().then(() => { recheck.textContent = 'Re-scan'; });
+  });
+
+  topLink.addEventListener('click', (e) => {
+    e.preventDefault();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && !started) {
+      checkIso();
+      tryStart();
+    }
+  });
+
+  runChecks();
+  setTimeout(runChecks, 1200);
+  setTimeout(runChecks, 3000);
+})();
+</script>
+</body>
+</html>
