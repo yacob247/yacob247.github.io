@@ -643,6 +643,110 @@
   .faq .ans p { margin-bottom: 10px; }
   .faq .ans p:last-child { margin-bottom: 0; }
 
+  /* =====================================================================
+     Gallery
+     ===================================================================== */
+  .gallery-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(158px, 1fr));
+    gap: 10px;
+    padding: 18px;
+  }
+
+  .gallery-item {
+    position: relative;
+    display: block;
+    padding: 0;
+    aspect-ratio: 16 / 10;
+    border: 1px solid var(--line-2);
+    border-radius: 4px;
+    background: #05080b;
+    overflow: hidden;
+    cursor: pointer;
+    transition: border-color .18s, box-shadow .18s;
+  }
+  .gallery-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    filter: saturate(.8) brightness(.86);
+    transition: transform .35s ease, filter .35s ease;
+  }
+  .gallery-item:hover,
+  .gallery-item:focus-visible {
+    border-color: var(--amber);
+    box-shadow: 0 0 26px -10px var(--amber);
+    outline: none;
+  }
+  .gallery-item:hover img,
+  .gallery-item:focus-visible img {
+    transform: scale(1.06);
+    filter: saturate(1) brightness(1);
+  }
+
+  /* =====================================================================
+     Lightbox
+     ===================================================================== */
+  .lightbox {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 76px;
+    background: rgba(4, 6, 10, .95);
+    backdrop-filter: blur(6px);
+  }
+  .lightbox.open { display: flex; }
+
+  .lb-stage {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    max-width: 100%;
+    max-height: 100%;
+  }
+  .lb-stage img {
+    max-width: 100%;
+    max-height: calc(100vh - 48px);
+    display: block;
+    border: 1px solid var(--line-2);
+    border-radius: 4px;
+    background: #000;
+    box-shadow: 0 30px 90px -30px #000;
+  }
+
+  .lb-nav,
+  .lb-close {
+    position: absolute;
+    display: grid;
+    place-items: center;
+    width: 46px;
+    height: 46px;
+    padding: 0;
+    border: 1px solid var(--line-2);
+    border-radius: 50%;
+    background: rgba(16, 23, 31, .85);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 1.25rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: border-color .18s, color .18s, box-shadow .18s, background .18s;
+  }
+  .lb-nav:hover,
+  .lb-close:hover {
+    border-color: var(--amber);
+    color: var(--amber-2);
+    background: rgba(24, 34, 44, .95);
+    box-shadow: 0 0 22px -6px var(--amber);
+  }
+  .lb-prev { left: 16px; top: 50%; transform: translateY(-50%); }
+  .lb-next { right: 16px; top: 50%; transform: translateY(-50%); }
+  .lb-close { top: 14px; right: 14px; font-size: .9rem; }
+
   /* footer */
   footer {
     position: relative;
@@ -689,10 +793,18 @@
     .panel-head .sub { width: 100%; order: 3; margin-right: 0; }
     .keys td:first-child { width: auto; }
     .faq .ans { padding-left: 18px; }
+    
+    .gallery-grid { grid-template-columns: repeat(auto-fill, minmax(122px, 1fr)); gap: 8px; padding: 14px; }
+    .lightbox { padding: 58px 12px 86px; }
+    .lb-stage img { max-height: calc(100vh - 156px); }
+    .lb-prev { left: 12px; top: auto; bottom: 22px; transform: none; }
+    .lb-next { right: 12px; top: auto; bottom: 22px; transform: none; }
+    .lb-close { top: 10px; right: 10px; }
   }
 
   @media (prefers-reduced-motion: reduce) {
     .reticle, .reticle::before { animation: none; }
+    .gallery-item img { transition: none; }
   }
 </style>
 </head>
@@ -765,6 +877,18 @@
     </a>
   </div>
 
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Archive</h2>
+      <span class="sub">Field manual & screenshots</span>
+    </div>
+    <div class="gallery-grid" id="galleryGrid">
+      <!-- Items injected by JS -->
+    </div>
+  </section>
+
+
   <!-- ============================================================ preflight -->
   <section class="panel">
     <div class="panel-head">
@@ -812,6 +936,7 @@
     </div>
   </section>
 
+  
   <!-- ============================================================ briefing -->
   <section class="panel">
     <div class="panel-head">
@@ -961,6 +1086,9 @@
     </div>
   </section>
 
+  <!-- ============================================================ gallery -->
+  
+
   <!-- ======================================================= troubleshooting -->
   <section class="panel">
     <div class="panel-head">
@@ -1083,18 +1211,23 @@
   </div>
 </footer>
 
+<!-- ================================================================ Lightbox -->
+<div class="lightbox" id="lightbox" aria-hidden="true">
+  <button class="lb-nav lb-prev" id="lbPrev" type="button" aria-label="Previous image">←</button>
+  <div class="lb-stage">
+    <img id="lbImg" src="" alt="Battlefield Archive">
+  </div>
+  <button class="lb-nav lb-next" id="lbNext" type="button" aria-label="Next image">→</button>
+  <button class="lb-close" id="lbClose" type="button" aria-label="Close gallery">✕</button>
+</div>
+
 <script>
 (function () {
   'use strict';
 
-  /* =====================================================================
-     Single-game deployment. No registry, no query parameters — this page
-     exists for one build and one build only.
-     ===================================================================== */
   const GAME_URL  = 'https://envizion.work/bottleship-main/?game=dev&load=https://pub-841bd448812d4979b52ba64efdb90c94.r2.dev/battlefield.wgb';
   const GAME_NAME = 'Battlefield';
 
-  /* ---------------------------------------------------------------- refs */
   const $ = (id) => document.getElementById(id);
 
   const frame     = $('frame');
@@ -1113,7 +1246,6 @@
   const chipIso   = $('chipIso');
   const hdrStatus = $('hdrStatus');
 
-  /* -------------------------------------------------------------- helpers */
   function setCheck(row, state, valueText) {
     row.classList.remove('ok', 'warn', 'bad');
     if (state) row.classList.add(state);
@@ -1130,9 +1262,6 @@
     hdrStatus.innerHTML = '<i></i>' + text;
   }
 
-  /* =====================================================================
-     Pre-flight checks
-     ===================================================================== */
   let lastGpuOk = false;
 
   async function checkGpu() {
@@ -1211,7 +1340,7 @@
 
   function checkMem() {
     const row = $('chkMem');
-    const gb  = navigator.deviceMemory;   // Chromium only, approximate
+    const gb  = navigator.deviceMemory;
     if (gb) {
       setCheck(row, gb >= 8 ? 'ok' : gb >= 4 ? 'warn' : 'bad', '~' + gb + ' GB');
     } else {
@@ -1236,9 +1365,6 @@
     return { gpuOk, isoOk };
   }
 
-  /* =====================================================================
-     Loading overlay telemetry
-     ===================================================================== */
   const LOAD_LINES = [
     'Establishing uplink…',
     'Requesting high-performance GPU…',
@@ -1284,9 +1410,6 @@
     stopTelemetry();
   }
 
-  /* =====================================================================
-     Boot
-     ===================================================================== */
   newTab.href = GAME_URL;
 
   startTelemetry();
@@ -1303,8 +1426,6 @@
 
     frame.addEventListener('load', revealGame, { once: true });
 
-    // Safety net: reveal the stage after 60s whatever happens, so the user
-    // can interact with whatever the emulator ended up rendering.
     setTimeout(revealGame, 60000);
 
     frame.src = GAME_URL;
@@ -1317,7 +1438,7 @@
       tries++;
       if (tryStart()) { clearInterval(iv); return; }
 
-      if (tries >= 25) {          // ~5 seconds
+      if (tries >= 25) {
         clearInterval(iv);
         stopTelemetry();
 
@@ -1335,9 +1456,6 @@
     }, 200);
   }
 
-  /* =====================================================================
-     Controls
-     ===================================================================== */
   fsBtn.addEventListener('click', () => {
     if (document.fullscreenElement || document.webkitFullscreenElement) {
       (document.exitFullscreen || document.webkitExitFullscreen).call(document);
@@ -1359,7 +1477,6 @@
     window.scrollTo({ top: 0, behavior: 'smooth' });
   });
 
-  /* Re-verify isolation whenever the tab comes back into view. */
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && !started) {
       checkIso();
@@ -1367,13 +1484,124 @@
     }
   });
 
-  /* --------------------------------------------------------- initial scan */
   document.title = GAME_NAME + ' — Deployment';
 
   runChecks();
-  // Isolation may only settle after the one-time service-worker reload.
   setTimeout(runChecks, 1200);
   setTimeout(runChecks, 3000);
+
+  /* =====================================================================
+     Gallery Logic
+     ===================================================================== */
+  const GALLERY_COUNT = 11;
+  const GALLERY_DIR   = 'battleimages/'; // Relative to the emu/ folder
+
+  const galleryGrid = $('galleryGrid');
+  const lightbox    = $('lightbox');
+  const lbImg       = $('lbImg');
+  const lbPrev      = $('lbPrev');
+  const lbNext      = $('lbNext');
+  const lbClose     = $('lbClose');
+
+  const gallerySrc = (n) =>
+    GALLERY_DIR + 'page-' + String(n).padStart(3, '0') + '.png';
+
+  let lbIndex = 1;
+
+  function renderLightbox() {
+    lbImg.src = gallerySrc(lbIndex);
+    lbImg.alt = GAME_NAME + ' — archive image';
+
+    // Preload the neighbours so the arrows feel instant.
+    const prev = lbIndex === 1 ? GALLERY_COUNT : lbIndex - 1;
+    const next = lbIndex === GALLERY_COUNT ? 1 : lbIndex + 1;
+    new Image().src = gallerySrc(prev);
+    new Image().src = gallerySrc(next);
+  }
+
+  function openLightbox(n) {
+    lbIndex = n;
+    renderLightbox();
+    lightbox.classList.add('open');
+    lightbox.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+    lbClose.focus({ preventScroll: true });
+  }
+
+  function closeLightbox() {
+    lightbox.classList.remove('open');
+    lightbox.setAttribute('aria-hidden', 'true');
+    document.body.style.overflow = '';
+    lbImg.removeAttribute('src');
+  }
+
+  function stepLightbox(delta) {
+    lbIndex = ((lbIndex - 1 + delta + GALLERY_COUNT) % GALLERY_COUNT) + 1;
+    renderLightbox();
+  }
+
+  // Build the thumbnails
+  (function buildGallery() {
+    const frag = document.createDocumentFragment();
+
+    for (let i = 1; i <= GALLERY_COUNT; i++) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'gallery-item';
+
+      const img = document.createElement('img');
+      img.src = gallerySrc(i);
+      img.alt = GAME_NAME + ' — archive image';
+      img.loading = 'lazy';
+      img.decoding = 'async';
+
+      btn.appendChild(img);
+      btn.addEventListener('click', () => openLightbox(i));
+      frag.appendChild(btn);
+    }
+
+    galleryGrid.appendChild(frag);
+  })();
+
+  // Lightbox controls
+  lbPrev.addEventListener('click', () => stepLightbox(-1));
+  lbNext.addEventListener('click', () => stepLightbox(1));
+  lbClose.addEventListener('click', closeLightbox);
+
+  // Close on background click
+  lightbox.addEventListener('click', (e) => {
+    if (e.target === lightbox) closeLightbox();
+  });
+
+  // Keyboard navigation
+  document.addEventListener('keydown', (e) => {
+    if (!lightbox.classList.contains('open')) return;
+
+    if (e.key === 'Escape') {
+      closeLightbox();
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      stepLightbox(-1);
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      stepLightbox(1);
+    }
+  });
+
+  // Swipe on touch devices
+  let touchX = null;
+
+  lightbox.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 1) touchX = e.touches[0].clientX;
+  }, { passive: true });
+
+  lightbox.addEventListener('touchend', (e) => {
+    if (touchX === null) return;
+    const dx = e.changedTouches[0].clientX - touchX;
+    touchX = null;
+    if (Math.abs(dx) > 50) stepLightbox(dx < 0 ? 1 : -1);
+  }, { passive: true });
+
 })();
 </script>
 </body>
