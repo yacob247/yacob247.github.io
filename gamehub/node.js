@@ -110,7 +110,7 @@ const games = [
     category: 'Action',
     subcategory: 'Arcade .io',
     thumbnail: 'hole-io.jpg',
-    embedUrl: 'https://hole.io',
+    embedUrl: 'https://holeio.com/',
     description: 'Grow a hole and swallow the city in arcade matches.',
     tags: ['Arcade', '.io', 'Casual', 'Multiplayer'],
     provider: 'Official site'
