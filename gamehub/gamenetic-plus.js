@@ -89,7 +89,7 @@
     'igi-2':                   { price: 300, streak: 4, level: 3 },
     'battlefield':             { price: 300, streak: 3, level: 3 },
     'minecraft-real':          { price: 250, streak: 3, level: 3 },
-    'bus-simulator-ultimate':  { price: 200, streak: 2, level: 2 },
+    'thebus-simulator-ultimate':  { price: 200, streak: 2, level: 2 },
   };
   const hashId = id => { let h = 0; for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0; return h; };
   const rateOf = g => RATES[g.id] || g.coins || (ECON.perMinute[0] + hashId(g.id) % (ECON.perMinute[1] - ECON.perMinute[0] + 1));
