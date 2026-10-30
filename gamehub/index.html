@@ -1125,7 +1125,31 @@ body.modal-open { overflow: hidden; }
 @media (hover: none) {
   .acct-wrap.signed-in .acct-del { opacity: 1; visibility: visible; transform: none; pointer-events: auto; }
 }
-  </style>
+  
+/* ===== GAME COMMENTS ===== */
+.gc-box { margin-top: 22px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; }
+.gc-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.gc-head h3 { font-size: 1.05rem; }
+.gc-head h3 span { font-size: .75rem; background: var(--surface-2); padding: 2px 8px; border-radius: 999px; color: var(--text-2); margin-left: 6px; }
+.gc-head small { color: var(--text-2); font-size: .72rem; }
+.gc-form { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+.gc-form input, .gc-form textarea { width: 100%; padding: 10px 12px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font: inherit; font-size: .92rem; outline: none; resize: vertical; }
+.gc-form input { max-width: 260px; }
+.gc-form input:focus, .gc-form textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+.gc-row { display: flex; align-items: center; justify-content: space-between; color: var(--text-2); font-size: .75rem; }
+.gc-row button { padding: 8px 22px; border: 0; border-radius: 999px; background: var(--accent); color: #fff; font-weight: 700; cursor: pointer; }
+.gc-row button:disabled { opacity: .5; cursor: not-allowed; }
+.gc-list { display: flex; flex-direction: column; gap: 10px; max-height: 480px; overflow-y: auto; }
+.gc-item { display: flex; gap: 10px; padding: 10px 12px; background: var(--bg-2); border-radius: 12px; }
+.gc-av { width: 34px; height: 34px; flex-shrink: 0; border-radius: 50%; background: linear-gradient(135deg, var(--accent), #ec4899); display: flex; align-items: center; justify-content: center; font-weight: 800; color: #fff; }
+.gc-body { min-width: 0; flex: 1; }
+.gc-meta { font-size: .78rem; color: var(--text-2); }
+.gc-meta b { color: var(--text); margin-right: 6px; }
+.gc-txt { font-size: .92rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.gc-del { background: none; border: 0; color: var(--text-2); cursor: pointer; font-size: .75rem; margin-left: 8px; }
+.gc-del:hover { color: #f87171; }
+.gc-empty { color: var(--text-2); font-size: .85rem; text-align: center; padding: 14px 0; }
+</style>
 <style id="v2">
 /* ===== VIEW TOGGLE (Classic | Sections) ===== */
 .viewtoggle { display: flex; gap: 4px; width: max-content; max-width: 100%; margin-top: 14px; padding: 4px; border-radius: 999px; background: rgba(10, 20, 42, .55); border: 1px solid rgba(0, 212, 255, .28); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); box-shadow: 0 6px 24px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.06); }
@@ -1347,6 +1371,15 @@ body.v-sec #home:not(.filtering) #allSec { display: none; }
         <nav class="crumbs" id="crumbs"></nav>
         <p id="pvDesc"></p>
         <div id="pvExtra" class="pv-extra"></div>
+        <section id="gcBox" class="gc-box" aria-label="Game comments">
+          <div class="gc-head"><h3>💬 Comments <span id="gcCount">0</span></h3><small id="gcMode"></small></div>
+          <form id="gcForm" class="gc-form" autocomplete="off">
+            <input id="gcName" type="text" maxlength="24" placeholder="Your name">
+            <textarea id="gcText" maxlength="500" rows="2" placeholder="Write a comment about this game…"></textarea>
+            <div class="gc-row"><span id="gcLeft">500</span><button type="submit" id="gcSend">Post</button></div>
+          </form>
+          <div id="gcList" class="gc-list"></div>
+        </section>
       </div>
       <aside class="pv-side">
         <div class="slot" id="promoSide"></div>
@@ -4197,4 +4230,123 @@ const EMU_PAGES = {
 })();
 </script>
 <script src="gamenetic-plus.js" defer></script>
+
+<script>
+// ===== GAME COMMENTS (saved in your Google Sheet, tab "comments") =====
+// Paste your Apps Script Web App URL below. Leave '' for browser-only comments.
+(function () {
+  var COMMENTS_API_URL = 'https://script.google.com/macros/s/AKfycbwr759RZZN9HLE2kbTnSxJAHfsoaZnABp7QY_uua9FW6nUNroTCrI-On1HWHRHlhZBA/exec'; // <-- paste the NEW Apps Script /exec URL here
+  var LS_KEY = 'gn_comments', NAME_KEY = 'gn_comment_name', MINE_KEY = 'gn_comment_mine';
+  var $ = function (id) { return document.getElementById(id); };
+  var gameId = null, items = [], shared = false, lastPost = 0;
+
+  function lsGet(k, d) { try { return JSON.parse(localStorage.getItem(k)) || d; } catch (e) { return d; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+  function rid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+  function ago(ts) {
+    var s = Math.max(1, Math.round((Date.now() - ts) / 1000));
+    if (s < 60) return 'just now';
+    if (s < 3600) return Math.floor(s / 60) + ' min ago';
+    if (s < 86400) return Math.floor(s / 3600) + ' h ago';
+    return new Date(ts).toLocaleDateString();
+  }
+  function send(params) {
+    if (!COMMENTS_API_URL) return;
+    fetch(COMMENTS_API_URL, { method: 'POST', mode: 'no-cors', keepalive: true, body: new URLSearchParams(params) }).catch(function () {});
+  }
+
+  async function load(id) {
+    items = (lsGet(LS_KEY, {})[id] || []).slice(); shared = false;
+    render();
+    if (!COMMENTS_API_URL) return;
+    try {
+      var r = await fetch(COMMENTS_API_URL + '?action=list&gameId=' + encodeURIComponent(id));
+      var d = await r.json();
+      if (gameId !== id || !Array.isArray(d)) return;
+      var seen = {}; d.forEach(function (c) { seen[c.id] = 1; });
+      // keep my just-posted comments the sheet hasn't returned yet
+      var pending = items.filter(function (c) { return !seen[c.id] && Date.now() - c.ts < 120000; });
+      items = d.concat(pending); shared = true;
+    } catch (e) { /* keep local copy */ }
+    render();
+  }
+
+  function render() {
+    var list = $('gcList'); if (!list) return;
+    var mine = lsGet(MINE_KEY, {});
+    items.sort(function (a, b) { return b.ts - a.ts; });
+    $('gcCount').textContent = items.length;
+    $('gcMode').textContent = shared ? 'Shared with all players' : 'Saved on this device';
+    list.textContent = '';
+    if (!items.length) { var e = document.createElement('div'); e.className = 'gc-empty'; e.textContent = 'No comments yet — be the first!'; list.appendChild(e); return; }
+    items.forEach(function (c) {
+      var row = document.createElement('div'); row.className = 'gc-item';
+      var av = document.createElement('div'); av.className = 'gc-av'; av.textContent = (c.name || '?').charAt(0).toUpperCase();
+      var body = document.createElement('div'); body.className = 'gc-body';
+      var meta = document.createElement('div'); meta.className = 'gc-meta';
+      var b = document.createElement('b'); b.textContent = c.name || 'Player';
+      meta.appendChild(b); meta.appendChild(document.createTextNode(ago(c.ts)));
+      if (mine[c.id]) {
+        var del = document.createElement('button'); del.type = 'button'; del.className = 'gc-del'; del.textContent = 'Delete';
+        del.onclick = function () { remove(c); }; meta.appendChild(del);
+      }
+      var t = document.createElement('div'); t.className = 'gc-txt'; t.textContent = c.text;
+      body.appendChild(meta); body.appendChild(t); row.appendChild(av); row.appendChild(body); list.appendChild(row);
+    });
+  }
+
+  function post(name, text) {
+    var id = gameId, c = { id: rid(), name: name, text: text, ts: Date.now() }, owner = rid();
+    var mine = lsGet(MINE_KEY, {}); mine[c.id] = owner; lsSet(MINE_KEY, mine);
+    items.push(c); render();
+    var all = lsGet(LS_KEY, {}); (all[id] = all[id] || []).push(c); all[id] = all[id].slice(-200); lsSet(LS_KEY, all);
+    send({ action: 'add', id: c.id, gameId: id, name: name, text: text, owner: owner, ts: c.ts });
+  }
+
+  function remove(c) {
+    if (!confirm('Delete your comment?')) return;
+    var mine = lsGet(MINE_KEY, {});
+    send({ action: 'delete', id: c.id, gameId: gameId, owner: mine[c.id] || '' });
+    items = items.filter(function (x) { return x.id !== c.id; });
+    var all = lsGet(LS_KEY, {}); all[gameId] = (all[gameId] || []).filter(function (x) { return x.id !== c.id; }); lsSet(LS_KEY, all);
+    render();
+  }
+
+  async function defaultName() {
+    var saved = ''; try { saved = localStorage.getItem(NAME_KEY) || ''; } catch (e) {}
+    try {
+      if (window.__idb) {
+        var slot = await window.__idb.getCurrentSlot();
+        if (slot) { var acc = (await window.__idb.listSlots()).find(function (a) { return a.slot === slot; }); if (acc && acc.name) return acc.name; }
+      }
+    } catch (e) {}
+    return saved;
+  }
+
+  async function onRoute() {
+    var m = location.hash.match(/^#\/play\/(.+)$/);
+    if (!m || !$('gcBox')) { gameId = null; return; }
+    var id = decodeURIComponent(m[1]);
+    if (id === gameId) return;
+    gameId = id; load(id);
+    $('gcName').value = await defaultName();
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    $('gcText').addEventListener('input', function () { $('gcLeft').textContent = 500 - this.value.length; });
+    $('gcForm').addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var name = $('gcName').value.trim().slice(0, 24) || 'Player', text = $('gcText').value.trim();
+      if (!text || !gameId) return;
+      if (Date.now() - lastPost < 10000) { alert('Please wait a few seconds before posting again.'); return; }
+      lastPost = Date.now();
+      try { localStorage.setItem(NAME_KEY, name); } catch (e) {}
+      post(name, text);
+      $('gcText').value = ''; $('gcLeft').textContent = 500;
+    });
+    window.addEventListener('hashchange', onRoute);
+    onRoute();
+  });
+})();
+</script>
 </body></html>
