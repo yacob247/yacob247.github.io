@@ -610,28 +610,8 @@ const games = [
     tags: ['Snake', 'Arena', 'Multiplayer', 'Casual'],
     provider: 'Official site'
   },
-  {
-    id: 'aquapark-io',
-    name: 'Aquapark.io',
-    category: 'Survival',
-    subcategory: 'Racing Arcade',
-    thumbnail: 'aquapark-io.jpg',
-    embedUrl: 'https://aquapark.io',
-    description: 'Water slide racing arcade with multiplayer fun.',
-    tags: ['Racing', 'Arcade', 'Multiplayer', 'Casual'],
-    provider: 'Official site'
-  },
-  {
-    id: 'hextris-io',
-    name: 'Hextris',
-    category: 'Survival',
-    subcategory: 'Puzzle Arcade',
-    thumbnail: 'hextris-io.jpg',
-    embedUrl: 'https://hextris.io',
-    description: 'Hexagonal puzzle arcade inspired by Tetris.',
-    tags: ['Puzzle', 'Arcade', 'Casual', 'Hex'],
-    provider: 'Official site'
-  },
+
+ 
   {
     id: 'survev-io',
     name: 'Survev.io',
