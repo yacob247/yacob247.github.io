@@ -1149,6 +1149,11 @@ body.modal-open { overflow: hidden; }
 .gc-del { background: none; border: 0; color: var(--text-2); cursor: pointer; font-size: .75rem; margin-left: 8px; }
 .gc-del:hover { color: #f87171; }
 .gc-empty { color: var(--text-2); font-size: .85rem; text-align: center; padding: 14px 0; }
+.gc-as { display: flex; align-items: center; gap: 8px; font-size: .85rem; color: var(--text-2); }
+.gc-as b { color: var(--text); }
+.gc-as .gc-av { width: 26px; height: 26px; font-size: .75rem; }
+.gc-av { overflow: hidden; }
+.gc-av img { width: 100%; height: 100%; object-fit: cover; display: block; }
 </style>
 <style id="v2">
 /* ===== VIEW TOGGLE (Classic | Sections) ===== */
@@ -1374,7 +1379,7 @@ body.v-sec #home:not(.filtering) #allSec { display: none; }
         <section id="gcBox" class="gc-box" aria-label="Game comments">
           <div class="gc-head"><h3>💬 Comments <span id="gcCount">0</span></h3><small id="gcMode"></small></div>
           <form id="gcForm" class="gc-form" autocomplete="off">
-            <input id="gcName" type="text" maxlength="24" placeholder="Your name">
+            <div id="gcAs" class="gc-as"></div>
             <textarea id="gcText" maxlength="500" rows="2" placeholder="Write a comment about this game…"></textarea>
             <div class="gc-row"><span id="gcLeft">500</span><button type="submit" id="gcSend">Post</button></div>
           </form>
@@ -3414,7 +3419,7 @@ async function fetchGameMonetizeGames() {
       clearInterval(prerollTimer);
       preroll.classList.add('done');
 if (currentGame && currentGame.provider === 'BottleShip') {
-  Plays.hit(currentGame.id);
+  Plays.hit(currentGame.id, true);
   const page = EMU_PAGES[currentGame.id];
   location.href = page || ('emu/?id=' + encodeURIComponent(currentGame.id));
   return;
@@ -3453,7 +3458,7 @@ const EMU_PAGES = {
 
   // Redirect to the dedicated page if it exists
   if (EMU_PAGES[game.id]) {
-    Plays.hit(game.id);
+    Plays.hit(game.id, true);
     location.replace(EMU_PAGES[game.id]);
     return;
   }
@@ -3665,21 +3670,40 @@ const EMU_PAGES = {
     // ================================================================
     // Paste the Web App URL from plays-apps-script.gs here to make the rails global.
     // Left empty, the rails still work from this browser's own play history.
-    const PLAYS_API_URL = '';
+    const PLAYS_API_URL = 'https://script.google.com/macros/s/AKfycbxMpBpwDfKFK8yobCNm8XGLI7-HJQjGr0kLFyw8YkjoY03QNaoLH3l-QF0IiDCaZ5-n/exec';
 
     const Plays = (() => {
       const day = (off = 0) => new Date(Date.now() - off * 864e5).toISOString().slice(0, 10);
       let local = {}, remote = {}, hasRemote = false;
       try { local = JSON.parse(localStorage.getItem('gn_plays') || '{}') || {}; } catch (e) {}
-      function hit(id) {
-        if (!id) return;
-        try { const k = 'gn_hit_' + id; if (sessionStorage.getItem(k)) return; sessionStorage.setItem(k, '1'); } catch (e) {}
+      // A play only counts if the player stays 10s (not just opens the page), once per game per
+      // session. Counts are queued and sent in ONE small batch request, not one request per play.
+      let queue = [], qTimer = null;
+      const seen = id => { try { return !!sessionStorage.getItem('gn_hit_' + id); } catch (e) { return false; } };
+      function flushQueue() {
+        clearTimeout(qTimer); qTimer = null;
+        if (!PLAYS_API_URL || !queue.length) { queue = []; return; }
+        const ids = queue.splice(0, 20).join(',');
+        fetch(PLAYS_API_URL, { method: 'POST', mode: 'no-cors', keepalive: true, body: new URLSearchParams({ ids }) }).catch(() => {});
+        if (queue.length) flushQueue();
+      }
+      function count(id) {
+        if (seen(id)) return;
+        try { sessionStorage.setItem('gn_hit_' + id, '1'); } catch (e) {}
         const r = local[id] || (local[id] = { t: 0, d: {} });
         r.t++; r.d[day()] = (r.d[day()] || 0) + 1;
         Object.keys(r.d).forEach(k => { if (k < day(7)) delete r.d[k]; });
         try { localStorage.setItem('gn_plays', JSON.stringify(local)); } catch (e) {}
-        if (PLAYS_API_URL) fetch(PLAYS_API_URL, { method: 'POST', mode: 'no-cors', keepalive: true, body: new URLSearchParams({ gameId: id }) }).catch(() => {});
+        queue.push(id);
+        if (!qTimer) qTimer = setTimeout(flushQueue, 20000);
       }
+      function hit(id, now) {
+        if (!id || seen(id)) return;
+        if (now) return count(id); // page is about to navigate away, can't wait
+        setTimeout(() => { if (typeof currentGame !== 'undefined' && currentGame && currentGame.id === id) count(id); }, 10000);
+      }
+      addEventListener('pagehide', flushQueue);
+      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushQueue(); });
       async function load() {
         if (!PLAYS_API_URL) return;
         try {
@@ -4235,14 +4259,19 @@ const EMU_PAGES = {
 // ===== GAME COMMENTS (saved in your Google Sheet, tab "comments") =====
 // Paste your Apps Script Web App URL below. Leave '' for browser-only comments.
 (function () {
-  var COMMENTS_API_URL = 'https://script.google.com/macros/s/AKfycbwr759RZZN9HLE2kbTnSxJAHfsoaZnABp7QY_uua9FW6nUNroTCrI-On1HWHRHlhZBA/exec'; // <-- paste the NEW Apps Script /exec URL here
-  var LS_KEY = 'gn_comments', NAME_KEY = 'gn_comment_name', MINE_KEY = 'gn_comment_mine';
+  var COMMENTS_API_URL = 'https://script.google.com/macros/s/AKfycbwqSQq2ioQz9j5EiHAVPhPHaGRGINJsT7AsrPsyAA-642sQgwgtuJPDlNTeVCRqiBMF/exec'; // <-- paste the comments Apps Script /exec URL here
+  var LS_KEY = 'gn_comments', MINE_KEY = 'gn_comment_mine', AID_KEY = 'gn_aid';
   var $ = function (id) { return document.getElementById(id); };
-  var gameId = null, items = [], shared = false, lastPost = 0;
+  var gameId = null, items = [], shared = false, lastPost = 0, thumbSrc = '', thumbOut = '';
 
   function lsGet(k, d) { try { return JSON.parse(localStorage.getItem(k)) || d; } catch (e) { return d; } }
   function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
   function rid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+  function aid() { // private id of this browser, used only to keep "Anonymous 2" the same person
+    var a = ''; try { a = localStorage.getItem(AID_KEY) || ''; } catch (e) {}
+    if (!a) { a = 'a' + rid() + rid(); try { localStorage.setItem(AID_KEY, a); } catch (e) {} }
+    return a;
+  }
   function ago(ts) {
     var s = Math.max(1, Math.round((Date.now() - ts) / 1000));
     if (s < 60) return 'just now';
@@ -4254,6 +4283,63 @@ const EMU_PAGES = {
     if (!COMMENTS_API_URL) return;
     fetch(COMMENTS_API_URL, { method: 'POST', mode: 'no-cors', keepalive: true, body: new URLSearchParams(params) }).catch(function () {});
   }
+  function label(c) { return c.name ? c.name : 'Anonymous' + (c.anon ? ' ' + c.anon : ''); }
+  function okPhoto(u) { return typeof u === 'string' && /^(data:image\/(jpeg|png|webp);base64,|https:\/\/)/.test(u); }
+
+  function mkAvatar(name, photo) {
+    var av = document.createElement('div'); av.className = 'gc-av';
+    var letter = name ? name.charAt(0).toUpperCase() : '👤';
+    if (okPhoto(photo)) {
+      var im = document.createElement('img'); im.alt = ''; im.referrerPolicy = 'no-referrer';
+      im.onerror = function () { im.remove(); av.textContent = letter; };
+      im.src = photo; av.appendChild(im);
+    } else av.textContent = letter;
+    return av;
+  }
+
+  // Who is posting: the current profile's name + photo, otherwise anonymous.
+  async function me() {
+    var name = '', photo = '';
+    try {
+      if (window.__idb) {
+        var slot = await window.__idb.getCurrentSlot();
+        if (slot) {
+          var acc = (await window.__idb.listSlots()).find(function (a) { return a.slot === slot; });
+          if (acc) { name = String(acc.name || '').trim().slice(0, 24); photo = acc.photo || ''; }
+        }
+      }
+    } catch (e) {}
+    if (name.toLowerCase() === 'player') name = ''; // default placeholder name = no name chosen
+    return { name: name, photo: name ? photo : '' };
+  }
+  async function updateAs() {
+    var box = $('gcAs'); if (!box) return;
+    var m = await me();
+    box.textContent = '';
+    box.appendChild(mkAvatar(m.name, m.photo));
+    var t = document.createElement('span');
+    if (m.name) { t.appendChild(document.createTextNode('Posting as ')); var b = document.createElement('b'); b.textContent = m.name; t.appendChild(b); }
+    else t.textContent = 'Posting as Anonymous — sign in (top right) to use your name & photo';
+    box.appendChild(t);
+  }
+  // shrink the profile photo to a tiny 48px image so it is cheap to store in the sheet
+  function thumb(src) {
+    if (!src) return Promise.resolve('');
+    if (/^https:\/\//.test(src)) return Promise.resolve(src.slice(0, 500));
+    if (!/^data:image\//.test(src)) return Promise.resolve('');
+    if (src === thumbSrc) return Promise.resolve(thumbOut);
+    return new Promise(function (res) {
+      var im = new Image();
+      im.onload = function () {
+        var n = 48, c = document.createElement('canvas'); c.width = c.height = n;
+        var m = Math.min(im.width, im.height);
+        c.getContext('2d').drawImage(im, (im.width - m) / 2, (im.height - m) / 2, m, m, 0, 0, n, n);
+        thumbSrc = src; thumbOut = c.toDataURL('image/jpeg', 0.7); res(thumbOut);
+      };
+      im.onerror = function () { res(''); };
+      im.src = src;
+    });
+  }
 
   async function load(id) {
     items = (lsGet(LS_KEY, {})[id] || []).slice(); shared = false;
@@ -4262,11 +4348,12 @@ const EMU_PAGES = {
     try {
       var r = await fetch(COMMENTS_API_URL + '?action=list&gameId=' + encodeURIComponent(id));
       var d = await r.json();
-      if (gameId !== id || !Array.isArray(d)) return;
-      var seen = {}; d.forEach(function (c) { seen[c.id] = 1; });
-      // keep my just-posted comments the sheet hasn't returned yet
+      var list = Array.isArray(d) ? d : (d && d.c), prof = (d && d.p) || {};
+      if (gameId !== id || !Array.isArray(list)) return;
+      list.forEach(function (c) { if (c.pk && prof[c.pk]) c.photo = prof[c.pk]; });
+      var seen = {}; list.forEach(function (c) { seen[c.id] = 1; });
       var pending = items.filter(function (c) { return !seen[c.id] && Date.now() - c.ts < 120000; });
-      items = d.concat(pending); shared = true;
+      items = list.concat(pending); shared = true;
     } catch (e) { /* keep local copy */ }
     render();
   }
@@ -4281,26 +4368,39 @@ const EMU_PAGES = {
     if (!items.length) { var e = document.createElement('div'); e.className = 'gc-empty'; e.textContent = 'No comments yet — be the first!'; list.appendChild(e); return; }
     items.forEach(function (c) {
       var row = document.createElement('div'); row.className = 'gc-item';
-      var av = document.createElement('div'); av.className = 'gc-av'; av.textContent = (c.name || '?').charAt(0).toUpperCase();
       var body = document.createElement('div'); body.className = 'gc-body';
       var meta = document.createElement('div'); meta.className = 'gc-meta';
-      var b = document.createElement('b'); b.textContent = c.name || 'Player';
+      var b = document.createElement('b'); b.textContent = label(c);
       meta.appendChild(b); meta.appendChild(document.createTextNode(ago(c.ts)));
       if (mine[c.id]) {
         var del = document.createElement('button'); del.type = 'button'; del.className = 'gc-del'; del.textContent = 'Delete';
         del.onclick = function () { remove(c); }; meta.appendChild(del);
       }
       var t = document.createElement('div'); t.className = 'gc-txt'; t.textContent = c.text;
-      body.appendChild(meta); body.appendChild(t); row.appendChild(av); row.appendChild(body); list.appendChild(row);
+      body.appendChild(meta); body.appendChild(t);
+      row.appendChild(mkAvatar(c.name, c.photo)); row.appendChild(body); list.appendChild(row);
     });
   }
 
-  function post(name, text) {
-    var id = gameId, c = { id: rid(), name: name, text: text, ts: Date.now() }, owner = rid();
+  // Anonymous numbering: same browser keeps the same number in a game, a new one gets the next number.
+  function anonFor(a) {
+    var mine = lsGet(MINE_KEY, {}), own = 0, max = 0;
+    items.forEach(function (c) {
+      if (c.name) return;
+      var n = Number(c.anon) || 0; if (n > max) max = n;
+      if (n && (c.aid === a || mine[c.id])) own = n;
+    });
+    return own || max + 1;
+  }
+
+  function post(name, text, photo) {
+    var id = gameId, a = aid(), owner = rid();
+    var c = { id: rid(), name: name, text: text, ts: Date.now(), aid: a, anon: name ? '' : anonFor(a), photo: photo };
     var mine = lsGet(MINE_KEY, {}); mine[c.id] = owner; lsSet(MINE_KEY, mine);
     items.push(c); render();
-    var all = lsGet(LS_KEY, {}); (all[id] = all[id] || []).push(c); all[id] = all[id].slice(-200); lsSet(LS_KEY, all);
-    send({ action: 'add', id: c.id, gameId: id, name: name, text: text, owner: owner, ts: c.ts });
+    var all = lsGet(LS_KEY, {}); (all[id] = all[id] || []).push({ id: c.id, name: name, text: text, ts: c.ts, aid: a, anon: c.anon });
+    all[id] = all[id].slice(-200); lsSet(LS_KEY, all);
+    send({ action: 'add', id: c.id, gameId: id, name: name, text: text, owner: owner, aid: a, photo: photo, ts: c.ts });
   }
 
   function remove(c) {
@@ -4312,37 +4412,29 @@ const EMU_PAGES = {
     render();
   }
 
-  async function defaultName() {
-    var saved = ''; try { saved = localStorage.getItem(NAME_KEY) || ''; } catch (e) {}
-    try {
-      if (window.__idb) {
-        var slot = await window.__idb.getCurrentSlot();
-        if (slot) { var acc = (await window.__idb.listSlots()).find(function (a) { return a.slot === slot; }); if (acc && acc.name) return acc.name; }
-      }
-    } catch (e) {}
-    return saved;
-  }
-
-  async function onRoute() {
+  function onRoute() {
     var m = location.hash.match(/^#\/play\/(.+)$/);
     if (!m || !$('gcBox')) { gameId = null; return; }
     var id = decodeURIComponent(m[1]);
+    updateAs();
     if (id === gameId) return;
     gameId = id; load(id);
-    $('gcName').value = await defaultName();
   }
 
   document.addEventListener('DOMContentLoaded', function () {
     $('gcText').addEventListener('input', function () { $('gcLeft').textContent = 500 - this.value.length; });
-    $('gcForm').addEventListener('submit', function (ev) {
+    $('gcText').addEventListener('focus', updateAs);
+    document.addEventListener('visibilitychange', function () { if (!document.hidden) updateAs(); });
+    $('gcForm').addEventListener('submit', async function (ev) {
       ev.preventDefault();
-      var name = $('gcName').value.trim().slice(0, 24) || 'Player', text = $('gcText').value.trim();
+      var text = $('gcText').value.trim();
       if (!text || !gameId) return;
       if (Date.now() - lastPost < 10000) { alert('Please wait a few seconds before posting again.'); return; }
       lastPost = Date.now();
-      try { localStorage.setItem(NAME_KEY, name); } catch (e) {}
-      post(name, text);
-      $('gcText').value = ''; $('gcLeft').textContent = 500;
+      var btn = $('gcSend'); btn.disabled = true;
+      var m = await me(), photo = m.name ? await thumb(m.photo) : '';
+      post(m.name, text, photo);
+      $('gcText').value = ''; $('gcLeft').textContent = 500; btn.disabled = false;
     });
     window.addEventListener('hashchange', onRoute);
     onRoute();
