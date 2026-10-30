@@ -1028,17 +1028,7 @@ const games = [
     tags: ['Crafting', 'Sandbox', 'Puzzle', 'Creative'],
     provider: 'Official site'
   },
-  {
-    id: 'phet-colorado',
-    name: 'PhET Simulations',
-    category: 'Simulation',
-    subcategory: 'Science Simulations',
-    thumbnail: 'phet-colorado.jpg',
-    embedUrl: 'https://phet.colorado.edu',
-    description: 'Interactive science and math simulations for learning.',
-    tags: ['Science', 'Education', 'Simulation', 'Interactive'],
-    provider: 'Official site'
-  },
+
   {
     id: 'falstad-circuit',
     name: 'Falstad Circuit Simulator',
