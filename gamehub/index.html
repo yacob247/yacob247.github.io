@@ -3782,7 +3782,7 @@ const EMU_PAGES = {
     // ================================================================
     // Paste the Web App URL from plays-apps-script.gs here to make the rails global.
     // Left empty, the rails still work from this browser's own play history.
-    const PLAYS_API_URL = 'https://script.google.com/macros/s/AKfycbxhfRttd8k7cfDgCCLNa-ybutHSLv7UF0MJRNQpMQpwCX1BYpgMsYHGv45eT_EoNXdZ/exec';
+    const PLAYS_API_URL = 'https://script.google.com/macros/s/AKfycbw7BbFb1QyrOQR0dVKNUuSPgyLlUXfBEriYnjn6i7VvcpusfwvDPLt6AYyySxFdDTCH/exec';
 
     const Plays = (() => {
       const day = (off = 0) => new Date(Date.now() - off * 864e5).toISOString().slice(0, 10);
@@ -3897,6 +3897,26 @@ const EMU_PAGES = {
     E('viewToggle').addEventListener('click', e => { const b = e.target.closest('.vt'); if (b) setView(b.dataset.view); });
     { let v = 'classic'; try { v = localStorage.getItem('gn_view') === 'sections' ? 'sections' : 'classic'; } catch (e) {} setView(v); }
     Plays.load();
+
+    // OWNER ONLY: open your site once as  yoursite.com/?seedplays=YOURSECRET  (the SEED_KEY from the plays script)
+    // and every game gets listed in the "Plays" sheet. Visitors never see or use this.
+    (function () {
+      var m = location.search.match(/[?&]seedplays=([^&]+)/);
+      if (!m || !PLAYS_API_URL) return;
+      var key = decodeURIComponent(m[1]), started = false;
+      function run() {
+        if (started) return; started = true;
+        var ids = allGames.map(function (g) { return g && g.id; }).filter(Boolean).map(String), n = 0;
+        (function next() {
+          var part = ids.slice(n, n + 120);
+          if (!part.length) { alert('Sent ' + ids.length + ' games to the Plays sheet. Check the sheet in a minute.'); return; }
+          fetch(PLAYS_API_URL, { method: 'POST', mode: 'no-cors', body: new URLSearchParams({ action: 'seed', key: key, ids: part.join(',') }) }).catch(function () {});
+          n += 120; setTimeout(next, 1500);
+        })();
+      }
+      window.addEventListener('gamenetic:gamesloaded', run);
+      setTimeout(run, 25000); // fallback if the event already happened
+    })();
 
     // ================================================================
     // 9. INIT
@@ -4371,7 +4391,7 @@ const EMU_PAGES = {
 // ===== GAME COMMENTS (saved in your Google Sheet, tab "comments") =====
 // Paste your Apps Script Web App URL below. Leave '' for browser-only comments.
 (function () {
-  var COMMENTS_API_URL = 'https://script.google.com/macros/s/AKfycbyiKS1ao1pVSAKIGeeVP2w35513LS0CMtQsN2_wldW7c_L8L8eRrq7KYCogrYLdllXL/exec'; // <-- paste the comments Apps Script /exec URL here
+  var COMMENTS_API_URL = 'https://script.google.com/macros/s/AKfycbyAbizGM7uNEQinjGhp55A5K1ACBImfPLXWsfMGNbskpBik_xD9zev7nHWP9iZ7yIkX/exec'; // <-- paste the comments Apps Script /exec URL here
   var LS_KEY = 'gn_comments', MINE_KEY = 'gn_comment_mine', AID_KEY = 'gn_aid';
   var $ = function (id) { return document.getElementById(id); };
   var gameId = null, items = [], shared = false, lastPost = 0, thumbSrc = '', thumbOut = '';
