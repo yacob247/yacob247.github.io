@@ -18,7 +18,7 @@
   const SALT = 'gn\u2022v1';
   const sig = str => { let h = 5381; const t = str + SALT; for (let i = 0; i < t.length; i++) h = ((h << 5) + h + t.charCodeAt(i)) | 0; return (h >>> 0).toString(36); };
   let tamperMsg = '';
-  const S0 = { streak: 0, last: 0, xp: 0, plays: {}, cats: {}, week: {}, badges: {}, react: {} };
+  const S0 = { lvMin: {}, streak: 0, last: 0, xp: 0, plays: {}, cats: {}, week: {}, badges: {}, react: {} };
   let S = { ...S0 };
   try {
     const raw = localStorage.getItem(KEY) || '{}', sg = localStorage.getItem(KEY + '_s');
@@ -83,18 +83,18 @@
   const RATES = {};        // override a game's rate, e.g. { 'minecraft-real': 4 }
   // Special games: price in coins + minimum streak + minimum level to unlock. Edit freely.
   const SPECIAL = {
-    'gta-san-andreas':         { price: 500, streak: 6, level: 5 },
-    'gta-vice-city':           { price: 400, streak: 5, level: 4 },
-    'mafia-1':                 { price: 350, streak: 4, level: 4 },
-    'igi-2':                   { price: 300, streak: 4, level: 3 },
-    'battlefield':             { price: 300, streak: 3, level: 3 },
-    'minecraft-real':          { price: 250, streak: 3, level: 3 },
-    'thebus-simulator-ultimate':  { price: 200, streak: 2, level: 2 },
+    'gta-san-andreas':         { price: 2000, streak: 6, level: 5 },
+    'gta-vice-city':           { price: 1600, streak: 5, level: 4 },
+    'mafia-1':                 { price: 1400, streak: 4, level: 4 },
+    'igi-2':                   { price: 1200, streak: 4, level: 3 },
+    'battlefield':             { price: 1200, streak: 3, level: 3 },
+    'minecraft-real':          { price: 1000, streak: 3, level: 3 },
+    'thebus-simulator-ultimate':  { price: 800, streak: 2, level: 2 },
   };
   const hashId = id => { let h = 0; for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0; return h; };
   const rateOf = g => RATES[g.id] || g.coins || (ECON.perMinute[0] + hashId(g.id) % (ECON.perMinute[1] - ECON.perMinute[0] + 1));
   const EK = 'gn_eco';
-  const ecoDef = () => ({ c: 0, tot: 0, g: {}, own: {}, bonusDay: 0 });
+  const ecoDef = () => ({ c: 0, tot: 0, g: {}, own: {}, bonusDay: 0, paid: {}, pend: null });
   function ecoLoad() {
     try {
       const raw = localStorage.getItem(EK); if (!raw) return ecoDef();
@@ -105,7 +105,7 @@
   }
   const ecoSave = e => { try { const js = JSON.stringify(e); localStorage.setItem(EK, sig(js) + '|' + js); } catch (x) {} };
   const eco = fn => { const e = ecoLoad(); const r = fn(e); ecoSave(e); return r; };   // read-modify-write (multi-tab safe)
-  const isLocked = id => !!SPECIAL[id] && !ecoLoad().own[id];
+  const isLocked = id => !!SPECIAL[id] && (!ecoLoad().own[id] || !pkFresh());   // owned games also stay shut until the passkey/face check passes
   window.__gnpIsLocked = isLocked;
   window.__gnpShop = id => showShop(id);
 
@@ -156,7 +156,7 @@
     if (!Clock.ok()) { Clock.sync(); return; }                       // no verified time = no coins
     const f = $('#gameFrame');
     if (document.visibilityState !== 'visible' || !document.hasFocus() || !f || !f.src || /about:blank$/.test(f.src)) return;
-    secAcc += dt; if (secAcc < 60) return; secAcc -= 60;
+    secAcc += dt; if (secAcc < 60) return; secAcc -= 60; chTick();
     const g = games().find(x => x.id === curId); if (g) earn(g, Clock.now());
   }, 5000);
 
@@ -171,14 +171,82 @@
   }
   setInterval(updateEarn, 15000);
 
+  /* ---------- level tasks: each new level needs 3 active minutes of play before it counts for unlocking ---------- */
+  const CH_MIN = 3;
+  const nextTask = () => { for (let l = 2; l <= level(); l++) if ((S.lvMin[l] || 0) < CH_MIN) return l; return 0; };
+  const effLevel = () => { let l = 1; while (l < level() && (S.lvMin[l + 1] || 0) >= CH_MIN) l++; return l; };
+  function chTick() {
+    const l = nextTask(); if (!l) return;
+    S.lvMin[l] = (S.lvMin[l] || 0) + 1; save();
+    if (S.lvMin[l] === CH_MIN) toast('✅ Level ' + l + ' task done');
+  }
+
+  /* ---------- passkey / face / fingerprint gate (WebAuthn, no server) ---------- */
+  const b64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const unb64 = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+  const PKK = 'gn_pk', PKOK = 'gn_pkok';
+  function pkFresh() { try { return Date.now() - (+sessionStorage.getItem(PKOK) || 0) < 15 * 6e4; } catch (e) { return false; } }
+  async function pkAuth() {
+    if (pkFresh()) return true;
+    if (!window.PublicKeyCredential || !navigator.credentials) { toast('This browser does not support passkeys'); return false; }
+    try {
+      const ch = crypto.getRandomValues(new Uint8Array(32)); let id = null;
+      try { id = localStorage.getItem(PKK); } catch (e) {}
+      if (!id) {
+        const c = await navigator.credentials.create({ publicKey: { challenge: ch, rp: { name: 'Gamenetic', id: location.hostname },
+          user: { id: crypto.getRandomValues(new Uint8Array(16)), name: 'gamenetic-player', displayName: 'Gamenetic player' },
+          pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
+          authenticatorSelection: { residentKey: 'required', userVerification: 'required' }, timeout: 60000 } });
+        try { localStorage.setItem(PKK, b64(c.rawId)); } catch (e) {}
+      } else {
+        await navigator.credentials.get({ publicKey: { challenge: ch, rpId: location.hostname, userVerification: 'required',
+          allowCredentials: [{ type: 'public-key', id: unb64(id) }], timeout: 60000 } });
+      }
+      sessionStorage.setItem(PKOK, String(Date.now())); return true;
+    } catch (e) { toast('Passkey check cancelled or failed'); return false; }
+  }
+
+  /* ---------- Stripe coin packs (Payment Links: paste yours below) ---------- */
+  // In Stripe, set each Payment Link's "after payment" redirect to:
+  //   https://YOUR-SITE/?gn_paid=0&sid={CHECKOUT_SESSION_ID}      (0 = first pack, 1 = second ...)
+  // verifyUrl (optional): your proxy that checks the session with the secret key and returns {"paid":true}
+  const STRIPE = {
+    verifyUrl: '',
+    packs: [
+      { coins: 500,   price: '$1.99',  link: 'https://buy.stripe.com/eVqaEPgH2dK3fTR3NMgUM02' },
+      { coins: 1500,  price: '$4.99',  link: 'https://buy.stripe.com/fZu28jduQ5dx6jhfwugUM03' },
+      { coins: 4000,  price: '$9.99',  link: 'https://buy.stripe.com/5kQ4grfCYbBV3753NMgUM04' },
+      { coins: 10000, price: '$19.99', link: 'https://buy.stripe.com/4gMdR162ogWfdLJfwugUM05' },
+    ],
+  };
+  function buyPack(i) {
+    const p = STRIPE.packs[i];
+    if (!p || !p.link) { toast('Stripe link not set yet'); return; }
+    const nonce = b64(crypto.getRandomValues(new Uint8Array(12)));
+    eco(e => { e.pend = { n: nonce, i }; });
+    const u = new URL(p.link); u.searchParams.set('client_reference_id', nonce); location.href = u.toString();
+  }
+  async function payReturn() {
+    const q = new URLSearchParams(location.search), i = q.get('gn_paid'), sid = q.get('sid');
+    if (i === null || !sid) return;
+    try { history.replaceState(null, '', location.pathname + location.hash); } catch (e) {}
+    const p = STRIPE.packs[+i]; if (!p) return;
+    if (STRIPE.verifyUrl) {
+      try { const j = await (await fetch(STRIPE.verifyUrl + '?session=' + encodeURIComponent(sid))).json(); if (!j.paid) { toast('Payment not confirmed'); return; } }
+      catch (e) { toast('Could not verify payment'); return; }
+    }
+    const n = eco(e => { if (e.paid[sid] || !e.pend || e.pend.i !== +i) return 0; e.paid[sid] = 1; e.pend = null; e.c += p.coins; return p.coins; });
+    if (n) { toast('🪙 +' + n + ' coins — thank you!'); paintWallet(n); } else toast('Payment already counted');
+  }
+
   /* ---------- special games shop ---------- */
   function showShop(focus) {
     document.querySelectorAll('.gnp-modal').forEach(m => m.remove());
-    const e = ecoLoad(), list = games(), lv = level();
+    const e = ecoLoad(), list = games(), lv = effLevel(), tl = nextTask();
     const o = el('div', { class: 'gnp-modal' });
     const card = el('div', { class: 'gnp-card gnp-wide' },
       el('h3', { text: '🪙 ' + e.c + ' coins · Special games' }),
-      el('p', { text: 'Earn coins by playing (each game pays its own rate, limited every 24 h). Reach the streak and level, then buy a game to unlock it forever.  🔥 ' + S.streak + '-day streak · Level ' + lv }));
+      el('p', { text: 'Earn coins by playing (each game pays its own rate, limited every 24 h). Reach the streak and level, then buy a game to unlock it. It only opens on this account after your passkey / face check.  🔥 ' + S.streak + '-day streak · Level ' + lv + (tl ? ' · Task: play ' + Math.max(0, CH_MIN - (S.lvMin[tl] || 0)) + ' more min to clear level ' + tl : '') }));
     const box = el('div', { class: 'gnp-shop' });
     const rows = Object.entries(SPECIAL).map(([id, sp]) => [id, sp, list.find(x => x.id === id)]).filter(r => r[2])
       .sort((a, b) => (b[0] === focus) - (a[0] === focus));
@@ -190,13 +258,17 @@
         own ? el('div', { class: 'gnp-req' }, el('span', { class: 'gnp-chip ok', text: '🔓 Unlocked' }))
             : el('div', { class: 'gnp-req' }, chip(okS, sp.streak + '-day streak'), chip(okL, 'Level ' + sp.level), chip(okC, sp.price + ' 🪙')));
       let btn;
-      if (own) btn = el('a', { class: 'gnp-btn', href: '#/play/' + encodeURIComponent(id), text: '▶ Play' });
+      if (own) {
+        btn = el('button', { class: 'gnp-btn', text: '🔐 Verify & Play' });
+        btn.onclick = async () => { if (await pkAuth()) { o.remove(); location.hash = '#/play/' + encodeURIComponent(id); } };
+      }
       else {
         btn = el('button', { class: 'gnp-btn', text: 'Unlock · ' + sp.price + ' 🪙' });
         if (!(okS && okL && okC)) { btn.disabled = true; btn.title = !okS ? 'Keep your daily streak going' : !okL ? 'Play more to level up' : 'Earn more coins'; }
-        btn.onclick = () => {
+        btn.onclick = async () => {
+          if (!(await pkAuth())) return;
           const res = eco(x => {
-            if (x.own[id]) return 'own'; if (S.streak < sp.streak) return 'streak'; if (level() < sp.level) return 'level'; if (x.c < sp.price) return 'coins';
+            if (x.own[id]) return 'own'; if (S.streak < sp.streak) return 'streak'; if (effLevel() < sp.level) return 'level'; if (x.c < sp.price) return 'coins';
             x.c -= sp.price; x.own[id] = 1; return 'ok';
           });
           if (res === 'ok') { toast('🔓 Unlocked ' + g.name + '!'); addXP(25); paintWallet(); paintLocks(); showShop(id); }
@@ -205,7 +277,9 @@
       }
       box.append(el('div', { class: 'gnp-shop-row' + (id === focus ? ' focus' : '') }, el('img', { src: thumb(g), alt: '' }), info, btn));
     });
-    card.append(box, el('button', { class: 'gnp-btn gnp-x', text: 'Close' }));
+    const packs = el('div', { class: 'gnp-packs' });
+    STRIPE.packs.forEach((pk, i) => { const b = el('button', { class: 'gnp-btn', text: '🪙 ' + pk.coins + ' · ' + pk.price }); b.onclick = () => buyPack(i); packs.append(b); });
+    card.append(el('p', { text: 'Buy coins:' }), packs, box, el('button', { class: 'gnp-btn gnp-x', text: 'Close' }));
     coinify(card);
     o.append(card); o.onclick = ev => { if (ev.target === o || ev.target.classList.contains('gnp-x')) o.remove(); };
     document.body.append(o);
@@ -523,7 +597,9 @@ background:linear-gradient(90deg,#ea3333 42%,#ffc233 42% 58%,#ea3333 58%);box-sh
   let tries = 0;
   const wait = setInterval(() => {           // wait until the game list has loaded
     if (games().length || ++tries > 60) {
-      clearInterval(wait); boot(); paintLocks();
+      clearInterval(wait);
+      if (!S.chInit) { S.chInit = 1; for (let l = 2; l <= level(); l++) S.lvMin[l] = CH_MIN; save(); }   // existing players keep the levels they already have
+      boot(); paintLocks(); payReturn();
       if (tamperMsg) toast('⚠ ' + tamperMsg);
       if (m0 && isLocked(decodeURIComponent(m0[1]))) { const id0 = decodeURIComponent(m0[1]); location.hash = ''; setTimeout(() => showShop(id0), 80); }
       else if (m0) onPlay(decodeURIComponent(m0[1]));
