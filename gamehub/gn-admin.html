@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Admin</title>
+<style>
+  body{font-family:system-ui,sans-serif;background:#0f1115;color:#eee;display:grid;place-items:center;min-height:100vh;margin:0}
+  .card{background:#1a1d24;border-radius:14px;padding:24px;width:min(92vw,360px);text-align:center}
+  h2{margin:0 0 6px} #bal{font-size:34px;font-weight:700;margin:10px 0}
+  input,button{font:inherit;padding:10px 12px;border-radius:8px;border:0;margin:4px 0;width:100%;box-sizing:border-box}
+  input{background:#0f1115;color:#eee;border:1px solid #333}
+  button{background:#f5b301;color:#000;font-weight:600;cursor:pointer}
+  button.alt{background:#2b3040;color:#eee}
+  small{color:#8a90a0}
+</style>
+</head>
+<body>
+<div class="card" id="app" hidden>
+  <h2>🪙 Admin wallet</h2>
+  <div id="bal">…</div>
+  <small id="info"></small>
+  <input id="amt" type="number" min="1" placeholder="Coins to add">
+  <button id="add">Add coins</button>
+  <button class="alt" id="go">Open Gamenetic</button>
+</div>
+<script>
+/* ---- CHANGE THIS PIN (only you know it; this file is never linked from the site) ---- */
+const PIN = '0000';
+const TARGET = 10000000;
+const SITE = 'index.html';
+const FALLBACK_IDS = ['gta-san-andreas','gta-vice-city','mafia-1','igi-2','battlefield','minecraft-real','thebus-simulator-ultimate'];
+
+/* must match gamenetic-plus.js exactly */
+const SALT = 'gn\u2022v1';
+const sig = str => { let h = 5381; const t = str + SALT; for (let i = 0; i < t.length; i++) h = ((h << 5) + h + t.charCodeAt(i)) | 0; return (h >>> 0).toString(36); };
+const EK = 'gn_eco';
+const ecoDef = () => ({ c: 0, tot: 0, g: {}, own: {}, bonusDay: 0, paid: {}, pend: null });
+function ecoLoad() {
+  try {
+    const raw = localStorage.getItem(EK); if (!raw) return ecoDef();
+    const i = raw.indexOf('|'), js = raw.slice(i + 1);
+    if (sig(js) !== raw.slice(0, i)) return ecoDef();
+    return { ...ecoDef(), ...JSON.parse(js) };
+  } catch (e) { return ecoDef(); }
+}
+const ecoSave = e => { const js = JSON.stringify(e); localStorage.setItem(EK, sig(js) + '|' + js); };
+
+async function restrictedIds() {
+  try {
+    const t = await (await fetch('gamenetic-plus.js', { cache: 'no-store' })).text();
+    const blk = t.match(/const SPECIAL = \{([\s\S]*?)\n  \};/);
+    const ids = [...blk[1].matchAll(/'([\w-]+)'\s*:\s*\{/g)].map(m => m[1]);
+    if (ids.length) return ids;
+  } catch (e) {}
+  return FALLBACK_IDS;
+}
+
+const $ = id => document.getElementById(id);
+const paint = () => { const e = ecoLoad(); $('bal').textContent = '🪙 ' + e.c.toLocaleString(); $('info').textContent = Object.keys(e.own).length + ' restricted games unlocked'; };
+
+(async () => {
+  if (prompt('PIN') !== PIN) { document.body.textContent = ''; return; }
+  const ids = await restrictedIds();
+  const e = ecoLoad();
+  if (e.c < TARGET) { e.tot += TARGET - e.c; e.c = TARGET; }      // back to 10,000,000 on every open
+  ids.forEach(id => e.own[id] = 1);                                // unlock every restricted game
+  ecoSave(e);
+  try { sessionStorage.setItem('gn_pkok', String(Date.now())); } catch (x) {}  // skip passkey check for 15 min (same tab)
+  $('app').hidden = false; paint();
+  $('add').onclick = () => {
+    const n = Math.floor(+$('amt').value); if (!(n > 0)) return;
+    const x = ecoLoad(); x.c += n; x.tot += n; ecoSave(x); $('amt').value = ''; paint();
+  };
+  $('go').onclick = () => { try { sessionStorage.setItem('gn_pkok', String(Date.now())); } catch (x) {} location.href = SITE; };
+})();
+</script>
+</body>
+</html>
