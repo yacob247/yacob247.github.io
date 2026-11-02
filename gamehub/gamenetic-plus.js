@@ -95,7 +95,7 @@
   const rateOf = g => RATES[g.id] || g.coins || (ECON.perMinute[0] + hashId(g.id) % (ECON.perMinute[1] - ECON.perMinute[0] + 1));
   /* ---------- Google account (required to buy / open locked games; client-side only, no backend) ---------- */
   // Google Cloud Console > APIs & Services > Credentials > OAuth client ID (Web). Add your site + http://localhost as Authorized JavaScript origins.
-  const GOOGLE_CLIENT_ID = 'PASTE_YOUR_CLIENT_ID.apps.googleusercontent.com';
+  const GOOGLE_CLIENT_ID = '303461259730-ai2ut7s19k2b7t4npbk13peht02fqei0.apps.googleusercontent.com';
   const AK = 'gn_acct';
   function acctLoad() {
     try {
