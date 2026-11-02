@@ -93,19 +93,31 @@
   };
   const hashId = id => { let h = 0; for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0; return h; };
   const rateOf = g => RATES[g.id] || g.coins || (ECON.perMinute[0] + hashId(g.id) % (ECON.perMinute[1] - ECON.perMinute[0] + 1));
-  const EK = 'gn_eco';
-  const ecoDef = () => ({ c: 0, tot: 0, g: {}, own: {}, bonusDay: 0, paid: {}, pend: null });
-  function ecoLoad() {
+  /* ---------- Google account (required to buy / open locked games; client-side only, no backend) ---------- */
+  // Google Cloud Console > APIs & Services > Credentials > OAuth client ID (Web). Add your site + http://localhost as Authorized JavaScript origins.
+  const GOOGLE_CLIENT_ID = 'PASTE_YOUR_CLIENT_ID.apps.googleusercontent.com';
+  const AK = 'gn_acct';
+  function acctLoad() {
     try {
-      const raw = localStorage.getItem(EK); if (!raw) return ecoDef();
+      const raw = localStorage.getItem(AK); if (!raw) return null;
+      const i = raw.indexOf('|'), js = raw.slice(i + 1);
+      return sig(js) === raw.slice(0, i) ? JSON.parse(js) : null;
+    } catch (e) { return null; }
+  }
+  const acctSave = a => { try { if (!a) return localStorage.removeItem(AK); const js = JSON.stringify(a); localStorage.setItem(AK, sig(js) + '|' + js); } catch (e) {} };
+  const ekey = () => { const a = acctLoad(); return a ? 'gn_eco:' + a.sub : 'gn_eco'; };   // each Google account has its own wallet + unlocks
+  const ecoDef = () => ({ c: 0, tot: 0, g: {}, own: {}, bonusDay: 0, paid: {}, pend: null });
+  function ecoLoad(k = ekey()) {
+    try {
+      const raw = localStorage.getItem(k); if (!raw) return ecoDef();
       const i = raw.indexOf('|'), js = raw.slice(i + 1);
       if (sig(js) !== raw.slice(0, i)) { tamperMsg = 'Wallet data was edited, so it was reset.'; return ecoDef(); }
       return { ...ecoDef(), ...JSON.parse(js) };
     } catch (e) { return ecoDef(); }
   }
-  const ecoSave = e => { try { const js = JSON.stringify(e); localStorage.setItem(EK, sig(js) + '|' + js); } catch (x) {} };
+  const ecoSave = (e, k = ekey()) => { try { const js = JSON.stringify(e); localStorage.setItem(k, sig(js) + '|' + js); } catch (x) {} };
   const eco = fn => { const e = ecoLoad(); const r = fn(e); ecoSave(e); return r; };   // read-modify-write (multi-tab safe)
-  const isLocked = id => !!SPECIAL[id] && (!ecoLoad().own[id] || !pkFresh());   // owned games also stay shut until the passkey/face check passes
+  const isLocked = id => !!SPECIAL[id] && (!acctLoad() || !ecoLoad().own[id] || !pkFresh());   // owned games also stay shut until the passkey/face check passes
   window.__gnpIsLocked = isLocked;
   window.__gnpShop = id => showShop(id);
 
@@ -187,23 +199,66 @@
   const PKK = 'gn_pk', PKOK = 'gn_pkok';
   function pkFresh() { try { return Date.now() - (+sessionStorage.getItem(PKOK) || 0) < 15 * 6e4; } catch (e) { return false; } }
   async function pkAuth() {
+    const a = await needAcct(); if (!a) return false;      // Google sign-in first, then the passkey
     if (pkFresh()) return true;
     if (!window.PublicKeyCredential || !navigator.credentials) { toast('This browser does not support passkeys'); return false; }
     try {
       const ch = crypto.getRandomValues(new Uint8Array(32)); let id = null;
-      try { id = localStorage.getItem(PKK); } catch (e) {}
+      try { id = localStorage.getItem(PKK + ':' + a.sub); } catch (e) {}
       if (!id) {
         const c = await navigator.credentials.create({ publicKey: { challenge: ch, rp: { name: 'Gamenetic', id: location.hostname },
-          user: { id: crypto.getRandomValues(new Uint8Array(16)), name: 'gamenetic-player', displayName: 'Gamenetic player' },
+          user: { id: new TextEncoder().encode(a.sub), name: a.email, displayName: a.name },
           pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
           authenticatorSelection: { residentKey: 'required', userVerification: 'required' }, timeout: 60000 } });
-        try { localStorage.setItem(PKK, b64(c.rawId)); } catch (e) {}
+        try { localStorage.setItem(PKK + ':' + a.sub, b64(c.rawId)); } catch (e) {}
       } else {
         await navigator.credentials.get({ publicKey: { challenge: ch, rpId: location.hostname, userVerification: 'required',
           allowCredentials: [{ type: 'public-key', id: unb64(id) }], timeout: 60000 } });
       }
       sessionStorage.setItem(PKOK, String(Date.now())); return true;
     } catch (e) { toast('Passkey check cancelled or failed'); return false; }
+  }
+
+  /* ---------- Google sign-in flow ---------- */
+  let gsiP;
+  const loadGsi = () => gsiP || (gsiP = new Promise((res, rej) => {
+    if (window.google && google.accounts) return res();
+    const sc = el('script', { src: 'https://accounts.google.com/gsi/client' }); sc.onload = res; sc.onerror = rej; document.head.append(sc);
+  }));
+  async function googleVerify(jwt) {   // checks Google's RSA signature, issuer, audience, expiry, verified email
+    const [h, p, sg] = jwt.split('.'), dec = x => JSON.parse(new TextDecoder().decode(unb64(x)));
+    const H = dec(h), P = dec(p);
+    if (!['accounts.google.com', 'https://accounts.google.com'].includes(P.iss) || P.aud !== GOOGLE_CLIENT_ID || P.exp * 1000 < Date.now() || !P.email_verified) throw 0;
+    const k = (await (await fetch('https://www.googleapis.com/oauth2/v3/certs')).json()).keys.find(x => x.kid === H.kid); if (!k) throw 0;
+    const key = await crypto.subtle.importKey('jwk', k, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
+    if (!(await crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, unb64(sg), new TextEncoder().encode(h + '.' + p)))) throw 0;
+    return P;
+  }
+  function mergeGuest() {               // coins earned before signing in move into the account wallet once
+    const g = ecoLoad('gn_eco'); if (!g.c) return;
+    eco(e => { e.c += g.c; e.tot += g.tot || 0; }); ecoSave(ecoDef(), 'gn_eco');
+  }
+  function signOut() { acctSave(null); try { sessionStorage.removeItem(PKOK); } catch (e) {} paintWallet(); paintLocks(); document.querySelectorAll('.gnp-modal').forEach(m => m.remove()); toast('Signed out'); }
+  function needAcct() {
+    const a = acctLoad(); if (a) return Promise.resolve(a);
+    if (GOOGLE_CLIENT_ID.startsWith('PASTE')) { toast('Set GOOGLE_CLIENT_ID in gamenetic-plus.js first'); return Promise.resolve(null); }
+    return new Promise(async resolve => {
+      const box = el('div'), o = el('div', { class: 'gnp-modal' }, el('div', { class: 'gnp-card' },
+        el('h3', { text: '🔐 Sign in with Google' }),
+        el('p', { text: 'Buying and opening locked games needs a Google account (no other sign-in is accepted) plus a passkey, so your games only open for you.' }),
+        box, el('button', { class: 'gnp-btn gnp-x', text: 'Cancel' })));
+      o.onclick = ev => { if (ev.target === o || ev.target.classList.contains('gnp-x')) { o.remove(); resolve(null); } };
+      document.body.append(o);
+      try { await loadGsi(); } catch (e) { toast('Could not load Google sign-in'); o.remove(); return resolve(null); }
+      google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: async r => {
+        try {
+          const P = await googleVerify(r.credential);
+          acctSave({ sub: P.sub, email: P.email, name: P.name || P.email }); mergeGuest();
+          o.remove(); paintWallet(); paintLocks(); toast('Signed in as ' + P.email); resolve(acctLoad());
+        } catch (e) { toast('Google sign-in could not be verified'); }
+      } });
+      google.accounts.id.renderButton(box, { theme: 'filled_blue', size: 'large' });
+    });
   }
 
   /* ---------- Stripe coin packs (Payment Links: paste yours below) ---------- */
@@ -219,7 +274,8 @@
       { coins: 10000, price: '$19.99', link: 'https://buy.stripe.com/4gMdR162ogWfdLJfwugUM05' },
     ],
   };
-  function buyPack(i) {
+  async function buyPack(i) {
+    if (!(await needAcct())) return;
     const p = STRIPE.packs[i];
     if (!p || !p.link) { toast('Stripe link not set yet'); return; }
     const nonce = b64(crypto.getRandomValues(new Uint8Array(12)));
@@ -279,7 +335,9 @@
     });
     const packs = el('div', { class: 'gnp-packs' });
     STRIPE.packs.forEach((pk, i) => { const b = el('button', { class: 'gnp-btn', text: '🪙 ' + pk.coins + ' · ' + pk.price }); b.onclick = () => buyPack(i); packs.append(b); });
-    card.append(el('p', { text: 'Buy coins:' }), packs, box, el('button', { class: 'gnp-btn gnp-x', text: 'Close' }));
+    const ac = acctLoad(), acb = el('button', { class: 'gnp-btn', text: ac ? '👤 ' + ac.email + ' · Sign out' : 'Sign in with Google' });
+    acb.onclick = () => ac ? signOut() : needAcct().then(() => showShop(focus));
+    card.append(acb, el('p', { text: 'Buy coins:' }), packs, box, el('button', { class: 'gnp-btn gnp-x', text: 'Close' }));
     coinify(card);
     o.append(card); o.onclick = ev => { if (ev.target === o || ev.target.classList.contains('gnp-x')) o.remove(); };
     document.body.append(o);

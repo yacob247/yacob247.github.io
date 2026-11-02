@@ -39,20 +39,24 @@ const SITE = 'index.html';
 /* must match gamenetic-plus.js exactly */
 const SALT = 'gn\u2022v1';
 const sig = str => { let h = 5381; const t = str + SALT; for (let i = 0; i < t.length; i++) h = ((h << 5) + h + t.charCodeAt(i)) | 0; return (h >>> 0).toString(36); };
-const EK = 'gn_eco';
+const DAY = 864e5, AK = 'gn_acct', PK = 'gn_plus';
+function acct() {                      // signed-in Google account (same signed format the site uses)
+  try { const raw = localStorage.getItem(AK); if (!raw) return null; const i = raw.indexOf('|'), js = raw.slice(i + 1); return sig(js) === raw.slice(0, i) ? JSON.parse(js) : null; } catch (e) { return null; }
+}
+const EK = () => { const a = acct(); return a ? 'gn_eco:' + a.sub : 'gn_eco'; };   // account wallet if signed in, else guest wallet (merges on sign-in)
 const ecoDef = () => ({ c: 0, tot: 0, g: {}, own: {}, bonusDay: 0, paid: {}, pend: null });
 function ecoLoad() {
   try {
-    const raw = localStorage.getItem(EK); if (!raw) return ecoDef();
+    const raw = localStorage.getItem(EK()); if (!raw) return ecoDef();
     const i = raw.indexOf('|'), js = raw.slice(i + 1);
     if (sig(js) !== raw.slice(0, i)) return ecoDef();
     return { ...ecoDef(), ...JSON.parse(js) };
   } catch (e) { return ecoDef(); }
 }
-const ecoSave = e => { const js = JSON.stringify(e); localStorage.setItem(EK, sig(js) + '|' + js); };
+const ecoSave = e => { const js = JSON.stringify(e); localStorage.setItem(EK(), sig(js) + '|' + js); };
 
 const $ = id => document.getElementById(id);
-const paint = () => { const e = ecoLoad(); $('bal').textContent = '🪙 ' + e.c.toLocaleString(); $('info').textContent = 'Money only: all locks, streak/level and passkey rules still apply'; };
+const paint = () => { const e = ecoLoad(); $('bal').textContent = '🪙 ' + e.c.toLocaleString(); $('info').textContent = (acct() ? 'Account: ' + acct().email : 'Not signed in yet (coins move to your Google account when you sign in)') + ' · nothing unlocked, you buy games yourself'; };
 
 async function start() {
   if ($('pin').value !== PIN) { $('pin').value = ''; $('pin').placeholder = 'Wrong PIN'; return; }
@@ -60,6 +64,14 @@ async function start() {
   const e = ecoLoad();
   if (e.c < TARGET) { e.tot += TARGET - e.c; e.c = TARGET; }      // back to 10,000,000 on every open
   ecoSave(e);
+  try {                                                             // streak + level high enough to BUY anything (nothing is unlocked)
+    const raw = localStorage.getItem(PK) || '{}', sg = localStorage.getItem(PK + '_s');
+    let S = { lvMin: {}, streak: 0, last: 0, xp: 0, plays: {}, cats: {}, week: {}, badges: {}, react: {} };
+    if (!sg || sg === sig(raw)) S = { ...S, ...JSON.parse(raw) };
+    S.streak = Math.max(S.streak, 30); S.last = Math.max(S.last, Math.floor(Date.now() / DAY)); S.xp = Math.max(S.xp, 20 * 15 * 15); S.tz = 1; S.chInit = 1;
+    for (let l = 2; l <= 16; l++) S.lvMin[l] = 3;
+    const j = JSON.stringify(S); localStorage.setItem(PK, j); localStorage.setItem(PK + '_s', sig(j));
+  } catch (x) {}
   $('app').hidden = false; paint();
   $('add').onclick = () => {
     const n = Math.floor(+$('amt').value); if (!(n > 0)) return;
