@@ -17,6 +17,11 @@
 </style>
 </head>
 <body>
+<div class="card" id="lock">
+  <h2>Admin</h2>
+  <input id="pin" type="password" placeholder="PIN" autofocus>
+  <button id="ok">Enter</button>
+</div>
 <div class="card" id="app" hidden>
   <h2>🪙 Admin wallet</h2>
   <div id="bal">…</div>
@@ -30,7 +35,6 @@
 const PIN = '0000';
 const TARGET = 10000000;
 const SITE = 'index.html';
-const FALLBACK_IDS = ['gta-san-andreas','gta-vice-city','mafia-1','igi-2','battlefield','minecraft-real','thebus-simulator-ultimate'];
 
 /* must match gamenetic-plus.js exactly */
 const SALT = 'gn\u2022v1';
@@ -47,34 +51,24 @@ function ecoLoad() {
 }
 const ecoSave = e => { const js = JSON.stringify(e); localStorage.setItem(EK, sig(js) + '|' + js); };
 
-async function restrictedIds() {
-  try {
-    const t = await (await fetch('gamenetic-plus.js', { cache: 'no-store' })).text();
-    const blk = t.match(/const SPECIAL = \{([\s\S]*?)\n  \};/);
-    const ids = [...blk[1].matchAll(/'([\w-]+)'\s*:\s*\{/g)].map(m => m[1]);
-    if (ids.length) return ids;
-  } catch (e) {}
-  return FALLBACK_IDS;
-}
-
 const $ = id => document.getElementById(id);
-const paint = () => { const e = ecoLoad(); $('bal').textContent = '🪙 ' + e.c.toLocaleString(); $('info').textContent = Object.keys(e.own).length + ' restricted games unlocked'; };
+const paint = () => { const e = ecoLoad(); $('bal').textContent = '🪙 ' + e.c.toLocaleString(); $('info').textContent = 'Money only: all locks, streak/level and passkey rules still apply'; };
 
-(async () => {
-  if (prompt('PIN') !== PIN) { document.body.textContent = ''; return; }
-  const ids = await restrictedIds();
+async function start() {
+  if ($('pin').value !== PIN) { $('pin').value = ''; $('pin').placeholder = 'Wrong PIN'; return; }
+  $('lock').hidden = true;
   const e = ecoLoad();
   if (e.c < TARGET) { e.tot += TARGET - e.c; e.c = TARGET; }      // back to 10,000,000 on every open
-  ids.forEach(id => e.own[id] = 1);                                // unlock every restricted game
   ecoSave(e);
-  try { sessionStorage.setItem('gn_pkok', String(Date.now())); } catch (x) {}  // skip passkey check for 15 min (same tab)
   $('app').hidden = false; paint();
   $('add').onclick = () => {
     const n = Math.floor(+$('amt').value); if (!(n > 0)) return;
     const x = ecoLoad(); x.c += n; x.tot += n; ecoSave(x); $('amt').value = ''; paint();
   };
-  $('go').onclick = () => { try { sessionStorage.setItem('gn_pkok', String(Date.now())); } catch (x) {} location.href = SITE; };
-})();
+  $('go').onclick = () => { location.href = SITE; };
+}
+$('ok').onclick = start;
+$('pin').onkeydown = e => { if (e.key === 'Enter') start(); };
 </script>
 </body>
 </html>
