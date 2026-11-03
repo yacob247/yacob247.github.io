@@ -35,7 +35,6 @@
   function special() { var i = gnp(); return (i && i.special) || FALLBACK_SPECIAL; }
   function packs() { var i = gnp(); return (i && i.packs && i.packs.length) ? i.packs : FALLBACK_PACKS; }
   function me() { var i = gnp(); return i && i.me ? i.me : null; }
-  function isEmu(g) { return !!g && (g.provider === 'BottleShip' || /^(igi-2|gta-san-andreas|mafia-1|battlefield)$/.test(g.id)); }
   function num(n) { return Number(n).toLocaleString('en-US'); }
 
   function info(g) {
@@ -92,13 +91,21 @@
 
   /* ---------------- knowledge blocks ---------------- */
   var SITE_GUIDE = 'ABOUT GAMENETIC: Gamenetic is a free site to play browser games instantly, no downloads. Find games with the search bar and category chips, click a game to play. ' +
-    'You can like or dislike games, save them for later, leave comments, and see your saved games under My Games. Home has Most Played and Trending rows.';
+    'You can like or dislike games, save them for later, and see your saved games under My Games.';
   function econText() {
     var i = gnp(), e = (i && i.econ) || { perMinute: [1, 5], dailyMinutes: 15, loginBonus: 5 };
-    return 'COINS: You earn coins by actually playing: each game pays its own fixed rate of ' + e.perMinute[0] + ' to ' + e.perMinute[1] + ' coins per active minute (the tab must be open, visible and focused with the game running). ' +
-      'Each game pays for up to ' + e.dailyMinutes + ' minutes per 24 hours (it resets 24 hours after your first coins from that game). ' +
-      'Every new day you also get a daily bonus of ' + e.loginBonus + ' coins times your streak (up to x10). Your streak grows by 1 for each day in a row you visit and play; missing a day resets it to 1. ' +
-      'Playing also earns XP, and XP raises your level.';
+    return 'COINS: You earn coins by playing. Each game pays its own rate of ' + e.perMinute[0] + ' to ' + e.perMinute[1] + ' coins per active minute, but only for the first ' + e.dailyMinutes + ' minutes of that game every 24 hours. ' +
+      'Every new day you also get a daily bonus of ' + e.loginBonus + ' coins times your streak (up to x10). Playing earns XP, and XP raises your level.';
+  }
+  function coachText() {
+    var i = gnp(), e = (i && i.econ) || { perMinute: [1, 5], dailyMinutes: 15, loginBonus: 5 };
+    return '**How to get coins faster**\n' +
+      '1. **Come back every single day.** Your daily bonus is ' + e.loginBonus + ' coins times your streak, up to x' + 10 + ' (so ' + (e.loginBonus * 10) + ' coins a day at a 10-day streak). Special games also need a streak, so never skip a day.\n' +
+      '2. **Do not play one game all day.** Each game only pays for its first ' + e.dailyMinutes + ' minutes every 24 hours. After that it pays nothing, no matter how long you stay. Play ' + e.dailyMinutes + ' minutes, then switch to a different game.\n' +
+      '3. **Stay active.** Coins only count while the game is running and the tab is open and in focus.\n' +
+      '4. **Spread your time.** Try many different games each day. Every new game gives you a fresh ' + e.dailyMinutes + ' minutes of coins.\n' +
+      '5. **Aim at the cheapest special game first,** then work up to the bigger ones.\n' +
+      '6. **Want it right now?** You can buy a coin pack in the shop: ' + packsText() + '.';
   }
   function packsText() { return packs().map(function (p) { return num(p.coins) + ' coins for ' + p.price; }).join('; '); }
   function specialList() {
@@ -110,17 +117,11 @@
       'To unlock one you need: a Google account sign-in (only Google works), a minimum daily streak, a minimum level, and enough coins. ' +
       'Special games: ' + specialList().map(function (r) { return r.g.name + ' (' + num(r.sp.price) + ' coins, ' + r.sp.streak + '-day streak, level ' + r.sp.level + ')'; }).join('; ') + '. ' +
       'After unlocking, the game opens only for your Google account and only after a passkey check (face, fingerprint or device lock), which stays valid about 15 minutes. Coins and unlocks belong to the Google account. ' +
-      'BUY COINS: ' + packsText() + '. Pick a pack in the shop, you go to Stripe secure checkout (Gamenetic never sees your card), and you return to the site where the coins are added automatically. Each payment is counted once. ' +
-      'If coins are missing after paying, reopen the site in the same browser signed in with the same Google account and check the shop.';
-  }
-  function emuText() {
-    return 'ABOUT SPECIAL PC GAMES (IGI 2, GTA San Andreas, Mafia, Battlefield): they run in the browser through an emulator. Use a desktop computer with a recent Chrome or Edge and WebGPU; they are not available on phones. ' +
-      'The first load downloads the game to your browser (large, IGI 2 is about 1.5 GB) and later loads start fast from the cache. The page reloads once on the first visit to enable cross-origin isolation. ' +
-      'Click inside the game for keyboard and mouse focus, use the Fullscreen button, and use Reload or Redeploy after you quit the game. For best speed make Chrome use your dedicated GPU and close other tabs.';
+      'BUY COINS: ' + packsText() + '. Pick a pack in the shop, pay on the secure checkout page, and the coins are added to your account automatically.';
   }
   function siteFacts(q) {
     var all = games(), out = [SITE_GUIDE];
-    if (/pay|buy|bought|purchas|coin|stripe|price|cost|shop|unlock|locked|special|premium|refund|receipt|card|sign ?in|google|passkey|account|login|log in|money|streak|level|xp|earn|wallet|balance/i.test(q)) out.push(payText());
+    if (/pay|buy|bought|purchas|coin|price|cost|shop|unlock|locked|special|premium|refund|receipt|card|sign ?in|google|passkey|account|login|log in|money|streak|level|xp|earn|wallet|balance/i.test(q)) out.push(payText());
     if (/categor|genre|kinds? of|types? of|how many|what games/i.test(q)) {
       var c = {}; all.forEach(function (g) { c[g.category] = (c[g.category] || 0) + 1; });
       out.push('Gamenetic has ' + num(all.length) + ' games. Categories: ' + Object.keys(c).sort(function (a, b) { return c[b] - c[a]; }).slice(0, 25).map(function (k) { return k + ' (' + c[k] + ')'; }).join(', ') + '.');
@@ -137,7 +138,6 @@
     if (o.features.length) t += 'Features: ' + o.features.join(' | ') + '\n';
     if (o.faq.length) t += 'FAQ: ' + o.faq.map(function (f) { return f.q + ' ' + f.a; }).join(' | ') + '\n';
     if (sp) t += 'ACCESS: special locked game. Needs Google sign-in, ' + sp.streak + '-day streak, level ' + sp.level + ', ' + num(sp.price) + ' coins, then a passkey check.\n';
-    if (isEmu(g)) t += emuText() + '\n';
     return t.slice(0, budget);
   }
   function buildContext(q) {
@@ -162,15 +162,13 @@
       o.push('2. Reach a **' + sp.streak + '-day streak** and **level ' + sp.level + '** by playing a bit every day.');
       o.push('3. Collect **' + num(sp.price) + ' coins** (earn them by playing, or buy a coin pack), then open the shop by clicking your coin badge or the 🔒 on the game and press Unlock.');
       o.push('4. Pass the passkey check (face, fingerprint or device lock). It stays valid about 15 minutes.');
-      o.push('5. Click the game to play.' + (isEmu(g) ? ' The first load downloads it to your browser, so give it a few minutes. It is cached after that.' : ''));
+      o.push('5. Click the game to play.');
       if (m && m.signedIn) {
         var own = m.owned.indexOf(g.id) !== -1;
         o.push(own ? '\nYou already own it. Just sign in with the passkey and play.' : '\nYour progress: ' + chk(m.streak >= sp.streak) + ' streak ' + m.streak + '/' + sp.streak + ', ' + chk(m.level >= sp.level) + ' level ' + m.level + '/' + sp.level + ', ' + chk(m.coins >= sp.price) + ' coins ' + num(m.coins) + '/' + num(sp.price) + '.');
       } else if (m) o.push('\nYou are not signed in yet. Sign in with Google from the shop first.');
-      if (isEmu(g)) o.push('\nUse a desktop with Chrome or Edge (WebGPU). It is not available on phones.');
     } else {
       o.push('**' + g.name + '** is free. Just click it on the home page and it starts in your browser. No download or sign-up needed.');
-      if (isEmu(g)) o.push(emuText());
     }
     return o.join('\n');
   }
@@ -198,11 +196,11 @@
     if (/\b(my|i have|do i have)\b.*\b(coins?|balance|wallet|streak|level|unlocked|owned|games)\b|how many coins|am i signed|my account/i.test(q) && !g) return { text: walletAnswer(), actions: ['shop'] };
     if (g && special()[g.id] && /access|unlock|buy|purchase|get|open|price|cost|how much|requirement|need|locked|why|can'?t|cannot|require|play/i.test(q) && !/tips?|controls?|keys?/i.test(q)) return { text: accessAnswer(g), actions: ['shop'] };
     if (g && /access|unlock|get into|open/i.test(q) && !special()[g.id] && !/tips?|controls?/i.test(q)) return { text: accessAnswer(g), actions: [] };
-    if (!g && /(coin ?packs?|buy coins?|more coins|top ?up|stripe|how (do|can) i pay|payment|pricing|how much (are|is|do).*coins?|price of coins)/i.test(q)) {
-      return { text: '**Coin packs** (one-time payments through Stripe secure checkout):\n' + packs().map(function (p) { return '- ' + num(p.coins) + ' coins · ' + p.price; }).join('\n') + '\n\nHow to buy:\n1. Sign in with Google.\n2. Click the coin badge to open the shop.\n3. Pick a pack and pay on the Stripe page (Gamenetic never sees your card).\n4. You come back to the site and the coins are added automatically.\n\nIf coins do not appear, reopen the site in the same browser with the same Google account.', actions: ['shop'] };
+    if (!g && /(coin ?packs?|buy coins?|more coins|top ?up|how (do|can) i pay|payment|pricing|how much (are|is|do).*coins?|price of coins)/i.test(q)) {
+      return { text: '**Coin packs** (one-time secure payments):\n' + packs().map(function (p) { return '- ' + num(p.coins) + ' coins · ' + p.price; }).join('\n') + '\n\nHow to buy:\n1. Sign in with Google.\n2. Click the coin badge to open the shop.\n3. Pick a pack and pay on the secure checkout page.\n4. You come back to the site and the coins are added automatically.', actions: ['shop'] };
     }
-    if (!g && /(earn|get|make|collect|free).*(coins?)|how do (coins|streaks?|levels?|xp) work|daily bonus|streak/i.test(q)) {
-      return { text: econText().replace('COINS: ', '**How coins work**\n').replace(/\. /g, '.\n- ').replace('.\n- ', '.\n- ') , actions: ['shop'] };
+    if (!g && /(faster|quick|fast|speed|farm|grind|more coins|earn|get coins|make coins|collect|how do (coins|streaks?|levels?|xp) work|daily bonus|streak)/i.test(q)) {
+      return { text: coachText(), actions: ['shop'] };
     }
     if (!g && /(locked|special|premium) games?|which games.*(locked|special|unlock)|what.*(unlock|locked)/i.test(q)) {
       return { text: '**Special (locked) games**\n' + specialList().map(function (r) { return '- ' + r.g.name + ': ' + num(r.sp.price) + ' coins · ' + r.sp.streak + '-day streak · level ' + r.sp.level; }).join('\n') + '\n\nAsk me "how do I unlock" any of them for the steps.', actions: ['shop'], games: specialList().map(function (r) { return r.g; }).slice(0, 5) };
@@ -213,108 +211,9 @@
     return null;
   }
 
-  /* ---------------- site files: where everything is ---------------- */
-  var SITE = 'https://envizion.work/gamehub/';
-  var REPO_API = 'https://api.github.com/repos/yacob247/yacob247.github.io/contents/gamehub';
-  var FILES = [
-    { n: 'index.html', d: 'the home page: browse, search and play all games', g: 'Pages' },
-    { n: 'blog.html', d: 'the blog with game reviews and guides', g: 'Pages' },
-    { n: 'lite.html', d: 'the lite page', g: 'Pages' },
-    { n: 'privacy-policy.html.html', d: 'the privacy policy', g: 'Policies' },
-    { n: 'terms-of-use.html.html', d: 'the terms of use', g: 'Policies' },
-    { n: 'catalog.json', d: 'the game catalog (id, title, category, tags, thumbnail, description for each game)', g: 'Game data' },
-    { n: 'rewrites.json', d: 'the game guides: how to play, controls, modes, tips, features and FAQ for each game', g: 'Game data' },
-    { n: 'blogs.json', d: 'the long review text for each game (used by the blog)', g: 'Game data' },
-    { n: 'games-with-real-thumbnails.json', d: 'the featured games list with their thumbnails', g: 'Game data' },
-    { n: 'sitemap.xml', d: 'the sitemap listing every game, category and tag page', g: 'Game data' },
-    { n: 'all_entries.txt', d: 'a plain text list of game entries', g: 'Game data' },
-    { n: 'glass-theme.css', d: 'the glass theme styles', g: 'Styles' },
-    { n: 'seo-links.css', d: 'styles for the browse links', g: 'Styles' }
-  ];
-  var DIRS = [
-    { n: 'games/', d: 'one page for every game, e.g. ' + SITE + 'games/bus-simulator-ultimate/' },
-    { n: 'category/', d: 'one page per category, e.g. ' + SITE + 'category/puzzle/' },
-    { n: 'tag/', d: 'one page per tag, e.g. ' + SITE + 'tag/2-player/' }
-  ];
-  // Internal files: the AI knows they exist for its own understanding, but never lists, reads, links or quotes them to visitors.
-  var INTERNAL_RE = /(gn-admin|admin|zx9k|vault|seal\.py|generate_rewrites|rewrite-feed|fix\.js|node\.js|\.har\b|here\.har|feed-raw|add-game|addd\.html|plays-apps-script|coi-serviceworker|gamenetic-plus|gamenetic-ai|index_1|igi2\.html|gtasa\.html|mafia\.html|humanizer|\bemu\b|\.wgb|\br2\b|pub-[0-9a-f]{8}|secret|password|api ?key|client ?id|source code|apps? script|service ?worker|embed ?url|iframe url|cheat engine|bypass|crack|hack the (shop|coins)|free coins hack|10,?000,?000)/i;
-  var sm = null, smLoading = null;
-  function loadSitemap() {
-    if (sm) return Promise.resolve(sm);
-    return smLoading || (smLoading = fetch('sitemap.xml').then(function (r) { return r.ok ? r.text() : ''; }).catch(function () { return ''; }).then(function (t) {
-      sm = { games: [], category: [], tag: [] };
-      (t.match(/<loc>[^<]+<\/loc>/g) || []).forEach(function (x) {
-        var m = x.match(/\/(games|category|tag)\/([^\/<]+)\/?</); if (m) sm[m[1]].push(m[2]);
-      });
-      return sm;
-    }));
-  }
-  function pageFor(g) {
-    if (!sm || !g) return '';
-    var al = [compact(g.name), compact(String(g.name || '').split(/[:\-–|(]/)[0]), compact(keyOf(g).replace(/-/g, ' '))].filter(function (a) { return a.length >= 3; });
-    var hit = sm.games.find(function (sl) { var c = compact(sl); return al.indexOf(c) !== -1; }) ||
-      sm.games.find(function (sl) { var c = compact(sl); return al.some(function (a) { return a.length >= 6 && (c.indexOf(a) === 0 || a.indexOf(c) === 0) && Math.abs(c.length - a.length) <= 6; }); });
-    return hit ? SITE + 'games/' + hit + '/' : '';
-  }
-  function liveDir() {
-    try { var c = JSON.parse(sessionStorage.getItem('gnai_dir') || 'null'); if (c && Date.now() - c.t < 6e5) return Promise.resolve(c.v); } catch (e) {}
-    return fetch(REPO_API).then(function (r) { if (!r.ok) throw 0; return r.json(); }).then(function (a) {
-      var v = a.map(function (f) { return { name: f.name, type: f.type, size: f.size }; });
-      try { sessionStorage.setItem('gnai_dir', JSON.stringify({ t: Date.now(), v: v })); } catch (e) {}
-      return v;
-    }).catch(function () { return null; });
-  }
-  function isPublicName(n) { return !INTERNAL_RE.test(n); }
-  async function filesAnswer(q) {
-    var m, out = [];
-    if (/(list|show|see|what|which|all).*(files?|folders?|directory|pages?)\b|site ?map|where is everything|what('?s| is) on (the )?site|how is (the )?site (organi[sz]ed|built|structured)/i.test(q) && !/game pages?\b.*how/i.test(q)) {
-      await loadSitemap();
-      var live = await liveDir(), imgs = 0, groups = {};
-      if (live) live.forEach(function (f) { if (f.type === 'file' && /\.(png|jpe?g|webp|avif|gif|svg)$/i.test(f.name)) imgs++; });
-      FILES.forEach(function (f) { (groups[f.g] = groups[f.g] || []).push(f); });
-      out.push('**Here is how the Gamenetic site is organised**');
-      Object.keys(groups).forEach(function (k) { out.push('**' + k + '**\n' + groups[k].map(function (f) { return '- ' + f.n + ': ' + f.d; }).join('\n')); });
-      out.push('**Folders**\n' + DIRS.map(function (f) { return '- ' + f.n + ': ' + f.d; }).join('\n'));
-      if (sm) out.push('That is ' + num(sm.games.length) + ' game pages, ' + num(sm.category.length) + ' category pages and ' + num(sm.tag.length) + ' tag pages.' + (imgs ? ' Plus ' + imgs + ' game thumbnail images.' : ''));
-      return out.join('\n\n');
-    }
-    if (/\b(privacy|data (we|you) collect|cookies?)\b/i.test(q) && /where|link|page|file|read|see/i.test(q)) return 'The privacy policy is here: ' + SITE + 'privacy-policy.html.html';
-    if (/\b(terms|terms of (use|service)|tos)\b/i.test(q) && /where|link|page|file|read|see/i.test(q)) return 'The terms of use are here: ' + SITE + 'terms-of-use.html.html';
-    if (/\b(blog|reviews?)\b/i.test(q) && /where|link|page|read|see|find/i.test(q) && !findNamed(q).length) return 'The blog with game reviews and guides is here: ' + SITE + 'blog.html';
-    if (/\b(categor(y|ies) pages?|tag pages?|game pages?|sitemap)\b/i.test(q) && /where|link|how many|list|find/i.test(q)) {
-      await loadSitemap(); if (!sm) return null;
-      if (/sitemap/i.test(q)) return 'The sitemap is here: ' + SITE + 'sitemap.xml. It lists ' + num(sm.games.length) + ' game pages, ' + num(sm.category.length) + ' category pages and ' + num(sm.tag.length) + ' tag pages.';
-      var kind = /tag/i.test(q) ? 'tag' : /game/i.test(q) ? 'games' : 'category', k2 = kind === 'games' ? 'games' : kind;
-      return 'Gamenetic has ' + num(sm[k2].length) + ' ' + (kind === 'games' ? 'game' : kind) + ' pages at ' + SITE + (kind === 'games' ? 'games' : kind) + '/NAME/. For example: ' + sm[k2].slice(0, 5).map(function (x) { return SITE + (kind === 'games' ? 'games' : kind) + '/' + x + '/'; }).join(', ') + '.';
-    }
-    m = q.match(/([\w.\-]+\.(?:json|html|css|xml|txt))/i);
-    if (m || /which file|what file|where (is|are|do i find|can i find).*(data|guides?|reviews?|catalog|descriptions?|thumbnails?)/i.test(q)) {
-      var needle = m ? m[1].toLowerCase() : '', f = FILES.find(function (x) { return needle && x.n.toLowerCase() === needle; });
-      if (!f && !m) {
-        var t = norm(q); f = FILES.find(function (x) { return (/guide|how to play|controls|tips/.test(t) && x.n === 'rewrites.json') || (/review|blog/.test(t) && x.n === 'blogs.json') || (/catalog|list of games|descriptions?/.test(t) && x.n === 'catalog.json') || (/thumbnail/.test(t) && x.n === 'games-with-real-thumbnails.json'); });
-      }
-      if (f) return '**' + f.n + '** is ' + f.d + '. You can open it here: ' + SITE + f.n;
-    }
-    return null;
-  }
-  var polDocs = null;
-  async function policyExcerpts(q) {
-    if (!/privacy|personal (data|info)|cookies?|terms|rules|allowed|banned|age|children|kids|copyright|dmca|liability|refund policy|contact|delete my data/i.test(q)) return '';
-    if (!polDocs) {
-      polDocs = [];
-      for (var f of ['privacy-policy.html.html', 'terms-of-use.html.html']) {
-        try {
-          var r = await fetch(f); if (!r.ok) continue; var h = await r.text();
-          h = h.replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ').replace(/<\/(p|li|h\d|div|br)>/gi, '\n').replace(/<[^>]+>/g, ' ');
-          h.split(/\n+/).map(clean).filter(function (x) { return x.length > 40; }).forEach(function (x) { polDocs.push({ f: f, t: x.slice(0, 420) }); });
-        } catch (e) {}
-      }
-    }
-    var toks = norm(q).split(' ').filter(function (t) { return t.length > 3 && !STOP[t]; });
-    var sc = polDocs.map(function (d) { var n = norm(d.t), s = 0; toks.forEach(function (t) { if (n.indexOf(t) !== -1) s++; }); return [s, d]; }).filter(function (x) { return x[0] > 0; });
-    sc.sort(function (a, b) { return b[0] - a[0]; });
-    return sc.slice(0, 4).map(function (x) { return '[' + (/privacy/.test(x[1].f) ? 'Privacy policy' : 'Terms of use') + '] ' + x[1].t; }).join('\n');
-  }
+  /* ---------------- scope guard: the AI only talks about games, tags, categories and coins ---------------- */
+  var BLOCK_RE = /(\bfiles?\b|folders?|director(y|ies)|\.(json|js|html?|css|xml|txt|py|gs|har|wgb|ps1)\b|\burls?\b|\blinks?\b|\bapis?\b|endpoint|back ?end|front ?end|\bserver side\b|\bscripts?\b|source code|\bcode base\b|admin|database|spreadsheet|google sheet|apps? script|stripe|payment link|checkout link|secret|password|api ?key|private key|access key|client ?id|bucket|\br2\b|cloudflare|github|emulat|\bemu\b|iframe|embed|vault|service ?worker|devtools|dev tools|view source|exploit|bypass|crack the|hack (the )?(site|shop|coins?|wallet|game hub|gamenetic)|coin hack|unlimited coins|free coins hack|infinite coins|sitemap|manifest)/i;
+  var SCOPE_MSG = 'I can only help with the games, their tags and categories, how to play them, and how coins and special games work. Ask me about a game or how to get coins!';
 
   /* ---------------- engine ---------------- */
   function setStatus(t) { var s = document.getElementById('gnaiStatus'); if (s) s.textContent = t || ''; }
@@ -333,7 +232,7 @@
   /* ---------------- UI ---------------- */
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function md(s) {
-    var h = esc(s).replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/(https?:\/\/[^\s<)]+[^\s<).,;])/g, '<a href="$1" target="_blank" rel="noopener" style="color:#c4b5fd">$1</a>');
+    var h = esc(s).replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
     var lines = h.split('\n'), out = '', inList = false;
     lines.forEach(function (l) {
       var m = l.match(/^\s*(?:[-*•]|\d+[.)])\s+(.*)$/);
@@ -392,7 +291,7 @@
     }
     function welcome() {
       var el = add('a', '<p>Hi! Ask me anything about Gamenetic or any game: how to play, controls, tips, or what to play next.</p>');
-      chips(el, ['How do I unlock IGI 2?', 'How do coins work?', 'Recommend a 2 player game', 'What files are on the site?'], true);
+      chips(el, ['How do I unlock IGI 2?', 'How do coins work?', 'Recommend a 2 player game', 'How do I get coins faster?'], true);
     }
 
     function setBusy(b) { busy = b; send.textContent = b ? 'Stop' : 'Send'; inp.disabled = b; }
@@ -410,6 +309,7 @@
       return 'I could not find a matching game. Try the name of a game or a type like "racing" or "2 player".';
     }
     function finish(bubble, text, res, ctx, q) {
+      text = String(text).replace(/https?:\/\/\S+/gi, '').replace(/\bwww\.\S+/gi, '');
       bubble.innerHTML = md(text);
       history.push({ role: 'user', content: q }, { role: 'assistant', content: text.slice(0, 600) });
       var list = (res && res.games) || ctx.shown;
@@ -424,32 +324,24 @@
       inp.value = ''; add('u', esc(q)); setBusy(true); stopFlag = false;
       var bubble = add('a', '<p>…</p>');
       try {
-        await loadRW(); await loadSitemap();
+        await loadRW();
         var ctx = buildContext(q);
         if (ctx.named.some(function (g) { return !(rw && rw[keyOf(g)]); })) { await loadBlogs(); ctx = buildContext(q); }
 
-        // 1) private/internal things are never shared with visitors
-        if (INTERNAL_RE.test(q)) {
-          return finish(bubble, 'That one is internal, so I can not share it. I am happy to help with games, how to play them, coins, the shop and payments, or where to find things on the site.', null, { shown: [] }, q);
-        }
-        // 2) site files, pages and links
-        var fa = await filesAnswer(q);
-        if (fa) return finish(bubble, fa, null, { shown: [] }, q);
-        // 3) exact answers for games, coins, shop and payments
+        // 1) anything about files, links, code, keys, backends, admin, emulators: not shared, ever
+        if (BLOCK_RE.test(q)) return finish(bubble, SCOPE_MSG, null, { shown: [] }, q);
+        // 2) exact answers for games, coins and the shop
         var res = directAnswer(q, ctx);
-        if (res) {
-          var link = ctx.named[0] ? pageFor(ctx.named[0]) : '';
-          return finish(bubble, res.text + (link ? '\n\nGame page: ' + link : ''), res, { shown: ctx.named }, q);
-        }
-        // 4) everything else: chat with the model, grounded in the data
-        var pol = await policyExcerpts(q), reply = '';
-        var sys = 'You are Gamenetic AI, a friendly, relaxed chat assistant built into the Gamenetic website (a free browser games site). ' +
-          'Chat naturally like a normal assistant: if someone says hi, say hi back warmly in one or two short sentences and ask what they want to play or know. ' +
-          'Small talk is fine. Your main expertise is Gamenetic: every game on it, how to play each one, controls, tips, recommendations, the coins, shop, locked games, accounts and payments, and where things are on the site. ' +
-          'Rules: Reply in the language the user writes in. Keep answers short and clear; use short numbered steps for how-to-play or payment steps. ' +
-          'Use the DATA below for facts. If something is not in the DATA, say you do not have that detail instead of guessing. ' +
-          'Never invent links, prices, game names, controls or features. Never share internal files, admin tools, keys, embed or storage URLs. Do not list categories or games unless asked.' +
-          '\n\nDATA:\n' + ctx.text + (pol ? '\n\nPOLICY EXCERPTS:\n' + pol : '');
+        if (res) return finish(bubble, res.text, res, { shown: ctx.named }, q);
+        // 3) everything else: chat with the model, grounded in the game data
+        var reply = '';
+        var sys = 'You are Gamenetic AI, a friendly teacher-style assistant inside the Gamenetic free browser games site. ' +
+          'If someone says hi, say hi back warmly in one or two short sentences and ask what they want to play. ' +
+          'You ONLY talk about: the games on Gamenetic, their tags and categories, how to play them, recommendations, and how coins and special locked games work (earn coins by playing a little every day, or buy coins, then unlock). ' +
+          'If asked about anything else, politely say you can only help with games and coins. ' +
+          'Keep answers short and clear; use short numbered steps for how-to-play. Use the DATA below. If something is not in the DATA, say you do not have that detail. ' +
+          'Never mention or reveal files, links, URLs, code, scripts, servers, keys, payment links, admin tools or how the site is built. Never invent games, controls, prices or features.' +
+          '\n\nDATA:\n' + ctx.text;
         var msgs = [{ role: 'system', content: sys }].concat(history.slice(-4)).concat([{ role: 'user', content: q }]);
         try {
           var eng = await getEngine();
@@ -462,10 +354,10 @@
           }
         } catch (e) {
           setStatus('');
-          reply = fallback(ctx, ctx.named, pol);
-          if (e && e.message === 'nogpu') reply += '\n\n(AI chat needs a WebGPU browser such as recent Chrome or Edge, so I showed the guide directly.)';
+          reply = fallback(ctx, ctx.named, '');
         }
-        if (!reply.trim()) reply = fallback(ctx, ctx.named, pol);
+        if (!reply.trim()) reply = fallback(ctx, ctx.named, '');
+        if (BLOCK_RE.test(reply)) reply = SCOPE_MSG;   // never let the model leak something it should not
         finish(bubble, reply, null, ctx, q);
       } catch (err) {
         bubble.innerHTML = '<p>Something went wrong. Please try again.</p>';
@@ -478,7 +370,7 @@
       box.classList.toggle('open');
       if (box.classList.contains('open')) {
         if (!log.children.length) welcome();
-        loadRW(); loadSitemap(); inp.focus();
+        loadRW(); inp.focus();
       }
     };
     box.querySelector('.x').onclick = function () { box.classList.remove('open'); };
