@@ -120,6 +120,7 @@
   const isLocked = id => !!SPECIAL[id] && (!acctLoad() || !ecoLoad().own[id] || !pkFresh());   // owned games also stay shut until the passkey/face check passes
   window.__gnpIsLocked = isLocked;
   window.__gnpShop = id => showShop(id);
+  window.__gnpInfo = () => { const a = acctLoad(), e = ecoLoad(); return { special: SPECIAL, econ: ECON, packs: STRIPE.packs.map(p => ({ coins: p.coins, price: p.price })), me: { signedIn: !!a, email: a ? a.email : '', coins: e.c, owned: Object.keys(e.own), streak: S.streak, level: effLevel() } }; };   // read-only info for the Gamenetic AI chat
 
   function coinify(root) {
     const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT), hits = []; let n;
