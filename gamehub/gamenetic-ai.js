@@ -57,26 +57,102 @@
     var id = decodeURIComponent(m[1]); return games().find(function (g) { return g.id === id; }) || null;
   }
 
-  /* ---------------- game matching (fuzzy: "igi2" finds "IGI 2: Covert Strike") ---------------- */
-  var idx = null, idxN = -1;
+  /* ---------------- game matching ----------------
+     Fuzzy and typo-tolerant: "vice city", "ig 2", "ig1 2 stike" and "igi2" should all find the right game.
+     Works by whole words (not raw substring), tolerates small misspellings and partial typing, and weighs
+     rare/distinctive words (e.g. "vice") much higher than words shared by dozens of games (e.g. "city",
+     "simulator", "real"). That stops a common word from dragging in unrelated games. */
+  var idx = null, idxN = -1, wordDF = null;
+  function lev(a, b) { // edit distance, for tolerating typos like "stike" -> "strike"
+    var al = a.length, bl = b.length, prev = [], i, j;
+    if (!al) return bl; if (!bl) return al;
+    for (j = 0; j <= bl; j++) prev[j] = j;
+    for (i = 1; i <= al; i++) {
+      var cur = [i];
+      for (j = 1; j <= bl; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a.charCodeAt(i - 1) === b.charCodeAt(j - 1) ? 0 : 1));
+      prev = cur;
+    }
+    return prev[bl];
+  }
+  function wordsMatch(qw, aw) {
+    if (qw === aw) return true;
+    if (qw.length >= 3 && aw.length >= 3 && lev(qw, aw) <= (Math.max(qw.length, aw.length) <= 4 ? 1 : 2)) return true; // small misspelling
+    if (qw.length >= 2 && aw.indexOf(qw) === 0 && aw.length - qw.length <= 2) return true; // partial typing, e.g. "ig" -> "igi"
+    if (aw.length >= 2 && qw.indexOf(aw) === 0 && qw.length - aw.length <= 2) return true;
+    return false;
+  }
   function buildIdx() {
     var all = games(); if (idx && idxN === all.length) return idx;
-    idx = all.map(function (g) {
-      var al = [g.name, String(g.name || '').split(/[:\-–|(]/)[0]];
-      if (!/^\d+$/.test(keyOf(g))) al.push(keyOf(g).replace(/-/g, ' '));
-      var seen = {}, c = [];
-      al.forEach(function (a) { var k = compact(a); if (k.length >= 4 && !seen[k]) { seen[k] = 1; c.push(k); } });
-      return { g: g, c: c };
-    }); idxN = all.length; return idx;
+    var dfMap = {};
+    var list = all.map(function (g) {
+      var raw = [g.name, String(g.name || '').split(/[:\-–|(]/)[0]];
+      if (!/^\d+$/.test(keyOf(g))) raw.push(keyOf(g).replace(/-/g, ' '));
+      var seen = {}, aliases = [];
+      raw.forEach(function (n) {
+        var words = norm(n).split(' ').filter(function (w) { return w.length > 1 || /^[0-9]+$/.test(w); }); // keep numbers like "2" (IGI 1 vs IGI 2 matters)
+        var key = words.join(' ');
+        if (words.length && !seen[key]) { seen[key] = 1; aliases.push(words); }
+      });
+      return { g: g, aliases: aliases };
+    });
+    list.forEach(function (e) {
+      var seenW = {};
+      e.aliases.forEach(function (words) { words.forEach(function (w) { seenW[w] = 1; }); });
+      Object.keys(seenW).forEach(function (w) { dfMap[w] = (dfMap[w] || 0) + 1; });
+    });
+    idx = list; idxN = all.length; wordDF = dfMap; return idx;
   }
+  function wordWeight(w) { return 1 / Math.sqrt((wordDF && wordDF[w]) || 1); } // rare word = high weight
   function findNamed(q) {
-    var cq = compact(q), hits = [];
-    buildIdx().forEach(function (e) { var best = 0; e.c.forEach(function (k) { if (cq.indexOf(k) !== -1 && k.length > best) best = k.length; }); if (best) hits.push({ g: e.g, len: best }); });
-    hits.sort(function (a, b) { return b.len - a.len; });
+    buildIdx();
+    var qList = norm(q).split(' ').filter(Boolean);
+    // also try the query with no spaces at all, so merged typing like "igi2" still works
+    var qJoined = compact(q);
+    var hits = [];
+    idx.forEach(function (e) {
+      var bestRatio = 0, bestLen = 0;
+      e.aliases.forEach(function (words) {
+        var aliasJoined = words.join('');
+        if (aliasJoined.length >= 4 && qJoined.indexOf(aliasJoined) !== -1) { // exact merged match, e.g. "igi2" in "howtoplayigi2"
+          if (1 > bestRatio || (1 === bestRatio && words.length > bestLen)) { bestRatio = 1; bestLen = words.length; }
+          return;
+        }
+        var total = 0, matched = 0, hasStrong = false;
+        words.forEach(function (w) {
+          var wt = wordWeight(w), isMatch = false;
+          qList.forEach(function (qw) { if (!isMatch && wordsMatch(qw, w)) isMatch = true; });
+          total += wt;
+          if (isMatch) { matched += wt; if (wt >= 0.45) hasStrong = true; }
+        });
+        if (!total) return;
+        var ratio = matched / total;
+        // need solid overlap AND at least one fairly distinctive word matched (not just a generic word like "city")
+        if (ratio >= 0.5 && hasStrong && (ratio > bestRatio || (ratio === bestRatio && words.length > bestLen))) { bestRatio = ratio; bestLen = words.length; }
+      });
+      if (bestRatio) hits.push({ g: e.g, ratio: bestRatio, len: bestLen });
+    });
+    hits.sort(function (a, b) { return b.ratio - a.ratio || b.len - a.len; });
     var out = [];
     hits.forEach(function (h) { if (out.length < 2 && !out.some(function (o) { return compact(o.name).indexOf(compact(h.g.name)) !== -1 || compact(h.g.name).indexOf(compact(o.name)) !== -1; })) out.push(h.g); });
     return out;
   }
+  /* ---------------- similar free games (suggested alongside a locked game) ---------------- */
+  function similarGames(g, n) {
+    n = n || 2;
+    var sp = special(), tags = (g.tags || []).map(function (t) { return String(t).toLowerCase(); });
+    var scored = [];
+    games().forEach(function (o) {
+      if (o.id === g.id || sp[o.id]) return; // skip itself and other locked games — must be free & already unlocked
+      var s = 0;
+      if (o.category === g.category) s += 3;
+      if (g.subcategory && o.subcategory === g.subcategory) s += 2;
+      (o.tags || []).forEach(function (t) { if (tags.indexOf(String(t).toLowerCase()) !== -1) s += 1; });
+      if (s > 0) scored.push([s, o]);
+    });
+    scored.sort(function (a, b) { return b[0] - a[0]; });
+    return scored.slice(0, n).map(function (x) { return x[1]; });
+  }
+  function chipsFor(g) { return special()[g.id] ? [g].concat(similarGames(g, 2)) : [g]; }
   var STOP = {}; 'the a an of to in on is are and or for with how do does can i you me my what which who where when about tell game games play playing any all some good best give show find list please this that it its there want need like'.split(' ').forEach(function (w) { STOP[w] = 1; });
   function searchGames(q, n) {
     var toks = norm(q).split(' ').filter(function (t) { return t.length > 2 && !STOP[t]; }); if (!toks.length) return [];
@@ -112,17 +188,20 @@
     var sp = special(), all = games();
     return Object.keys(sp).map(function (id) { var g = all.find(function (x) { return x.id === id; }); return { id: id, g: g, sp: sp[id] }; }).filter(function (r) { return r.g; });
   }
-  function payText() {
-    return econText() + '\nSHOP: Special (locked) games are bought with coins in the shop. Open it by clicking your coin badge at the top of the site or the lock on a game card. ' +
-      'To unlock one you need: a Google account sign-in (only Google works), a minimum daily streak, a minimum level, and enough coins. ' +
-      'Special games: ' + specialList().map(function (r) { return r.g.name + ' (' + num(r.sp.price) + ' coins, ' + r.sp.streak + '-day streak, level ' + r.sp.level + ')'; }).join('; ') + '. ' +
-      'After unlocking, the game opens only for your Google account and only after a passkey check (face, fingerprint or device lock), which stays valid about 15 minutes. Coins and unlocks belong to the Google account. ' +
+  function payText(skipList) {
+    var t = econText() + '\nSHOP: Special (locked) games are bought with coins in the shop. Open it by clicking your coin badge at the top of the site or the lock on a game card. ' +
+      'To unlock one you need: a Google account sign-in (only Google works), a minimum daily streak, a minimum level, and enough coins. ';
+    if (!skipList) t += 'Special games: ' + specialList().map(function (r) { return r.g.name + ' (' + num(r.sp.price) + ' coins, ' + r.sp.streak + '-day streak, level ' + r.sp.level + ')'; }).join('; ') + '. ';
+    t += 'After unlocking, the game opens only for your Google account and only after a passkey check (face, fingerprint or device lock), which stays valid about 15 minutes. Coins and unlocks belong to the Google account. ' +
       'BUY COINS: ' + packsText() + '. Pick a pack in the shop, pay on the secure checkout page, and the coins are added to your account automatically.';
+    return t;
   }
-  function siteFacts(q) {
+  function siteFacts(q, focusedGame) {
+    // when one specific game is already in focus, skip dumping the full locked-games list — the model should
+    // talk about that one game, not pad the answer with every other special game on the site.
     var all = games(), out = [SITE_GUIDE];
-    if (/pay|buy|bought|purchas|coin|price|cost|shop|unlock|locked|special|premium|refund|receipt|card|sign ?in|google|passkey|account|login|log in|money|streak|level|xp|earn|wallet|balance/i.test(q)) out.push(payText());
-    if (/categor|genre|kinds? of|types? of|how many|what games/i.test(q)) {
+    if (/pay|buy|bought|purchas|coin|price|cost|shop|unlock|locked|special|premium|refund|receipt|card|sign ?in|google|passkey|account|login|log in|money|streak|level|xp|earn|wallet|balance/i.test(q)) out.push(payText(!!focusedGame));
+    if (!focusedGame && /categor|genre|kinds? of|types? of|how many|what games/i.test(q)) {
       var c = {}; all.forEach(function (g) { c[g.category] = (c[g.category] || 0) + 1; });
       out.push('Gamenetic has ' + num(all.length) + ' games. Categories: ' + Object.keys(c).sort(function (a, b) { return c[b] - c[a]; }).slice(0, 25).map(function (k) { return k + ' (' + c[k] + ')'; }).join(', ') + '.');
     }
@@ -140,15 +219,21 @@
     if (sp) t += 'ACCESS: special locked game. Needs Google sign-in, ' + sp.streak + '-day streak, level ' + sp.level + ', ' + num(sp.price) + ' coins, then a passkey check.\n';
     return t.slice(0, budget);
   }
+  var lastGame = null; // the game the conversation is currently about, so "it"/"this" across turns resolves correctly
+  var REFER_RE = /\b(this|it|here|current|that game|the game)\b/i;
   function buildContext(q) {
     var named = findNamed(q), cur = currentGame(), shown = [], ctx = '';
-    if (!named.length && cur && /\b(this|it|here|current)\b/i.test(q)) named = [cur];
-    if (named.length) { var each = Math.floor((CTX_CHARS - 300) / named.length); named.forEach(function (g) { ctx += gameBlock(g, each) + '\n\n'; shown.push(g); }); }
-    else {
+    if (!named.length && REFER_RE.test(q)) { if (cur) named = [cur]; else if (lastGame) named = [lastGame]; }
+    var focused = named.length === 1 ? named[0] : null;
+    if (named.length) {
+      var each = Math.floor((CTX_CHARS - 300) / named.length);
+      named.forEach(function (g) { ctx += gameBlock(g, each) + '\n\n'; });
+      shown = focused ? chipsFor(focused) : named.slice();
+    } else {
       var res = searchGames(q, 8);
       if (res.length) { ctx += 'MATCHING GAMES:\n' + res.map(function (g) { return '- ' + g.name + ' [' + g.category + '; ' + (g.tags || []).join(', ') + '] ' + clean(g.description).slice(0, 110); }).join('\n') + '\n\n'; shown = res.slice(0, 5); }
     }
-    ctx += siteFacts(q);
+    ctx += siteFacts(q, focused);
     return { text: ctx.slice(0, CTX_CHARS + 1800), shown: shown, named: named };
   }
 
@@ -167,6 +252,8 @@
         var own = m.owned.indexOf(g.id) !== -1;
         o.push(own ? '\nYou already own it. Just sign in with the passkey and play.' : '\nYour progress: ' + chk(m.streak >= sp.streak) + ' streak ' + m.streak + '/' + sp.streak + ', ' + chk(m.level >= sp.level) + ' level ' + m.level + '/' + sp.level + ', ' + chk(m.coins >= sp.price) + ' coins ' + num(m.coins) + '/' + num(sp.price) + '.');
       } else if (m) o.push('\nYou are not signed in yet. Sign in with Google from the shop first.');
+      var sim = similarGames(g, 2);
+      if (sim.length) o.push('\nWant something similar you can play right now, free and already unlocked? Try ' + sim.map(function (s) { return '**' + s.name + '**'; }).join(' or ') + '.');
     } else {
       o.push('**' + g.name + '** is free. Just click it on the home page and it starts in your browser. No download or sign-up needed.');
     }
@@ -182,7 +269,12 @@
     else { sec('How to play', o.howToPlay); sec('Controls', o.controls); sec('Tips', o.tips.slice(0, 3)); }
     if (!out.length) return null;
     var head = '**' + g.name + '** (' + g.category + ')\n';
-    var extra = special()[g.id] ? '\n\nNote: this is a special locked game. Ask me "how do I unlock ' + g.name + '" for the steps.' : '';
+    var extra = '';
+    if (special()[g.id]) {
+      extra = '\n\nNote: this is a special locked game. Ask me "how do I unlock ' + g.name + '" for the steps.';
+      var sim = similarGames(g, 2);
+      if (sim.length) extra += ' Or try ' + sim.map(function (s) { return '**' + s.name + '**'; }).join(' or ') + ' now — similar, free, and already unlocked.';
+    }
     return head + out.join('\n\n') + extra;
   }
   function walletAnswer() {
@@ -194,8 +286,8 @@
   function directAnswer(q, ctx) {
     var named = ctx.named, g = named[0];
     if (/\b(my|i have|do i have)\b.*\b(coins?|balance|wallet|streak|level|unlocked|owned|games)\b|how many coins|am i signed|my account/i.test(q) && !g) return { text: walletAnswer(), actions: ['shop'] };
-    if (g && special()[g.id] && /access|unlock|buy|purchase|get|open|price|cost|how much|requirement|need|locked|why|can'?t|cannot|require|play/i.test(q) && !/tips?|controls?|keys?/i.test(q)) return { text: accessAnswer(g), actions: ['shop'] };
-    if (g && /access|unlock|get into|open/i.test(q) && !special()[g.id] && !/tips?|controls?/i.test(q)) return { text: accessAnswer(g), actions: [] };
+    if (g && special()[g.id] && /access|unlock|buy|purchase|get|open|price|cost|how much|requirement|need|locked|why|can'?t|cannot|require|play|without|free|skip/i.test(q) && !/tips?|controls?|keys?/i.test(q)) return { text: accessAnswer(g), actions: ['shop'], games: chipsFor(g) };
+    if (g && /access|unlock|get into|open/i.test(q) && !special()[g.id] && !/tips?|controls?/i.test(q)) return { text: accessAnswer(g), actions: [], games: chipsFor(g) };
     if (!g && /(coin ?packs?|buy coins?|more coins|top ?up|how (do|can) i pay|payment|pricing|how much (are|is|do).*coins?|price of coins)/i.test(q)) {
       return { text: '**Coin packs** (one-time secure payments):\n' + packs().map(function (p) { return '- ' + num(p.coins) + ' coins · ' + p.price; }).join('\n') + '\n\nHow to buy:\n1. Sign in with Google.\n2. Click the coin badge to open the shop.\n3. Pick a pack and pay on the secure checkout page.\n4. You come back to the site and the coins are added automatically.', actions: ['shop'] };
     }
@@ -206,7 +298,7 @@
       return { text: '**Special (locked) games**\n' + specialList().map(function (r) { return '- ' + r.g.name + ': ' + num(r.sp.price) + ' coins · ' + r.sp.streak + '-day streak · level ' + r.sp.level; }).join('\n') + '\n\nAsk me "how do I unlock" any of them for the steps.', actions: ['shop'], games: specialList().map(function (r) { return r.g; }).slice(0, 5) };
     }
     if (g && ctx.named.length === 1 && info(g).howToPlay + info(g).controls + info(g).intro !== '' && /how|control|key|tip|trick|mode|what is|about|tell|explain|guide|play|learn|beat|win|multiplayer|player|worth|review|describe|info/i.test(q)) {
-      var t = gameAnswer(g, q); if (t) return { text: t, actions: [] };
+      var t = gameAnswer(g, q); if (t) return { text: t, actions: [], games: chipsFor(g) };
     }
     return null;
   }
@@ -232,20 +324,36 @@
   /* ---------------- UI ---------------- */
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function md(s) {
-    var h = esc(s).replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
-    var lines = h.split('\n'), out = '', inList = false;
+    var h = esc(s).replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/`([^`]+)`/g, '<code>$1</code>');
+    var lines = h.split('\n'), out = '', inList = false, listTag = 'ul';
     lines.forEach(function (l) {
-      var m = l.match(/^\s*(?:[-*•]|\d+[.)])\s+(.*)$/);
-      if (m) { if (!inList) { out += '<ul>'; inList = true; } out += '<li>' + m[1] + '</li>'; }
-      else { if (inList) { out += '</ul>'; inList = false; } out += l.trim() ? '<p>' + l + '</p>' : ''; }
+      var hm = l.match(/^\s*(#{1,4})\s+(.*)$/);
+      var om = l.match(/^\s*\d+[.)]\s+(.*)$/);
+      var um = l.match(/^\s*[-*•]\s+(.*)$/);
+      if (hm) {
+        if (inList) { out += '</' + listTag + '>'; inList = false; }
+        var lvl = Math.min(hm[1].length + 3, 6); // #->h4 .. ####->h6
+        out += '<h' + lvl + '>' + hm[2] + '</h' + lvl + '>';
+      } else if (om || um) {
+        var tag = om ? 'ol' : 'ul', text = om ? om[1] : um[1];
+        if (inList && listTag !== tag) { out += '</' + listTag + '>'; inList = false; }
+        if (!inList) { out += '<' + tag + '>'; inList = true; listTag = tag; }
+        out += '<li>' + text + '</li>';
+      } else {
+        if (inList) { out += '</' + listTag + '>'; inList = false; }
+        if (/^\s*(-{3,}|—{3,})\s*$/.test(l)) out += '<hr>';
+        else if (l.trim()) out += '<p>' + l + '</p>';
+      }
     });
-    return out + (inList ? '</ul>' : '');
+    return out + (inList ? '</' + listTag + '>' : '');
   }
 
+  var FONT = '"Inter",ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif';
   var css = '' +
-    '#gnaiBtn{position:fixed;right:18px;bottom:18px;z-index:9998;display:flex;align-items:center;gap:8px;padding:12px 18px;border:0;border-radius:999px;cursor:pointer;font:600 14px/1 "Segoe UI",system-ui,sans-serif;color:#fff;background:linear-gradient(135deg,#7c3aed,#ec4899);box-shadow:0 8px 24px rgba(124,58,237,.5)}' +
+    '@import url(\'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap\');' +
+    '#gnaiBtn{position:fixed;right:18px;bottom:18px;z-index:9998;display:flex;align-items:center;gap:8px;padding:12px 18px;border:0;border-radius:999px;cursor:pointer;font:600 14px/1 ' + FONT + ';color:#fff;background:linear-gradient(135deg,#7c3aed,#ec4899);box-shadow:0 8px 24px rgba(124,58,237,.5)}' +
     '#gnaiBtn:hover{transform:translateY(-2px)}' +
-    '#gnai{position:fixed;right:18px;bottom:78px;z-index:9999;width:380px;max-width:calc(100vw - 24px);height:560px;max-height:calc(100vh - 100px);display:none;flex-direction:column;background:#0b0f1a;color:#f1f5f9;border:1px solid #334155;border-radius:16px;box-shadow:0 20px 50px rgba(0,0,0,.65);font:14px/1.5 "Segoe UI",system-ui,sans-serif;overflow:hidden}' +
+    '#gnai{position:fixed;right:18px;bottom:78px;z-index:9999;width:380px;max-width:calc(100vw - 24px);height:560px;max-height:calc(100vh - 100px);display:none;flex-direction:column;background:#0b0f1a;color:#f1f5f9;border:1px solid #334155;border-radius:16px;box-shadow:0 20px 50px rgba(0,0,0,.65);font:15px/1.6 ' + FONT + ';letter-spacing:.1px;overflow:hidden}' +
     '#gnai.open{display:flex}' +
     '#gnai .h{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:linear-gradient(135deg,#0f172a,#1e1b4b);border-bottom:1px solid #334155;font-weight:700}' +
     '#gnai .h small{display:block;font-weight:400;color:#94a3b8;font-size:11px}' +
@@ -254,15 +362,20 @@
     '#gnaiLog .m{max-width:88%;padding:9px 12px;border-radius:12px;word-wrap:break-word}' +
     '#gnaiLog .u{align-self:flex-end;background:#7c3aed;color:#fff;border-bottom-right-radius:3px}' +
     '#gnaiLog .a{align-self:flex-start;background:#1e293b;border-bottom-left-radius:3px}' +
-    '#gnaiLog .a p{margin:0 0 6px}#gnaiLog .a p:last-child{margin:0}#gnaiLog .a ul{margin:4px 0 4px 18px;padding:0}' +
+    '#gnaiLog .a p{margin:0 0 8px}#gnaiLog .a p:last-child{margin:0}' +
+    '#gnaiLog .a h4,#gnaiLog .a h5,#gnaiLog .a h6{margin:10px 0 4px;font-weight:700;color:#f1f5f9}' +
+    '#gnaiLog .a h4{font-size:15px}#gnaiLog .a h5{font-size:14px}#gnaiLog .a h6{font-size:13px;color:#c4b5fd}' +
+    '#gnaiLog .a ul,#gnaiLog .a ol{margin:4px 0 8px 20px;padding:0}#gnaiLog .a li{margin:2px 0}' +
+    '#gnaiLog .a code{background:#111827;border:1px solid #334155;border-radius:4px;padding:1px 5px;font:13px/1.4 ui-monospace,Menlo,Consolas,monospace}' +
+    '#gnaiLog .a hr{border:0;border-top:1px solid #334155;margin:10px 0}' +
     '#gnaiLog .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}' +
-    '#gnaiLog .chip{padding:5px 10px;border-radius:999px;border:1px solid #a78bfa;background:transparent;color:#c4b5fd;font-size:12px;cursor:pointer}' +
+    '#gnaiLog .chip{padding:5px 10px;border-radius:999px;border:1px solid #a78bfa;background:transparent;color:#c4b5fd;font:500 12px/1 ' + FONT + ';cursor:pointer}' +
     '#gnaiLog .chip:hover{background:#7c3aed;color:#fff}' +
     '#gnaiStatus{padding:0 14px;color:#a78bfa;font-size:12px;min-height:16px}' +
     '#gnai .in{display:flex;gap:8px;padding:10px;border-top:1px solid #334155;background:#111827}' +
-    '#gnai input{flex:1;min-width:0;padding:10px 12px;border-radius:10px;border:1px solid #334155;background:#0b0f1a;color:#f1f5f9;font:inherit;outline:none}' +
+    '#gnai input{flex:1;min-width:0;padding:10px 12px;border-radius:10px;border:1px solid #334155;background:#0b0f1a;color:#f1f5f9;font:15px/1.4 ' + FONT + ';outline:none}' +
     '#gnai input:focus{border-color:#7c3aed}' +
-    '#gnai .send{padding:0 14px;border:0;border-radius:10px;background:#7c3aed;color:#fff;font-weight:600;cursor:pointer}' +
+    '#gnai .send{padding:0 14px;border:0;border-radius:10px;background:#7c3aed;color:#fff;font:600 14px ' + FONT + ';cursor:pointer}' +
     '#gnai .send:disabled{opacity:.5;cursor:default}' +
     '@media(max-width:520px){#gnai{right:8px;bottom:70px;height:calc(100vh - 90px)}#gnaiBtn{right:10px;bottom:10px}}';
 
@@ -327,6 +440,7 @@
         await loadRW();
         var ctx = buildContext(q);
         if (ctx.named.some(function (g) { return !(rw && rw[keyOf(g)]); })) { await loadBlogs(); ctx = buildContext(q); }
+        if (ctx.named.length === 1) lastGame = ctx.named[0]; // remember what this conversation is about, for "it"/"this" next turn
 
         // 1) anything about files, links, code, keys, backends, admin, emulators: not shared, ever
         if (BLOCK_RE.test(q)) return finish(bubble, SCOPE_MSG, null, { shown: [] }, q);
@@ -335,12 +449,12 @@
         if (res) return finish(bubble, res.text, res, { shown: ctx.named }, q);
         // 3) everything else: chat with the model, grounded in the game data
         var reply = '';
-        var sys = 'You are Gamenetic AI, a friendly teacher-style assistant inside the Gamenetic free browser games site. ' +
-          'If someone says hi, say hi back warmly in one or two short sentences and ask what they want to play. ' +
-          'You ONLY talk about: the games on Gamenetic, their tags and categories, how to play them, recommendations, and how coins and special locked games work (earn coins by playing a little every day, or buy coins, then unlock). ' +
-          'If asked about anything else, politely say you can only help with games and coins. ' +
-          'Keep answers short and clear; use short numbered steps for how-to-play. Use the DATA below. If something is not in the DATA, say you do not have that detail. ' +
-          'Never mention or reveal files, links, URLs, code, scripts, servers, keys, payment links, admin tools or how the site is built. Never invent games, controls, prices or features.' +
+        var sys = 'You are Gamenetic AI, built into the Gamenetic free browser games site. Write the way a sharp, concise assistant writes: plain language, no filler, no repeated stock phrases, no padding sentences just to sound complete. ' +
+          'Use ONLY the facts in DATA below. Never invent or guess a game\'s controls, tips, price, streak, level or features. If DATA does not cover what was asked, say plainly that you do not have that detail, in one short sentence, instead of making something up or repeating a generic description. ' +
+          'If someone just says hi, greet them in one short sentence and ask what they want to play. ' +
+          'Format for readability: short paragraphs, **bold** for key terms, and a numbered or bulleted list whenever you give steps or more than two items. Do not restate the question back to the user. Do not use the exact same sentence structure for every game you describe. ' +
+          'You ONLY talk about: the games on Gamenetic, their tags and categories, how to play them, recommendations, and how coins and special locked games work (earn coins by playing a little every day, or buy coins, then unlock). If asked about anything else, say in one sentence that you only help with games and coins. ' +
+          'Never mention or reveal files, links, URLs, code, scripts, servers, keys, payment links, admin tools or how the site is built.' +
           '\n\nDATA:\n' + ctx.text;
         var msgs = [{ role: 'system', content: sys }].concat(history.slice(-4)).concat([{ role: 'user', content: q }]);
         try {
@@ -378,5 +492,12 @@
     inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') ask(); });
   }
 
+  /* ---------------- preload: start caching the model into IndexedDB as soon as the page opens ---------------- */
+  function preload() {
+    if (!navigator.gpu) return; // no WebGPU, nothing to preload
+    getEngine().catch(function () { /* ignore; chat still falls back to plain answers */ });
+  }
+
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', build); else build();
+  if ('requestIdleCallback' in window) requestIdleCallback(preload, { timeout: 4000 }); else setTimeout(preload, 300);
 })();
