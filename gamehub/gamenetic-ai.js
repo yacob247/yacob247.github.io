@@ -7,7 +7,8 @@
   var MODEL_ID = 'Qwen2-0.5B-Instruct-q4f16_1-MLC';
   var WASM = 'Qwen2-0.5B-Instruct-q4f16_1-ctx4k_cs1k-webgpu.wasm';
   var WEBLLM = 'https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.84/+esm';
-  var CTX_CHARS = 5200;
+  var PHONE = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && matchMedia('(pointer: coarse)').matches);
+  var CTX_CHARS = PHONE ? 2200 : 5200;
 
   var rw = null, rwLoading = null, blogs = null, blogsLoading = null;
   var engine = null, engineLoading = null, history = [], busy = false, stopFlag = false;
@@ -314,7 +315,7 @@
     if (engineLoading) return engineLoading;
     if (!navigator.gpu) return Promise.reject(new Error('nogpu'));
     engineLoading = import(WEBLLM).then(function (w) {
-      var cfg = { useIndexedDBCache: true, model_list: [{ model: R2 + '/?p=/resolve/main/', model_id: MODEL_ID, model_lib: R2 + '/' + WASM, overrides: { context_window_size: 4096 } }] };
+      var cfg = { useIndexedDBCache: true, model_list: [{ model: R2 + '/?p=/resolve/main/', model_id: MODEL_ID, model_lib: R2 + '/' + WASM, overrides: PHONE ? { context_window_size: 2048, prefill_chunk_size: 256 } : { context_window_size: 4096 } }] };
       return w.CreateMLCEngine(MODEL_ID, { appConfig: cfg, initProgressCallback: function (r) { setStatus((r.text || 'Loading AI…').slice(0, 80)); } });
     }).then(function (e) { engine = e; setStatus(''); return e; })
       .finally(function () { engineLoading = null; });
@@ -456,11 +457,11 @@
           'You ONLY talk about: the games on Gamenetic, their tags and categories, how to play them, recommendations, and how coins and special locked games work (earn coins by playing a little every day, or buy coins, then unlock). If asked about anything else, say in one sentence that you only help with games and coins. ' +
           'Never mention or reveal files, links, URLs, code, scripts, servers, keys, payment links, admin tools or how the site is built.' +
           '\n\nDATA:\n' + ctx.text;
-        var msgs = [{ role: 'system', content: sys }].concat(history.slice(-4)).concat([{ role: 'user', content: q }]);
+        var msgs = [{ role: 'system', content: sys }].concat(history.slice(PHONE ? -2 : -4)).concat([{ role: 'user', content: q }]);
         try {
           var eng = await getEngine();
           setStatus('');
-          var stream = await eng.chat.completions.create({ messages: msgs, stream: true, temperature: 0.5, top_p: 0.9, repetition_penalty: 1.1, max_tokens: 380 });
+          var stream = await eng.chat.completions.create({ messages: msgs, stream: true, temperature: 0.5, top_p: 0.9, repetition_penalty: 1.1, max_tokens: PHONE ? 220 : 380 });
           for await (var part of stream) {
             if (stopFlag) { eng.interruptGenerate(); break; }
             var d = part.choices[0] && part.choices[0].delta && part.choices[0].delta.content;
@@ -482,19 +483,21 @@
 
     btn.onclick = function () {
       box.classList.toggle('open');
+      if (!box.classList.contains('open')) freeGPU();
       if (box.classList.contains('open')) {
         if (!log.children.length) welcome();
         loadRW(); inp.focus();
       }
     };
-    box.querySelector('.x').onclick = function () { box.classList.remove('open'); };
+    function freeGPU() { if (PHONE && engine && !busy) { var e = engine; engine = null; try { e.unload(); } catch (x) {} } }
+    box.querySelector('.x').onclick = function () { box.classList.remove('open'); freeGPU(); };
     send.onclick = function () { if (busy) { stopFlag = true; } else { ask(); } };
     inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') ask(); });
   }
 
   /* ---------------- preload: start caching the model into IndexedDB as soon as the page opens ---------------- */
   function preload() {
-    if (!navigator.gpu) return; // no WebGPU, nothing to preload
+    if (!navigator.gpu || PHONE) return; // no WebGPU, or phone: load the model only when the user actually asks something
     getEngine().catch(function () { /* ignore; chat still falls back to plain answers */ });
   }
 
