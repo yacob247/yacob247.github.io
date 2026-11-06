@@ -81,10 +81,18 @@ a{color:var(--blue)}
 .frm input:focus,.frm textarea:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(0,212,255,.18)}
 .frm pre{margin:0;font-size:.78rem;max-height:180px}
 @media(max-width:1000px){#pv{position:fixed;right:0;top:0;bottom:0;z-index:30;background:#0a1226}#pv.open{width:min(430px,100vw)}.pvh,#pvb{min-width:0}}
+#cm,#mn{position:fixed;z-index:50;min-width:220px;padding:6px;border-radius:14px;background:#14181f;border:1px solid var(--line);box-shadow:0 12px 40px rgba(0,0,0,.6)}
+.mi{display:flex;gap:14px;justify-content:space-between;align-items:center;width:100%;padding:8px 12px;border-radius:9px;background:none;text-align:left;font-size:.88rem;color:#e6edf8}
+.mi:hover{background:rgba(255,255,255,.08)}.mi.del{color:#f87171}.mi small{color:#94a3b8}.mh{height:1px;background:rgba(255,255,255,.1);margin:5px 0}
+.ci{display:flex;align-items:center;gap:6px}.ci span{flex:1;overflow:hidden;text-overflow:ellipsis}.dots{background:none;color:#94a3b8;padding:0 6px;opacity:.55}.ci:hover .dots{opacity:1}
+#md{position:fixed;inset:0;z-index:60;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.6)}#md.on{display:flex}
+#mdb{width:min(520px,92vw);max-height:80vh;overflow:auto;padding:20px;border-radius:18px;background:#101521;border:1px solid var(--line)}
+#mdb h3{margin-bottom:8px}#mdb p,#mdb label{display:block;margin:8px 0;font-size:.9rem;color:var(--tx)}#mdb select{background:#050a1a;color:#fff;border:1px solid var(--line);border-radius:8px;padding:6px}
+details summary{cursor:pointer;font-weight:700;color:#fff}
 </style></head><body>
 <div id="app">
 <aside id="sb"><div class="logo">Yacob<span>AI Agent</span></div><button id="nc">＋ New chat</button><div id="cl"></div>
-<div><div id="bar"><i></i></div><div id="st">Loading AI…</div></div></aside>
+<div><div id="bar"><i></i></div><div id="st">Loading AI…</div></div><button id="mnb" class="signin">☰ Menu</button></aside>
 <main>
 <header class="top"><button id="mb">☰</button><div id="ttl">New chat</div><button id="pvbtn" class="signin">◧ Live</button><button id="memb" class="signin">🧠 Memory</button><button id="thk" class="signin">Thinking: ON</button><button id="acct" class="signin">Sign in with Google</button></header>
 <div id="hero"><h1>Your AI admin manager</h1><p>Tell me what to do. I handle email, bookings, calendar, docs, slides, sheets and websites. Nothing runs until you approve it.</p>
@@ -95,6 +103,7 @@ a{color:var(--blue)}
 </main>
 <section id="pv"><div class="pvh"><b id="pvt">Live workspace</b><span id="pvs">Idle</span><button id="pvx" class="ab">✕</button></div>
 <div id="pvb"><div class="pve">When the AI works you watch it here live: its thinking, plan, drafts and edits. Drafts are editable before you approve.</div></div></section></div>
+<div id="md"><div id="mdb"></div></div>
 <script type="module">
 import * as webllm from "https://esm.run/@mlc-ai/web-llm@0.2.79";
 const MODEL="Llama-3.2-1B-Instruct-q4f16_1-MLC";
@@ -115,7 +124,7 @@ const save=()=>kv("put",JSON.parse(JSON.stringify(S)),"state").catch(()=>{});
 const FIELDS=["name","services","prices","hours","tone","email"];
 let engine,busy=false,stopped=false;
 
-const bub=(t,c="a",nosave)=>{const d=document.createElement("div");d.className="m "+c;if(c==="a")d.innerHTML=md(t);else d.textContent=t;
+const bub=(t,c="a",nosave)=>{const d=document.createElement("div");d.className="m "+c;if(c==="a")d.innerHTML=md(t);else if(c==="th"){const i=t.indexOf("\n");d.className="m s";d.innerHTML="<details><summary>"+E(t.slice(0,i))+"</summary><div style='white-space:pre-wrap;margin-top:6px'>"+E(t.slice(i+1))+"</div></details>"}else d.textContent=t;
  if(!nosave){S.cur.msgs.push({t,c});if(S.cur.msgs.length>200)S.cur.msgs.shift()}
  $("hero").style.display="none";$("chat").style.display="flex";$("chat").append(d);$("chat").scrollTop=1e9;return d};
 const ok=t=>bub("✔ "+t,"s");
@@ -279,7 +288,9 @@ const G={
  },
  async create_doc(a){
   const d=await gf("https://docs.googleapis.com/v1/documents",{method:"POST",body:JSON.stringify({title:a.title||"Untitled"})},"docs");
-  if(a.content)await gf(`https://docs.googleapis.com/v1/documents/${d.documentId}:batchUpdate`,{method:"POST",body:JSON.stringify({requests:[{insertText:{location:{index:1},text:String(a.content)}}]})},"docs");
+  S.lastDoc=d.documentId;const U0="https://docs.google.com/document/d/"+d.documentId+"/edit";LV.show(U0);
+  if(a.content){const ch=[];let cur="";for(const q of String(a.content).split(/(?<=\n)/)){if(cur&&(cur+q).length>500){ch.push(cur);cur=""}cur+=q}if(cur)ch.push(cur);let ix=1;
+   for(const c of ch){await gf(`https://docs.googleapis.com/v1/documents/${d.documentId}:batchUpdate`,{method:"POST",body:JSON.stringify({requests:[{insertText:{location:{index:ix},text:c}}]})},"docs");ix+=c.length;LV.act("Writing the document… "+ix+" characters");LV.show(U0)}}
   S.lastDoc=d.documentId;return "✔ Google Doc created: https://docs.google.com/document/d/"+d.documentId+"/edit";
  },
  async read_doc(a){
@@ -317,7 +328,7 @@ const G={
  export_data(){const x=document.createElement("a");x.href=URL.createObjectURL(new Blob([JSON.stringify(S,null,2)],{type:"application/json"}));x.download="agent-setup.json";x.click();return "✔ Exported agent-setup.json"},
  async reset(){await kv("delete","state");location.reload()},
  signout(){TOK=null;S.cfg.user="";render();return "✔ Signed out of Google"},
- open_url(a){const u=place(a.target);if(!u)throw new Error("Unknown place: "+a.target);try{window.open(u,"_blank","noopener")}catch{}return "Opening "+u+" (click if no tab opened)"},
+ open_url(a){const u=place(a.target);if(!u)throw new Error("Unknown place: "+a.target);LV.show(u);try{window.open(u,"_blank","noopener")}catch{}return "Opening "+u+" (click if no tab opened)"},
  async web_search(a){const q=a.query||"";if(!q)throw new Error("Search for what?");try{const r=await fetch("https://r.jina.ai/https://duckduckgo.com/html/?q="+enc(q));return "🔎 "+q+":\\n"+(await r.text()).replace(/\\s+/g," ").slice(0,1500)}catch{window.open("https://www.google.com/search?q="+enc(q),"_blank");return "Opened Google search for: "+q}},
  async gmail_read(a){const l=await gf(GM+"?maxResults=1&q="+enc(a.query||"in:inbox"),{},"gmail");if(!(l.messages||[]).length)return "No matching email";const d=await gf(GM+"/"+l.messages[0].id+"?format=full",{},"gmail"),h=n=>(d.payload.headers.find(x=>x.name===n)||{}).value||"";return "📧 From: "+h("From")+"\\nSubject: "+h("Subject")+"\\n"+(bodyOf(d.payload)||d.snippet).slice(0,1500)},
  async gmail_trash(a){if(!a.query)throw new Error("Which emails? Give a search");const l=await gf(GM+"?maxResults=5&q="+enc(a.query),{},"gmail");let n=0;for(const m of l.messages||[]){await gf(GM+"/"+m.id+"/trash",{method:"POST"},"gmail");n++}return "✔ Moved "+n+" email(s) to trash"},
@@ -346,7 +357,7 @@ const G={
 const missing=()=>FIELDS.filter(f=>!S.profile[f]);
 const know=()=>S.sites.map(s=>s.url+": "+s.text.slice(0,500)).join("\n").slice(0,1400);
 
-function chatSys(){const m=missing();return `You are the owner's online admin manager for their business. Keep replies short (1-3 sentences).
+function chatSys(){const m=missing();return `You are the owner's online admin manager for their business. Keep replies short (1-3 sentences). Always reply in ${S.cfg.lang||"English"}.
 You CAN, when the owner asks: send emails and search the inbox (Gmail), create and read Google Calendar events, create Google Docs, Slides and Sheets, read/edit/delete across Google Docs, Sheets, Gmail, Calendar, Drive (share, trash), Tasks and Contacts, open ANY Google tool or website in a new tab, search the web, explain and edit your own memory, log rows to Sheets, save notes to Drive, read websites, track bookings and tasks, remember standing instructions, show any data (bookings, tasks, emails, rules, sites, inbox, activity, settings), pause/resume, change the approval mode, switch Google services on/off, approve all, export, and reset. Every action is shown to the owner and only runs after they press Approve; say briefly what you will do and never claim it is already done. You remember contacts, sent emails and facts the owner tells you (see Memory) and use them for "my friend", "him", "send it". If the owner gives a task, do not ask onboarding questions.
 Business so far: ${JSON.stringify(S.profile)}
 Memory: ${memSummary()}
@@ -361,16 +372,19 @@ The system saves details and runs actions automatically and shows ✔ lines. Nev
 const EM=/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/,EMG=/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
 const memSummary=()=>`contacts: ${S.mem.contacts.slice(0,8).map(c=>c.name+(c.relation?" ("+c.relation+")":"")+" <"+c.email+">").join("; ")||"none"}. Last contact: ${S.mem.last||"none"}. Facts: ${S.mem.facts.slice(-6).join("; ")||"none"}. Recent sent: ${S.mem.sent.slice(0,3).map(m=>m.to+" — "+m.subject).join("; ")||"none"}`;
 const sender=()=>S.profile.name||S.cfg.userName||"";
-const sysBase=()=>`Business info: ${JSON.stringify(S.profile)}. Standing instructions (obey): ${S.rules.join("; ")||"none"}.`;
+const sysBase=()=>`Write in ${S.cfg.lang||"English"}. Business info: ${JSON.stringify(S.profile)}. Standing instructions (obey): ${S.rules.join("; ")||"none"}.`;
 const LV={
+ show(url){const m=String(url||"").match(/docs\.google\.com\/(document|presentation|spreadsheets)\/d\/([\w-]+)/);if(!m)return;const id=m[2],base="https://docs.google.com/"+m[1]+"/d/"+id,src=base+"/preview?cb="+Date.now();
+  if(LV.V&&LV.V.id===id&&LV.V.f.isConnected){LV.V.f.src=src;return}
+  const b=LV.blk("Live — "+{document:"Google Doc",presentation:"Google Slides",spreadsheets:"Google Sheet"}[m[1]]);b.style.padding="0";const bar=document.createElement("div");bar.className="frm";const r=document.createElement("button");r.className="ab edit";r.textContent="Refresh";const o=document.createElement("a");o.target="_blank";o.href=base+"/edit";o.textContent="Open & edit in Google ↗";const f=document.createElement("iframe");f.style.cssText="width:100%;height:440px;border:0;background:#fff";r.onclick=()=>{f.src=base+"/preview?cb="+Date.now()};bar.append(r,o);b.append(bar,f);$("pvb").prepend(b.parentNode);f.src=src;LV.V={id,f};LV.open()},
  open(){$("pv").classList.add("open")},
- reset(t){$("pvb").innerHTML="";$("pvt").textContent=t;LV.A=null;LV.P=null},
+ reset(t){$("pvb").innerHTML="";$("pvt").textContent=t;LV.A=null;LV.P=null;LV.V=null},
  st(t,busy){$("pvs").textContent=t;$("pvs").className=busy?"busy":""},
  blk(title,live){const b=document.createElement("div");b.className="blk"+(live?" live":"");const h=document.createElement("div");h.className="bh";h.textContent=title;const d=document.createElement("div");d.className="bd";b.append(h,d);$("pvb").append(b);$("pvb").scrollTop=1e9;return d},
  live(d,on){d.parentNode.classList.toggle("live",on)},
  step(t){if(!LV.P)LV.P=LV.blk("Plan");const e=document.createElement("div");e.className="stp";e.textContent="○ "+t;LV.P.append(e);return e},
  mark(e,y){if(e)e.textContent=y+e.textContent.slice(1)},
- act(t,url){if(!LV.A)LV.A=LV.blk("Activity");const e=document.createElement("div");e.className="stp";e.textContent=new Date().toLocaleTimeString()+"  "+t;
+ act(t,url){if(url)LV.show(url);if(!LV.A)LV.A=LV.blk("Activity");const e=document.createElement("div");e.className="stp";e.textContent=new Date().toLocaleTimeString()+"  "+t;
   if(url){const l=document.createElement("a");l.href=url;l.target="_blank";l.textContent="  Open ↗";e.append(l)}LV.A.append(e);$("pvb").scrollTop=1e9},
  review(it){const d=LV.blk("Review & edit — "+it.a.type.replace(/_/g," "));const w=document.createElement("div");w.className="frm";
   for(const [k,v] of Object.entries(it.a)){const l=document.createElement("label");l.textContent=k;
@@ -378,7 +392,9 @@ const LV={
    else{const long=String(v??"").length>60||/body|content|text|note/.test(k),f=document.createElement(long?"textarea":"input");f.value=v??"";if(long)f.rows=Math.min(14,Math.max(4,String(v).split("\n").length+1));
     f.oninput=()=>{it.a[k]=typeof v==="number"?+f.value:f.value;draw(it)};l.append(f)}
    w.append(l)}
-  d.append(w);it.pv=d.parentNode;LV.open();$("pvb").scrollTop=1e9}
+  d.append(w);{const bt=document.createElement("div");bt.className="frm";const em=/email/.test(it.a.type),ap=document.createElement("button");ap.className="ab approve";ap.textContent=em?"Send":"Approve";ap.onclick=()=>decide(it,true);const rj=document.createElement("button");rj.className="ab reject";rj.textContent="Reject";rj.onclick=()=>decide(it,false);bt.append(ap,rj);
+  if(em){const g=document.createElement("a");g.target="_blank";g.textContent="Open in Gmail ↗";g.onclick=()=>{g.href="https://mail.google.com/mail/?view=cm&fs=1&to="+enc(it.a.to||"")+"&su="+enc(it.a.subject||"")+"&body="+enc(it.a.body||"")};bt.append(g)}d.append(bt)}
+  it.pv=d.parentNode;LV.open();$("pvb").scrollTop=1e9}
 };
 function resolve(t){t=(t||"").trim();if(EM.test(t))return t.match(EM)[0].toLowerCase();
  const q=t.toLowerCase().replace(/^(my|the|to)\s+/,"");if(!q)return "";
@@ -431,7 +447,7 @@ async function prepare(a,ctx){const t=a.type;
   else{const r=await composeEmail(a,ctx);a.subject=r.subject;a.body=r.body}
   delete a.brief;S.mem.draft={to:a.to,subject:a.subject,body:a.body};if(a.to)S.mem.last=a.to}
  else if(t==="append_sheet"){const j=await composeJSON(a,ctx,'{"rows":[["value","value"]]}',"rows");a.rows=(j.rows||[]).slice(0,40);delete a.brief}
- else if(t==="edit_doc"){a.text=await composeText(a,ctx,"text for the document");delete a.brief}
+ else if(t==="edit_doc"){a.text=a.text||await composeText(a,ctx,"text for the document");delete a.brief}
  else if(t==="create_doc"){a.content=await composeText(a,ctx,"document");a.title=a.title||"Document";delete a.brief}
  else if(t==="drive_save"){a.content=await composeText(a,ctx,"note");a.name=a.name||"note.txt";delete a.brief}
  else if(t==="create_slides"){const j=await composeJSON(a,ctx,'{"slides":[{"title":"","body":"bullet lines separated by newlines"}]} with 5 to 7 slides',"slides");a.slides=(j.slides||[]).slice(0,12);a.title=a.title||"Presentation";delete a.brief;if(!a.slides.length){bub("I couldn’t build the slides. Try again with more detail.","a");return false}}
@@ -463,25 +479,46 @@ ACTIONS
 {"type":"remember_contact","name":"","email":"","relation":""} {"type":"remember_fact","text":""} {"type":"forget","what":""}
 {"type":"show","what":"bookings|tasks|emails|rules|workflows|sites|activity|profile|inbox|settings|snippets|memory"}
 {"type":"pause"} {"type":"resume"} {"type":"set_mode","mode":"all|external"} {"type":"set_perm","service":"gmail|calendar|drive|sheets|docs|slides","on":true} {"type":"approve_all"} {"type":"export_data"} {"type":"reset"} {"type":"signout"} {"type":"make_snippet","kind":"enquiry|booking"} {"type":"open_url","target":"docs|sheets|slides|gmail|calendar|drive|https://..."} {"type":"edit_doc","url":"","find":"","brief":""} {"type":"web_search","query":""} {"type":"gmail_read","query":""} {"type":"gmail_trash","query":""} {"type":"delete_event","title":""} {"type":"drive_trash","name":""} {"type":"drive_share","name":"","email":"","role":"viewer|editor"} {"type":"read_sheet","url":"","range":"A1:H30"} {"type":"append_sheet","url":"","brief":""} {"type":"google_task","text":""} {"type":"list_google_tasks"} {"type":"list_contacts"} {"type":"drive_list","query":""}
+HOW TO: pick the single best action. Put a full instruction in "brief" (what to write, for whom, tone). Never claim you cannot use a Google tool: every Google tool has an action. Never invent emails, dates or prices.
 EXAMPLES
+"write a proposal doc for my cleaning business" -> {"actions":[{"type":"create_doc","title":"Cleaning Service Proposal","brief":"Write a service proposal for the cleaning business"}]}
+"make a 6 slide pitch about my bakery" -> {"actions":[{"type":"create_slides","title":"Bakery Pitch","brief":"6 slide pitch about the bakery"}]}
+"add a pricing section to my doc" -> {"actions":[{"type":"edit_doc","url":"","find":"","brief":"Write a pricing section"}]}
+"email jo@x.com that the meeting moved to 3pm" -> {"actions":[{"type":"send_email","to":"jo@x.com","brief":"Tell Jo the meeting moved to 3pm"}]}
+"any new emails?" -> {"actions":[{"type":"gmail_search","query":"is:unread in:inbox"}]}
+"look up cleaning prices in Sydney" -> {"actions":[{"type":"web_search","query":"cleaning prices Sydney"}]}
 "tell sam@x.com I will meet him in 2 days" -> {"actions":[{"type":"send_email","to":"sam@x.com","brief":"Tell him I will meet him on the date from the hints"}]}
 "send it to my friend" -> {"actions":[{"type":"send_email","to":"<friend's email from Memory>","brief":"send the last draft"}]}
 "my friend Sam is sam@x.com" -> {"actions":[{"type":"remember_contact","name":"Sam","email":"sam@x.com","relation":"friend"}]}
 "book Ana Friday 3pm" -> {"actions":[{"type":"add_booking","name":"Ana","date":"<date>","time":"15:00","note":""},{"type":"create_event","title":"Ana","date":"<date>","time":"15:00","minutes":60,"attendee":"","note":""}]}`;
 const fastActs=t=>{let m=t.match(/^\s*(?:please\s+)?(?:can you\s+)?(?:open|go to|visit|launch|take me to)\s+(?:my\s+|the\s+)?(.+?)(?:\s+for me)?(?:\s+please)?[.!]*\s*$/i);if(m&&place(m[1]))return[{type:"open_url",target:m[1]}];m=t.match(/^\s*(?:please\s+)?(?:search|google|look up)\s+(?:for\s+)?(.+)$/i);return m?[{type:"web_search",query:m[1]}]:null};
+const intent=t=>{t=t.trim();let m;const top=x=>((x.match(/\b(?:about|on|called|titled)\s+(.{3,70})$/i)||[])[1]||"").replace(/[.!?]+$/,"").replace(/^./,c=>c.toUpperCase());
+ if(m=t.match(/^\s*(?:please\s+)?(send|write|draft|compose)\s+(?:an?\s+)?(?:e-?mail|mail)\s*(?:to\s+(\S+))?\s*(.*)$/i))return[{type:"send_email",to:m[2]||"",brief:m[3]||t}];
+ if(m=t.match(/^\s*(?:please\s+)?e-?mail\s+(\S+)\s+(.+)$/i))return[{type:"send_email",to:m[1],brief:m[2]}];
+ const inDoc=/\b(?:to|in|into)\s+(?:my|the)\s+(?:last\s+|latest\s+)?(?:google\s+)?(?:doc|document)\b/i.test(t);
+ if(/\b(?:make|create|build|write|generate|draft)\b/i.test(t)&&!inDoc){
+  if(/\b(?:slides?|slide ?deck|presentation|powerpoint|pitch deck)\b/i.test(t))return[{type:"create_slides",title:top(t),brief:t}];
+  if(/\b(?:sheet|spreadsheet|tracker|table)\b/i.test(t))return[{type:"create_sheet",title:top(t),brief:t}];
+  if(/\b(?:doc|document|proposal|report|letter|essay|contract|resume|cv|article|policy|plan)\b/i.test(t))return[{type:"create_doc",title:top(t),brief:t}]}
+ if(m=t.match(/\b(?:replace|change)\s+["“']?(.+?)["”']?\s+(?:with|to)\s+["“']?(.+?)["”']?\s+in\s+(?:my\s+|the\s+)?(?:last\s+)?(?:google\s+)?(?:doc|document)/i))return[{type:"edit_doc",url:"",find:m[1],text:m[2]}];
+ if(inDoc&&/\b(?:add|append|write|put|insert)\b/i.test(t))return[{type:"edit_doc",url:"",find:"",brief:t}];
+ if(/\b(?:read|open|show)\b.*\b(?:latest|last|newest|recent)\s+(?:e-?mail|message)/i.test(t))return[{type:"gmail_read",query:"in:inbox"}];
+ if(/\b(?:check|show|any|new)\b.*\b(?:inbox|e-?mails?|mail)\b/i.test(t)&&!/\b(?:send|write|draft)\b/i.test(t))return[{type:"gmail_search",query:"is:unread in:inbox"}];
+ if(/\b(?:what'?s|what is|show|check|list|my)\b.*\b(?:calendar|schedule|agenda)\b/i.test(t))return[{type:"list_events"}];
+ return null};
 async function think(text){
  const fp=fastActs(text);if(fp){LV.reset(text.slice(0,60));LV.open();for(const a of fp){Object.defineProperty(a,"__s",{value:LV.step(short(a)),writable:true});await propose(a)}LV.st("Done");return fp.length}
- const ctx={text,dates:dateHints(text)};
- LV.reset(text.slice(0,60));LV.open();LV.st("Thinking",true);
- const d=LV.blk("🧠 Thinking",true);
- ctx.rewrite=S.cfg.think===false?(d.textContent="(thinking is off)",text):((await gen([{role:"system",content:`You are the owner's chief of staff. Think out loud in 2-4 short sentences: what the owner wants, which tools or Google/web apps are needed, who/what/when (use Date hints), and the order of steps. Do not do the task.\nMemory: ${memSummary()}\nDate hints: ${ctx.dates}`},...S.hist.slice(-5,-1).map(m=>({role:m.role,content:m.content.slice(0,200)})),{role:"user",content:text}],d,{n:170,t:.2}))||text);
- LV.live(d,false);LV.st("Planning",true);
- let acts=[];
- try{const r=await engine.chat.completions.create({temperature:.1,max_tokens:500,response_format:{type:"json_object"},messages:[{role:"system",content:PLAN(ctx)},{role:"user",content:`OWNER SAID: ${text}\nINSTRUCTION: ${ctx.rewrite}`}]});
+ const ctx={text,dates:dateHints(text)},INT=intent(text);
+ LV.reset(text.slice(0,60));LV.open();LV.st("Working",true);
+ const d=document.createElement("div");
+ ctx.rewrite=INT?text:S.cfg.think===false?(d.textContent="(thinking is off)",text):((await gen([{role:"system",content:`You are the owner's chief of staff. Think out loud in 2-4 short sentences: what the owner wants, which tools or Google/web apps are needed, who/what/when (use Date hints), and the order of steps. Do not do the task.\nMemory: ${memSummary()}\nDate hints: ${ctx.dates}`},...S.hist.slice(-5,-1).map(m=>({role:m.role,content:m.content.slice(0,200)})),{role:"user",content:text}],d,{n:170,t:.2}))||text);
+ LV.st("Planning",true);
+ let acts=INT||[];
+ if(!acts.length)try{const r=await engine.chat.completions.create({temperature:.1,max_tokens:500,response_format:{type:"json_object"},messages:[{role:"system",content:PLAN(ctx)},{role:"user",content:`OWNER SAID: ${text}\nINSTRUCTION: ${ctx.rewrite}`}]});
   acts=(JSON.parse(r.choices[0].message.content).actions||[]).filter(a=>a&&TYPES.has(a.type)).slice(0,4)}catch{}
  if(stopped)throw new Error("Stopped");
  if(!acts.length){LV.st("Idle");return 0}
- const u="Understood: "+ctx.rewrite.replace(/\s+/g," ").slice(0,240);bub(u,"a");S.hist.push({role:"assistant",content:u});
+ const u="Understood: "+ctx.rewrite.replace(/\s+/g," ").slice(0,240);bub("🧠 Thinking · "+acts.length+" step"+(acts.length>1?"s":"")+"\n"+ctx.rewrite.slice(0,600)+"\n\nPlan:\n"+acts.map(a=>"• "+short(a)).join("\n"),"th");S.hist.push({role:"assistant",content:u});
  for(const a of acts)Object.defineProperty(a,"__s",{value:LV.step(short(a)),writable:true});
  for(const a of acts){LV.mark(a.__s,"✎");LV.st("Working",true);
   if(await prepare(a,ctx)===false){LV.mark(a.__s,"✖");continue}
@@ -528,10 +565,40 @@ function card(title,lines,fn){
   if(fn&&lines.length){const b=document.createElement("button");b.className="ab edit";b.textContent="Draft reply";b.onclick=()=>fn(i);r.append(b)}d.append(r)});
  $("hero").style.display="none";$("chat").style.display="flex";$("chat").append(d);$("chat").scrollTop=1e9;
 }
+let CM=null;const closeM=()=>{CM&&CM.remove();CM=null};
+document.addEventListener("click",e=>{if(CM&&!CM.contains(e.target))closeM()});
+function popup(a,items){closeM();const m=document.createElement("div");m.id="cm";
+ for(const it of items){if(it==="-"){const h=document.createElement("div");h.className="mh";m.append(h);continue}
+  const b=document.createElement("button");b.className="mi"+(it.del?" del":"");b.innerHTML="<span></span><small></small>";b.firstChild.textContent=it.l;b.lastChild.textContent=it.k||"";b.onclick=e=>{e.stopPropagation();it.f()};m.append(b)}
+ document.body.append(m);const r=a.getBoundingClientRect();let y=r.bottom+4;if(y+m.offsetHeight>innerHeight-8)y=Math.max(8,r.top-m.offsetHeight-4);m.style.left=Math.max(8,Math.min(r.left,innerWidth-236))+"px";m.style.top=y+"px";CM=m;return m}
+const pin=c=>{c.pin=!c.pin;save();render();closeM()},ren=c=>{closeM();const n=(prompt("Rename chat",c.title)||"").trim();if(n){c.title=n;save();render()}},
+delChat=c=>{closeM();if(busy||!confirm("Delete this chat?"))return;if(c===S.cur){S.cur={id:Date.now(),title:"New chat",msgs:[]};S.hist=[]}else S.chats=S.chats.filter(x=>x!==c);save();replay()},
+shareChat=c=>{closeM();const t=c.title+"\n\n"+c.msgs.map(m=>(m.c==="u"?"You: ":"AI: ")+m.t).join("\n\n");try{navigator.clipboard.writeText(t)}catch{}const x=document.createElement("a");x.href=URL.createObjectURL(new Blob([t],{type:"text/plain"}));x.download=c.title.replace(/[^\w-]+/g,"_")+".txt";x.click();ok("Chat copied to clipboard and saved as a .txt file")};
+function projMenu(c,a){const P=S.projects||[];popup(a,[...P.map(p=>({l:(c.proj===p?"✔ ":"")+p,f:()=>{c.proj=c.proj===p?"":p;save();render();closeM()}})),...(P.length?[]:[{l:"No projects yet",f:()=>{}}]),"-",{l:"＋ New project",f:()=>{closeM();const n=(prompt("Project name")||"").trim();if(n){S.projects=[...P,n];c.proj=n;save();render()}}}])}
+function chatMenu(c,a){popup(a,[{l:c.pin?"Unpin":"Pin",k:"P",f:()=>pin(c)},{l:"Rename",k:"R",f:()=>ren(c)},{l:"Add to project",k:"▸",f:()=>projMenu(c,a)},{l:"Share chat",f:()=>shareChat(c)},"-",{l:"Delete",k:"D",del:1,f:()=>delChat(c)}]);CM.c=c}
+const modal=(t,fn)=>{const b=$("mdb");b.innerHTML="";const h=document.createElement("h3");h.textContent=t;b.append(h);fn(b);const x=document.createElement("button");x.className="ab";x.textContent="Close";x.onclick=()=>$("md").classList.remove("on");b.append(x);$("md").classList.add("on")};
+$("md").onclick=e=>{if(e.target.id==="md")$("md").classList.remove("on")};
+const note=(t,l)=>()=>{closeM();modal(t,b=>{for(const x of l){const p=document.createElement("p");p.textContent=x;b.append(p)}})};
+const LANGS=["English","Español","Français","Deutsch","Português","Italiano","العربية","中文","日本語","हिन्दी","አማርኛ"];
+function settings(){closeM();modal("Settings",b=>{
+ const tg=(l,g,f)=>{const x=document.createElement("label"),i=document.createElement("input");i.type="checkbox";i.checked=g();i.onchange=()=>{f(i.checked);save();render()};x.append(i," "+l);b.append(x)};
+ tg("Ask approval for every action (off = only Google/web actions)",()=>S.cfg.mode==="all",v=>S.cfg.mode=v?"all":"external");
+ tg("Show thinking",()=>S.cfg.think!==false,v=>S.cfg.think=v);
+ for(const k of Object.keys(SC))tg("Allow "+k+" (sign in again to apply)",()=>S.cfg.perm[k],v=>S.cfg.perm[k]=v);
+ const l=document.createElement("label"),sel=document.createElement("select");l.append("Language ");for(const x of LANGS)sel.add(new Option(x,x));sel.value=S.cfg.lang||"English";sel.onchange=()=>{S.cfg.lang=sel.value;save()};l.append(sel);b.append(l)})}
+const help=note("Get help",["Just tell me what to do. Examples:","• open google docs / open maps / visit bbc.com","• search for best invoice templates","• write a Google Doc proposal for my business","• check my inbox, read my latest email, delete emails from spam@x.com","• book Ana on Friday at 3pm, delete my 3pm event","• share Proposal with sam@x.com as editor","• remember that Sam is my accountant, forget Sam, show memory","Every action asks for your approval first. Edit drafts in the Live panel. Press ⋯ on a chat to pin, rename, add to a project, share or delete it."]);
+const shortcuts=note("Keyboard shortcuts",["Enter — send","Shift+Enter — new line","Ctrl+Shift+, — Settings","Ctrl+/ — this list","In a chat's ⋯ menu: P pin · R rename · D delete · Esc close"]);
+const policy=n=>note(n,n==="Privacy policy"?["Everything runs in your browser. Chats, memory and settings are stored on this device only (IndexedDB).","The AI model runs locally on your GPU. Google data is read only through your own sign-in and only when you approve an action.","Network use: Google APIs, the model download host, and r.jina.ai when a site or search can’t be read directly."]:n==="Usage policy"?["Use this for your own accounts and business. Review every action before you approve it. The small local model can make mistakes."]:n==="Terms of service"?["Provided as is, without warranty. You are responsible for the actions you approve and for the Google permissions you grant."]:["No web fonts are loaded. The app uses your system fonts (Segoe UI / system-ui)."]);
+const choices=()=>{closeM();modal("Your privacy choices",b=>{for(const [l,f] of [["Export my data",()=>G.export_data()],["Delete all my data",()=>confirm("Delete ALL chats, memory and settings?")&&G.reset()]]){const x=document.createElement("button");x.className="ab edit";x.textContent=l;x.onclick=f;b.append(x)}})};
+function learnMenu(a){popup(a,[{l:"Usage policy",f:policy("Usage policy")},{l:"Privacy policy",f:policy("Privacy policy")},{l:"Terms of service",f:policy("Terms of service")},{l:"Font licenses",f:policy("Font licenses")},{l:"Your privacy choices",f:choices},"-",{l:"Keyboard shortcuts",k:"Ctrl+/",f:shortcuts}])}
+$("mnb").onclick=e=>{e.stopPropagation();const a=$("mnb");popup(a,[{l:"Settings",k:"Ctrl+Shift+,",f:settings},{l:"Language",f:settings},{l:"Get help",f:help},"-",{l:"Learn more",k:"▸",f:()=>learnMenu(a)},"-",{l:"Log out",f:()=>{closeM();G.signout();ok("Signed out of Google")}}])};
+addEventListener("keydown",e=>{if(e.key==="Escape"){closeM();$("md").classList.remove("on");return}
+ if(e.ctrlKey&&e.shiftKey&&e.key===","){e.preventDefault();settings();return}if(e.ctrlKey&&e.key==="/"){e.preventDefault();shortcuts();return}
+ if(CM&&CM.c&&!e.ctrlKey&&!e.metaKey){const c=CM.c,k=e.key.toLowerCase();if(k==="p"){e.preventDefault();pin(c)}else if(k==="r"){e.preventDefault();ren(c)}else if(k==="d"){e.preventDefault();delChat(c)}}});
 const archive=()=>{if(S.cur.msgs.length)S.chats=[{...S.cur,hist:S.hist},...S.chats].slice(0,30)};
 function replay(){$("chat").innerHTML="";S.cur.msgs.forEach(m=>bub(m.t,m.c,true));render()}
 function newChat(){if(busy)return;archive();S.cur={id:Date.now(),title:"New chat",msgs:[]};S.hist=[];save();replay();$("sb").classList.remove("open")}
-function openChat(i){if(busy||!i)return;const c=S.chats[i-1];S.chats.splice(i-1,1);archive();S.cur=c;S.hist=c.hist||[];save();replay();$("sb").classList.remove("open")}
+function openChat(c){if(busy||c===S.cur)return;S.chats=S.chats.filter(x=>x!==c);archive();S.cur=c;S.hist=c.hist||[];save();replay();$("sb").classList.remove("open")}
 function render(){
  $("thk").textContent="Thinking: "+(S.cfg.think===false?"OFF":"ON");
  const a=$("acct");a.textContent=TOK?"● "+(S.cfg.user||"Google"):"Sign in with Google";
@@ -539,7 +606,7 @@ function render(){
  $("ttl").textContent=S.cur.title;
  const has=S.cur.msgs.length>0;$("hero").style.display=has?"none":"flex";$("chat").style.display=has?"flex":"none";
  $("cl").innerHTML="";
- [S.cur,...S.chats].forEach((c,i)=>{const d=document.createElement("div");d.className="ci"+(i?"":" on");d.textContent=c.title;d.onclick=()=>openChat(i);$("cl").append(d)});
+ [S.cur,...S.chats].sort((a,b)=>!!b.pin-!!a.pin).forEach(c=>{const d=document.createElement("div");d.className="ci"+(c===S.cur?" on":"");const t=document.createElement("span");t.textContent=(c.pin?"📌 ":"")+(c.proj?"📁"+c.proj+" · ":"")+c.title;const b=document.createElement("button");b.className="dots";b.textContent="⋯";b.onclick=e=>{e.stopPropagation();chatMenu(c,b)};d.append(t,b);d.onclick=()=>openChat(c);d.oncontextmenu=e=>{e.preventDefault();chatMenu(c,b)};$("cl").append(d)});
 }
 preload().catch(()=>{});$("pvbtn").onclick=()=>$("pv").classList.toggle("open");$("pvx").onclick=()=>$("pv").classList.remove("open");
 $("thk").onclick=()=>{S.cfg.think=S.cfg.think===false;save();render()};$("memb").onclick=()=>G.show({what:"memory"});
