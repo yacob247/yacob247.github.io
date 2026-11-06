@@ -128,7 +128,7 @@ Cache.prototype.add=async function(r){const res=await window.fetch(r);if(!res.ok
 Cache.prototype.addAll=async function(a){for(const r of a)await this.add(r)};
 const appConfig={cacheBackend:"indexeddb",model_list:[{model:PRE,model_id:MODEL,model_lib:LIB}]};
 const $=id=>document.getElementById(id);
-const D={mem:{contacts:[],facts:[],sent:[],last:"",draft:null},cur:{id:0,title:"New chat",msgs:[]},chats:[],cfg:{clientId:"",fb:"",user:"",mode:"all",paused:false,perm:{gmail:true,calendar:true,drive:true,sheets:true,docs:true,slides:true,tasks:true,contacts:true},sheetId:""},log:[],inbox:[],last:"",profile:{},rules:[],sites:[],flows:[],bookings:[],emails:[],tasks:[],snips:[],hist:[]};
+const D={mem:{contacts:[],facts:[],sent:[],last:"",draft:null},cur:{id:0,title:"New chat",msgs:[]},chats:[],cfg:{clientId:"",fb:"",user:"",mode:"all",paused:false,perm:{gmail:true,calendar:true,drive:true,sheets:true,docs:true,slides:true,tasks:true,contacts:true,cloud:true},sheetId:""},log:[],inbox:[],last:"",profile:{},rules:[],sites:[],flows:[],bookings:[],emails:[],tasks:[],snips:[],hist:[]};
 let S=D;
 const idb=()=>new Promise((res,rej)=>{const r=indexedDB.open("yacob-agent",1);r.onupgradeneeded=()=>r.result.createObjectStore("kv");r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
 const kv=async(m,...a)=>{const d=await idb();return new Promise((res,rej)=>{const q=d.transaction("kv",m==="get"?"readonly":"readwrite").objectStore("kv")[m](...a);q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)})};
@@ -179,9 +179,9 @@ function apply(a){
   case"make_snippet":snippet(a.kind==="booking"?"booking":"enquiry");break;
  }}catch{}
 }
-const Q=[],FREE=new Set(["set_send_mode","open_url","web_search","show","approve_all","export_data","pause","resume","signout","remember_contact","remember_fact"]),NG=new Set(["send_email","gmail_search","create_event","list_events","log_to_sheet","drive_save","create_doc","create_slides","create_sheet","read_doc","edit_doc","drive_list","gmail_read","gmail_trash","delete_event","drive_trash","drive_share","read_sheet","append_sheet","google_task","list_google_tasks","list_contacts"]);let TOK=null;
+const Q=[],FREE=new Set(["set_send_mode","open_url","web_search","show","approve_all","export_data","pause","resume","signout","remember_contact","remember_fact"]),NG=new Set(["send_email","gmail_search","create_event","list_events","log_to_sheet","drive_save","create_doc","create_slides","create_sheet","read_doc","setup_google","edit_doc","drive_list","gmail_read","gmail_trash","delete_event","drive_trash","drive_share","read_sheet","append_sheet","google_task","list_google_tasks","list_contacts"]);let TOK=null;
 const log=t=>{S.log=(S.log||[]).concat(new Date().toLocaleTimeString()+" "+t).slice(-40)};
-const EXT=new Set(["send_email","gmail_search","create_event","list_events","log_to_sheet","drive_save","add_site","create_doc","create_slides","create_sheet","read_doc","edit_doc","drive_list","gmail_read","gmail_trash","delete_event","drive_trash","drive_share","read_sheet","append_sheet","google_task","list_google_tasks","list_contacts"]);
+const EXT=new Set(["send_email","gmail_search","create_event","list_events","log_to_sheet","drive_save","add_site","create_doc","create_slides","create_sheet","read_doc","setup_google","edit_doc","drive_list","gmail_read","gmail_trash","delete_event","drive_trash","drive_share","read_sheet","append_sheet","google_task","list_google_tasks","list_contacts"]);
 function describe(a){const t=a.type;
  if(t==="send_email")return `SEND EMAIL (Gmail) → ${a.to}\nSubject: ${a.subject}\n${a.body}`;
  if(t==="create_event")return `CREATE CALENDAR EVENT: ${a.title} on ${a.date} ${a.time||""} (${a.minutes||60} min)${a.attendee?" + "+a.attendee:""}`;
@@ -231,13 +231,13 @@ async function run(a){
  catch(e){tset(a,"✖ "+e.message);bub("✖ "+a.type+": "+e.message,"s");log("failed "+a.type+": "+e.message);LV.mark(a.__s,"✖");LV.act("✖ "+e.message);if(e.auth)await propose(a)}
  save();render();
 }
-const SC={gmail:["gmail.send","gmail.readonly","gmail.modify"],tasks:["tasks"],contacts:["contacts.readonly"],calendar:["calendar"],drive:["drive"],sheets:["spreadsheets"],docs:["documents"],slides:["presentations"]};
+const SC={cloud:["cloud-platform"],gmail:["gmail.send","gmail.readonly","gmail.modify"],tasks:["tasks"],contacts:["contacts.readonly"],calendar:["calendar"],drive:["drive"],sheets:["spreadsheets"],docs:["documents"],slides:["presentations"]};
 const FB={apiKey:"AIzaSyDLeM4MrsA1Q8zq7_QcQfTJKk049vOVOO4",authDomain:"envizionwork.firebaseapp.com",databaseURL:"https://envizionwork-default-rtdb.firebaseio.com",projectId:"envizionwork",storageBucket:"envizionwork.firebasestorage.app",messagingSenderId:"706251024837",appId:"1:706251024837:web:4c931733d3a9f430a703ac",measurementId:"G-9CL929H67Z"};
 const FB_B="https://www.gstatic.com/firebasejs/10.14.1/";let FBM;const preload=()=>FBM=FBM||Promise.all([import(FB_B+"firebase-app.js"),import(FB_B+"firebase-auth.js")]).catch(e=>{FBM=null;throw e});
 const parseFb=t=>{const o={};for(const m of (t||"").matchAll(/(\w+)\s*:\s*["']([^"']+)["']/g))o[m[1]]=m[2];return o.apiKey&&o.authDomain?o:null};
 async function connect(){
  const fc=parseFb(S.cfg.fb)||FB;
- const sc=Object.keys(SC).filter(k=>S.cfg.perm[k]).flatMap(k=>SC[k]).map(x=>"https://www.googleapis.com/auth/"+x);
+ const sc=Object.keys(SC).filter(k=>S.cfg.perm[k]||k==="cloud").flatMap(k=>SC[k]).map(x=>"https://www.googleapis.com/auth/"+x);
  if(!sc.length)return alert("Allow at least one service");
  try{
   const B="https://www.gstatic.com/firebasejs/10.14.1/";
@@ -246,22 +246,31 @@ async function connect(){
   sc.forEach(x=>pr.addScope(x));
   const r=await A.signInWithPopup(A.getAuth(app),pr);
   TOK=A.GoogleAuthProvider.credentialFromResult(r).accessToken;S.cfg.user=r.user.email;S.cfg.userName=r.user.displayName||"";save();
-  ok("Signed in as "+r.user.email+" — Google connected");log("google connected "+r.user.email);render();
+  ok("Signed in as "+r.user.email+" — Google connected");log("google connected "+r.user.email);render();enableApis().catch(e=>log("auto-enable: "+e.message));
  }catch(e){ok("Sign-in failed: "+e.message)}
 }
 function gisConnect(){
  const c=S.cfg;if(!c.clientId)return alert("Paste your Google OAuth Client ID first");
- const scope=Object.keys(SC).filter(k=>c.perm[k]).flatMap(k=>SC[k]).map(x=>"https://www.googleapis.com/auth/"+x).join(" ");
+ const scope=Object.keys(SC).filter(k=>c.perm[k]||k==="cloud").flatMap(k=>SC[k]).map(x=>"https://www.googleapis.com/auth/"+x).join(" ");
  if(!scope)return alert("Allow at least one service");
  const go=()=>google.accounts.oauth2.initTokenClient({client_id:c.clientId,scope,callback:r=>{if(r.access_token){TOK=r.access_token;ok("Google connected");log("google connected")}else ok("Google connect failed");render()}}).requestAccessToken({prompt:"consent"});
  if(window.google?.accounts)go();else{const x=document.createElement("script");x.src="https://accounts.google.com/gsi/client";x.onload=go;document.head.append(x)}
 }
-async function gf(url,o={},svc){
+const ALLAPIS=["drive.googleapis.com","docs.googleapis.com","sheets.googleapis.com","slides.googleapis.com","gmail.googleapis.com","calendar-json.googleapis.com","tasks.googleapis.com","people.googleapis.com"];let ENA=null;
+async function enableApis(list=ALLAPIS){const fc=parseFb(S.cfg.fb)||FB,pr=fc.messagingSenderId||"706251024837",H={Authorization:"Bearer "+TOK,"Content-Type":"application/json"},sl=x=>new Promise(r=>setTimeout(r,x));
+ try{LV.act("A Google API is switched off. Switching on: "+list.map(x=>x.split(".")[0]).join(", ")+"…")}catch{}
+ const r=await fetch("https://serviceusage.googleapis.com/v1/projects/"+pr+"/services:batchEnable",{method:"POST",headers:H,body:JSON.stringify({serviceIds:list})}),j=await r.json().catch(()=>({}));
+ if(!r.ok){const m=(j.error&&j.error.message)||r.status;throw new Error(/scope|insufficient/i.test(m)?"The AI needs permission to switch on Google APIs. Log out, sign in with Google again and accept the Cloud permission, then retry.":/permission|denied/i.test(m)?"This Google account can’t switch on APIs for project "+pr+". Sign in with the project’s Owner account. ("+m+")":"Couldn’t switch on the APIs: "+m)}
+ let op=j;for(let i=0;i<30&&op.name&&!op.done;i++){await sl(2000);op=await(await fetch("https://serviceusage.googleapis.com/v1/"+op.name,{headers:H})).json()}
+ if(op.error)throw new Error("Switching on APIs failed: "+op.error.message);await sl(5000);try{LV.act("✔ Google APIs switched on automatically")}catch{}}
+async function gf(url,o={},svc,_t){
  if(!TOK)throw new Error("Press “Sign in with Google” (top right) first");
  if(svc&&!S.cfg.perm[svc])throw new Error(svc+" permission is off");
  const r=await fetch(url,{...o,headers:{Authorization:"Bearer "+TOK,"Content-Type":"application/json",...(o.headers||{})}});
  if(r.status===401){TOK=null;render();throw Object.assign(new Error("Google session expired — approve again to sign in"),{auth:true})}
- if(!r.ok)throw new Error("Google "+r.status+" "+(await r.text()).slice(0,150));
+ if(!r.ok){const t=await r.text(),dis=/SERVICE_DISABLED|has not been used|accessNotConfigured/.test(t);
+  if(dis&&(_t||0)<3){if(!_t)await(ENA=ENA||enableApis().finally(()=>ENA=null));else await new Promise(x=>setTimeout(x,6000));return gf(url,o,svc,(_t||0)+1)}
+  throw new Error("Google "+r.status+" "+t.slice(0,150))}
  return r.json();
 }
 const SITES={docs:"https://docs.google.com/document/u/0/",sheets:"https://docs.google.com/spreadsheets/u/0/",slides:"https://docs.google.com/presentation/u/0/",forms:"https://docs.google.com/forms/u/0/",gmail:"https://mail.google.com/",mail:"https://mail.google.com/",calendar:"https://calendar.google.com/",drive:"https://drive.google.com/",meet:"https://meet.google.com/",chat:"https://chat.google.com/",photos:"https://photos.google.com/",keep:"https://keep.google.com/",maps:"https://maps.google.com/",youtube:"https://www.youtube.com/",translate:"https://translate.google.com/",contacts:"https://contacts.google.com/",tasks:"https://tasks.google.com/",news:"https://news.google.com/",earth:"https://earth.google.com/",scholar:"https://scholar.google.com/",analytics:"https://analytics.google.com/",ads:"https://ads.google.com/",searchconsole:"https://search.google.com/search-console",sites:"https://sites.google.com/",classroom:"https://classroom.google.com/",cloud:"https://console.cloud.google.com/",firebase:"https://console.firebase.google.com/",play:"https://play.google.com/",finance:"https://www.google.com/finance",flights:"https://www.google.com/travel/flights",shopping:"https://shopping.google.com/",books:"https://books.google.com/",account:"https://myaccount.google.com/",google:"https://www.google.com/",businessprofile:"https://business.google.com/",merchant:"https://merchants.google.com/"};
@@ -350,6 +359,7 @@ const G={
  export_data(){const x=document.createElement("a");x.href=URL.createObjectURL(new Blob([JSON.stringify(S,null,2)],{type:"application/json"}));x.download="agent-setup.json";x.click();return "✔ Exported agent-setup.json"},
  async reset(){await kv("delete","state");location.reload()},
  signout(){TOK=null;S.cfg.user="";render();return "✔ Signed out of Google"},
+ async setup_google(){await enableApis();return "✔ Switched on: "+ALLAPIS.map(x=>x.split(".")[0]).join(", ")},
  open_compose(a){const u="https://mail.google.com/mail/?authuser="+enc(S.cfg.user||"0")+"&view=cm&fs=1&tf=1&to="+enc(a.to||"")+"&su="+enc(a.subject||"")+"&body="+enc(String(a.body||"").slice(0,1500));try{window.open(u,"_blank","noopener")}catch{}return "Opening Gmail compose with your email filled in. Press Send there: "+u},
  set_send_mode(a){const m=a.mode==="auto"?"auto":a.mode==="compose"?"compose":"ask";S.cfg.sendMode=m;return "✔ Email sending: "+{ask:"I ask for your approval first",auto:"I send automatically with NO approval",compose:"I open a filled-in Gmail compose window"}[m]},
  open_url(a){const u=place(a.target);if(!u)throw new Error("Unknown place: "+a.target);LV.show(u);try{window.open(u,"_blank","noopener")}catch{}return "Opening "+u+" (click if no tab opened)"},
@@ -491,7 +501,7 @@ RULES
 - For anything that must be written (email, doc, slides, sheet, note) give a short "brief" saying what to write. Do NOT write the content yourself.
 - Use exact dates from Date hints. Never invent addresses, dates, prices or facts.
 - Telling or notifying someone, or "email X" = send_email. "Draft/write an email" with no sending = draft_email.
-- "open / go to Google Docs, Sheets, Slides, Gmail, Calendar, Drive" = open_url. "add to / edit / change / replace in my doc" = edit_doc (leave url empty for the most recent doc; use find only to replace specific text; brief says what to write). "list / find my files" = drive_list.
+- "open / go to Google Docs, Sheets, Slides, Gmail, Calendar, Drive" = open_url. "add to / edit / change / replace in my doc" = edit_doc (leave url empty for the most recent doc; use find only to replace specific text; brief says what to write). "list / find my files" = drive_list. "set up / switch on / enable google apis" = setup_google.
 - open_url target can be any Google tool (docs, sheets, slides, forms, gmail, calendar, drive, meet, maps, youtube, photos, keep, analytics, ads, cloud, ...) or any website domain/URL. "search/look up X" = web_search. "read/open my latest email" = gmail_read. "delete/trash emails" = gmail_trash. "share <file> with <email>" = drive_share. Reminders/to-dos for Google = google_task.
 - Questions, explanations and chit-chat = {"actions":[]}.
 ACTIONS
@@ -503,7 +513,7 @@ ACTIONS
 {"type":"set_profile","field":"name|services|prices|hours|tone|email","value":""} {"type":"add_rule","text":""} {"type":"add_workflow","when":"","then":""}
 {"type":"remember_contact","name":"","email":"","relation":""} {"type":"remember_fact","text":""} {"type":"forget","what":""}
 {"type":"show","what":"bookings|tasks|emails|rules|workflows|sites|activity|profile|inbox|settings|snippets|memory"}
-{"type":"pause"} {"type":"resume"} {"type":"set_mode","mode":"all|external"} {"type":"set_perm","service":"gmail|calendar|drive|sheets|docs|slides","on":true} {"type":"approve_all"} {"type":"export_data"} {"type":"reset"} {"type":"signout"} {"type":"make_snippet","kind":"enquiry|booking"} {"type":"set_send_mode","mode":"ask|auto|compose"} {"type":"open_url","target":"docs|sheets|slides|gmail|calendar|drive|https://..."} {"type":"edit_doc","url":"","find":"","brief":""} {"type":"web_search","query":""} {"type":"gmail_read","query":""} {"type":"gmail_trash","query":""} {"type":"delete_event","title":""} {"type":"drive_trash","name":""} {"type":"drive_share","name":"","email":"","role":"viewer|editor"} {"type":"read_sheet","url":"","range":"A1:H30"} {"type":"append_sheet","url":"","brief":""} {"type":"google_task","text":""} {"type":"list_google_tasks"} {"type":"list_contacts"} {"type":"drive_list","query":""}
+{"type":"pause"} {"type":"resume"} {"type":"set_mode","mode":"all|external"} {"type":"set_perm","service":"gmail|calendar|drive|sheets|docs|slides","on":true} {"type":"approve_all"} {"type":"export_data"} {"type":"reset"} {"type":"signout"} {"type":"make_snippet","kind":"enquiry|booking"} {"type":"set_send_mode","mode":"ask|auto|compose"} {"type":"open_url","target":"docs|sheets|slides|gmail|calendar|drive|https://..."} {"type":"edit_doc","url":"","find":"","brief":""} {"type":"web_search","query":""} {"type":"gmail_read","query":""} {"type":"gmail_trash","query":""} {"type":"delete_event","title":""} {"type":"drive_trash","name":""} {"type":"drive_share","name":"","email":"","role":"viewer|editor"} {"type":"read_sheet","url":"","range":"A1:H30"} {"type":"append_sheet","url":"","brief":""} {"type":"google_task","text":""} {"type":"list_google_tasks"} {"type":"list_contacts"} {"type":"drive_list","query":""} {"type":"setup_google"}
 HOW TO: pick the single best action. Put a full instruction in "brief" (what to write, for whom, tone). Never claim you cannot use a Google tool: every Google tool has an action. Never invent emails, dates or prices.
 EXAMPLES
 "write a proposal doc for my cleaning business" -> {"actions":[{"type":"create_doc","title":"Cleaning Service Proposal","brief":"Write a service proposal for the cleaning business"}]}
@@ -584,7 +594,7 @@ const VIEWS={
  activity:()=>(S.log||[]).slice(-15).reverse(),
  profile:()=>FIELDS.map(f=>f+": "+(S.profile[f]||"not set")),
  inbox:()=>(S.inbox||[]).map(m=>m.from+" — "+m.subject),
- settings:()=>["Approval: "+(S.cfg.mode==="all"?"ask before every action":"ask only for Google/web actions"),"AI: "+(S.cfg.paused?"paused":"active"),"Google: "+(TOK?S.cfg.user||"signed in":"not signed in"),"Services on: "+Object.keys(SC).filter(k=>S.cfg.perm[k]).join(", ")],
+ settings:()=>["Approval: "+(S.cfg.mode==="all"?"ask before every action":"ask only for Google/web actions"),"AI: "+(S.cfg.paused?"paused":"active"),"Google: "+(TOK?S.cfg.user||"signed in":"not signed in"),"Services on: "+Object.keys(SC).filter(k=>k!=="cloud"&&S.cfg.perm[k]).join(", ")],
  memory:()=>[...S.mem.contacts.map(c=>"👤 "+c.name+(c.relation?" ("+c.relation+")":"")+" <"+c.email+">"),...S.mem.facts.map(f=>"📝 "+f),...S.mem.sent.slice(0,10).map(m=>"✉ "+m.to+" — "+m.subject)],
  snippets:()=>S.snips.map(x=>x.type+":\n"+x.code)
 };
