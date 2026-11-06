@@ -179,7 +179,7 @@ function apply(a){
   case"make_snippet":snippet(a.kind==="booking"?"booking":"enquiry");break;
  }}catch{}
 }
-const Q=[],FREE=new Set(["set_send_mode","open_url","web_search","show","approve_all","export_data","pause","resume","signout","remember_contact","remember_fact"]),NG=new Set(["send_email","gmail_search","create_event","list_events","log_to_sheet","drive_save","create_doc","create_slides","create_sheet","read_doc","setup_google","edit_doc","drive_list","gmail_read","gmail_trash","delete_event","drive_trash","drive_share","read_sheet","append_sheet","google_task","list_google_tasks","list_contacts"]);let TOK=null;
+const Q=[],FREE=new Set(["research","read_url","weather","calc","timer","now","copy_last","save_file","set_send_mode","open_url","web_search","show","approve_all","export_data","pause","resume","signout","remember_contact","remember_fact"]),NG=new Set(["send_email","gmail_search","create_event","list_events","log_to_sheet","drive_save","create_doc","create_slides","create_sheet","read_doc","setup_google","edit_doc","drive_list","gmail_read","gmail_trash","delete_event","drive_trash","drive_share","read_sheet","append_sheet","google_task","list_google_tasks","list_contacts"]);let TOK=null;
 const log=t=>{S.log=(S.log||[]).concat(new Date().toLocaleTimeString()+" "+t).slice(-40)};
 const EXT=new Set(["send_email","gmail_search","create_event","list_events","log_to_sheet","drive_save","add_site","create_doc","create_slides","create_sheet","read_doc","setup_google","edit_doc","drive_list","gmail_read","gmail_trash","delete_event","drive_trash","drive_share","read_sheet","append_sheet","google_task","list_google_tasks","list_contacts"]);
 function describe(a){const t=a.type;
@@ -194,6 +194,14 @@ function describe(a){const t=a.type;
  if(t==="create_slides")return `CREATE GOOGLE SLIDES: ${a.title} (${(a.slides||[]).length} slides)\n`+(a.slides||[]).map(x=>"• "+x.title).join("\n");
  if(t==="create_sheet")return `CREATE GOOGLE SHEET: ${a.title} (${(a.rows||[]).length} rows)`;
  if(t==="read_doc")return "READ GOOGLE DOC: "+(a.url||a.id);
+ if(t==="research")return "RESEARCH ONLINE: "+a.query;
+ if(t==="read_url")return "READ PAGE: "+a.url;
+ if(t==="weather")return "WEATHER: "+a.city;
+ if(t==="calc")return "CALCULATE: "+a.expr;
+ if(t==="timer")return "REMINDER in "+a.minutes+" min: "+(a.text||"");
+ if(t==="now")return "CURRENT DATE AND TIME";
+ if(t==="copy_last")return "COPY LAST ANSWER";
+ if(t==="save_file")return "CREATE FILE: "+a.name;
  return t.replace(/_/g," ").toUpperCase()+": "+Object.entries(a).filter(([k])=>k!=="type").map(([k,v])=>v).join(" · ");
 }
 const short=a=>describe(a).split("\n")[0];
@@ -280,12 +288,41 @@ const b64d=x=>{x=x.replace(/-/g,"+").replace(/_/g,"/");try{return decodeURICompo
 const bodyOf=p=>{if(p.mimeType==="text/plain"&&p.body&&p.body.data)return b64d(p.body.data);for(const x of p.parts||[]){const r=bodyOf(x);if(r)return r}return""};
 const GM="https://gmail.googleapis.com/gmail/v1/users/me/messages",CAL="https://www.googleapis.com/calendar/v3/calendars/primary/events",DR="https://www.googleapis.com/drive/v3/files";
 const dfind=async n=>{const r=await gf(DR+"?pageSize=1&fields="+enc("files(id,name,webViewLink)")+"&q="+enc("name contains '"+String(n||"").replace(/'/g,"\\'")+"' and trashed=false"),{},"drive");if(!(r.files||[]).length)throw new Error("No Drive file named "+n);return r.files[0]};
-const newest=async(mt,t0)=>{for(let i=0;i<14;i++){await new Promise(r=>setTimeout(r,1500));const r=await gf(DR+"?pageSize=1&orderBy="+enc("createdTime desc")+"&fields="+enc("files(id)")+"&q="+enc("mimeType='application/vnd.google-apps."+mt+"' and createdTime > '"+t0+"' and trashed=false"),{},"drive");if((r.files||[]).length)return r.files[0].id}return null};
+const newest=async(mt,t0)=>{for(let i=0;i<30;i++){await new Promise(r=>setTimeout(r,i?700:250));const r=await gf(DR+"?pageSize=1&orderBy="+enc("createdTime desc")+"&fields="+enc("files(id)")+"&q="+enc("mimeType='application/vnd.google-apps."+mt+"' and createdTime > '"+t0+"' and trashed=false"),{},"drive");if((r.files||[]).length)return r.files[0].id}return null};
 async function realNew(mt,url,title){if(S.cfg.realTab===false)return null;const t0=new Date(Date.now()-15000).toISOString();try{window.open(url,"_blank")}catch{}LV.act("Opened a new Google "+mt+" in a tab. Waiting for Google to create it…");
  const id=await newest(mt,t0);if(!id){LV.act("Couldn’t find the new file, creating one directly instead");return null}
  if(title)try{await gf(DR+"/"+id,{method:"PATCH",body:JSON.stringify({name:title})},"drive")}catch{}LV.act("Found it. Writing into it now…");return id}
 const b64u=s=>{let x="";new TextEncoder().encode(s).forEach(c=>x+=String.fromCharCode(c));return btoa(x).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"")};
+const JINA="https://r.jina.ai/";
+async function fetchText(u,max=3500){const r=await fetch(JINA+u);if(!r.ok)throw new Error("Couldn’t read "+u+" ("+r.status+")");return(await r.text()).replace(/\n{3,}/g,"\n\n").slice(0,max)}
+const askAI=async(sys,usr,n=350)=>(await engine.chat.completions.create({temperature:.2,max_tokens:n,messages:[{role:"system",content:sys},{role:"user",content:usr}]})).choices[0].message.content.trim();
+async function gather(q){const out=[],links=[];
+ await Promise.all([
+  (async()=>{const j=await(await fetch("https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch="+enc(q)+"&srlimit=1&format=json&origin=*")).json(),t=j.query.search[0]&&j.query.search[0].title;if(!t)return;const k=await(await fetch("https://en.wikipedia.org/api/rest_v1/page/summary/"+enc(t.replace(/ /g,"_")))).json();if(k.extract){out.push("Wikipedia — "+t+": "+k.extract.slice(0,1500));links.push("https://en.wikipedia.org/wiki/"+enc(t.replace(/ /g,"_")))}})().catch(()=>{}),
+  (async()=>{const md=await fetchText("https://html.duckduckgo.com/html/?q="+enc(q),9000),us=[...new Set([...md.matchAll(/uddg=([^)&\s]+)/g)].map(m=>{try{return decodeURIComponent(m[1])}catch{return null}}).filter(u=>u&&/^https?:/.test(u)&&!/duckduckgo\.com/.test(u)))].slice(0,4);
+   const pg=await Promise.all(us.slice(0,2).map(u=>fetchText(u,1800).then(t=>({u,t})).catch(()=>null)));pg.forEach(x=>{if(x){out.push(x.u+": "+x.t);links.push(x.u)}});us.slice(2).forEach(u=>links.push(u))})().catch(()=>{})]);
+ return{src:out.join("\n\n").slice(0,6000),links:[...new Set(links)]}}
+async function ground(text){let src="";const urls=(text.match(/https?:\/\/[^\s)]+/g)||[]).slice(0,2);
+ if(urls.length){LV.act("Reading the pages you gave…");for(const u of urls)src+=u+": "+await fetchText(u,2500).catch(()=>"(could not read)")+"\n\n"}
+ else if(/\b(research|latest|current|recent|online|web|look ?up|sources?|real|facts?|statistics|stats|news|trends?|market|compare|history|how many|price)\b/i.test(text)){LV.act("Looking this up online first…");const q=text.replace(/\b(please|make|create|write|build|generate|draft|a|an|me|google|docs?|document|slides?|sheet|presentation|report|about|on)\b/gi,"").replace(/\s+/g," ").trim().slice(0,80);src=(await gather(q)).src}
+ return src.slice(0,5000)}
+const isMath=e=>/\d/.test(e)&&(/[+*\/x×÷^%]|\s-\s|sqrt|pow/i.test(e))&&!/[a-z]/i.test(e.replace(/\b(sqrt|sin|cos|tan|log|abs|round|floor|ceil|pow|pi|of|x)\b/gi,""));
+const calcX=e=>{e=String(e).toLowerCase().replace(/×|\bx\b/g,"*").replace(/÷/g,"/").replace(/\^/g,"**").replace(/(\d+(?:\.\d+)?)\s*%\s*of\s*(\d+(?:\.\d+)?)/g,"($2*$1/100)").replace(/(\d)\s*%/g,"($1/100)").replace(/,(?=\d{3})/g,"");
+ const w=e.match(/[a-z_.]+/g)||[];if(w.some(x=>!/^(sqrt|sin|cos|tan|log|abs|round|floor|ceil|pow|pi)$/.test(x)))throw new Error("I can only do plain maths here");
+ e=e.replace(/\b(sqrt|sin|cos|tan|log|abs|round|floor|ceil|pow)\b/g,"Math.$1").replace(/\bpi\b/g,"Math.PI");const v=Function('"use strict";return ('+e+')')();if(typeof v!=="number"||!isFinite(v))throw new Error("That doesn’t work out to a number");return v};
+const WX={0:"clear",1:"mostly clear",2:"partly cloudy",3:"overcast",45:"fog",48:"fog",51:"light drizzle",53:"drizzle",55:"heavy drizzle",61:"light rain",63:"rain",65:"heavy rain",71:"light snow",73:"snow",75:"heavy snow",80:"showers",81:"showers",82:"heavy showers",95:"thunderstorm",96:"thunderstorm",99:"thunderstorm"};
+
 const G={
+ async research(a){const q=String(a.query||"").trim();if(!q)throw new Error("What should I look up?");LV.act("Searching the web for: "+q);const g=await gather(q);if(!g.src)throw new Error("I couldn’t reach the web (your browser or network may be blocking it)");
+  const ans=await askAI("Answer the question using ONLY the sources. Be concise (max 6 sentences). If the sources don’t answer it, say so.","Question: "+q+"\n\nSources:\n"+g.src.slice(0,4500),380);return ans+"\n\nSources:\n"+g.links.slice(0,4).map((u,i)=>(i+1)+". "+u).join("\n")},
+ async read_url(a){const u=place(a.url);if(!u)throw new Error("That doesn’t look like a link");LV.act("Reading "+u);const t=await fetchText(u,6000);return await askAI("Summarize the page in 5 short bullet points, using only the text.",t,300)+"\n\n"+u},
+ async weather(a){const c=String(a.city||"").trim();if(!c)throw new Error("Which city?");const g=(await(await fetch("https://geocoding-api.open-meteo.com/v1/search?count=1&name="+enc(c))).json()).results;if(!g||!g[0])throw new Error("I couldn’t find a place called "+c);const p=g[0],j=await(await fetch("https://api.open-meteo.com/v1/forecast?latitude="+p.latitude+"&longitude="+p.longitude+"&current=temperature_2m,apparent_temperature,wind_speed_10m,weather_code&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&forecast_days=3")).json(),n=j.current,d=j.daily;
+  return "Weather in "+p.name+(p.country?", "+p.country:"")+": "+Math.round(n.temperature_2m)+"°C (feels "+Math.round(n.apparent_temperature)+"°), "+(WX[n.weather_code]||"")+", wind "+Math.round(n.wind_speed_10m)+" km/h.\n"+d.time.map((t,i)=>new Date(t+"T12:00").toLocaleDateString(undefined,{weekday:"short"})+": "+Math.round(d.temperature_2m_min[i])+"–"+Math.round(d.temperature_2m_max[i])+"°C, rain chance "+(d.precipitation_probability_max[i]??"?")+"%").join("\n")},
+ calc(a){const v=calcX(a.expr);return a.expr+" = "+(Math.abs(v)<1e15?+v.toPrecision(12):v)},
+ timer(a){const m=Math.max(.05,+a.minutes||1),txt=a.text||"Time’s up";if(window.Notification&&Notification.permission==="default")Notification.requestPermission();setTimeout(()=>{bub("⏰ "+txt,"a");try{if(window.Notification&&Notification.permission==="granted")new Notification("Reminder",{body:txt});const c=new AudioContext(),o=c.createOscillator();o.connect(c.destination);o.start();setTimeout(()=>o.stop(),500)}catch{}},m*60000);return "✔ Reminder set for "+(m<1?Math.round(m*60)+" seconds":m+" min")+": "+txt+" (keep this tab open)"},
+ now(){return new Date().toLocaleString(undefined,{weekday:"long",year:"numeric",month:"long",day:"numeric",hour:"2-digit",minute:"2-digit"})},
+ async copy_last(){await navigator.clipboard.writeText(S.last||"");return "✔ Copied the last answer"},
+ save_file(a){const n=String(a.name||"file.txt"),x=(n.split(".").pop()||"txt").toLowerCase(),M={html:"text/html",css:"text/css",js:"text/javascript",json:"application/json",csv:"text/csv",md:"text/markdown",py:"text/x-python"},t=String(a.content||"").replace(/^```\w*\n/,"").replace(/\n```\s*$/,""),l=document.createElement("a");l.href=URL.createObjectURL(new Blob([t],{type:(M[x]||"text/plain")+";charset=utf-8"}));l.download=n;l.click();return "✔ Created file "+n+" ("+t.length+" characters) — check your downloads"},
  async send_email(a){
   if(!EM.test(a.to||""))throw new Error("No valid recipient email");
   const raw=`To: ${a.to}\r\nSubject: =?UTF-8?B?${btoa(unescape(encodeURIComponent(a.subject||"")))}?=\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n${a.body||""}`;
@@ -460,16 +497,16 @@ const clean=t=>t.split("\n").filter(l=>!/\[[^\]]*\]/.test(l)).join("\n").trim();
 async function composeEmail(a,ctx){
  const c=S.mem.contacts.find(x=>x.email===(a.to||"").toLowerCase()),d=LV.blk("Writing email"+(a.to?" to "+a.to:""),true);
  const out=await gen([{role:"system",content:`You write emails for a business owner. Output exactly:\nSubject: <short subject>\n\n<email body>\nRules: plain text; warm, clear, professional; short; no placeholders or square brackets; never invent facts; use the exact dates given; ${sender()?`sign off with "${sender()}"`:"no signature"}. ${sysBase()}`},
-  {role:"user",content:`Recipient: ${c?c.name+(c.relation?" ("+c.relation+")":""):a.to||"unknown"}\nTask: ${ctx.rewrite}\nBrief: ${a.brief||ctx.text}\nDate hints: ${ctx.dates}`}],d,{n:450,t:.5});
+  {role:"user",content:`Recipient: ${c?c.name+(c.relation?" ("+c.relation+")":""):a.to||"unknown"}\nTask: ${ctx.rewrite}\nBrief: ${a.brief||ctx.text}${ctx.src?"\nReference material from the web (use these real facts, do not invent):\n"+ctx.src:""}\nDate hints: ${ctx.dates}`}],d,{n:450,t:.5});
  d.parentNode.remove();const m=out.match(/^\s*Subject:\s*(.+)\n+([\s\S]*)$/i);
  return {subject:(m?m[1]:a.brief||"Hello").replace(/\[[^\]]*\]/g,"").trim().slice(0,100),body:clean(m?m[2]:out)}}
 async function composeText(a,ctx,kind){
  const d=LV.blk("Writing "+kind,true);
- const out=await gen([{role:"system",content:`You write a ${kind} for a business owner. Output only the ${kind} text: clear structure, short paragraphs, headings as plain lines. No placeholders or square brackets; never invent facts or prices that are not in the business info. ${sysBase()}`},{role:"user",content:`Task: ${ctx.rewrite}\nTitle: ${a.title||""}\nBrief: ${a.brief||ctx.text}`}],d,{n:700,t:.5});
+ const out=await gen([{role:"system",content:`You write a ${kind} for a business owner. Output only the ${kind} text: clear structure, short paragraphs, headings as plain lines. No placeholders or square brackets; never invent facts or prices that are not in the business info. ${sysBase()}`},{role:"user",content:`Task: ${ctx.rewrite}\nTitle: ${a.title||""}\nBrief: ${a.brief||ctx.text}${ctx.src?"\nReference material from the web (use these real facts, do not invent):\n"+ctx.src:""}`}],d,{n:700,t:.5});
  d.parentNode.remove();return clean(out)}
 async function composeJSON(a,ctx,shape,label){
  const d=LV.blk("Building "+label,true);d.textContent="…";let j={};
- try{const r=await engine.chat.completions.create({temperature:.4,max_tokens:700,response_format:{type:"json_object"},messages:[{role:"system",content:`Output JSON only: ${shape}. No placeholders; never invent facts. ${sysBase()}`},{role:"user",content:`Task: ${ctx.rewrite}\nTitle: ${a.title||""}\nBrief: ${a.brief||ctx.text}`}]});j=JSON.parse(r.choices[0].message.content)}catch{}
+ try{const r=await engine.chat.completions.create({temperature:.4,max_tokens:700,response_format:{type:"json_object"},messages:[{role:"system",content:`Output JSON only: ${shape}. No placeholders; never invent facts. ${sysBase()}`},{role:"user",content:`Task: ${ctx.rewrite}\nTitle: ${a.title||""}\nBrief: ${a.brief||ctx.text}${ctx.src?"\nReference material from the web (use these real facts, do not invent):\n"+ctx.src:""}`}]});j=JSON.parse(r.choices[0].message.content)}catch{}
  d.parentNode.remove();return j}
 async function prepare(a,ctx){const t=a.type;
  if(t==="set_profile"&&a.field==="email"&&!/\b(my|our)\b[^.]*\bemail\b/i.test(ctx.text))return false;
@@ -484,13 +521,14 @@ async function prepare(a,ctx){const t=a.type;
  else if(t==="append_sheet"){const j=await composeJSON(a,ctx,'{"rows":[["value","value"]]}',"rows");a.rows=(j.rows||[]).slice(0,40);delete a.brief}
  else if(t==="edit_doc"){a.text=a.text||await composeText(a,ctx,"text for the document");delete a.brief}
  else if(t==="create_doc"){a.content=await composeText(a,ctx,"document");a.title=a.title||"Document";delete a.brief}
+ else if(t==="save_file"){a.name=String(a.name||"file.txt").replace(/[^\w.\- ]/g,"_").slice(0,80);a.content=await composeText(a,ctx,"file "+a.name+" (output only the raw file contents)");delete a.brief}
  else if(t==="drive_save"){a.content=await composeText(a,ctx,"note");a.name=a.name||"note.txt";delete a.brief}
  else if(t==="create_slides"){const j=await composeJSON(a,ctx,'{"slides":[{"title":"","body":"bullet lines separated by newlines"}]} with 5 to 7 slides',"slides");a.slides=(j.slides||[]).slice(0,12);a.title=a.title||"Presentation";delete a.brief;if(!a.slides.length){bub("I couldn’t build the slides. Try again with more detail.","a");return false}}
  else if(t==="create_sheet"){const j=await composeJSON(a,ctx,'{"rows":[["column 1","column 2"],["value","value"]]}',"sheet");a.rows=(j.rows||[]).slice(0,40);a.title=a.title||"Sheet";delete a.brief}
  else if(t==="create_event"){if(!a.date||isNaN(new Date(a.date))){bub("What date and time should the event be?","a");return false}a.minutes=a.minutes||60}
  return true}
-const TYPES=new Set(["set_profile","add_rule","add_workflow","add_site","add_booking","add_task","draft_email","send_email","gmail_search","create_event","list_events","log_to_sheet","drive_save","create_doc","create_slides","create_sheet","read_doc","show","pause","resume","set_mode","set_perm","approve_all","export_data","reset","signout","make_snippet","remember_contact","remember_fact","forget","set_send_mode","open_url","edit_doc","drive_list","web_search","gmail_read","gmail_trash","delete_event","drive_trash","drive_share","read_sheet","append_sheet","google_task","list_google_tasks","list_contacts"]);
-const PLAN=ctx=>`You turn an INSTRUCTION into actions for a business admin assistant. Output JSON {"actions":[...]} with at most 4 actions.
+const TYPES=new Set(["research","read_url","weather","calc","timer","now","copy_last","save_file","set_profile","add_rule","add_workflow","add_site","add_booking","add_task","draft_email","send_email","gmail_search","create_event","list_events","log_to_sheet","drive_save","create_doc","create_slides","create_sheet","read_doc","show","pause","resume","set_mode","set_perm","approve_all","export_data","reset","signout","make_snippet","remember_contact","remember_fact","forget","set_send_mode","open_url","edit_doc","drive_list","web_search","gmail_read","gmail_trash","delete_event","drive_trash","drive_share","read_sheet","append_sheet","google_task","list_google_tasks","list_contacts"]);
+const PLAN=ctx=>`You turn an INSTRUCTION into actions for a business admin assistant. Output JSON {"thought":"2 short sentences: what the owner wants, what to look up online or read first, and the steps","actions":[...]} with at most 6 actions. Put "thought" first.
 Memory: ${memSummary()}
 Last draft: ${S.mem.draft?S.mem.draft.to+" — "+S.mem.draft.subject:"none"}
 Business: ${JSON.stringify(S.profile)}
@@ -513,8 +551,8 @@ ACTIONS
 {"type":"set_profile","field":"name|services|prices|hours|tone|email","value":""} {"type":"add_rule","text":""} {"type":"add_workflow","when":"","then":""}
 {"type":"remember_contact","name":"","email":"","relation":""} {"type":"remember_fact","text":""} {"type":"forget","what":""}
 {"type":"show","what":"bookings|tasks|emails|rules|workflows|sites|activity|profile|inbox|settings|snippets|memory"}
-{"type":"pause"} {"type":"resume"} {"type":"set_mode","mode":"all|external"} {"type":"set_perm","service":"gmail|calendar|drive|sheets|docs|slides","on":true} {"type":"approve_all"} {"type":"export_data"} {"type":"reset"} {"type":"signout"} {"type":"make_snippet","kind":"enquiry|booking"} {"type":"set_send_mode","mode":"ask|auto|compose"} {"type":"open_url","target":"docs|sheets|slides|gmail|calendar|drive|https://..."} {"type":"edit_doc","url":"","find":"","brief":""} {"type":"web_search","query":""} {"type":"gmail_read","query":""} {"type":"gmail_trash","query":""} {"type":"delete_event","title":""} {"type":"drive_trash","name":""} {"type":"drive_share","name":"","email":"","role":"viewer|editor"} {"type":"read_sheet","url":"","range":"A1:H30"} {"type":"append_sheet","url":"","brief":""} {"type":"google_task","text":""} {"type":"list_google_tasks"} {"type":"list_contacts"} {"type":"drive_list","query":""} {"type":"setup_google"}
-HOW TO: pick the single best action. Put a full instruction in "brief" (what to write, for whom, tone). Never claim you cannot use a Google tool: every Google tool has an action. Never invent emails, dates or prices.
+{"type":"pause"} {"type":"resume"} {"type":"set_mode","mode":"all|external"} {"type":"set_perm","service":"gmail|calendar|drive|sheets|docs|slides","on":true} {"type":"approve_all"} {"type":"export_data"} {"type":"reset"} {"type":"signout"} {"type":"make_snippet","kind":"enquiry|booking"} {"type":"set_send_mode","mode":"ask|auto|compose"} {"type":"open_url","target":"docs|sheets|slides|gmail|calendar|drive|https://..."} {"type":"edit_doc","url":"","find":"","brief":""} {"type":"web_search","query":""} {"type":"gmail_read","query":""} {"type":"gmail_trash","query":""} {"type":"delete_event","title":""} {"type":"drive_trash","name":""} {"type":"drive_share","name":"","email":"","role":"viewer|editor"} {"type":"read_sheet","url":"","range":"A1:H30"} {"type":"append_sheet","url":"","brief":""} {"type":"google_task","text":""} {"type":"list_google_tasks"} {"type":"list_contacts"} {"type":"drive_list","query":""} {"type":"setup_google"} {"type":"research","query":""} {"type":"read_url","url":""} {"type":"weather","city":""} {"type":"calc","expr":""} {"type":"timer","minutes":10,"text":""} {"type":"now"} {"type":"save_file","name":"notes.txt","brief":""}
+HOW TO: for any factual, current or unknown question use research (it searches the web and reads pages; never guess facts). If the owner gives a link use read_url. To make a file on the computer (txt, md, html, css, js, json, csv, py) use save_file with the filename. Pick the single best action. Put a full instruction in "brief" (what to write, for whom, tone). Never claim you cannot use a Google tool: every Google tool has an action. Never invent emails, dates or prices.
 EXAMPLES
 "write a proposal doc for my cleaning business" -> {"actions":[{"type":"create_doc","title":"Cleaning Service Proposal","brief":"Write a service proposal for the cleaning business"}]}
 "make a 6 slide pitch about my bakery" -> {"actions":[{"type":"create_slides","title":"Bakery Pitch","brief":"6 slide pitch about the bakery"}]}
@@ -526,8 +564,19 @@ EXAMPLES
 "send it to my friend" -> {"actions":[{"type":"send_email","to":"<friend's email from Memory>","brief":"send the last draft"}]}
 "my friend Sam is sam@x.com" -> {"actions":[{"type":"remember_contact","name":"Sam","email":"sam@x.com","relation":"friend"}]}
 "book Ana Friday 3pm" -> {"actions":[{"type":"add_booking","name":"Ana","date":"<date>","time":"15:00","note":""},{"type":"create_event","title":"Ana","date":"<date>","time":"15:00","minutes":60,"attendee":"","note":""}]}`;
-const fastActs=t=>{let m=t.match(/^\s*(?:please\s+)?(?:can you\s+)?(?:open|go to|visit|launch|take me to)\s+(?:my\s+|the\s+)?(.+?)(?:\s+for me)?(?:\s+please)?[.!]*\s*$/i);if(m&&place(m[1]))return[{type:"open_url",target:m[1]}];m=t.match(/^\s*(?:please\s+)?(?:search|google|look up)\s+(?:for\s+)?(.+)$/i);return m?[{type:"web_search",query:m[1]}]:null};
+const fastActs=t=>{let q;
+ if(q=t.match(/^\s*(?:please\s+)?(?:what(?:'s| is)|calc(?:ulate)?|compute|solve)?\s*:?\s*(.+?)\s*[?=]*\s*$/i))if(isMath(q[1]))return[{type:"calc",expr:q[1]}];
+ if(/^\s*(?:what(?:'s| is)\s+)?(?:the\s+)?(?:current\s+)?(?:time|date|day)(?:\s+(?:is it|today|now))?\s*\??\s*$/i.test(t)||/^\s*what\s+(?:time|day)\s+is\s+it\??\s*$/i.test(t))return[{type:"now"}];
+ if(q=t.match(/\bweather\b.*?\b(?:in|for|at)\s+([a-z][a-z .,'-]{1,40}?)\s*\??$/i)||t.match(/^\s*(?:what'?s\s+)?(?:the\s+)?weather\s+([a-z][a-z .,'-]{1,40})\??$/i))return[{type:"weather",city:q[1]}];
+ if(q=t.match(/(?:remind me|set (?:a )?(?:timer|reminder|alarm))\s*(?:in|for)?\s*(\d+(?:\.\d+)?)\s*(sec(?:ond)?s?|min(?:ute)?s?|hours?|hrs?|h|m)\b\s*(?:to|about|that)?\s*(.*)$/i)){const n=+q[1],u=q[2].toLowerCase();return[{type:"timer",minutes:/^s/.test(u)?n/60:/^h/.test(u)?n*60:n,text:q[3]||"Time’s up"}]}
+ if(q=t.match(/^\s*(?:please\s+)?(?:read|summari[sz]e)\s+(https?:\/\/\S+)\s*$/i)||t.match(/^\s*(https?:\/\/\S+)\s*$/))return[{type:"read_url",url:q[1]}];
+ if(q=t.match(/^\s*(?:please\s+)?(?:research|find out|look up|search(?: the web| online)?(?: for)?|what is|what are|who is|who was|tell me about)\s+(.{3,120}?)\s*\??$/i))if(q[1].split(/\s+/).length<=14&&!/\b(my|our|me|you|your)\b/i.test(q[1]))return[{type:"research",query:q[1]}];
+ if(/^\s*(?:please\s+)?copy (?:that|this|it|the (?:last )?(?:answer|reply))\s*$/i.test(t))return[{type:"copy_last"}];
+ if(q=t.match(/^\s*(?:please\s+)?google\s+(.+)$/i))return[{type:"web_search",query:q[1]}];
+ 
+let m=t.match(/^\s*(?:please\s+)?(?:can you\s+)?(?:open|go to|visit|launch|take me to)\s+(?:my\s+|the\s+)?(.+?)(?:\s+for me)?(?:\s+please)?[.!]*\s*$/i);if(m&&place(m[1]))return[{type:"open_url",target:m[1]}];return null};
 const intent=t=>{t=t.trim();let m;
+ if(m=t.match(/\b(?:create|make|write|save|generate|build)\b.*?\b([\w-]+\.(?:txt|md|html|css|js|json|csv|py))\b/i))return[{type:"save_file",name:m[1],brief:t}];
  if(/\b(?:always|auto(?:matically)?)\s+send\b|send\s+(?:emails?\s+)?without\s+(?:asking|approval)/i.test(t))return[{type:"set_send_mode",mode:"auto"}];
  if(/ask\s+me\s+before|send\s+with\s+approval/i.test(t))return[{type:"set_send_mode",mode:"ask"}];
  if(/open\s+(?:a\s+)?(?:gmail\s+)?compose\s+(?:window\s+)?(?:when|for|to)\s+send|send\s+via\s+gmail\s+compose/i.test(t))return[{type:"set_send_mode",mode:"compose"}];const top=x=>((x.match(/\b(?:about|on|called|titled)\s+(.{3,70})$/i)||[])[1]||"").replace(/[.!?]+$/,"").replace(/^./,c=>c.toUpperCase());
@@ -549,14 +598,16 @@ async function think(text){
  const ctx={text,dates:dateHints(text)},INT=intent(text);
  LV.reset(text.slice(0,60));LV.open();LV.st("Working",true);
  const d=document.createElement("div");
- ctx.rewrite=INT?text:S.cfg.think===false?(d.textContent="(thinking is off)",text):((await gen([{role:"system",content:`You are the owner's chief of staff. Think out loud in 2-4 short sentences: what the owner wants, which tools or Google/web apps are needed, who/what/when (use Date hints), and the order of steps. Do not do the task.\nMemory: ${memSummary()}\nDate hints: ${ctx.dates}`},...S.hist.slice(-5,-1).map(m=>({role:m.role,content:m.content.slice(0,200)})),{role:"user",content:text}],d,{n:170,t:.2}))||text);
- LV.st("Planning",true);
+ ctx.rewrite=text;
+ LV.st("Thinking",true);
  let acts=INT||[];
- if(!acts.length)try{const r=await engine.chat.completions.create({temperature:.1,max_tokens:500,response_format:{type:"json_object"},messages:[{role:"system",content:PLAN(ctx)},{role:"user",content:`OWNER SAID: ${text}\nINSTRUCTION: ${ctx.rewrite}`}]});
-  acts=(JSON.parse(r.choices[0].message.content).actions||[]).filter(a=>a&&TYPES.has(a.type)).slice(0,4)}catch{}
+ if(!acts.length)try{const r=await engine.chat.completions.create({temperature:.1,max_tokens:460,response_format:{type:"json_object"},messages:[{role:"system",content:PLAN(ctx)},...S.hist.slice(-5,-1).map(m=>({role:m.role,content:m.content.slice(0,200)})),{role:"user",content:`OWNER SAID: ${text}`}]});
+  const pj=JSON.parse(r.choices[0].message.content);if(pj.thought){ctx.thought=String(pj.thought);ctx.rewrite=text+"\n(Plan: "+ctx.thought+")"}
+  acts=(pj.actions||[]).filter(a=>a&&TYPES.has(a.type)).slice(0,6)}catch{}
  if(stopped)throw new Error("Stopped");
  if(!acts.length){LV.st("Idle");return 0}
- const u="Understood: "+ctx.rewrite.replace(/\s+/g," ").slice(0,240);const bx={m:{h:"Ran "+acts.length+" step"+(acts.length>1?"s":""),rows:[{t:INT?"I know how to do this one, so I’m using a built-in routine.":ctx.rewrite.replace(/\s+/g," ").slice(0,220)},...acts.map(a=>({t:short(a).slice(0,90),d:"Waiting…"}))]}};
+ try{if(acts.some(a=>/^(create_|edit_doc|append_sheet|send_email|draft_email|save_file)/.test(a.type)))ctx.src=await ground(text)}catch{}
+ const u="Understood: "+ctx.rewrite.replace(/\s+/g," ").slice(0,240);const bx={m:{h:"Ran "+acts.length+" step"+(acts.length>1?"s":""),rows:[{t:INT?"I know how to do this one, so I’m using a built-in routine.":(ctx.thought||ctx.rewrite).replace(/\s+/g," ").slice(0,220)},...acts.map(a=>({t:short(a).slice(0,90),d:"Waiting…"}))]}};
  bub(JSON.stringify(bx.m),"th");bx.d=$("chat").lastChild;bx.msg=S.cur.msgs[S.cur.msgs.length-1];acts.forEach((a,i)=>{Object.defineProperty(a,"__b",{value:bx,writable:true});Object.defineProperty(a,"__r",{value:i+1,writable:true})});S.hist.push({role:"assistant",content:u});
  for(const a of acts)Object.defineProperty(a,"__s",{value:LV.step(short(a)),writable:true});
  for(const a of acts){LV.mark(a.__s,"✎");LV.st("Working",true);tset(a,"Working on it…");
@@ -678,7 +729,7 @@ render();
  try{S={...D,...(await kv("get","state")||{})};S.cfg={...D.cfg,...S.cfg,perm:{...D.cfg.perm,...S.cfg.perm}};replay()}catch{}
  try{
   engine=await webllm.CreateMLCEngine(MODEL,{appConfig,initProgressCallback:p=>{$("st").textContent=p.text;$("bar").firstChild.style.width=(p.progress*100)+"%"}});
-  $("st").textContent="AI ready";$("go").disabled=$("in").disabled=false;
+  $("st").textContent="AI ready";engine.chat.completions.create({max_tokens:1,messages:[{role:"user",content:"hi"}]}).catch(()=>{});$("go").disabled=$("in").disabled=false;
   render();
  }catch(e){$("st").textContent="Load failed (needs WebGPU browser): "+e.message}
 })();
