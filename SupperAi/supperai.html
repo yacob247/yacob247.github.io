@@ -60,18 +60,41 @@ a{color:var(--blue)}
 ::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-thumb{background:#334155;border-radius:4px}
 @media(max-width:800px){aside{position:fixed;inset:0 auto 0 0;z-index:20;transform:translateX(-100%);transition:transform .25s;background:#0a1226}aside.open{transform:none}#mb{display:block}*{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}.m{max-width:94%}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+#pv{width:0;overflow:hidden;flex-shrink:0;display:flex;flex-direction:column;border-left:1px solid transparent;transition:width .25s;background:linear-gradient(135deg,rgba(255,122,26,.05),rgba(0,212,255,.05)),var(--fill);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
+#pv.open{width:430px;border-left-color:var(--line)}
+.pvh{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line);min-width:430px}
+#pvt{flex:1;font-weight:800;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#pvs{font-size:.72rem;font-weight:800;padding:3px 10px;border-radius:999px;border:1px solid rgba(0,212,255,.38);color:var(--blue)}
+#pvs.busy{border-color:#ff7a1a;color:#ff9a3c;animation:pls 1.2s infinite}
+@keyframes pls{50%{box-shadow:0 0 12px rgba(255,122,26,.6)}}
+#pvb{flex:1;overflow:auto;padding:14px 16px;min-width:430px;display:flex;flex-direction:column;gap:12px}
+.pve{color:#94a3b8;font-size:.85rem}
+.blk{background:rgba(5,10,26,.55);border:1px solid var(--line);border-radius:14px;overflow:hidden;transition:opacity .3s}
+.blk.done{opacity:.55}
+.bh{padding:8px 12px;font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#9fb4d9;border-bottom:1px solid rgba(255,255,255,.06)}
+.bd{padding:10px 12px;font-size:.85rem;white-space:pre-wrap;word-break:break-word;color:#dbe5f7}
+.blk.live .bd::after{content:"▍";color:#ff7a1a;animation:pls 1s infinite}
+.stp{padding:3px 0}
+.frm{padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.frm label{display:flex;flex-direction:column;gap:3px;font-size:.68rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#9fb4d9}
+.frm input,.frm textarea{background:rgba(5,10,26,.8);border:1px solid var(--line);border-radius:10px;padding:8px 10px;color:#f1f5f9;font:inherit;font-size:.88rem;font-weight:400;text-transform:none;letter-spacing:0;outline:0;resize:vertical}
+.frm input:focus,.frm textarea:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(0,212,255,.18)}
+.frm pre{margin:0;font-size:.78rem;max-height:180px}
+@media(max-width:1000px){#pv{position:fixed;right:0;top:0;bottom:0;z-index:30;background:#0a1226}#pv.open{width:min(430px,100vw)}.pvh,#pvb{min-width:0}}
 </style></head><body>
 <div id="app">
 <aside id="sb"><div class="logo">Yacob<span>AI Agent</span></div><button id="nc">＋ New chat</button><div id="cl"></div>
 <div><div id="bar"><i></i></div><div id="st">Loading AI…</div></div></aside>
 <main>
-<header class="top"><button id="mb">☰</button><div id="ttl">New chat</div><button id="acct" class="signin">Sign in with Google</button></header>
+<header class="top"><button id="mb">☰</button><div id="ttl">New chat</div><button id="pvbtn" class="signin">◧ Live</button><button id="acct" class="signin">Sign in with Google</button></header>
 <div id="hero"><h1>Your AI admin manager</h1><p>Tell me what to do. I handle email, bookings, calendar, docs, slides, sheets and websites. Nothing runs until you approve it.</p>
 <div class="chips"><button class="chip" data-q="Check my inbox for new enquiries">Check my inbox</button><button class="chip" data-q="Write a Google Doc service proposal for my business">Write a proposal doc</button><button class="chip" data-q="Book Ana on Friday at 3pm">Book a customer</button><button class="chip" data-q="What is on my calendar?">My calendar</button><button class="chip" data-q="Show my settings">Show settings</button></div></div>
 <div id="chat"></div>
 <div class="comp"><div class="box"><textarea id="in" rows="1" placeholder="Message your AI…" disabled></textarea><button id="go" disabled>↑</button></div>
 <div class="fine">Runs in your browser. Every action asks for your approval first.</div></div>
-</main></div>
+</main>
+<section id="pv"><div class="pvh"><b id="pvt">Live workspace</b><span id="pvs">Idle</span><button id="pvx" class="ab">✕</button></div>
+<div id="pvb"><div class="pve">When the AI works you watch it here live: its thinking, plan, drafts and edits. Drafts are editable before you approve.</div></div></section></div>
 <script type="module">
 import * as webllm from "https://esm.run/@mlc-ai/web-llm@0.2.79";
 const MODEL="Llama-3.2-1B-Instruct-q4f16_1-MLC";
@@ -84,13 +107,13 @@ Cache.prototype.add=async function(r){const res=await window.fetch(r);if(!res.ok
 Cache.prototype.addAll=async function(a){for(const r of a)await this.add(r)};
 const appConfig={cacheBackend:"indexeddb",model_list:[{model:PRE,model_id:MODEL,model_lib:LIB}]};
 const $=id=>document.getElementById(id);
-const D={cur:{id:0,title:"New chat",msgs:[]},chats:[],cfg:{clientId:"",fb:"",user:"",mode:"all",paused:false,perm:{gmail:true,calendar:true,drive:true,sheets:true,docs:true,slides:true},sheetId:""},log:[],inbox:[],last:"",profile:{},rules:[],sites:[],flows:[],bookings:[],emails:[],tasks:[],snips:[],hist:[]};
+const D={mem:{contacts:[],facts:[],sent:[],last:"",draft:null},cur:{id:0,title:"New chat",msgs:[]},chats:[],cfg:{clientId:"",fb:"",user:"",mode:"all",paused:false,perm:{gmail:true,calendar:true,drive:true,sheets:true,docs:true,slides:true},sheetId:""},log:[],inbox:[],last:"",profile:{},rules:[],sites:[],flows:[],bookings:[],emails:[],tasks:[],snips:[],hist:[]};
 let S=D;
 const idb=()=>new Promise((res,rej)=>{const r=indexedDB.open("yacob-agent",1);r.onupgradeneeded=()=>r.result.createObjectStore("kv");r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
 const kv=async(m,...a)=>{const d=await idb();return new Promise((res,rej)=>{const q=d.transaction("kv",m==="get"?"readonly":"readwrite").objectStore("kv")[m](...a);q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)})};
 const save=()=>kv("put",JSON.parse(JSON.stringify(S)),"state").catch(()=>{});
 const FIELDS=["name","services","prices","hours","tone","email"];
-let engine,busy=false;
+let engine,busy=false,stopped=false;
 
 const bub=(t,c="a",nosave)=>{const d=document.createElement("div");d.className="m "+c;if(c==="a")d.innerHTML=md(t);else d.textContent=t;
  if(!nosave){S.cur.msgs.push({t,c});if(S.cur.msgs.length>200)S.cur.msgs.shift()}
@@ -132,7 +155,7 @@ function apply(a){
   case"make_snippet":snippet(a.kind==="booking"?"booking":"enquiry");break;
  }}catch{}
 }
-const Q=[],FREE=new Set(["show","approve_all","export_data","pause","resume","signout"]);let TOK=null;
+const Q=[],FREE=new Set(["show","approve_all","export_data","pause","resume","signout","remember_contact","remember_fact"]),NG=new Set(["send_email","gmail_search","create_event","list_events","log_to_sheet","drive_save","create_doc","create_slides","create_sheet","read_doc"]);let TOK=null;
 const log=t=>{S.log=(S.log||[]).concat(new Date().toLocaleTimeString()+" "+t).slice(-40)};
 const EXT=new Set(["send_email","gmail_search","create_event","list_events","log_to_sheet","drive_save","add_site","create_doc","create_slides","create_sheet","read_doc"]);
 function describe(a){const t=a.type;
@@ -149,6 +172,7 @@ function describe(a){const t=a.type;
  if(t==="read_doc")return "READ GOOGLE DOC: "+(a.url||a.id);
  return t.replace(/_/g," ").toUpperCase()+": "+Object.entries(a).filter(([k])=>k!=="type").map(([k,v])=>v).join(" · ");
 }
+const short=a=>describe(a).split("\n")[0];
 async function propose(a){
  if(!a||!a.type)return;
  if(FREE.has(a.type))return run(a);
@@ -157,28 +181,32 @@ async function propose(a){
  if(Q.some(x=>key(x.a)===key(a)))return;
  if(S.cfg.mode==="external"&&!EXT.has(a.type))return run(a);
  const it={a,el:document.createElement("div")};it.el.className="m s";Q.push(it);
- draw(it);$("chat").append(it.el);$("chat").scrollTop=1e9;render();
+ LV.review(it);LV.mark(a.__s,"⏳");draw(it);$("chat").append(it.el);$("chat").scrollTop=1e9;render();
 }
 function draw(it){
- const e=it.el;e.innerHTML="";const t=document.createElement("div");t.style.whiteSpace="pre-wrap";t.textContent="⏳ Needs your approval: "+describe(it.a);e.append(t);
+ const e=it.el;e.innerHTML="";const t=document.createElement("div");t.style.whiteSpace="pre-wrap";t.textContent="⏳ Waiting for your approval: "+short(it.a)+"  (review & edit it in the Live panel)";e.append(t);
  for(const [l,f] of [["Approve",()=>decide(it,true)],["Edit",()=>edit(it)],["Reject",()=>decide(it,false)]]){const b=document.createElement("button");b.textContent=l;b.className="ab "+l.toLowerCase();b.onclick=f;e.append(b)}
 }
 async function decide(it,yes){
  const i=Q.indexOf(it);if(i<0)return;Q.splice(i,1);
  it.el.textContent=(yes?"✔ Approved: ":"✖ Rejected: ")+describe(it.a).split("\n")[0];
  log((yes?"approved ":"rejected ")+it.a.type);
+ if(it.pv)it.pv.classList.add("done");if(!yes)LV.mark(it.a.__s,"✖");
+ if(yes&&NG.has(it.a.type)&&!TOK)await connect();
  if(yes)await run(it.a);save();render();
 }
-function edit(it){const v=prompt("Edit action (JSON)",JSON.stringify(it.a,null,1));if(!v)return;try{it.a=JSON.parse(v);draw(it)}catch{alert("Invalid JSON")}}
+function edit(it){LV.open();if(it.pv)it.pv.scrollIntoView({behavior:"smooth"})}
 async function run(a){
  if(S.cfg.paused&&!["resume","show"].includes(a.type)){bub("⏸ AI is paused. Say “resume” to continue.","s");return}
+ LV.mark(a.__s,"▶");LV.act("Running: "+short(a));
  try{const r=G[a.type]?await G[a.type](a):await apply(a);
-  if(typeof r==="string"){S.last=r.slice(0,1000);const d=bub(r,r.startsWith("✔")?"s":"a");const u=r.match(/https:\/\/docs\.google\.com\/\S+/);if(u){const l=document.createElement("a");l.href=u[0];l.target="_blank";l.textContent="  Open ↗";l.style.color="#9bd";d.append(l)}}log("done "+a.type)}
- catch(e){bub("✖ "+a.type+": "+e.message,"s");log("failed "+a.type+": "+e.message)}
+  if(typeof r==="string"){S.last=r.slice(0,1000);LV.act(r.replace(/\n/g," ").slice(0,160),(r.match(/https:\/\/docs\.google\.com\/\S+/)||[])[0]);const d=bub(r,r.startsWith("✔")?"s":"a");const u=r.match(/https:\/\/docs\.google\.com\/\S+/);if(u){const l=document.createElement("a");l.href=u[0];l.target="_blank";l.textContent="  Open ↗";l.style.color="#9bd";d.append(l)}}log("done "+a.type);LV.mark(a.__s,"✔")}
+ catch(e){bub("✖ "+a.type+": "+e.message,"s");log("failed "+a.type+": "+e.message);LV.mark(a.__s,"✖");LV.act("✖ "+e.message);if(e.auth)await propose(a)}
  save();render();
 }
 const SC={gmail:["gmail.send","gmail.readonly"],calendar:["calendar.events"],drive:["drive.file"],sheets:["spreadsheets"],docs:["documents"],slides:["presentations"]};
 const FB={apiKey:"AIzaSyDLeM4MrsA1Q8zq7_QcQfTJKk049vOVOO4",authDomain:"envizionwork.firebaseapp.com",databaseURL:"https://envizionwork-default-rtdb.firebaseio.com",projectId:"envizionwork",storageBucket:"envizionwork.firebasestorage.app",messagingSenderId:"706251024837",appId:"1:706251024837:web:4c931733d3a9f430a703ac",measurementId:"G-9CL929H67Z"};
+const FB_B="https://www.gstatic.com/firebasejs/10.14.1/";let FBM;const preload=()=>FBM=FBM||Promise.all([import(FB_B+"firebase-app.js"),import(FB_B+"firebase-auth.js")]).catch(e=>{FBM=null;throw e});
 const parseFb=t=>{const o={};for(const m of (t||"").matchAll(/(\w+)\s*:\s*["']([^"']+)["']/g))o[m[1]]=m[2];return o.apiKey&&o.authDomain?o:null};
 async function connect(){
  const fc=parseFb(S.cfg.fb)||FB;
@@ -186,11 +214,11 @@ async function connect(){
  if(!sc.length)return alert("Allow at least one service");
  try{
   const B="https://www.gstatic.com/firebasejs/10.14.1/";
-  const {initializeApp,getApps}=await import(B+"firebase-app.js"),A=await import(B+"firebase-auth.js");
+  preload();const [{initializeApp,getApps},A]=await FBM;
   const app=getApps()[0]||initializeApp(fc),pr=new A.GoogleAuthProvider();
   sc.forEach(x=>pr.addScope(x));
   const r=await A.signInWithPopup(A.getAuth(app),pr);
-  TOK=A.GoogleAuthProvider.credentialFromResult(r).accessToken;S.cfg.user=r.user.email;save();
+  TOK=A.GoogleAuthProvider.credentialFromResult(r).accessToken;S.cfg.user=r.user.email;S.cfg.userName=r.user.displayName||"";save();
   ok("Signed in as "+r.user.email+" — Google connected");log("google connected "+r.user.email);render();
  }catch(e){ok("Sign-in failed: "+e.message)}
 }
@@ -205,17 +233,17 @@ async function gf(url,o={},svc){
  if(!TOK)throw new Error("Press “Sign in with Google” (top right) first");
  if(svc&&!S.cfg.perm[svc])throw new Error(svc+" permission is off");
  const r=await fetch(url,{...o,headers:{Authorization:"Bearer "+TOK,"Content-Type":"application/json",...(o.headers||{})}});
- if(r.status===401){TOK=null;render();throw new Error("Google session expired, press Connect Google")}
+ if(r.status===401){TOK=null;render();throw Object.assign(new Error("Google session expired — approve again to sign in"),{auth:true})}
  if(!r.ok)throw new Error("Google "+r.status+" "+(await r.text()).slice(0,150));
  return r.json();
 }
 const b64u=s=>{let x="";new TextEncoder().encode(s).forEach(c=>x+=String.fromCharCode(c));return btoa(x).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"")};
 const G={
  async send_email(a){
-  if(!a.to)throw new Error("No recipient");
+  if(!EM.test(a.to||""))throw new Error("No valid recipient email");
   const raw=`To: ${a.to}\r\nSubject: =?UTF-8?B?${btoa(unescape(encodeURIComponent(a.subject||"")))}?=\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n${a.body||""}`;
   await gf("https://gmail.googleapis.com/gmail/v1/users/me/messages/send",{method:"POST",body:JSON.stringify({raw:b64u(raw)})},"gmail");
-  S.emails.push({to:a.to,subject:a.subject,body:(a.body||"")+"\n[SENT]"});return "✔ Email sent to "+a.to;
+  S.emails.push({to:a.to,subject:a.subject,body:(a.body||"")+"\n[SENT]"});S.mem.sent=[{to:a.to,subject:a.subject,body:a.body,t:Date.now()},...S.mem.sent].slice(0,30);S.mem.last=a.to;return "✔ Email sent to "+a.to;
  },
  async gmail_search(a){
   const l=await gf("https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=5&q="+encodeURIComponent(a.query||"is:unread in:inbox"),{},"gmail");
@@ -264,7 +292,14 @@ const G={
   if((a.rows||[]).length)await gf(`https://sheets.googleapis.com/v4/spreadsheets/${r.spreadsheetId}/values/A1:append?valueInputOption=USER_ENTERED`,{method:"POST",body:JSON.stringify({values:a.rows})},"sheets");
   return "✔ Google Sheet created: https://docs.google.com/spreadsheets/d/"+r.spreadsheetId+"/edit";
  },
- show(a){const w=(a.what||"").toLowerCase().replace(/^drafts?/,"emails"),k=Object.keys(VIEWS).find(v=>w.startsWith(v.slice(0,4)));
+ remember_contact(a){const e=(a.email||"").toLowerCase();if(!EM.test(e))throw new Error("No valid email to remember");
+  let c=S.mem.contacts.find(x=>x.email===e);if(!c){c={name:a.name||e.split("@")[0],email:e,relation:""};S.mem.contacts.unshift(c)}
+  if(a.name)c.name=a.name;if(a.relation)c.relation=a.relation;S.mem.last=e;return "✔ Remembered: "+c.name+(c.relation?" ("+c.relation+")":"")+" <"+e+">"},
+ remember_fact(a){if(!a.text)throw new Error("Nothing to remember");S.mem.facts.push(a.text);S.mem.facts=S.mem.facts.slice(-60);return "✔ Remembered: "+a.text},
+ forget(a){const q=(a.what||"").toLowerCase();if(!q)throw new Error("Forget what?");const n=S.mem.contacts.length+S.mem.facts.length;
+  S.mem.contacts=S.mem.contacts.filter(c=>![c.name,c.email,c.relation].some(v=>v&&v.toLowerCase().includes(q)));S.mem.facts=S.mem.facts.filter(f=>!f.toLowerCase().includes(q));
+  return "✔ Forgot "+(n-S.mem.contacts.length-S.mem.facts.length)+" item(s)"},
+ show(a){const w=(a.what||"").toLowerCase().replace(/^drafts?/,"emails").replace(/^(contacts?|people|sent.*|history)/,"memory"),k=Object.keys(VIEWS).find(v=>w.startsWith(v.slice(0,4)));
   if(!k)return "I can show: "+Object.keys(VIEWS).join(", ");
   card(k[0].toUpperCase()+k.slice(1),VIEWS[k](),k==="inbox"?i=>send("Customer enquiry from "+S.inbox[i].from+" — "+S.inbox[i].subject+": "+S.inbox[i].snippet+". Draft a reply email to them."):null)},
  pause(){S.cfg.paused=true;log("AI paused");return "⏸ Paused. Say “resume” to continue."},
@@ -285,63 +320,156 @@ const missing=()=>FIELDS.filter(f=>!S.profile[f]);
 const know=()=>S.sites.map(s=>s.url+": "+s.text.slice(0,500)).join("\n").slice(0,1400);
 
 function chatSys(){const m=missing();return `You are the owner's online admin manager for their business. Keep replies short (1-3 sentences).
-You CAN, when the owner asks: send emails and search the inbox (Gmail), create and read Google Calendar events, create Google Docs, Slides and Sheets, read Google Docs, log rows to Sheets, save notes to Drive, read websites, track bookings and tasks, remember standing instructions, show any data (bookings, tasks, emails, rules, sites, inbox, activity, settings), pause/resume, change the approval mode, switch Google services on/off, approve all, export, and reset. Every action is shown to the owner and only runs after they press Approve; say briefly what you will do and never claim it is already done. If the owner gives a task, do not ask onboarding questions.
+You CAN, when the owner asks: send emails and search the inbox (Gmail), create and read Google Calendar events, create Google Docs, Slides and Sheets, read Google Docs, log rows to Sheets, save notes to Drive, read websites, track bookings and tasks, remember standing instructions, show any data (bookings, tasks, emails, rules, sites, inbox, activity, settings), pause/resume, change the approval mode, switch Google services on/off, approve all, export, and reset. Every action is shown to the owner and only runs after they press Approve; say briefly what you will do and never claim it is already done. You remember contacts, sent emails and facts the owner tells you (see Memory) and use them for "my friend", "him", "send it". If the owner gives a task, do not ask onboarding questions.
 Business so far: ${JSON.stringify(S.profile)}
+Memory: ${memSummary()}
 Still unknown: ${m.join(", ")||"nothing"}. ${m.length?"Only if no task was given, ask about: "+m[0]+".":""}
 Standing instructions (ALWAYS obey exactly): ${S.rules.join("; ")||"none"}
 Workflows you follow: ${S.flows.map(f=>"when "+f.when+" then "+f.then).join("; ")||"none"}
 Last action result:\n${S.last||"none"}\nWebsite knowledge:\n${know()||"none"}
 The system saves details and runs actions automatically and shows ✔ lines. Never say you cannot do admin; never invent facts.`}
 
-async function setupPass(user,reply){
- const r=await engine.chat.completions.create({temperature:.1,max_tokens:600,response_format:{type:"json_object"},messages:[
- {role:"system",content:`Convert the user's latest request into actions. Output JSON {"actions":[...]}, max 4. Include only what the user asked for or stated; never invent emails, dates or names. Today is ${new Date().toISOString().slice(0,10)}. Dates YYYY-MM-DD, times HH:MM 24h.
-Action types:
-{"type":"set_profile","field":"name|services|prices|hours|tone|email","value":""}
-{"type":"add_rule","text":""} (standing instruction or setting: language, tone, limits, always/never)
-{"type":"add_workflow","when":"","then":""}
-{"type":"add_site","url":"","purpose":""} (read a website)
-{"type":"add_booking","name":"","date":"","time":"","note":""}
-{"type":"add_task","text":""}
-{"type":"draft_email","to":"","subject":"","body":""} (local draft only)
-{"type":"send_email","to":"","subject":"","body":""} (Gmail; write the body yourself using business info: ${JSON.stringify(S.profile)})
-{"type":"gmail_search","query":"is:unread"}
-{"type":"create_event","title":"","date":"","time":"","minutes":60,"attendee":"","note":""}
-{"type":"list_events"}
-{"type":"log_to_sheet","row":["",""]}
-{"type":"drive_save","name":"","content":""}
-{"type":"create_doc","title":"","content":""} (write the full document text yourself)
-{"type":"create_slides","title":"","slides":[{"title":"","body":""}]} (write the slides yourself)
-{"type":"create_sheet","title":"","rows":[["",""]]}
-{"type":"read_doc","url":""}
-{"type":"show","what":"bookings|tasks|emails|rules|workflows|sites|activity|profile|inbox|settings|snippets"}
-{"type":"pause"}  {"type":"resume"}
-{"type":"set_mode","mode":"all|external"} (all = ask before every action, external = only Google/web actions)
-{"type":"set_perm","service":"gmail|calendar|drive|sheets|docs|slides","on":true}
-{"type":"approve_all"}  {"type":"export_data"}  {"type":"reset"}  {"type":"signout"}
-{"type":"make_snippet","kind":"enquiry|booking"}
-Examples: "email sam@x.com that we open at 9" -> send_email. "what's on my calendar" -> list_events. "check my inbox" -> gmail_search. "book Ana friday 3pm" -> add_booking + create_event. "show my bookings" -> show. "pause" -> pause. "approve everything" -> approve_all. "turn off gmail" -> set_perm. Chit-chat or questions -> {"actions":[]}.`},
- {role:"user",content:"USER: "+user+"\nASSISTANT: "+reply}]});
- let j;try{j=JSON.parse(r.choices[0].message.content)}catch{return}
- for(const a of (j.actions||[]).slice(0,4))await propose(a);
-}
 
+const EM=/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/,EMG=/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
+const memSummary=()=>`contacts: ${S.mem.contacts.slice(0,8).map(c=>c.name+(c.relation?" ("+c.relation+")":"")+" <"+c.email+">").join("; ")||"none"}. Last contact: ${S.mem.last||"none"}. Facts: ${S.mem.facts.slice(-6).join("; ")||"none"}. Recent sent: ${S.mem.sent.slice(0,3).map(m=>m.to+" — "+m.subject).join("; ")||"none"}`;
+const sender=()=>S.profile.name||S.cfg.userName||"";
+const sysBase=()=>`Business info: ${JSON.stringify(S.profile)}. Standing instructions (obey): ${S.rules.join("; ")||"none"}.`;
+const LV={
+ open(){$("pv").classList.add("open")},
+ reset(t){$("pvb").innerHTML="";$("pvt").textContent=t;LV.A=null;LV.P=null},
+ st(t,busy){$("pvs").textContent=t;$("pvs").className=busy?"busy":""},
+ blk(title,live){const b=document.createElement("div");b.className="blk"+(live?" live":"");const h=document.createElement("div");h.className="bh";h.textContent=title;const d=document.createElement("div");d.className="bd";b.append(h,d);$("pvb").append(b);$("pvb").scrollTop=1e9;return d},
+ live(d,on){d.parentNode.classList.toggle("live",on)},
+ step(t){if(!LV.P)LV.P=LV.blk("Plan");const e=document.createElement("div");e.className="stp";e.textContent="○ "+t;LV.P.append(e);return e},
+ mark(e,y){if(e)e.textContent=y+e.textContent.slice(1)},
+ act(t,url){if(!LV.A)LV.A=LV.blk("Activity");const e=document.createElement("div");e.className="stp";e.textContent=new Date().toLocaleTimeString()+"  "+t;
+  if(url){const l=document.createElement("a");l.href=url;l.target="_blank";l.textContent="  Open ↗";e.append(l)}LV.A.append(e);$("pvb").scrollTop=1e9},
+ review(it){const d=LV.blk("Review & edit — "+it.a.type.replace(/_/g," "));const w=document.createElement("div");w.className="frm";
+  for(const [k,v] of Object.entries(it.a)){const l=document.createElement("label");l.textContent=k;
+   if(v&&typeof v==="object"){const pr=document.createElement("pre");pr.textContent=JSON.stringify(v,null,1);l.append(pr)}
+   else{const long=String(v??"").length>60||/body|content|text|note/.test(k),f=document.createElement(long?"textarea":"input");f.value=v??"";if(long)f.rows=Math.min(14,Math.max(4,String(v).split("\n").length+1));
+    f.oninput=()=>{it.a[k]=typeof v==="number"?+f.value:f.value;draw(it)};l.append(f)}
+   w.append(l)}
+  d.append(w);it.pv=d.parentNode;LV.open();$("pvb").scrollTop=1e9}
+};
+function resolve(t){t=(t||"").trim();if(EM.test(t))return t.match(EM)[0].toLowerCase();
+ const q=t.toLowerCase().replace(/^(my|the|to)\s+/,"");if(!q)return "";
+ const c=S.mem.contacts.find(c=>[c.name,c.relation].some(v=>v&&(v.toLowerCase()===q||q.includes(v.toLowerCase())||(q.length>2&&v.toLowerCase().includes(q)))));
+ return c?c.email:(/^(him|her|them|they|he|she|same|again)$/.test(q)?S.mem.last||"":"")}
+function learn(e,text){e=e.toLowerCase();
+ const rel=(text.match(/\b(?:my|our)\s+(friend|colleague|client|customer|boss|manager|teacher|mum|mom|dad|brother|sister|partner|wife|husband|supplier|accountant|lawyer)\b/i)||[])[1];
+ let c=S.mem.contacts.find(x=>x.email===e);
+ if(!c){const nm=e.split("@")[0].replace(/[._-]+/g," ").replace(/\b\w/g,m=>m.toUpperCase());c={name:nm,email:e,relation:rel||""};S.mem.contacts.unshift(c);S.mem.contacts=S.mem.contacts.slice(0,100);ok("Remembered contact: "+nm+" <"+e+">"+(rel?" ("+rel+")":""))}
+ else if(rel&&!c.relation){c.relation=rel;ok("Updated: "+c.name+" is your "+rel)}
+ S.mem.last=e}
+function dateHints(t){
+ const d0=new Date();d0.setHours(12,0,0,0);const iso=d=>new Date(d-d.getTimezoneOffset()*6e4).toISOString().slice(0,10),
+ fmt=d=>d.toLocaleDateString("en-AU",{weekday:"long",day:"numeric",month:"long"}),out=[],
+ plus=n=>{const d=new Date(d0);d.setDate(d.getDate()+n);return d},add=(k,d)=>out.push(`"${k}" = ${iso(d)} (${fmt(d)})`);let m;
+ out.push("today = "+iso(d0)+" ("+fmt(d0)+")");
+ if(/\btomorrow\b/i.test(t))add("tomorrow",plus(1));
+ if(m=t.match(/\b(?:in|after)\s+(\d+|a|one|two|three|four|five)\s+(day|week)s?\b/i)){const w={a:1,one:1,two:2,three:3,four:4,five:5};add(m[0],plus((+m[1]||w[m[1].toLowerCase()])*(/week/i.test(m[2])?7:1)))}
+ const D=["sunday","monday","tuesday","wednesday","thursday","friday","saturday"];
+ for(const w of D)if(new RegExp("\\b"+w+"\\b","i").test(t))add(w,plus((D.indexOf(w)-d0.getDay()+7)%7||7));
+ if(m=t.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i))out.push(`"${m[0]}" = ${String(+m[1]%12+(/pm/i.test(m[3])?12:0)).padStart(2,"0")}:${m[2]||"00"}`);
+ return out.join("; ")}
+async function gen(messages,el,o={}){
+ const st=await engine.chat.completions.create({stream:true,temperature:o.t??.3,max_tokens:o.n||400,messages});
+ let out="";for await(const c of st){out+=c.choices[0]?.delta?.content||"";if(el){el.textContent=out;$("pvb").scrollTop=1e9}}
+ if(stopped)throw new Error("Stopped");return out.trim()}
+const clean=t=>t.split("\n").filter(l=>!/\[[^\]]*\]/.test(l)).join("\n").trim();
+async function composeEmail(a,ctx){
+ const c=S.mem.contacts.find(x=>x.email===(a.to||"").toLowerCase()),d=LV.blk("Writing email"+(a.to?" to "+a.to:""),true);
+ const out=await gen([{role:"system",content:`You write emails for a business owner. Output exactly:\nSubject: <short subject>\n\n<email body>\nRules: plain text; warm, clear, professional; short; no placeholders or square brackets; never invent facts; use the exact dates given; ${sender()?`sign off with "${sender()}"`:"no signature"}. ${sysBase()}`},
+  {role:"user",content:`Recipient: ${c?c.name+(c.relation?" ("+c.relation+")":""):a.to||"unknown"}\nTask: ${ctx.rewrite}\nBrief: ${a.brief||ctx.text}\nDate hints: ${ctx.dates}`}],d,{n:450,t:.5});
+ d.parentNode.remove();const m=out.match(/^\s*Subject:\s*(.+)\n+([\s\S]*)$/i);
+ return {subject:(m?m[1]:a.brief||"Hello").replace(/\[[^\]]*\]/g,"").trim().slice(0,100),body:clean(m?m[2]:out)}}
+async function composeText(a,ctx,kind){
+ const d=LV.blk("Writing "+kind,true);
+ const out=await gen([{role:"system",content:`You write a ${kind} for a business owner. Output only the ${kind} text: clear structure, short paragraphs, headings as plain lines. No placeholders or square brackets; never invent facts or prices that are not in the business info. ${sysBase()}`},{role:"user",content:`Task: ${ctx.rewrite}\nTitle: ${a.title||""}\nBrief: ${a.brief||ctx.text}`}],d,{n:700,t:.5});
+ d.parentNode.remove();return clean(out)}
+async function composeJSON(a,ctx,shape,label){
+ const d=LV.blk("Building "+label,true);d.textContent="…";let j={};
+ try{const r=await engine.chat.completions.create({temperature:.4,max_tokens:700,response_format:{type:"json_object"},messages:[{role:"system",content:`Output JSON only: ${shape}. No placeholders; never invent facts. ${sysBase()}`},{role:"user",content:`Task: ${ctx.rewrite}\nTitle: ${a.title||""}\nBrief: ${a.brief||ctx.text}`}]});j=JSON.parse(r.choices[0].message.content)}catch{}
+ d.parentNode.remove();return j}
+async function prepare(a,ctx){const t=a.type;
+ if(t==="set_profile"&&a.field==="email"&&!/\b(my|our)\b[^.]*\bemail\b/i.test(ctx.text))return false;
+ if(t==="send_email"||t==="draft_email"){
+  a.to=resolve(a.to);if(!a.to&&/\b(him|her|them|they|he|she)\b/i.test(ctx.text))a.to=S.mem.last||"";
+  const reuse=S.mem.draft&&/\b(send|forward) (it|that|this|the (last )?(draft|email))\b|last draft/i.test(ctx.text+" "+(a.brief||""));
+  if(!a.to&&reuse)a.to=S.mem.draft.to||"";
+  if(t==="send_email"&&!a.to){bub("Who should I send it to? Give me their email address once and I’ll remember them.","a");return false}
+  if(reuse){a.subject=S.mem.draft.subject;a.body=S.mem.draft.body}
+  else{const r=await composeEmail(a,ctx);a.subject=r.subject;a.body=r.body}
+  delete a.brief;S.mem.draft={to:a.to,subject:a.subject,body:a.body};if(a.to)S.mem.last=a.to}
+ else if(t==="create_doc"){a.content=await composeText(a,ctx,"document");a.title=a.title||"Document";delete a.brief}
+ else if(t==="drive_save"){a.content=await composeText(a,ctx,"note");a.name=a.name||"note.txt";delete a.brief}
+ else if(t==="create_slides"){const j=await composeJSON(a,ctx,'{"slides":[{"title":"","body":"bullet lines separated by newlines"}]} with 5 to 7 slides',"slides");a.slides=(j.slides||[]).slice(0,12);a.title=a.title||"Presentation";delete a.brief;if(!a.slides.length){bub("I couldn’t build the slides. Try again with more detail.","a");return false}}
+ else if(t==="create_sheet"){const j=await composeJSON(a,ctx,'{"rows":[["column 1","column 2"],["value","value"]]}',"sheet");a.rows=(j.rows||[]).slice(0,40);a.title=a.title||"Sheet";delete a.brief}
+ else if(t==="create_event"){if(!a.date||isNaN(new Date(a.date))){bub("What date and time should the event be?","a");return false}a.minutes=a.minutes||60}
+ return true}
+const TYPES=new Set(["set_profile","add_rule","add_workflow","add_site","add_booking","add_task","draft_email","send_email","gmail_search","create_event","list_events","log_to_sheet","drive_save","create_doc","create_slides","create_sheet","read_doc","show","pause","resume","set_mode","set_perm","approve_all","export_data","reset","signout","make_snippet","remember_contact","remember_fact","forget"]);
+const PLAN=ctx=>`You turn an INSTRUCTION into actions for a business admin assistant. Output JSON {"actions":[...]} with at most 4 actions.
+Memory: ${memSummary()}
+Last draft: ${S.mem.draft?S.mem.draft.to+" — "+S.mem.draft.subject:"none"}
+Business: ${JSON.stringify(S.profile)}
+Date hints: ${ctx.dates}
+RULES
+- Email addresses of other people are contacts or recipients. They are NEVER the business email unless the owner says "my email is".
+- "to" must be an email address. Resolve names, relations ("my friend") and him/her/them from Memory (Last contact). If unknown use "".
+- For anything that must be written (email, doc, slides, sheet, note) give a short "brief" saying what to write. Do NOT write the content yourself.
+- Use exact dates from Date hints. Never invent addresses, dates, prices or facts.
+- Telling or notifying someone, or "email X" = send_email. "Draft/write an email" with no sending = draft_email.
+- Questions and chit-chat = {"actions":[]}.
+ACTIONS
+{"type":"send_email","to":"","brief":""} {"type":"draft_email","to":"","brief":""}
+{"type":"create_doc","title":"","brief":""} {"type":"create_slides","title":"","brief":""} {"type":"create_sheet","title":"","brief":""}
+{"type":"create_event","title":"","date":"YYYY-MM-DD","time":"HH:MM","minutes":60,"attendee":"","note":""}
+{"type":"list_events"} {"type":"gmail_search","query":"is:unread"} {"type":"read_doc","url":""} {"type":"log_to_sheet","row":[]} {"type":"drive_save","name":"","brief":""}
+{"type":"add_site","url":""} {"type":"add_booking","name":"","date":"","time":"","note":""} {"type":"add_task","text":""}
+{"type":"set_profile","field":"name|services|prices|hours|tone|email","value":""} {"type":"add_rule","text":""} {"type":"add_workflow","when":"","then":""}
+{"type":"remember_contact","name":"","email":"","relation":""} {"type":"remember_fact","text":""} {"type":"forget","what":""}
+{"type":"show","what":"bookings|tasks|emails|rules|workflows|sites|activity|profile|inbox|settings|snippets|memory"}
+{"type":"pause"} {"type":"resume"} {"type":"set_mode","mode":"all|external"} {"type":"set_perm","service":"gmail|calendar|drive|sheets|docs|slides","on":true} {"type":"approve_all"} {"type":"export_data"} {"type":"reset"} {"type":"signout"} {"type":"make_snippet","kind":"enquiry|booking"}
+EXAMPLES
+"tell sam@x.com I will meet him in 2 days" -> {"actions":[{"type":"send_email","to":"sam@x.com","brief":"Tell him I will meet him on the date from the hints"}]}
+"send it to my friend" -> {"actions":[{"type":"send_email","to":"<friend's email from Memory>","brief":"send the last draft"}]}
+"my friend Sam is sam@x.com" -> {"actions":[{"type":"remember_contact","name":"Sam","email":"sam@x.com","relation":"friend"}]}
+"book Ana Friday 3pm" -> {"actions":[{"type":"add_booking","name":"Ana","date":"<date>","time":"15:00","note":""},{"type":"create_event","title":"Ana","date":"<date>","time":"15:00","minutes":60,"attendee":"","note":""}]}`;
+async function think(text){
+ const ctx={text,dates:dateHints(text)};
+ LV.reset(text.slice(0,60));LV.open();LV.st("Thinking",true);
+ const d=LV.blk("Understanding the request",true);
+ ctx.rewrite=(await gen([{role:"system",content:`You are the owner's chief of staff. Rewrite the owner's message as a precise instruction to yourself in 2-4 short sentences: the goal, who it is for (resolve "him/them/my friend" from Memory), exact dates (use Date hints), key points and tone. Do not do the task. Do not ask questions.\nMemory: ${memSummary()}\nLast draft: ${S.mem.draft?S.mem.draft.to+" — "+S.mem.draft.subject:"none"}\nDate hints: ${ctx.dates}`},...S.hist.slice(-5,-1).map(m=>({role:m.role,content:m.content.slice(0,200)})),{role:"user",content:text}],d,{n:170,t:.2}))||text;
+ LV.live(d,false);LV.st("Planning",true);
+ let acts=[];
+ try{const r=await engine.chat.completions.create({temperature:.1,max_tokens:500,response_format:{type:"json_object"},messages:[{role:"system",content:PLAN(ctx)},{role:"user",content:`OWNER SAID: ${text}\nINSTRUCTION: ${ctx.rewrite}`}]});
+  acts=(JSON.parse(r.choices[0].message.content).actions||[]).filter(a=>a&&TYPES.has(a.type)).slice(0,4)}catch{}
+ if(stopped)throw new Error("Stopped");
+ if(!acts.length){LV.st("Idle");return 0}
+ const u="Understood: "+ctx.rewrite.replace(/\s+/g," ").slice(0,240);bub(u,"a");S.hist.push({role:"assistant",content:u});
+ for(const a of acts)Object.defineProperty(a,"__s",{value:LV.step(short(a)),writable:true});
+ for(const a of acts){LV.mark(a.__s,"✎");LV.st("Working",true);
+  if(await prepare(a,ctx)===false){LV.mark(a.__s,"✖");continue}
+  await propose(a)}
+ LV.st(Q.length?"Waiting for you":"Done");return acts.length}
 async function send(text){
  text=text.trim();if(!text||busy)return;
- busy=true;$("go").textContent="■";$("in").disabled=true;if(S.cur.title==="New chat")S.cur.title=text.slice(0,40);bub(text,"u");
+ busy=true;stopped=false;$("go").textContent="■";$("in").disabled=true;if(S.cur.title==="New chat")S.cur.title=text.slice(0,40);bub(text,"u");
  try{
-  for(const u of text.match(/https?:\/\/[^\s]+/g)||[])await propose({type:"add_site",url:u.replace(/[.,)]+$/,"")});
-  const em=text.match(/[\w.+-]+@[\w-]+\.[\w.-]+/);if(em&&!S.profile.email)await propose({type:"set_profile",field:"email",value:em[0]});
+  if(!/\bmy (own |business )?email\b/i.test(text))for(const e of text.match(EMG)||[])learn(e,text);
   S.hist.push({role:"user",content:text});
-  const d=bub("…");let out="";
-  const st=await engine.chat.completions.create({stream:true,temperature:.6,max_tokens:300,messages:[{role:"system",content:chatSys()},...S.hist.slice(-8)]});
-  for await(const c of st){out+=c.choices[0]?.delta?.content||"";d.innerHTML=md(out);$("chat").scrollTop=1e9}
-  S.cur.msgs[S.cur.msgs.length-1].t=out;S.hist.push({role:"assistant",content:out});
-  await setupPass(text,out);
- }catch(e){bub("Error: "+e.message,"s")}
+  const chit=text.split(/\s+/).length<4&&/^(hi|hello|hey|thanks|thank you|ok|okay|yes|no|cool)\b/i.test(text);
+  const did=chit?0:await think(text);
+  if(!did){
+   const d=bub("…");let out="";
+   const st=await engine.chat.completions.create({stream:true,temperature:.6,max_tokens:300,messages:[{role:"system",content:chatSys()},...S.hist.slice(-8)]});
+   for await(const c of st){out+=c.choices[0]?.delta?.content||"";d.innerHTML=md(out);$("chat").scrollTop=1e9}
+   S.cur.msgs[S.cur.msgs.length-1].t=out;S.hist.push({role:"assistant",content:out})}
+ }catch(e){bub(e.message==="Stopped"?"Stopped.":"Error: "+e.message,"s");LV.st("Stopped")}
  S.hist=S.hist.slice(-20);save();render();busy=false;$("go").textContent="↑";$("in").disabled=false;$("in").focus();
 }
-$("go").onclick=()=>{if(busy){engine.interruptGenerate();return}const v=$("in").value;$("in").value="";$("in").style.height="auto";send(v)};
+$("go").onclick=()=>{if(busy){stopped=true;engine.interruptGenerate();return}const v=$("in").value;$("in").value="";$("in").style.height="auto";send(v)};
 $("in").onkeydown=e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();$("go").click()}};$("in").oninput=()=>{$("in").style.height="auto";$("in").style.height=Math.min($("in").scrollHeight,180)+"px"};
 
 const E=s=>String(s??"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
@@ -357,6 +485,7 @@ const VIEWS={
  profile:()=>FIELDS.map(f=>f+": "+(S.profile[f]||"not set")),
  inbox:()=>(S.inbox||[]).map(m=>m.from+" — "+m.subject),
  settings:()=>["Approval: "+(S.cfg.mode==="all"?"ask before every action":"ask only for Google/web actions"),"AI: "+(S.cfg.paused?"paused":"active"),"Google: "+(TOK?S.cfg.user||"signed in":"not signed in"),"Services on: "+Object.keys(SC).filter(k=>S.cfg.perm[k]).join(", ")],
+ memory:()=>[...S.mem.contacts.map(c=>"👤 "+c.name+(c.relation?" ("+c.relation+")":"")+" <"+c.email+">"),...S.mem.facts.map(f=>"📝 "+f),...S.mem.sent.slice(0,10).map(m=>"✉ "+m.to+" — "+m.subject)],
  snippets:()=>S.snips.map(x=>x.type+":\n"+x.code)
 };
 function card(title,lines,fn){
@@ -377,6 +506,7 @@ function render(){
  $("cl").innerHTML="";
  [S.cur,...S.chats].forEach((c,i)=>{const d=document.createElement("div");d.className="ci"+(i?"":" on");d.textContent=c.title;d.onclick=()=>openChat(i);$("cl").append(d)});
 }
+preload().catch(()=>{});$("pvbtn").onclick=()=>$("pv").classList.toggle("open");$("pvx").onclick=()=>$("pv").classList.remove("open");
 $("nc").onclick=newChat;$("mb").onclick=()=>$("sb").classList.toggle("open");
 document.querySelectorAll(".chip").forEach(c=>c.onclick=()=>{if(!$("go").disabled){$("in").value=c.dataset.q;$("go").click()}});
 render();
