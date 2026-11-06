@@ -155,9 +155,9 @@ function apply(a){
   case"make_snippet":snippet(a.kind==="booking"?"booking":"enquiry");break;
  }}catch{}
 }
-const Q=[],FREE=new Set(["show","approve_all","export_data","pause","resume","signout","remember_contact","remember_fact"]),NG=new Set(["send_email","gmail_search","create_event","list_events","log_to_sheet","drive_save","create_doc","create_slides","create_sheet","read_doc"]);let TOK=null;
+const Q=[],FREE=new Set(["open_url","show","approve_all","export_data","pause","resume","signout","remember_contact","remember_fact"]),NG=new Set(["send_email","gmail_search","create_event","list_events","log_to_sheet","drive_save","create_doc","create_slides","create_sheet","read_doc","edit_doc","drive_list"]);let TOK=null;
 const log=t=>{S.log=(S.log||[]).concat(new Date().toLocaleTimeString()+" "+t).slice(-40)};
-const EXT=new Set(["send_email","gmail_search","create_event","list_events","log_to_sheet","drive_save","add_site","create_doc","create_slides","create_sheet","read_doc"]);
+const EXT=new Set(["send_email","gmail_search","create_event","list_events","log_to_sheet","drive_save","add_site","create_doc","create_slides","create_sheet","read_doc","edit_doc","drive_list"]);
 function describe(a){const t=a.type;
  if(t==="send_email")return `SEND EMAIL (Gmail) → ${a.to}\nSubject: ${a.subject}\n${a.body}`;
  if(t==="create_event")return `CREATE CALENDAR EVENT: ${a.title} on ${a.date} ${a.time||""} (${a.minutes||60} min)${a.attendee?" + "+a.attendee:""}`;
@@ -204,7 +204,7 @@ async function run(a){
  catch(e){bub("✖ "+a.type+": "+e.message,"s");log("failed "+a.type+": "+e.message);LV.mark(a.__s,"✖");LV.act("✖ "+e.message);if(e.auth)await propose(a)}
  save();render();
 }
-const SC={gmail:["gmail.send","gmail.readonly"],calendar:["calendar.events"],drive:["drive.file"],sheets:["spreadsheets"],docs:["documents"],slides:["presentations"]};
+const SC={gmail:["gmail.send","gmail.readonly"],calendar:["calendar.events"],drive:["drive"],sheets:["spreadsheets"],docs:["documents"],slides:["presentations"]};
 const FB={apiKey:"AIzaSyDLeM4MrsA1Q8zq7_QcQfTJKk049vOVOO4",authDomain:"envizionwork.firebaseapp.com",databaseURL:"https://envizionwork-default-rtdb.firebaseio.com",projectId:"envizionwork",storageBucket:"envizionwork.firebasestorage.app",messagingSenderId:"706251024837",appId:"1:706251024837:web:4c931733d3a9f430a703ac",measurementId:"G-9CL929H67Z"};
 const FB_B="https://www.gstatic.com/firebasejs/10.14.1/";let FBM;const preload=()=>FBM=FBM||Promise.all([import(FB_B+"firebase-app.js"),import(FB_B+"firebase-auth.js")]).catch(e=>{FBM=null;throw e});
 const parseFb=t=>{const o={};for(const m of (t||"").matchAll(/(\w+)\s*:\s*["']([^"']+)["']/g))o[m[1]]=m[2];return o.apiKey&&o.authDomain?o:null};
@@ -273,7 +273,7 @@ const G={
  async create_doc(a){
   const d=await gf("https://docs.googleapis.com/v1/documents",{method:"POST",body:JSON.stringify({title:a.title||"Untitled"})},"docs");
   if(a.content)await gf(`https://docs.googleapis.com/v1/documents/${d.documentId}:batchUpdate`,{method:"POST",body:JSON.stringify({requests:[{insertText:{location:{index:1},text:String(a.content)}}]})},"docs");
-  return "✔ Google Doc created: https://docs.google.com/document/d/"+d.documentId+"/edit";
+  S.lastDoc=d.documentId;return "✔ Google Doc created: https://docs.google.com/document/d/"+d.documentId+"/edit";
  },
  async read_doc(a){
   const id=((a.url||a.id||"").match(/\/d\/([\w-]+)/)||[])[1]||a.id;if(!id)throw new Error("No doc link");
@@ -310,6 +310,17 @@ const G={
  export_data(){const x=document.createElement("a");x.href=URL.createObjectURL(new Blob([JSON.stringify(S,null,2)],{type:"application/json"}));x.download="agent-setup.json";x.click();return "✔ Exported agent-setup.json"},
  async reset(){await kv("delete","state");location.reload()},
  signout(){TOK=null;S.cfg.user="";render();return "✔ Signed out of Google"},
+ open_url(a){const m={docs:"https://docs.google.com/document/u/0/",sheets:"https://docs.google.com/spreadsheets/u/0/",slides:"https://docs.google.com/presentation/u/0/",gmail:"https://mail.google.com/",calendar:"https://calendar.google.com/",drive:"https://drive.google.com/"};
+  const t=String(a.target||"docs").trim(),k=t.toLowerCase().replace(/^google\s*/,"").replace(/s$/,""),u=/^https:\/\//.test(t)?t:m[k+"s"]||m[k];
+  if(!u)throw new Error("Unknown place: "+t);try{window.open(u,"_blank","noopener")}catch{}return "Opening "+u+" (click if no tab opened)"},
+ async edit_doc(a){
+  const id=((a.url||"").match(/\/d\/([\w-]+)/)||[])[1]||S.lastDoc;if(!id)throw new Error("Which doc? Paste its link or create one first");
+  const U="https://docs.googleapis.com/v1/documents/"+id,L="https://docs.google.com/document/d/"+id+"/edit";
+  if(a.find){await gf(U+":batchUpdate",{method:"POST",body:JSON.stringify({requests:[{replaceAllText:{containsText:{text:String(a.find),matchCase:false},replaceText:String(a.text||"")}}]})},"docs");return "✔ Replaced text in doc: "+L}
+  const d=await gf(U,{},"docs"),end=d.body.content[d.body.content.length-1].endIndex-1;
+  await gf(U+":batchUpdate",{method:"POST",body:JSON.stringify({requests:[{insertText:{location:{index:end},text:"\n"+String(a.text||"")}}]})},"docs");return "✔ Added to doc: "+L},
+ async drive_list(a){const q=(a.query||"").replace(/'/g,"\\'"),r=await gf("https://www.googleapis.com/drive/v3/files?pageSize=10&fields="+encodeURIComponent("files(name,webViewLink)")+"&orderBy="+encodeURIComponent("modifiedTime desc")+(q?"&q="+encodeURIComponent("name contains '"+q+"'"):""),{},"drive");
+  return (r.files||[]).length?"Drive files:\n"+r.files.map(f=>"• "+f.name+" "+f.webViewLink).join("\n"):"No files found"},
  async drive_save(a){
   const b="x"+Date.now(),n=a.name||"note.txt";
   await gf("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",{method:"POST",headers:{"Content-Type":"multipart/related; boundary="+b},body:`--${b}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify({name:n})}\r\n--${b}\r\nContent-Type: text/plain\r\n\r\n${a.content||""}\r\n--${b}--`},"drive");
@@ -320,7 +331,7 @@ const missing=()=>FIELDS.filter(f=>!S.profile[f]);
 const know=()=>S.sites.map(s=>s.url+": "+s.text.slice(0,500)).join("\n").slice(0,1400);
 
 function chatSys(){const m=missing();return `You are the owner's online admin manager for their business. Keep replies short (1-3 sentences).
-You CAN, when the owner asks: send emails and search the inbox (Gmail), create and read Google Calendar events, create Google Docs, Slides and Sheets, read Google Docs, log rows to Sheets, save notes to Drive, read websites, track bookings and tasks, remember standing instructions, show any data (bookings, tasks, emails, rules, sites, inbox, activity, settings), pause/resume, change the approval mode, switch Google services on/off, approve all, export, and reset. Every action is shown to the owner and only runs after they press Approve; say briefly what you will do and never claim it is already done. You remember contacts, sent emails and facts the owner tells you (see Memory) and use them for "my friend", "him", "send it". If the owner gives a task, do not ask onboarding questions.
+You CAN, when the owner asks: send emails and search the inbox (Gmail), create and read Google Calendar events, create Google Docs, Slides and Sheets, read and edit Google Docs, open Google Docs/Sheets/Slides/Gmail/Calendar/Drive in a new tab, list Drive files, log rows to Sheets, save notes to Drive, read websites, track bookings and tasks, remember standing instructions, show any data (bookings, tasks, emails, rules, sites, inbox, activity, settings), pause/resume, change the approval mode, switch Google services on/off, approve all, export, and reset. Every action is shown to the owner and only runs after they press Approve; say briefly what you will do and never claim it is already done. You remember contacts, sent emails and facts the owner tells you (see Memory) and use them for "my friend", "him", "send it". If the owner gives a task, do not ask onboarding questions.
 Business so far: ${JSON.stringify(S.profile)}
 Memory: ${memSummary()}
 Still unknown: ${m.join(", ")||"nothing"}. ${m.length?"Only if no task was given, ask about: "+m[0]+".":""}
@@ -402,13 +413,14 @@ async function prepare(a,ctx){const t=a.type;
   if(reuse){a.subject=S.mem.draft.subject;a.body=S.mem.draft.body}
   else{const r=await composeEmail(a,ctx);a.subject=r.subject;a.body=r.body}
   delete a.brief;S.mem.draft={to:a.to,subject:a.subject,body:a.body};if(a.to)S.mem.last=a.to}
+ else if(t==="edit_doc"){a.text=await composeText(a,ctx,"text for the document");delete a.brief}
  else if(t==="create_doc"){a.content=await composeText(a,ctx,"document");a.title=a.title||"Document";delete a.brief}
  else if(t==="drive_save"){a.content=await composeText(a,ctx,"note");a.name=a.name||"note.txt";delete a.brief}
  else if(t==="create_slides"){const j=await composeJSON(a,ctx,'{"slides":[{"title":"","body":"bullet lines separated by newlines"}]} with 5 to 7 slides',"slides");a.slides=(j.slides||[]).slice(0,12);a.title=a.title||"Presentation";delete a.brief;if(!a.slides.length){bub("I couldn’t build the slides. Try again with more detail.","a");return false}}
  else if(t==="create_sheet"){const j=await composeJSON(a,ctx,'{"rows":[["column 1","column 2"],["value","value"]]}',"sheet");a.rows=(j.rows||[]).slice(0,40);a.title=a.title||"Sheet";delete a.brief}
  else if(t==="create_event"){if(!a.date||isNaN(new Date(a.date))){bub("What date and time should the event be?","a");return false}a.minutes=a.minutes||60}
  return true}
-const TYPES=new Set(["set_profile","add_rule","add_workflow","add_site","add_booking","add_task","draft_email","send_email","gmail_search","create_event","list_events","log_to_sheet","drive_save","create_doc","create_slides","create_sheet","read_doc","show","pause","resume","set_mode","set_perm","approve_all","export_data","reset","signout","make_snippet","remember_contact","remember_fact","forget"]);
+const TYPES=new Set(["set_profile","add_rule","add_workflow","add_site","add_booking","add_task","draft_email","send_email","gmail_search","create_event","list_events","log_to_sheet","drive_save","create_doc","create_slides","create_sheet","read_doc","show","pause","resume","set_mode","set_perm","approve_all","export_data","reset","signout","make_snippet","remember_contact","remember_fact","forget","open_url","edit_doc","drive_list"]);
 const PLAN=ctx=>`You turn an INSTRUCTION into actions for a business admin assistant. Output JSON {"actions":[...]} with at most 4 actions.
 Memory: ${memSummary()}
 Last draft: ${S.mem.draft?S.mem.draft.to+" — "+S.mem.draft.subject:"none"}
@@ -420,6 +432,7 @@ RULES
 - For anything that must be written (email, doc, slides, sheet, note) give a short "brief" saying what to write. Do NOT write the content yourself.
 - Use exact dates from Date hints. Never invent addresses, dates, prices or facts.
 - Telling or notifying someone, or "email X" = send_email. "Draft/write an email" with no sending = draft_email.
+- "open / go to Google Docs, Sheets, Slides, Gmail, Calendar, Drive" = open_url. "add to / edit / change / replace in my doc" = edit_doc (leave url empty for the most recent doc; use find only to replace specific text; brief says what to write). "list / find my files" = drive_list.
 - Questions and chit-chat = {"actions":[]}.
 ACTIONS
 {"type":"send_email","to":"","brief":""} {"type":"draft_email","to":"","brief":""}
@@ -430,17 +443,19 @@ ACTIONS
 {"type":"set_profile","field":"name|services|prices|hours|tone|email","value":""} {"type":"add_rule","text":""} {"type":"add_workflow","when":"","then":""}
 {"type":"remember_contact","name":"","email":"","relation":""} {"type":"remember_fact","text":""} {"type":"forget","what":""}
 {"type":"show","what":"bookings|tasks|emails|rules|workflows|sites|activity|profile|inbox|settings|snippets|memory"}
-{"type":"pause"} {"type":"resume"} {"type":"set_mode","mode":"all|external"} {"type":"set_perm","service":"gmail|calendar|drive|sheets|docs|slides","on":true} {"type":"approve_all"} {"type":"export_data"} {"type":"reset"} {"type":"signout"} {"type":"make_snippet","kind":"enquiry|booking"}
+{"type":"pause"} {"type":"resume"} {"type":"set_mode","mode":"all|external"} {"type":"set_perm","service":"gmail|calendar|drive|sheets|docs|slides","on":true} {"type":"approve_all"} {"type":"export_data"} {"type":"reset"} {"type":"signout"} {"type":"make_snippet","kind":"enquiry|booking"} {"type":"open_url","target":"docs|sheets|slides|gmail|calendar|drive|https://..."} {"type":"edit_doc","url":"","find":"","brief":""} {"type":"drive_list","query":""}
 EXAMPLES
 "tell sam@x.com I will meet him in 2 days" -> {"actions":[{"type":"send_email","to":"sam@x.com","brief":"Tell him I will meet him on the date from the hints"}]}
 "send it to my friend" -> {"actions":[{"type":"send_email","to":"<friend's email from Memory>","brief":"send the last draft"}]}
 "my friend Sam is sam@x.com" -> {"actions":[{"type":"remember_contact","name":"Sam","email":"sam@x.com","relation":"friend"}]}
 "book Ana Friday 3pm" -> {"actions":[{"type":"add_booking","name":"Ana","date":"<date>","time":"15:00","note":""},{"type":"create_event","title":"Ana","date":"<date>","time":"15:00","minutes":60,"attendee":"","note":""}]}`;
+const fastActs=t=>{const m=t.match(/^\s*(?:please\s+)?(?:can you\s+)?(?:open|go to|launch)\s+(?:my\s+|the\s+)?(?:google\s+)?(docs?|sheets?|slides|gmail|calendar|drive)\b/i);return m?[{type:"open_url",target:m[1]}]:null};
 async function think(text){
+ const fp=fastActs(text);if(fp){LV.reset(text.slice(0,60));LV.open();for(const a of fp){Object.defineProperty(a,"__s",{value:LV.step(short(a)),writable:true});await propose(a)}LV.st("Done");return fp.length}
  const ctx={text,dates:dateHints(text)};
  LV.reset(text.slice(0,60));LV.open();LV.st("Thinking",true);
  const d=LV.blk("Understanding the request",true);
- ctx.rewrite=(await gen([{role:"system",content:`You are the owner's chief of staff. Rewrite the owner's message as a precise instruction to yourself in 2-4 short sentences: the goal, who it is for (resolve "him/them/my friend" from Memory), exact dates (use Date hints), key points and tone. Do not do the task. Do not ask questions.\nMemory: ${memSummary()}\nLast draft: ${S.mem.draft?S.mem.draft.to+" — "+S.mem.draft.subject:"none"}\nDate hints: ${ctx.dates}`},...S.hist.slice(-5,-1).map(m=>({role:m.role,content:m.content.slice(0,200)})),{role:"user",content:text}],d,{n:170,t:.2}))||text;
+ ctx.rewrite=text;
  LV.live(d,false);LV.st("Planning",true);
  let acts=[];
  try{const r=await engine.chat.completions.create({temperature:.1,max_tokens:500,response_format:{type:"json_object"},messages:[{role:"system",content:PLAN(ctx)},{role:"user",content:`OWNER SAID: ${text}\nINSTRUCTION: ${ctx.rewrite}`}]});
@@ -466,7 +481,7 @@ async function send(text){
    const st=await engine.chat.completions.create({stream:true,temperature:.6,max_tokens:300,messages:[{role:"system",content:chatSys()},...S.hist.slice(-8)]});
    for await(const c of st){out+=c.choices[0]?.delta?.content||"";d.innerHTML=md(out);$("chat").scrollTop=1e9}
    S.cur.msgs[S.cur.msgs.length-1].t=out;S.hist.push({role:"assistant",content:out})}
- }catch(e){bub(e.message==="Stopped"?"Stopped.":"Error: "+e.message,"s");LV.st("Stopped")}
+ }catch(e){bub((stopped||e.message==="Stopped")?"Stopped.":"Error: "+e.message,"s");LV.st("Stopped")}
  S.hist=S.hist.slice(-20);save();render();busy=false;$("go").textContent="↑";$("in").disabled=false;$("in").focus();
 }
 $("go").onclick=()=>{if(busy){stopped=true;engine.interruptGenerate();return}const v=$("in").value;$("in").value="";$("in").style.height="auto";send(v)};
