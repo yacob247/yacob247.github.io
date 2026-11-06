@@ -81,6 +81,8 @@
   .btn.sm { flex: 0 0 auto; padding: 11px 13px; }
   .btn:disabled { opacity: .55; cursor: default; }
   .btn svg { width: 15px; height: 15px; }
+  .lock { display: flex; align-items: center; gap: 7px; font-size: .78rem; color: #cbd5e1; cursor: pointer; }
+  .lock input { accent-color: #ff7a1a; }
   .use { display: none; margin-top: 6px; border: 1px solid var(--border); border-radius: 10px; background: #060b17; overflow: hidden; }
   .use.open { display: block; }
   .use-h { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; font-size: .7rem; color: #7d8aa3; border-bottom: 1px solid var(--border); letter-spacing: .06em; text-transform: uppercase; }
@@ -133,7 +135,7 @@
     <h1>Procedural Worlds</h1>
     <p>Storms, snow, soil, oceans and volcanoes, generated entirely by code. No textures, no downloads, no libraries. Move your mouse over any card to play with it, then preview the full scene or grab the file.</p>
     <div class="facts">
-      <span class="fact"><b>10</b> assets</span>
+      <span class="fact"><b>11</b> assets</span>
       <span class="fact"><b>0</b> dependencies</span>
       <span class="fact"><b>1</b> file each</span>
       <span class="fact">Loads <b>only when you click</b></span>
@@ -222,9 +224,14 @@ var ASSETS = [
     tags: ['WebGL2', 'Lava loop', 'Steam', 'Machinery'],
     desc: 'An industrial magma circulation plant: glowing lava loops, turning gears, vents and steam.',
     hint: 'Move: speed up the flow  ·  Click: alarm',
-    use: '<iframe src="magmacirculationfacility.html" allow="fullscreen"></iframe>\n<!-- or open magmacirculationfacility.html directly -->' }
+    use: '<iframe src="magmacirculationfacility.html" allow="fullscreen"></iframe>\n<!-- or open magmacirculationfacility.html directly -->' },
+  { id: 'world', cat: 'Games', thumb: 'desert', name: 'PBR Drive', file: 'pbr-world.html', kind: 'page',
+    tags: ['WebGL2', 'Open world', 'Driving', 'Forests'],
+    desc: 'An endless road drive through PBR forests, snow and desert. Dents the ground as you go.',
+    hint: 'Move: wind  ·  Click: dust devil',
+    use: '<iframe src="pbr-world.html" allow="fullscreen"></iframe>\n<!-- or open pbr-world.html directly -->' }
 ];
-var CATS = ['All', 'Weather', 'Sky', 'Ground', 'Water', 'Fire'];
+var CATS = ['All', 'Games', 'Weather', 'Sky', 'Ground', 'Water', 'Fire'];
 
 /* ---------- tiny helpers ---------- */
 function $(id) { return document.getElementById(id); }
@@ -236,6 +243,11 @@ function rgb(c, a) { return 'rgba(' + (c[0] | 0) + ',' + (c[1] | 0) + ',' + (c[2
 function abs(file) { return new URL(BASE + file, location.href).href; }
 var PHONE = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && matchMedia('(pointer: coarse)').matches);
 var REDUCE = matchMedia('(prefers-reduced-motion: reduce)').matches;
+/* Owner tools: open this page once with ?owner to show the Lock tick boxes. */
+var OWNER = (function () { try { if (/[?&]owner\b/.test(location.search)) localStorage.setItem('owner', '1'); return localStorage.getItem('owner') === '1'; } catch (e) { return false; } })();
+function isLocked(a) { try { return localStorage.getItem('lock:' + a.id) === '1'; } catch (e) { return false; } }
+function setLock(a, v) { try { if (v) localStorage.setItem('lock:' + a.id, '1'); else localStorage.removeItem('lock:' + a.id); } catch (e) {} }
+function applyLock(card, a) { var lk = isLocked(a), b = card.querySelector('[data-act=dl]'), cb = card.querySelector('input[data-act=lock]'); b.disabled = lk; b.title = lk ? 'Download is locked' : ''; if (cb) cb.checked = lk; }
 
 var ICON_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
 var ICON_DL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-5-5m5 5l5-5M4 21h16"/></svg>';
@@ -701,9 +713,12 @@ ASSETS.forEach(function (a) {
     '<div class="chips">' + a.tags.map(function (t) { return '<span class="chip">' + esc(t) + '</span>'; }).join('') + '</div>' +
     '<div class="file">' + esc(a.file) + '</div>' +
     '<div class="btns"><button class="btn pri" type="button" data-act="prev">' + ICON_PLAY + 'Preview</button><button class="btn" type="button" data-act="dl">' + ICON_DL + 'Download</button><button class="btn sm" type="button" data-act="use" title="How to use" aria-label="How to use">' + ICON_CODE + '</button></div>' +
+    (OWNER ? '<label class="lock"><input type="checkbox" data-act="lock"> Lock download (only you see this)</label>' : '') +
     '<div class="use"><div class="use-h"><span>Usage</span><button type="button" data-act="copy">Copy</button></div><pre><code>' + esc(a.use) + '</code></pre></div></div>';
   grid.appendChild(card);
-  makeThumb(card.querySelector('canvas'), card, SC[a.id]);
+  makeThumb(card.querySelector('canvas'), card, SC[a.thumb || a.id]);
+  applyLock(card, a);
+  card.addEventListener('change', function (e) { if (e.target.dataset.act === 'lock') { setLock(a, e.target.checked); applyLock(card, a); } });
   card.addEventListener('click', function (e) {
     var bt = e.target.closest('button[data-act]'); if (!bt) return;
     var act = bt.dataset.act;
@@ -725,6 +740,7 @@ function copyText(txt, btn) {
 
 /* ---------- DOWNLOAD: the file is requested only here ---------- */
 function download(a, btn) {
+  if (isLocked(a)) { toast('Download is locked for ' + a.name, true); return Promise.resolve(); }
   var old = btn ? btn.innerHTML : '';
   if (btn) { btn.disabled = true; btn.textContent = 'Downloading…'; }
   return fetch(abs(a.file), { cache: 'no-cache' }).then(function (r) { if (!r.ok) throw new Error(r.status); return r.blob(); }).then(function (b) {
