@@ -824,6 +824,15 @@
         border: 0;
       }
     }
+      body.busy *,
+    body.busy *::before,
+    body.busy *::after {
+      -webkit-backdrop-filter: none !important;
+      backdrop-filter: none !important;
+      animation: none !important;
+      transition: none !important;
+      box-shadow: none !important;
+    }
   </style></head><body>
 <div id="app">
 <aside id="sb"><div class="logo">Yacob<span>AI Agent</span></div><button id="nc">＋ New chat</button><div id="cl"></div>
@@ -1373,6 +1382,7 @@
         sc.forEach((x) => pr.addScope(x));
         const r = await A.signInWithPopup(A.getAuth(app), pr);
         TOK = A.GoogleAuthProvider.credentialFromResult(r).accessToken;
+        DENIED = "";
         S.cfg.user = r.user.email;
         S.cfg.userName = r.user.displayName || "";
         save();
@@ -1426,7 +1436,8 @@
       "tasks.googleapis.com",
       "people.googleapis.com",
     ];
-    let ENA = null;
+    let ENA = null,
+      DENIED = "";
     async function enableApis(list = ALLAPIS) {
       const fc = parseFb(S.cfg.fb) || FB,
         pr = fc.messagingSenderId || "706251024837",
@@ -1450,11 +1461,12 @@
           /scope|insufficient/i.test(m)
             ? "The AI needs permission to switch on Google APIs. Log out, sign in with Google again and accept the Cloud permission, then retry."
             : /permission|denied/i.test(m)
-              ? "This Google account can’t switch on APIs for project " +
-                pr +
-                ". Sign in with the project’s Owner account. (" +
-                m +
-                ")"
+              ? (DENIED =
+                  "Google won’t let " +
+                  (S.cfg.user || "this account") +
+                  " switch on APIs for project " +
+                  pr +
+                  " because it isn’t an Owner or Editor of that project. No code can get around that. Fix once: (1) sign in with the Google account that owns the project, or (2) make your own project with this account at console.firebase.google.com (Add project → Add web app), then paste its config in Settings → Account → “Your own Firebase project”. After that the AI switches the APIs on by itself.")
               : "Couldn’t switch on the APIs: " + m,
         );
       }
@@ -1492,6 +1504,7 @@
       if (!r.ok) {
         const t = await r.text(),
           dis = /SERVICE_DISABLED|has not been used|accessNotConfigured/.test(t);
+        if (dis && DENIED) throw new Error(DENIED);
         if (dis && (_t || 0) < 3) {
           if (!_t) await (ENA = ENA || enableApis().finally(() => (ENA = null)));
           else await new Promise((x) => setTimeout(x, 6000));
@@ -2849,21 +2862,50 @@
         );
       return out.join("; ");
     }
+    let TPS = 0,
+      ES = 0,
+      WARNED = false;
+    const meter = (n, t0) => {
+      const dt = (performance.now() - t0) / 1000;
+      if (n < 8 || dt < 0.5) return;
+      TPS = Math.round((n / dt) * 10) / 10;
+      try {
+        $("thk").textContent = "Thinking: ON · " + TPS + " tok/s" + (ES ? " (GPU " + ES + ")" : "");
+      } catch {}
+      if (TPS < 4 && n >= 15 && !WARNED) {
+        WARNED = true;
+        bub(
+          "⚠ The AI is only producing " +
+            TPS +
+            " words-pieces per second. That is your computer, not the code: the browser is probably not using your real graphics card. Open chrome://gpu and check “WebGPU: Hardware accelerated”. On Windows go to Settings → System → Display → Graphics, add Chrome and set it to High performance, then restart Chrome. Close other heavy tabs too.",
+          "s",
+        );
+      }
+    };
     async function gen(messages, el, o = {}) {
       const st = await engine.chat.completions.create({
         stream: true,
+        stream_options: { include_usage: true },
         temperature: o.t ?? 0.3,
         max_tokens: o.n || 400,
         messages,
       });
-      let out = "";
+      let out = "",
+        n = 0,
+        lu = 0;
+      const t0 = performance.now();
       for await (const c of st) {
         out += c.choices[0]?.delta?.content || "";
-        if (el) {
+        if (c.usage && c.usage.extra) ES = Math.round(c.usage.extra.decode_tokens_per_s * 10) / 10;
+        n++;
+        if (el && performance.now() - lu > 70) {
+          lu = performance.now();
           el.textContent = out;
           $("pvb").scrollTop = 1e9;
         }
       }
+      if (el) el.textContent = out;
+      meter(n, t0);
       if (stopped) throw new Error("Stopped");
       return out.trim();
     }
@@ -3095,7 +3137,7 @@
     ]);
     const PLAN = (
       ctx,
-    ) => `You turn an INSTRUCTION into actions for a business admin assistant. Output JSON {"thought":"2 short sentences: what the owner wants, what to look up online or read first, and the steps","actions":[...]} with at most 6 actions. Put "thought" first.
+    ) => `You turn an INSTRUCTION into actions for a business admin assistant. ${S.cur.thought ? 'Output JSON {"actions":[...]} with at most 6 actions.' : 'Output JSON {"thought":"2 short sentences: what the owner wants, what to look up online or read first, and the steps","actions":[...]} with at most 6 actions. Put "thought" first.'}
     Memory: ${memSummary()}
     Last draft: ${S.mem.draft ? S.mem.draft.to + " — " + S.mem.draft.subject : "none"}
     Business: ${JSON.stringify(S.profile)}
@@ -3307,6 +3349,7 @@
             ],
           });
           const pj = JSON.parse(r.choices[0].message.content);
+          S.cur.thought = true;
           if (pj.thought) {
             ctx.thought = String(pj.thought);
             ctx.rewrite = text + "\n(Plan: " + ctx.thought + ")";
@@ -3334,7 +3377,7 @@
             {
               t: INT
                 ? "I know how to do this one, so I’m using a built-in routine."
-                : (ctx.thought || ctx.rewrite).replace(/\s+/g, " ").slice(0, 220),
+                : (ctx.thought || "Continuing from my earlier plan in this chat.").replace(/\s+/g, " ").slice(0, 220),
             },
             ...acts.map((a) => ({ t: short(a).slice(0, 90), d: "Waiting…" })),
           ],
@@ -3369,6 +3412,7 @@
       text = text.trim();
       if (!text || busy) return;
       busy = true;
+      document.body.classList.add("busy");
       stopped = false;
       $("go").textContent = "■";
       $("in").disabled = true;
@@ -3384,7 +3428,10 @@
         const did = chit ? 0 : await think(text);
         if (!did) {
           const d = bub("…");
-          let out = "";
+          let out = "",
+            n = 0,
+            lu = 0;
+          const t0 = performance.now();
           const st = await engine.chat.completions.create({
             stream: true,
             temperature: 0.6,
@@ -3393,9 +3440,16 @@
           });
           for await (const c of st) {
             out += c.choices[0]?.delta?.content || "";
-            d.innerHTML = md(out);
-            $("chat").scrollTop = 1e9;
+            n++;
+            if (performance.now() - lu > 70) {
+              lu = performance.now();
+              d.innerHTML = md(out);
+              $("chat").scrollTop = 1e9;
+            }
           }
+          d.innerHTML = md(out);
+          $("chat").scrollTop = 1e9;
+          meter(n, t0);
           S.cur.msgs[S.cur.msgs.length - 1].t = out;
           S.hist.push({ role: "assistant", content: out });
         }
@@ -3407,6 +3461,7 @@
       save();
       render();
       busy = false;
+      document.body.classList.remove("busy");
       $("go").textContent = "↑";
       $("in").disabled = false;
       $("in").focus();
@@ -3828,6 +3883,16 @@
             settings("Account");
           }),
         );
+        H(b, "Your own Firebase project");
+        sr(
+          b,
+          "Firebase config",
+          "Optional. Paste the config block from your own Firebase web app (apiKey, authDomain, projectId, messagingSenderId…) so this account owns the project and the AI can switch on Google APIs itself. Log out and in again after changing.",
+          inp(S.cfg.fb || "", (v) => {
+            S.cfg.fb = v;
+            DENIED = "";
+          }),
+        );
         H(b, "Delete account");
         sr(
           b,
@@ -4151,7 +4216,7 @@
       $("sb").classList.remove("open");
     }
     function render() {
-      $("thk").textContent = "Thinking: ON";
+      $("thk").textContent = "Thinking: ON" + (TPS ? " · " + TPS + " tok/s" + (ES ? " (GPU " + ES + ")" : "") : "");
       const a = $("acct");
       a.textContent = TOK ? "● " + (S.cfg.user || "Google") : "Sign in with Google";
       a.onclick = () => (TOK ? confirm("Sign out of Google?") && G.signout() : connect());
