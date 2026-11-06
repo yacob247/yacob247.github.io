@@ -180,11 +180,24 @@
 <script type="module">
     import * as webllm from "https://esm.run/@mlc-ai/web-llm@0.2.80";
     const MODEL = "Qwen3.5-4B-q4f16_1-MLC";
-    const R2 = "https://pub-2cb8cb7c4732f5e7a3eaf3513624bed9271.r2.dev/images-ai/Qwen3.5-4B-q4f16_1-MLC";
+    const R2 = "https://pub-406a7f3fa4d44f41b5317520aa1aaf4a.r2.dev/Qwen3.5-4B-q4f16_1-MLC";
     const LIB = R2 + "/model.wasm";
-    const _f = window.fetch.bind(window), PRE = R2 + "/resolve/main/";
-    window.fetch = (u, o) => { const x = typeof u === "string" ? u : u && u.url; return _f(x && x.startsWith(PRE) ? R2 + "/" + x.slice(PRE.length) : u, o); };
-    const appConfig = { cacheBackend: "indexeddb", model_list: [{ model: PRE, model_id: MODEL, model_lib: LIB, overrides: { context_window_size: 8192 } }] };
+    const PRE = R2;
+    const _f = window.fetch.bind(window);
+    window.fetch = (input, init) => {
+        try {
+            const isReq = typeof Request !== "undefined" && input instanceof Request;
+            const raw = typeof input === "string" ? input : (input instanceof URL ? input.href : (input && input.url));
+            // Only rewrite requests that go to our model host; leave everything else untouched
+            if (raw && raw.startsWith(R2)) {
+                const url = raw.replace(/\/resolve\/main\//g, "/");
+                if (url !== raw) return _f(isReq ? new Request(url, input) : url, init);
+            }
+        } catch (e) { console.warn("fetch rewrite failed", e); }
+        return _f(input, init);
+    };
+
+const appConfig = { cacheBackend: "indexeddb", model_list: [{ model: R2 + "/resolve/main/../../", model_id: MODEL, model_lib: LIB, overrides: { context_window_size: 8192 } }] };
 
     const $ = (id) => document.getElementById(id);
     let engine, globalGenerating = false, currentGenInterrupt = null;
@@ -735,6 +748,18 @@ Always write complete, full-length content � never abbreviate with placeholder
 
     (async () => {
         load(); replay();
+        try {
+            // Sanity-check the wasm file first, so a bad file gives a clear message
+            const r = await fetch(LIB, { cache: "no-store" });
+            const head = new Uint8Array(await r.clone().arrayBuffer()).slice(0, 4);
+            const isWasm = head[0] === 0x00 && head[1] === 0x61 && head[2] === 0x73 && head[3] === 0x6d;
+            if (!r.ok || !isWasm) {
+                const snippet = (await r.text()).slice(0, 120).replace(/\s+/g, " ");
+                throw new Error(`model.wasm is not a valid WebAssembly file (HTTP ${r.status}). Server returned: "${snippet}"`);
+            }
+            // Good file on the server: purge any stale/broken copy web-llm cached earlier
+            try { for (const n of ["webllm/wasm", "webllm/model", "webllm/config"]) { const c = await caches.open(n); await c.delete(LIB); } } catch (_) {}
+        } catch (e) { $("st").textContent = "Load failed: " + e.message; return; }
         try {
             engine = await webllm.CreateMLCEngine(MODEL, { appConfig, initProgressCallback: (p) => { $("st").textContent = p.text; $("bar").firstChild.style.width = p.progress * 100 + "%"; } });
         } catch (e) { $("st").textContent = "Load failed: " + e.message; }
