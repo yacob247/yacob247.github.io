@@ -1128,8 +1128,29 @@ ${contextHint(text)}`;
         for await (const c of stream) { if (isStopped()) break; raw += c.choices?.[0]?.delta?.content || ""; }
         return raw.replace(/<think>[\s\S]*?(<\/think>|$)/g, "").replace(/^```[a-z]*\n?|```$/gm, "").trim();
     }
-    async function directRoute(text, targetChat) {
+    async function directRoute(text, targetChat, requestFiles = []) {
         const t = text.toLowerCase();
+        const imgFiles = [...requestFiles, ...sessionFiles].filter(f => IMG_NAME_RE.test(f.name));
+        const isUp = /\b(upscal\w*|enlarg\w*|(increase|improve|raise|higher|bigger)\b[^.]{0,25}\b(resolution|size|quality))\b/.test(t);
+        const isImg = isUp || /\b(image|photo|picture|png|jpe?g|webp|resize|crop|compress|ocr|remove (the )?background)\b/.test(t);
+        if (isImg && !imgFiles.length) { bub("Attach the image first with the 📎 button, then send your request again.", "a", false, targetChat); return true; }
+        if (isUp) {
+            let stopped = false; currentGenInterrupt = () => { stopped = true; };
+            const status = createClaudeBlock(targetChat), m = t.match(/(\d+(?:\.\d+)?)\s*(?:x|×|times)/);
+            const scale = Math.min(8, Math.max(1.1, m ? parseFloat(m[1]) : 2)), args = { file_id: imgFiles.at(-1).id, scale };
+            addNote(status, "Working out what you want: upscale the image " + scale + "×.");
+            const st = addStep(status, "Running upscale_image", JSON.stringify({ tool: "upscale_image", ...args }, null, 2));
+            setStatus(status, "Upscaling the image…");
+            try {
+                const out = await runImageToolCall({ tool: "upscale_image", ...args }, targetChat);
+                finishStep(st, JSON.stringify(out).slice(0, 800));
+                const bad = out?.error || out?.result?.ok === false;
+                addResultRow(status, bad ? "Upscale failed" : "Created the upscaled image");
+                bub(bad ? "Upscale failed: " + (out.error || out.result?.error || "unknown error") : `Done: upscaled ${scale}×. Download it from the card above. This is high-quality Lanczos resampling with light sharpening: it enlarges cleanly but cannot invent new detail.`, bad ? "s" : "a", false, targetChat);
+            } catch (e) { finishStep(st, "Error: " + (e.message || e)); bub("Upscale failed: " + (e.message || e), "s", false, targetChat); }
+            setStatus(status, "Done", true); currentGenInterrupt = null; return true;
+        }
+        if (requestFiles.length) return false;
         const calc = text.match(/\d[\d\s,.+\-*\/()^%x×]*\d/);
         const expr = calc ? calc[0].replace(/,/g, "").replace(/[x×]/gi, "*").replace(/\^/g, "**").trim() : "";
         const isCalc = /^[\d\s.+\-*\/()%]+$/.test(expr) && /[+\-*\/%]/.test(expr.replace(/^-/, "")) && (text.length < 90 || /\b(calculate|compute|what is|multiply|times|plus|minus|divide)\b/.test(t));
@@ -1186,7 +1207,7 @@ ${contextHint(text)}`;
     }
 
     async function chat(text, targetChat, requestFiles = []) {
-        if (!requestFiles.length && await directRoute(text, targetChat)) { save(); if (S.cur.id === targetChat.id) autoscroll(); return; }
+        if (await directRoute(text, targetChat, requestFiles)) { save(); if (S.cur.id === targetChat.id) autoscroll(); return; }
         currentRequestFiles = requestFiles.map(f => ({ id: f.id, name: f.name })); runOutputs = [];
         requestFiles.forEach(f => { if (!sessionFiles.some(s => s.id === f.id)) sessionFiles.push({ id: f.id, name: f.name }); });
         const sys = buildSys(text, requestFiles);
@@ -1511,7 +1532,7 @@ self.onmessage = (m) => h.onmessage(m);`;
     const pick = (v) => {
         choice = String(v); localStorage.setItem("yacob_model2", choice); mdl.value = choice;
         if (choice === "auto") autoStart(); else manualLoad(parseInt(choice, 10));
-    };
+    };a
     mdl.onchange = () => pick(mdl.value);
 
     // ---------- Models & requirements panel ----------
