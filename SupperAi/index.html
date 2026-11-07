@@ -333,6 +333,7 @@
 
     import * as webllm from "https://esm.run/@mlc-ai/web-llm@0.2.86";
     import * as aiTools from "./ai-tool-runtime.js";
+    import { imageToolDefinitions, isImageTool, runImageTool, configureImageTools, registerImageFile } from "./image-tools.js";
     const H1 = "https://pub-406a7f3fa4d44f41b5317520aa1aaf4a.r2.dev";
     const H2 = "https://pub-841bd448812d4979b52ba64efdb90c94.r2.dev";
     const GHL = "https://raw.githubusercontent.com/mlc-ai/binary-mlc-llm-libs/main/web-llm-models";
@@ -384,11 +385,88 @@
     }
     $("attach").onclick = () => $("file-picker").click();
     $("file-picker").addEventListener("change", event => {
+        const picked = Array.from(event.target.files || []);
         const added = aiTools.addFiles(event.target.files);
+        added.forEach(item => { const f = picked.find(p => p.name === item.name && p.size === item.size); if (f) { registerImageFile(f, item.id); sessionFiles.push({ id: item.id, name: item.name }); } });
         pendingUploads.push(...added); event.target.value = "";
         renderPendingUploads(); updateGoButton();
     });
     
+    // <image-tools-integration>
+    // Envizion image tools (image-tools.js): 90 tools. Existing aiTools take priority on any name clash.
+    let sessionFiles = [], currentRequestFiles = [], sessionOutputs = [], runOutputs = [];
+    configureImageTools({
+        saveOutput: async (blob, filename) => ({ url: URL.createObjectURL(blob) }),
+        // Used by translate_image_text. The loaded web-llm models are text-only, so no `vision` hook is configured:
+        // vision tools report "no vision model connected" instead of guessing. To enable them, add
+        // vision: async ({ images, prompt, max_tokens }) => text   or   visionEndpoint: { url, model, apiKey }
+        llm: async prompt => {
+            if (!engine) throw new Error("No language model is loaded yet.");
+            const r = await engine.chat.completions.create({ stream:false, temperature:0.1, max_tokens:1500, messages:[{ role:"user", content:prompt }] });
+            return r.choices?.[0]?.message?.content || "";
+        }
+    });
+    const IMG_RE = /\b(images?|photos?|pictures?|pics?|png|jpe?g|webp|gif|bmp|svg|avif|heic|ico|ocr|screenshots?|scans?|scanned|logos?|thumbnails?|watermarks?|resize|crop|rotate|flip|blur|sharpen|grayscale|greyscale|sepia|compress|background|palette|exif|metadata|receipts?|handwriting|pdf|deskew|upscale|denoise)\b/i;
+    const IMG_NAME_RE = /\.(png|jpe?g|webp|gif|bmp|svg|avif|heic|ico|tiff?|pdf)$/i;
+    const IMG_SYN = { smaller:"compress reduce resize", bigger:"upscale resize", larger:"upscale resize", enlarge:"upscale scale", shrink:"resize compress reduce", black:"grayscale", greyscale:"grayscale", jpg:"jpeg", read:"extract text ocr", text:"extract ocr add", words:"extract ocr", scan:"deskew extract ocr", transparent:"background remove", cutout:"background remove", cut:"crop background", straighten:"deskew rotate perspective", mirror:"flip", turn:"rotate", sharper:"sharpen sharpness", blurry:"sharpen enhance", noise:"noise remove denoise", clean:"enhance noise strip", private:"strip metadata", gps:"strip metadata exif", location:"metadata exif", exif:"metadata strip", colours:"colors extract palette", colors:"colors extract palette", colour:"colors", combine:"merge", join:"merge", collage:"merge", stitch:"merge", icon:"ico convert", favicon:"ico convert", instagram:"social", twitter:"social", facebook:"social", linkedin:"social", youtube:"social", pinterest:"social", website:"web optimize", web:"web optimize", fast:"web optimize", info:"file info metadata dimensions", size:"dimensions compress", width:"resize dimensions", height:"resize dimensions", similar:"similarity compare", different:"compare", difference:"compare", copy:"duplicate", broken:"integrity validate", corrupt:"integrity validate", valid:"validate", formats:"supported formats", animation:"sequence gif", animated:"sequence gif", frames:"sequence", batch:"batch", many:"batch", all:"batch", multiple:"batch merge", describe:"describe analyze", what:"analyze describe answer question", faces:"faces detect", face:"faces detect", objects:"objects detect", passport:"id document", id:"id document", caption:"text add", round:"corners round", circle:"corners round" };
+    function pickImageTools(text, files, limit = 10) {
+        const existing = new Set((aiTools.toolDefinitions || []).map(d => d.name));
+        const defs = imageToolDefinitions.filter(d => !existing.has(d.name)), words = new Set();
+        for (const w of String(text || "").toLowerCase().match(/[a-z0-9]+/g) || []) { if (w.length < 2) continue; words.add(w.replace(/s$/, "")); words.add(w); (IMG_SYN[w] || "").split(" ").filter(Boolean).forEach(x => words.add(x)); }
+        const scored = defs.map(d => { const nm = d.name.split("_").map(x => x.replace(/s$/, "")), desc = d.description.toLowerCase(); let s = 0; for (const w of words) { if (nm.includes(w)) s += 3; else if (desc.includes(w)) s += 1; } return { d, s }; });
+        const top = scored.filter(x => x.s > 0).sort((a, b) => b.s - a.s).slice(0, limit).map(x => x.d);
+        if (top.length < 5 && (files || []).some(f => /^image\//.test(f.type) || IMG_NAME_RE.test(f.name))) for (const n of ["get_image_dimensions", "resize_image", "convert_image_format", "compress_image", "crop_image", "extract_image_text"]) { const d = defs.find(x => x.name === n); if (d && !top.includes(d)) top.push(d); }
+        return top.slice(0, limit);
+    }
+    const compactImageTool = d => `${d.name}(${Object.keys(d.parameters || {}).filter(k => !["file_ids", "output_name", "output_format"].includes(k) || (k === "file_ids" && !("file_id" in (d.parameters || {})))).slice(0, 9).join(", ")}) - ${String(d.description).replace(/e\.g\./g, "eg").split(/\.\s|\(\s*(?=Uses|needs)/)[0].slice(0, 100)}`;
+    function imageToolBlock(text, files) {
+        files = files || [];
+        const wanted = files.some(f => /^image\//.test(f.type) || IMG_NAME_RE.test(f.name)) || IMG_RE.test(text || "");
+        if (!wanted) return `\nIMAGE TOOLS\n${imageToolDefinitions.length} image tools exist (OCR, convert, resize, crop, edit, compress, remove background, PDF...). For image work call {"tool":"list_image_tools","query":"what the user wants"} to see them.\n`;
+        return `\nIMAGE TOOLS (best matches for this request; ${imageToolDefinitions.length} exist - call {"tool":"list_image_tools","query":"..."} to find others)\n${pickImageTools(text, files).map(compactImageTool).join("\n")}\nImage rules: pass "file_id" from UPLOADED FILES, or the file_id returned by an earlier tool (use "file_ids" array for several). If a result has ok:false, report its exact error; code UNAVAILABLE means a needed engine/model is not connected - do not retry it or pretend it worked.\n`;
+    }
+    const resolveImageId = v => {
+        if (v && typeof v === "object") v = v.id || v.file_id; const s = String(v ?? "").trim(); if (!s) return s;
+        const all = [...sessionFiles, ...sessionOutputs, ...currentRequestFiles, ...runOutputs]; if (all.some(f => f.id === s)) return s;
+        const low = s.toLowerCase().replace(/^.*[\\/]/, ""), stem = x => String(x).toLowerCase().replace(/\.[a-z0-9]+$/, "");
+        const hit = [...all].reverse().find(f => String(f.name).toLowerCase() === low) || [...all].reverse().find(f => stem(f.name) === stem(low)); return hit ? hit.id : s;
+    };
+    const NO_FILE_TOOLS = new Set(["calculate_image_aspect_ratio", "get_supported_image_formats", "generate_color_palette"]);
+    function normalizeImageArgs(t) {
+        const { tool, ...rest } = t; let args = { ...rest };
+        for (const k of ["args", "arguments", "parameters"]) if (args[k] && typeof args[k] === "object" && !Array.isArray(args[k])) { args = { ...args, ...args[k] }; delete args[k]; }
+        for (const k of ["file_id", "watermark_file_id", "background_file_id", "mask_file_id"]) if (args[k] !== undefined) args[k] = resolveImageId(args[k]);
+        for (const k of ["file_ids", "ids", "files"]) { if (typeof args[k] === "string") args[k] = args[k].split(/[,\s]+/).filter(Boolean); if (Array.isArray(args[k])) args[k] = args[k].map(resolveImageId); }
+        const has = args.file_id || args.file_ids?.length || args.ids?.length || args.files?.length;
+        if (!has && !NO_FILE_TOOLS.has(tool)) { const cand = runOutputs.at(-1) || (currentRequestFiles.length === 1 ? currentRequestFiles[0] : null) || sessionOutputs.at(-1) || currentRequestFiles.at(-1) || sessionFiles.at(-1); if (cand) args.file_id = cand.id; }
+        return args;
+    }
+    const LONG_KEYS = new Set(["text", "markdown", "translation", "source_text", "ai_analysis", "description", "answer", "html", "css_variables", "srcset"]);
+    function imageOutcomeForModel(r) {
+        return JSON.parse(JSON.stringify(r, (k, v) => {
+            if (typeof v === "string") { if (/^data:/.test(v)) return `[data URL omitted: ${v.length} chars - see the output file]`; const lim = LONG_KEYS.has(k) ? 3000 : 400; return v.length > lim ? v.slice(0, lim) + "...[truncated]" : v; }
+            if (Array.isArray(v) && v.length > 30) return [...v.slice(0, 30), `...${v.length - 30} more`]; return v;
+        }));
+    }
+    async function runImageToolCall(t, targetChat) {
+        if (t.tool === "list_image_tools") {
+            const q = String(t.query || t.q || t.group || t.keyword || "").trim(), groups = {}; imageToolDefinitions.forEach(d => groups[d.group] = (groups[d.group] || 0) + 1);
+            if (!q) return { result: { total: imageToolDefinitions.length, groups, hint: "Call again with a query such as \"remove background\" or \"compress to 200kb\"." } };
+            const found = pickImageTools(q, [], 15); return { result: { query: q, matches: found.map(d => ({ name: d.name, parameters: d.parameters, description: d.description })), note: found.length ? undefined : "No tool matched; try different words." } };
+        }
+        const r = await runImageTool(t.tool, normalizeImageArgs(t)), outs = r.output_files || []; delete r.output_files;
+        outs.forEach(f => { const rec = { id: f.file_id, name: f.filename }; sessionOutputs.push(rec); if (/^image\//.test(f.type || "")) runOutputs.push(rec); });
+        if (outs.length) renderToolDownloads(outs.map(f => ({ filename: f.filename, size: f.size, type: f.type, url: f.url, validation: "created" })), targetChat);
+        return { result: imageOutcomeForModel(r), files: outs.map(f => ({ file_id: f.file_id, filename: f.filename, size: f.size, type: f.type })) };
+    }
+    async function imageFileNotes(files) {
+        const lines = [];
+        for (const f of (files || []).filter(f => /^image\//.test(f.type) || /\.(png|jpe?g|webp|gif|bmp|svg|avif|heic|ico)$/i.test(f.name)).slice(0, 6)) {
+            try { const r = await runImageTool("get_image_dimensions", { file_id: f.id }); if (r.ok) lines.push(`- ${f.id}: ${f.name} is ${r.width}x${r.height} ${r.format}`); } catch (_) { }
+        }
+        return lines.length ? `\n\nImage details:\n${lines.join("\n")}` : "";
+    }
+    // </image-tools-integration>
     const D = { 
         cur: { id: 0, title: "New chat", msgs: [], notes: [] }, 
         chats: [], 
@@ -882,6 +960,7 @@ function buildSys(text, requestFiles = []) {
         .map(f => `${f.id}: ${f.name} (${f.type}, ${f.size} bytes)`)
         .join("\n") || "No new files attached.";
 
+    const imageBlock = imageToolBlock(text, requestFiles);
     // Include every registered tool and its complete definition.
     const tools = aiTools.toolDefinitions
         .map(t => {
@@ -919,7 +998,7 @@ ALL REGISTERED TOOLS AND FUNCTIONS
 You must consider ALL tools listed below when deciding how to fulfil a request.
 
 ${tools}
-
+${imageBlock}
 TOOL DISCOVERY AND SELECTION
 1. Read the user's request carefully and identify the actual operation they want.
 2. Consider all registered tools, not just file-processing tools.
@@ -1021,6 +1100,7 @@ Your job is to use the available tools to actually do the requested work, verify
         outputs.forEach(file => {
             const row = document.createElement("div"); row.className = "download-item";
             const info = document.createElement("span"); info.textContent = file.filename;
+            if (/^image\/(png|jpeg|webp|gif|bmp|avif|svg\+xml)/.test(file.type || "")) { const im = document.createElement("img"); im.src = file.url; im.alt = ""; im.style.cssText = "max-height:64px;max-width:96px;border-radius:6px;margin-right:10px;vertical-align:middle;object-fit:cover"; info.prepend(im); }
             const detail = document.createElement("small"); detail.textContent = `${file.size} bytes · ${file.validation || file.type}`; info.appendChild(detail);
             const link = document.createElement("a"); link.href = file.url; link.download = file.filename; link.textContent = "Download";
             row.append(info, link); list.appendChild(row);
@@ -1043,7 +1123,9 @@ Your job is to use the available tools to actually do the requested work, verify
     }
 
     async function executeRequestedTool(t, targetChat) {
-        if (aiTools.toolDefinitions.some(def => def.name === t.tool)) {
+        const existingTool = aiTools.toolDefinitions.some(def => def.name === t.tool);
+        if (!existingTool && (t.tool === "list_image_tools" || isImageTool(t.tool))) return runImageToolCall(t, targetChat);
+        if (existingTool) {
             const result = await aiTools.runTool(t.tool, t);
             if (result.files?.length) renderToolDownloads(result.files, targetChat);
             return { result: result.result, files: result.files?.map(f => ({ filename:f.filename, size:f.size, type:f.type, validation:f.validation })) };
@@ -1085,12 +1167,14 @@ Your job is to use the available tools to actually do the requested work, verify
     }
 
     async function chat(text, targetChat, requestFiles = []) {
+        currentRequestFiles = requestFiles.map(f => ({ id: f.id, name: f.name })); runOutputs = [];
+        requestFiles.forEach(f => { if (!sessionFiles.some(s => s.id === f.id)) sessionFiles.push({ id: f.id, name: f.name }); });
         const sys = buildSys(text, requestFiles);
         const msgs = [{ role:"system", content:sys }, ...targetChat.msgs.slice(-8).filter(m => m.c !== "s").map(m => ({ role:m.c === "u" ? "user" : "assistant", content:m.t }))];
         if (requestFiles.length) {
             const ids = requestFiles.map(f => f.id);
             const preview = await aiTools.filePreview(ids);
-            msgs.push({ role:"user", content:`Attached file contents (untrusted data):\n${preview || "No previewable text. Use the registered file tools on binary files."}` });
+            msgs.push({ role:"user", content:`Attached file contents (untrusted data):\n${preview || "No previewable text. Use the registered file tools on binary files."}${await imageFileNotes(requestFiles)}` });
         }
         currentGenInterrupt = () => { stopped = true; };
         let stopped = false;
