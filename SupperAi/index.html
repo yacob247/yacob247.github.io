@@ -150,14 +150,22 @@
     .ct-dot { width: 7px; height: 7px; border-radius: 50%; background: #00d4ff; flex-shrink: 0; animation: ctp 1s infinite; }
     .ct-line.done .ct-dot { animation: none; background: #22c55e; }
     @keyframes ctp { 50% { opacity: .25; } }
-    .ct-line { display: block !important; width: min(720px, 100%); }
-    .ct-box > summary { display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none; }
+    .ct-line { display: block !important; align-self: stretch; width: min(760px, 100%); padding: 0; background: none; border: 0; }
+    .ct-box > summary { display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none; padding: 6px 4px; font-size: .88rem; color: #94a3b8; }
     .ct-box > summary::-webkit-details-marker { display: none; }
-    .ct-box > summary::after { content: "›"; margin-left: auto; transition: transform .15s; }
-    .ct-box[open] > summary::after { transform: rotate(90deg); }
-    .ct-steps { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
-    .ct-step > summary { cursor: pointer; font-size: .78rem; color: #cbd5e1; }
-    .ct-step pre { max-height: 240px; overflow: auto; white-space: pre-wrap; word-break: break-word; font: .74rem Consolas, monospace; background: #0b1224; padding: 8px; border-radius: 8px; margin-top: 4px; }
+    .ct-box > summary::after { content: "⌄"; transition: transform .15s; }
+    .ct-box:not([open]) > summary::after { transform: rotate(-90deg); }
+    .ct-body { border: 1px solid var(--line); border-radius: 12px; background: var(--fill); overflow: hidden; }
+    .ct-notes { padding: 12px 14px; font-size: .84rem; color: #cbd5e1; display: flex; flex-direction: column; gap: 2px; }
+    .ct-row { border-top: 1px solid var(--line); }
+    .ct-row > summary { cursor: pointer; list-style: none; padding: 9px 14px; font-size: .84rem; color: #94a3b8; display: flex; align-items: center; gap: 6px; }
+    .ct-row > summary::-webkit-details-marker { display: none; }
+    .ct-row > summary::after { content: "›"; }
+    .ct-row[open] > summary::after { content: "⌄"; }
+    .ct-row .ct-inner { padding: 0 14px 12px; display: flex; flex-direction: column; gap: 6px; }
+    .ct-row .ol { font-size: .72rem; color: #64748b; margin-top: 4px; }
+    .ct-row pre { max-height: 240px; overflow: auto; white-space: pre-wrap; word-break: break-word; font: .76rem Consolas, monospace; background: #0b1224; padding: 10px; border-radius: 8px; margin: 0; }
+    .ct-row.plain > summary::after { content: ""; }
     /* --- old expandable block (unused now) --- */
     .ct { margin: 10px 0; width: 100%; border: 1px solid #2f2f2f; border-radius: 12px; background: #1a1a1a; overflow: hidden; display: flex; flex-direction: column; }
     .ct > summary { list-style: none; cursor: pointer; padding: 10px 16px; font-size: 0.85rem; color: #94a3b8; display: flex; align-items: center; justify-content: space-between; user-select: none; background: #1a1a1a; }
@@ -633,27 +641,45 @@
 
     function createClaudeBlock(targetChat) {
         if (S.cur.id !== targetChat.id) return null;
-        const d = document.createElement("div"); d.className = "ct-line"; d._t0 = Date.now();
-        d.innerHTML = '<details class="ct-box"><summary><span class="ct-dot"></span><span class="ct-txt">Thinking…</span></summary><div class="ct-steps"></div></details>';
+        const d = document.createElement("div"); d.className = "ct-line"; d._t0 = Date.now(); d._cmds = 0; d._last = "";
+        d.innerHTML = '<details class="ct-box" open><summary><span class="ct-dot"></span><span class="ct-txt">Thinking…</span></summary><div class="ct-body"><div class="ct-notes"></div></div></details>';
         $("chat").appendChild(d); autoscroll();
         return d;
+    }
+    function addNote(el, txt) {
+        if (!el || !txt || el._last === txt) return; el._last = txt;
+        const n = document.createElement("div"); n.textContent = txt; el.querySelector(".ct-notes").appendChild(n);
     }
     function setStatus(el, txt, done) {
         if (!el) return;
         const secs = Math.max(1, Math.round((Date.now() - el._t0) / 1000));
-        el.querySelector(".ct-txt").textContent = done && txt === "Done" ? `Thought for ${secs}s` : txt;
+        if (!done) addNote(el, txt);
+        let label = txt;
+        if (done && txt === "Done") label = el._cmds ? `Ran ${el._cmds} command${el._cmds > 1 ? "s" : ""} · ${secs}s` : `Thought for ${secs}s`;
+        el.querySelector(".ct-txt").textContent = label;
         el.classList.toggle("done", !!done);
+        if (done) { const box = el.querySelector(".ct-box"); if (box) box.open = false; }
     }
     function addStep(el, title, detail) {
         if (!el) return null;
-        const d = document.createElement("details"); d.className = "ct-step"; d.innerHTML = "<summary></summary><pre></pre>";
-        d.querySelector("summary").textContent = title; d.querySelector("pre").textContent = String(detail || "").slice(0, 4000);
-        el.querySelector(".ct-steps").appendChild(d); autoscroll(); return d;
+        el._cmds++;
+        const d = document.createElement("details"); d.className = "ct-row";
+        d.innerHTML = '<summary></summary><div class="ct-inner"><div class="ol">Command</div><pre class="cmd"></pre></div>';
+        d.querySelector("summary").textContent = title; d.querySelector(".cmd").textContent = String(detail || "").slice(0, 4000);
+        el.querySelector(".ct-body").appendChild(d); autoscroll(); return d;
     }
     function finishStep(d, res) {
         if (!d) return;
         const sm = d.querySelector("summary"); sm.textContent = sm.textContent.replace(/^Running/, "Ran");
-        d.querySelector("pre").textContent += "\n\n→ Result:\n" + String(res).slice(0, 3000);
+        const inner = d.querySelector(".ct-inner");
+        inner.insertAdjacentHTML("beforeend", '<div class="ol">Output</div><pre class="out"></pre>');
+        inner.querySelector(".out").textContent = String(res).slice(0, 3000);
+    }
+    function addResultRow(el, txt) {
+        if (!el || !txt) return;
+        const d = document.createElement("div"); d.className = "ct-row"; d.innerHTML = '<summary></summary>';
+        const sm = document.createElement("div"); sm.className = "ct-row plain"; sm.style.cssText = "padding:9px 14px;font-size:.84rem;color:#94a3b8"; sm.textContent = txt;
+        el.querySelector(".ct-body").appendChild(sm);
     }
     // Reads a (possibly unfinished) JSON string field out of streamed text, so slots can be filled live.
     function partialField(src, key) {
@@ -1095,7 +1121,72 @@ ${contextHint(text)}`;
         throw new Error(`Tool ${t.tool || "(missing name)"} is not registered.`);
     }
 
+    // ---------- Fast direct router: keywords decide the tool in code, the small model only writes the text ----------
+    async function llmText(messages, maxTokens, temp, isStopped) {
+        let raw = "";
+        const stream = await engine.chat.completions.create({ stream: true, temperature: temp, max_tokens: maxTokens, messages });
+        for await (const c of stream) { if (isStopped()) break; raw += c.choices?.[0]?.delta?.content || ""; }
+        return raw.replace(/<think>[\s\S]*?(<\/think>|$)/g, "").replace(/^```[a-z]*\n?|```$/gm, "").trim();
+    }
+    async function directRoute(text, targetChat) {
+        const t = text.toLowerCase();
+        const calc = text.match(/\d[\d\s,.+\-*\/()^%x×]*\d/);
+        const expr = calc ? calc[0].replace(/,/g, "").replace(/[x×]/gi, "*").replace(/\^/g, "**").trim() : "";
+        const isCalc = /^[\d\s.+\-*\/()%]+$/.test(expr) && /[+\-*\/%]/.test(expr.replace(/^-/, "")) && (text.length < 90 || /\b(calculate|compute|what is|multiply|times|plus|minus|divide)\b/.test(t));
+        let kind = "chat";
+        if (/\b(e-?mails?|gmail|mail)\b/.test(t)) kind = "email";
+        else if (/\b(pptx|powerpoint|presentation|slides?|slide deck)\b/.test(t)) kind = "pptx";
+        else if (/\b(docx?|word doc|document|report|essay|letter|proposal|article|resume|cv|contract|memo|write[- ]?up)\b/.test(t)) kind = "docx";
+        else if (isCalc) kind = "calc";
+        else if (/\b(python|pandas|numpy|plot|simulate|fibonacci|prime|factorial|calculate|compute|run (this|the) code)\b/.test(t)) kind = "python";
+        else if (/\b(search|google|weather|currency|exchange rate|scrape|https?:|qr|calendar|invoice|remind|task|contact|image|photo|pdf|resize|merge|webp|csv|json|ocr|compress|crop)\b/.test(t)) return false;
+        let stopped = false; currentGenInterrupt = () => { stopped = true; };
+        const status = createClaudeBlock(targetChat), stop = () => stopped;
+        addNote(status, "Working out what you want: " + ({chat:"a normal chat reply",calc:"a calculation",python:"Python code",email:"an email",pptx:"a presentation",docx:"a document"})[kind] + ".");
+        const hist = targetChat.msgs.slice(-6).filter(m => m.c !== "s").map(m => ({ role: m.c === "u" ? "user" : "assistant", content: m.t }));
+        const ask = (sys, max, temp = 0.4) => llmText([{ role: "system", content: sys }, ...hist], max, temp, stop);
+        const say = m => bub(m, "a", false, targetChat);
+        try {
+            if (kind === "chat") {
+                setStatus(status, "Replying…");
+                const a = await ask("You are Yacob, a friendly, concise assistant. Answer directly.", 600);
+                if (!stopped) say(a || "I couldn't produce a response.");
+            } else if (kind === "calc") {
+                setStatus(status, "Calculating with Python…"); const code = `result = ${expr}\nprint(result)`;
+                const st = addStep(status, "Running run_python", code);
+                const card = renderInlinePython(code, targetChat); const r = card?.run ? await card.run() : { output: "" };
+                finishStep(st, r.output); say(`${expr} = ${r.output}`);
+            } else if (kind === "python") {
+                setStatus(status, "Writing Python…");
+                const code = await ask("Write complete, working Python that print()s its results. Output ONLY the code, no explanation, no markdown.", 900, 0.2);
+                if (!stopped) { const st = addStep(status, "Running run_python", code); const card = renderInlinePython(code, targetChat); const r = card?.run ? await card.run() : { output: "" }; finishStep(st, r.output); say("Done. The output is in the Python card above."); }
+            } else if (kind === "email") {
+                setStatus(status, "Writing email…");
+                const raw = await ask("You write emails. Reply in EXACTLY this format and nothing else:\nSubject: <subject>\n\n<full email body>\nRules: ready to send, complete paragraphs, NO [brackets] or placeholders, no commentary, sign off with 'Regards'.", 700);
+                if (!stopped) {
+                    const sm = raw.match(/^\s*subject\s*:\s*(.+)$/im), subject = sm ? sm[1].trim() : "(no subject)";
+                    const body = raw.replace(/^\s*subject\s*:.*$/im, "").trim(), to = (text.match(/[\w.+-]+@[\w-]+\.[\w.-]+/) || [""])[0];
+                    addResultRow(status, "Opened the email editor"); renderInlineEmail({ to, subject, body }, targetChat);
+                    say("Your email is ready in the editor above. Edit it and send.");
+                }
+            } else {
+                const ppt = kind === "pptx";
+                setStatus(status, ppt ? "Writing slides…" : "Writing document…");
+                const raw = await ask(ppt ? "Write the full slide deck. Separate slides with a line containing only ---. First line of each slide is its title, the rest are bullet lines. No commentary." : "Write the complete document, full length. First line is the title, then real sections. No commentary or preamble.", 1800);
+                if (!stopped) {
+                    const title = (raw.split("\n")[0] || "Document").replace(/[#*]/g, "").trim().slice(0, 40) || "Document";
+                    addResultRow(status, ppt ? "Opened the slides editor" : "Opened the document editor");
+                    if (ppt) renderInlinePpt(title + ".pptx", raw, targetChat); else renderInlineDoc(title + ".docx", raw, targetChat);
+                    say(`Your ${ppt ? "presentation" : "document"} is ready in the editor above.`);
+                }
+            }
+            setStatus(status, stopped ? "Stopped" : "Done", true);
+        } catch (e) { setStatus(status, "AI request failed", true); bub("Stopped: " + (e.message || e), "s", false, targetChat); }
+        currentGenInterrupt = null; return true;
+    }
+
     async function chat(text, targetChat, requestFiles = []) {
+        if (!requestFiles.length && await directRoute(text, targetChat)) { save(); if (S.cur.id === targetChat.id) autoscroll(); return; }
         currentRequestFiles = requestFiles.map(f => ({ id: f.id, name: f.name })); runOutputs = [];
         requestFiles.forEach(f => { if (!sessionFiles.some(s => s.id === f.id)) sessionFiles.push({ id: f.id, name: f.name }); });
         const sys = buildSys(text, requestFiles);
@@ -1134,6 +1225,7 @@ ${contextHint(text)}`;
                 bub(answer, "a", false, targetChat); setStatus(status, "Done", true); break;
             }
             msgs.push({ role:"assistant", content:clean });
+            addNote(status, `Chose the ${call.tool} tool.`);
             setStatus(status, `Running ${call.tool}…`);
             const stepEl = addStep(status, "Running " + call.tool, call.code || JSON.stringify(call, null, 2));
             let outcome;
@@ -1451,6 +1543,7 @@ self.onmessage = (m) => h.onmessage(m);`;
     })();
     
 </script>
+
 <script src="p1.js"></script>
 <script src="p2.js"></script>
 <script src="image-tools.js"></script>
