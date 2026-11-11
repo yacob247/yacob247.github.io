@@ -3199,6 +3199,27 @@ async function fetchGameMonetizeGames() {
   });
 }
 
+async function fetchMadKidGames() {
+  const r = await fetch('mad.json', { cache: 'no-cache' });
+  if (!r.ok) return [];
+  const data = await r.json();
+  return data.filter(it => it && it.url && it.title).map(it => {
+    const category = cleanText(it.category) || 'Other';
+    const tags = (Array.isArray(it.tags) ? it.tags : String(it.tags || '').split(',')).map(t => cleanText(t)).filter(Boolean);
+    const sub = tags.find(t => t.toLowerCase() !== category.toLowerCase() && !/^\d+\s*player/i.test(t)) || 'General';
+    return applyRewrite({
+      id: String(it.id),
+      name: cleanText(it.title),
+      category, subcategory: sub,
+      thumbnail: it.thumb || '',
+      embedUrl: __gl.seal(it.url),
+      description: cleanText(it.description).slice(0, 320),
+      tags: tags.slice(0, 5),
+      provider: 'MadKidGames'
+    });
+  });
+}
+
   
 
     // ================================================================
@@ -3211,6 +3232,7 @@ async function fetchGameMonetizeGames() {
   isLoading = true;
   try {
     allGames = allGames.concat(await fetchGameMonetizeGames());
+    try { allGames = allGames.concat(await fetchMadKidGames()); } catch (e) { console.warn('MadKidGames catalog unavailable', e); }
   } catch (e) { console.error(e); feedFailed = true; }
   isLoading = false;
   onBatchLoaded();
