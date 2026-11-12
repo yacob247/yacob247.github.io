@@ -4876,4 +4876,75 @@ const EMU_PAGES = {
   update();
 })();
 </script>
+
+<style>
+/* ===== PLAY NEXT: hovering a card pops out the WHOLE picture at its own shape (nothing cropped) ===== */
+@media (hover: hover) {
+  .next-grid .nx:hover { transform: none; box-shadow: none; z-index: auto; }
+  .next-grid .nx:hover .nx-info, .next-grid .nx:hover::after { opacity: 0; }
+}
+.nx-pop { position: fixed; z-index: 9000; display: block; overflow: hidden; border-radius: 12px; background: #05080f; text-decoration: none; color: #fff;
+  box-shadow: 0 0 0 3px #ff7a1a, 0 0 16px 2px rgba(255,122,26,.7), 0 0 34px 8px rgba(0,212,255,.42), 0 14px 34px rgba(0,0,0,.65);
+  animation: nxPopIn .16s ease-out both; transition: width .12s ease, height .12s ease, left .12s ease, top .12s ease; }
+.nx-pop img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.nx-pop .nx-info { position: absolute; left: 0; right: 0; bottom: 0; padding: 26px 10px 9px; opacity: 1; pointer-events: none;
+  background: radial-gradient(circle at 94% 100%, rgba(0,212,255,.8), transparent 46%), radial-gradient(circle at 4% 88%, rgba(0,212,255,.35), transparent 30%), linear-gradient(transparent, rgba(255,112,20,.96) 58%); }
+.nx-pop .nx-info > b { display: block; font-size: .88rem; font-weight: 800; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nx-pop .nx-row { display: flex; align-items: center; gap: 7px; margin-top: 4px; font-size: .64rem; font-weight: 700; white-space: nowrap; }
+.nx-pop .nx-chip { font-style: normal; border: 1px solid rgba(0,212,255,.75); background: rgba(6,12,30,.82); padding: 2px 7px; border-radius: 999px; max-width: 90px; overflow: hidden; text-overflow: ellipsis; }
+.nx-pop .nx-row em { font-style: normal; }
+@keyframes nxPopIn { from { opacity: 0; transform: scale(.94); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .nx-pop { animation: none; transition: none; } }
+</style>
+
+<script>
+/* ===== PLAY NEXT hover: pop-out card sized to the picture's own shape (wide, tall or square), whole image visible ===== */
+(function () {
+  var grid = document.getElementById('nextGrid');
+  if (!grid || !window.matchMedia || !matchMedia('(hover: hover)').matches) return;
+  var pop = null, cur = null;
+
+  function close() { if (pop) { pop.remove(); pop = null; cur = null; } }
+
+  function size(c, r) {                       // c = grid cell width, r = picture width / height
+    var vw = innerWidth - 16, vh = innerHeight - 16;
+    var w = r >= 1 ? c * 1.6 : c * 1.6 * r;
+    w = Math.max(c * 1.25, Math.min(c * 2.2, w));
+    var h = w / r, maxH = Math.min(c * 2.4, vh);
+    if (h > maxH) { h = maxH; w = h * r; }
+    if (w > vw) { w = vw; h = w / r; }
+    return { w: Math.round(w), h: Math.round(h) };
+  }
+  function place(card, img) {
+    var o = img.naturalWidth ? img : card.querySelector('img') || img;       // the card's own picture is already loaded
+    var b = card.getBoundingClientRect(), r = (o.naturalWidth && o.naturalHeight) ? o.naturalWidth / o.naturalHeight : 1;
+    var s = size(b.width, r);
+    var left = b.left + b.width / 2 - s.w / 2, top = b.top + b.height / 2 - s.h / 2;
+    left = Math.max(8, Math.min(innerWidth - s.w - 8, left));
+    top = Math.max(8, Math.min(innerHeight - s.h - 8, top));
+    pop.style.width = s.w + 'px'; pop.style.height = s.h + 'px'; pop.style.left = Math.round(left) + 'px'; pop.style.top = Math.round(top) + 'px';
+  }
+  function open(card) {
+    close(); cur = card;
+    var src = card.querySelector('img'), info = card.querySelector('.nx-info');
+    if (!src) return;
+    pop = document.createElement('a'); pop.className = 'nx-pop'; pop.href = '#/play/' + encodeURIComponent(card.dataset.id);
+    var im = document.createElement('img'); im.alt = ''; im.src = src.currentSrc || src.src; pop.appendChild(im);
+    if (info) pop.appendChild(info.cloneNode(true));
+    document.body.appendChild(pop);
+    place(card, im);
+    if (!im.complete || !im.naturalWidth) im.addEventListener('load', function () { if (pop && cur === card) place(card, im); });
+    pop.addEventListener('mouseleave', close);
+  }
+
+  grid.addEventListener('mouseover', function (e) {
+    var c = e.target.closest && e.target.closest('.nx');
+    if (c && c !== cur) open(c);
+  });
+  addEventListener('scroll', close, { passive: true });
+  addEventListener('resize', close);
+  addEventListener('hashchange', close);
+  addEventListener('blur', close);
+})();
+</script>
 </body></html>
