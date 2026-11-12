@@ -490,13 +490,7 @@
     $('#gnpPlayer')?.remove();
     const host = $('#pvDesc'); if (!host) return;
     const box = el('div', { id: 'gnpPlayer' });
-    const mine = S.react[g.id] || '';
-    const row = el('div', { class: 'gnp-react' });
-    ['🔥', '😴', '💀', '🎯'].forEach(e => {
-      const b = el('button', { class: 'gnp-emo' + (mine === e ? ' on' : ''), text: e });
-      b.onclick = () => { S.react[g.id] = S.react[g.id] === e ? '' : e; save(); decoratePlayer(g); };
-      row.append(b);
-    });
+        const row = el('div', { class: 'gnp-react' });
     const REPORT_EMAIL = 'envizionupdates@gmail.com';
     const body = 'Hi, this game is not working.\n\nGame: ' + g.name + '\nGame ID: ' + g.id +
       '\nLink: ' + location.href + '\nBrowser: ' + navigator.userAgent + '\n\nWhat went wrong:\n';
