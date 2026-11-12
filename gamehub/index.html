@@ -4883,7 +4883,7 @@ const EMU_PAGES = {
   .next-grid .nx:hover { transform: none; box-shadow: none; z-index: auto; }
   .next-grid .nx:hover .nx-info, .next-grid .nx:hover::after { opacity: 0; }
 }
-.nx-pop { position: fixed; z-index: 9000; display: block; overflow: hidden; border-radius: 12px; background: #05080f; text-decoration: none; color: #fff;
+.nx-pop { position: fixed; z-index: 9000; display: block; pointer-events: none; overflow: hidden; border-radius: 12px; background: #05080f; text-decoration: none; color: #fff;
   box-shadow: 0 0 0 3px #ff7a1a, 0 0 16px 2px rgba(255,122,26,.7), 0 0 34px 8px rgba(0,212,255,.42), 0 14px 34px rgba(0,0,0,.65);
   animation: nxPopIn .16s ease-out both; transition: width .12s ease, height .12s ease, left .12s ease, top .12s ease; }
 .nx-pop img { display: block; width: 100%; height: 100%; object-fit: contain; }
@@ -4898,15 +4898,31 @@ const EMU_PAGES = {
 </style>
 
 <script>
-/* ===== PLAY NEXT hover: pop-out card sized to the picture's own shape (wide, tall or square), whole image visible ===== */
+/* ===== HOVER POP-OUT (main page cards + Play next): once the pointer has rested on a card for ~1.5 s (and nothing is scrolling),
+   it pops out at the picture's own shape, whole image visible. It never catches the mouse, so row auto-scroll, wheel and clicks keep working. ===== */
 (function () {
-  var grid = document.getElementById('nextGrid');
-  if (!grid || !window.matchMedia || !matchMedia('(hover: hover)').matches) return;
-  var pop = null, cur = null;
+  if (!window.matchMedia || !matchMedia('(hover: hover)').matches) return;
+  var SEL = '.nx, .pcard[data-id]', HOVER_MS = 100, QUIET_MS = 50;
+  var pop = null, cur = null, cand = null, timer = 0, lx = -1, ly = -1, lastScroll = 0;
 
-  function close() { if (pop) { pop.remove(); pop = null; cur = null; } }
+  function close() { if (pop) { pop.remove(); pop = null; } cur = null; }
+  function cancel() { clearTimeout(timer); timer = 0; }
+  function under() {                                  // the card that is really under the pointer right now
+    if (lx < 0) return null;
+    var e = document.elementFromPoint(lx, ly);
+    return e && e.closest ? e.closest(SEL) : null;
+  }
+  function arm(c, ms) { cancel(); cand = c; if (c) timer = setTimeout(fire, ms || HOVER_MS); }
+  function fire() {
+    timer = 0; if (!cand) return;
+    var quiet = performance.now() - lastScroll;
+    if (quiet < QUIET_MS) { timer = setTimeout(fire, QUIET_MS - quiet + 20); return; }   // rows still scrolling: wait for them to stop
+    var u = under();
+    if (u !== cand) { close(); arm(u); return; }      // card moved away from under the pointer (scrolled): start over on the new one
+    if (cand.isConnected) open(cand);
+  }
 
-  function size(c, r) {                       // c = grid cell width, r = picture width / height
+  function size(c, r) {                       // c = card width, r = picture width / height
     var vw = innerWidth - 16, vh = innerHeight - 16;
     var w = r >= 1 ? c * 1.6 : c * 1.6 * r;
     w = Math.max(c * 1.25, Math.min(c * 2.2, w));
@@ -4924,27 +4940,68 @@ const EMU_PAGES = {
     top = Math.max(8, Math.min(innerHeight - s.h - 8, top));
     pop.style.width = s.w + 'px'; pop.style.height = s.h + 'px'; pop.style.left = Math.round(left) + 'px'; pop.style.top = Math.round(top) + 'px';
   }
+  function infoFor(card) {
+    var info = card.querySelector('.nx-info');
+    if (info) return info.cloneNode(true);                                   // Play next cards already have one
+    var t = card.querySelector('.ttl');
+    if (!t) return null;
+    var d = document.createElement('div'); d.className = 'nx-info';
+    var b = document.createElement('b'); b.textContent = t.textContent; d.appendChild(b);
+    var cat = card.querySelector('.cnt'), sub = card.querySelector('.meta'), txt = (sub && sub.textContent) || (cat && cat.textContent) || '';
+    if (txt) { var row = document.createElement('div'); row.className = 'nx-row'; var chip = document.createElement('i'); chip.className = 'nx-chip'; chip.textContent = txt; row.appendChild(chip); d.appendChild(row); }
+    return d;
+  }
   function open(card) {
-    close(); cur = card;
-    var src = card.querySelector('img'), info = card.querySelector('.nx-info');
-    if (!src) return;
-    pop = document.createElement('a'); pop.className = 'nx-pop'; pop.href = '#/play/' + encodeURIComponent(card.dataset.id);
+    close();
+    var src = card.querySelector('img'); if (!src || !card.dataset.id) return;
+    cur = card;
+    pop = document.createElement('div'); pop.className = 'nx-pop';
     var im = document.createElement('img'); im.alt = ''; im.src = src.currentSrc || src.src; pop.appendChild(im);
-    if (info) pop.appendChild(info.cloneNode(true));
+    var inf = infoFor(card); if (inf) pop.appendChild(inf);
     document.body.appendChild(pop);
     place(card, im);
     if (!im.complete || !im.naturalWidth) im.addEventListener('load', function () { if (pop && cur === card) place(card, im); });
-    pop.addEventListener('mouseleave', close);
   }
 
-  grid.addEventListener('mouseover', function (e) {
-    var c = e.target.closest && e.target.closest('.nx');
-    if (c && c !== cur) open(c);
-  });
-  addEventListener('scroll', close, { passive: true });
-  addEventListener('resize', close);
-  addEventListener('hashchange', close);
-  addEventListener('blur', close);
+  function onPointer(e) {
+    lx = e.clientX; ly = e.clientY;
+    var c = e.target && e.target.closest ? e.target.closest(SEL) : null;
+    if (c === cand) return;                           // still on the same card: keep waiting
+    close(); arm(c);                                  // new card (or left the cards): drop any pop-out, wait again
+  }
+  document.addEventListener('mouseover', onPointer, true);
+  document.addEventListener('mousemove', function (e) { lx = e.clientX; ly = e.clientY; }, { passive: true, capture: true });
+  document.addEventListener('mouseout', function (e) { if (!e.relatedTarget) { lx = ly = -1; cancel(); cand = null; close(); } }, true);   // pointer left the window
+  function scrolled() { lastScroll = performance.now(); if (pop) { close(); if (cand && !timer) arm(cand); } }
+  addEventListener('scroll', scrolled, { passive: true, capture: true });   // any scroll, incl. rows auto-scrolling: hide, and wait until it stops
+  addEventListener('wheel', scrolled, { passive: true, capture: true });
+  addEventListener('mousedown', function () { cancel(); close(); }, true);
+  addEventListener('resize', function () { cancel(); cand = null; close(); });
+  addEventListener('hashchange', function () { cancel(); cand = null; close(); });
 })();
 </script>
+
+<style>
+/* ===== PHONES: expanded category grids + all-games grid = tidy 2-column grid, every tile the same size ===== */
+@media (max-width: 640px) {
+  #secView .sec-grid, #allSec .grid2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    grid-auto-rows: auto !important; grid-auto-flow: row !important;
+    gap: 10px !important; justify-content: stretch !important; align-items: start !important;
+  }
+  #secView .sec-grid .pcard, #allSec .grid2 .pcard,
+  #secView .sec-grid .pcard[data-shape], #allSec .grid2 .pcard[data-shape] {
+    grid-column: auto !important; grid-row: auto !important;
+    width: 100% !important; height: auto !important; aspect-ratio: 16 / 10 !important;
+    position: relative !important; overflow: hidden !important; border-radius: 10px !important; background: #101626 !important;
+  }
+  #secView .sec-grid .pcard img, #allSec .grid2 .pcard img {
+    position: absolute !important; inset: 0 !important; width: 100% !important; height: 100% !important;
+    aspect-ratio: auto !important; object-fit: cover !important; border-radius: 10px !important;
+  }
+  #secView .sec-grid .pcard .ov, #allSec .grid2 .pcard .ov { position: absolute !important; inset: 0 !important; height: auto !important; padding: 6px 8px !important; }
+  #secView .sec-grid .pcard .ttl, #allSec .grid2 .pcard .ttl { font-size: .74rem !important; }
+  #secView .sec-grid .pcard:hover, #allSec .grid2 .pcard:hover { transform: none !important; }
+}
+</style>
 </body></html>
