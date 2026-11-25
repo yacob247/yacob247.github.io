@@ -1,0 +1,1925 @@
+================================================================================
+ SPECIAL-FILES-REFERENCE.TXT
+ Every "special file" a website can have — sitemaps, ads.txt, robots.txt,
+ PWA files, security files, host configs, feeds, error pages, misc.
+ --------------------------------------------------------------------------------
+ Each entry gives you:
+   · WHERE IT GOES  (exact folder / URL path)
+   · FORMAT         (file type)
+   · STRUCTURE      (annotated template you can copy)
+   · NOTES          (gotchas)
+
+ This is NOT a template you fill in once. Pick what applies to your site.
+================================================================================
+
+
+================================================================================
+ SECTION 0 · WHERE FILES LIVE ON A SERVER
+================================================================================
+
+DOMAIN ROOT  →  https://example.com/  (the folder mapped to the domain)
+
+   /                            ← ROOT
+   ├── index.html               ← home page
+   ├── about.html
+   ├── contact.html
+   ├── ...
+   │
+   ├── robots.txt               ← MUST be at root
+   ├── sitemap.xml              ← MUST be at root (or referenced from robots.txt)
+   ├── sitemap-index.xml        ← optional alternate name
+   ├── sitemap.html             ← human-readable; can live anywhere
+   ├── ads.txt                  ← MUST be at root (or /public_html)
+   ├── app-ads.txt              ← MUST be at root
+   ├── humans.txt               ← MUST be at root
+   ├── security.txt             ← root OR /.well-known/security.txt
+   ├── opensearch.xml           ← root or /search/
+   ├── rss.xml                  ← root (or /feed/, /rss/)
+   ├── atom.xml
+   ├── feed.json
+   ├── favicon.ico              ← root
+   ├── browserconfig.xml        ← root
+   ├── manifest.webmanifest     ← root (or /assets/)
+   ├── service-worker.js        ← root (or /assets/) — scope matters
+   ├── .htaccess                ← Apache only, root or per-folder
+   ├── web.config               ← IIS only
+   ├── _headers                 ← Netlify / Cloudflare Pages
+   ├── _redirects               ← Netlify / Cloudflare Pages
+   ├── netlify.toml             ← Netlify
+   ├── vercel.json              ← Vercel
+   ├── firebase.json            ← Firebase
+   ├── CNAME                    ← GitHub Pages
+   ├── .nojekyll                ← GitHub Pages
+   │
+   ├── .well-known/             ← EXACT folder name, all lowercase, hidden
+   │   ├── security.txt
+   │   ├── change-password
+   │   ├── gpc.json
+   │   ├── dnt-policy.txt
+   │   ├── apple-app-site-association
+   │   ├── assetlinks.json
+   │   └── (others)
+   │
+   ├── assets/  (or /static/, /public/, /img/, /css/, /js/)
+   │   ├── favicon-16.png
+   │   ├── favicon-32.png
+   │   ├── apple-touch-icon.png
+   │   ├── icon-192.png
+   │   ├── icon-512.png
+   │   └── ...
+   │
+   ├── 404.html                 ← root or per-host
+   ├── 500.html
+   ├── offline.html
+   ├── maintenance.html
+   ├── coming-soon.html
+   │
+   ├── README.md                ← not served (hidden by web servers)
+   ├── LICENSE
+   ├── .gitignore
+   └── ... actual site folders
+
+RULES OF THUMB
+  · Files starting with "." are hidden on most OSes and NOT served by most
+    web servers by default (.htaccess, .well-known contents, .env).
+  · robots.txt, sitemap.xml, ads.txt MUST be at the true root.
+  · .well-known must be spelled exactly and be served with Content-Type.
+  · Server config files (.htaccess, _headers, etc.) are read at deploy,
+    not sent to visitors.
+  · Every path in this document is relative to the DOMAIN ROOT unless
+    marked otherwise.
+
+
+================================================================================
+ SECTION 1 · SEARCH ENGINE / DISCOVERY FILES
+================================================================================
+
+--------------------------------------------------------------------------------
+ 1.1  robots.txt
+--------------------------------------------------------------------------------
+WHERE   : /robots.txt  (root, exact name, lowercase)
+FORMAT  : plain text, UTF-8
+SERVED  : Content-Type: text/plain
+NOTES   : Crawlers fetch this first. Keep it small, don't hide secrets here
+          (it's public). Use sitemap reference at the end.
+
+STRUCTURE
+  -------------------------------------------------------------------------
+  # Group for general crawlers
+  User-agent: *
+  Allow: /              ← allow everything
+  # Disallow: /admin/   ← block a folder (optional, one per line)
+  # Disallow: /*.pdf    ← block a pattern (optional)
+
+  # Block a specific bad crawler
+  # User-agent: BadBot
+  # Disallow: /
+
+  # Crawl delay (seconds; only some bots honour it)
+  # Crawl-delay: 5
+
+  # Sitemaps — absolute URL, one per line
+  Sitemap: https://example.com/sitemap.xml
+  # Sitemap: https://example.com/sitemap-images.xml
+  # Sitemap: https://example.com/sitemap-videos.xml
+  -------------------------------------------------------------------------
+
+MUST NOT contain: passwords, admin paths you're trying to hide, staging URLs,
+                  crawl-delays on Googlebot (ignored), inline comments after
+                  rules on the same line without care.
+
+
+--------------------------------------------------------------------------------
+ 1.2  sitemap.xml
+--------------------------------------------------------------------------------
+WHERE   : /sitemap.xml  (root, exact name)
+FORMAT  : XML
+SERVED  : Content-Type: application/xml
+NOTES   : Up to 50,000 URLs per file, 50 MB max uncompressed. If bigger,
+          split into multiple sitemaps and use a sitemap-index (1.3).
+
+STRUCTURE
+  -------------------------------------------------------------------------
+  <?xml version="1.0" encoding="UTF-8"?>
+  <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+
+    <!-- ===== HOME ===== -->
+    <url>
+      <loc>https://example.com/</loc>
+      <lastmod>2025-01-15</lastmod>
+      <changefreq>weekly</changefreq>
+      <priority>1.0</priority>
+    </url>
+
+    <!-- ===== TOP-LEVEL PAGES ===== -->
+    <url>
+      <loc>https://example.com/about</loc>
+      <lastmod>2025-01-10</lastmod>
+      <changefreq>monthly</changefreq>
+      <priority>0.8</priority>
+    </url>
+
+    <url>
+      <loc>https://example.com/contact</loc>
+      <lastmod>2025-01-10</lastmod>
+      <changefreq>yearly</changefreq>
+      <priority>0.6</priority>
+    </url>
+
+    <!-- ===== BLOG / CONTENT ===== -->
+    <!-- repeat this block for every URL you want indexed -->
+    <url>
+      <loc>https://example.com/blog/my-post</loc>
+      <lastmod>2025-01-14</lastmod>
+      <changefreq>monthly</changefreq>
+      <priority>0.7</priority>
+    </url>
+
+  </urlset>
+  -------------------------------------------------------------------------
+
+FIELD CHEATSHEET
+  <loc>          absolute URL, no fragments (#), no querystring unless real
+  <lastmod>      W3C date (YYYY-MM-DD or full ISO-8601). Omit if unsure.
+  <changefreq>   always | hourly | daily | weekly | monthly | yearly | never
+                 (Google mostly ignores this — set to "weekly" or omit)
+  <priority>     0.0 – 1.0  (relative to other URLs on YOUR site, not global)
+                 Home=1.0, key pages=0.8, deeper=0.5–0.6, old=0.3
+
+
+--------------------------------------------------------------------------------
+ 1.3  sitemap-index.xml
+--------------------------------------------------------------------------------
+WHERE   : /sitemap-index.xml  (reference it from robots.txt)
+FORMAT  : XML
+WHEN    : Your sitemap has > 50k URLs, or you have separate sitemaps for
+          images / videos / news / categories.
+
+STRUCTURE
+  -------------------------------------------------------------------------
+  <?xml version="1.0" encoding="UTF-8"?>
+  <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <sitemap>
+      <loc>https://example.com/sitemap-pages.xml</loc>
+      <lastmod>2025-01-15</lastmod>
+    </sitemap>
+    <sitemap>
+      <loc>https://example.com/sitemap-posts.xml</loc>
+      <lastmod>2025-01-14</lastmod>
+    </sitemap>
+    <sitemap>
+      <loc>https://example.com/sitemap-images.xml</loc>
+      <lastmod>2025-01-14</lastmod>
+    </sitemap>
+    <sitemap>
+      <loc>https://example.com/sitemap-products.xml</loc>
+      <lastmod>2025-01-10</lastmod>
+    </sitemap>
+  </sitemapindex>
+  -------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+ 1.4  sitemap-images.xml / sitemap-videos.xml / sitemap-news.xml
+--------------------------------------------------------------------------------
+WHERE   : /sitemap-images.xml, /sitemap-videos.xml, /sitemap-news.xml
+FORMAT  : XML
+NOTES   : Optional specialized sitemaps. Google needs images to be the actual
+          <img> on the page. Video requires title, description, thumbnail,
+          and player URL. News requires <news:publication>, <news:title>,
+          <news:publication_date>, <news:name>, <news:language>, and only
+          articles published in the last 2 days.
+
+STRUCTURE  (IMAGE)
+  -------------------------------------------------------------------------
+  <?xml version="1.0" encoding="UTF-8"?>
+  <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+          xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
+    <url>
+      <loc>https://example.com/recipes/pasta</loc>
+      <image:image>
+        <image:loc>https://example.com/img/pasta.jpg</image:loc>
+        <image:title>Pasta with tomato</image:title>
+        <image:caption>Fresh pasta, 2025</image:caption>
+      </image:image>
+    </url>
+  </urlset>
+  -------------------------------------------------------------------------
+
+STRUCTURE  (VIDEO)
+  -------------------------------------------------------------------------
+  <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+          xmlns:video="http://www.google.com/schemas/sitemap-video/1.1">
+    <url>
+      <loc>https://example.com/watch/how-to-cook</loc>
+      <video:video>
+        <video:thumbnail_loc>https://example.com/thumbs/how-to.jpg</video:thumbnail_loc>
+        <video:title>How to cook X</video:title>
+        <video:description>Cooking lesson 1.</video:description>
+        <video:content_loc>https://example.com/video/how-to.mp4</video:content_loc>
+        <video:duration>600</video:duration>
+        <video:publication_date>2025-01-10</video:publication_date>
+      </video:video>
+    </url>
+  </urlset>
+  -------------------------------------------------------------------------
+
+STRUCTURE  (NEWS)
+  -------------------------------------------------------------------------
+  <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+          xmlns:news="http://www.google.com/schemas/sitemap-news/0.9">
+    <url>
+      <loc>https://example.com/news/breaking</loc>
+      <news:news>
+        <news:publication>
+          <news:name>My News Site</news:name>
+          <news:language>en</news:language>
+        </news:publication>
+        <news:publication_date>2025-01-15T09:00:00Z</news:publication_date>
+        <news:title>Breaking: Something Happened</news:title>
+      </news:news>
+    </url>
+  </urlset>
+  -------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+ 1.5  sitemap.html  (human-readable sitemap)
+--------------------------------------------------------------------------------
+WHERE   : /sitemap.html   (link in footer, reference in robots.txt optional)
+FORMAT  : HTML
+SERVED  : normal page
+NOTES   : Purely for humans. Not used by search engines to index directly,
+          but a good fallback and great for accessibility.
+
+STRUCTURE
+  -------------------------------------------------------------------------
+  <!DOCTYPE html>
+  <html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Sitemap — Example.com</title>
+    <link rel="canonical" href="https://example.com/sitemap.html">
+  </head>
+  <body>
+    <h1>Sitemap</h1>
+
+    <!-- ===== MAIN ===== -->
+    <h2>Main Pages</h2>
+    <ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="/about">About</a></li>
+      <li><a href="/contact">Contact</a></li>
+    </ul>
+
+    <!-- ===== CONTENT ===== -->
+    <h2>Recipes</h2>
+    <ul>
+      <li><a href="/recipes/pasta">Pasta</a></li>
+      <li><a href="/recipes/soup">Soup</a></li>
+    </ul>
+
+    <!-- ===== LEGAL ===== -->
+    <h2>Legal</h2>
+    <ul>
+      <li><a href="/privacy">Privacy Policy</a></li>
+      <li><a href="/terms">Terms</a></li>
+      <li><a href="/cookies">Cookie Policy</a></li>
+    </ul>
+  </body>
+  </html>
+  -------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+ 1.6  humans.txt
+--------------------------------------------------------------------------------
+WHERE   : /humans.txt  (root, optional but classic)
+FORMAT  : plain text
+NOTES   : Who built the site. Purely for humans. Link from <head>:
+          <link rel="author" href="/humans.txt">
+
+STRUCTURE
+  -------------------------------------------------------------------------
+  /* TEAM */
+  Chef / Author: Jane Doe
+  Contact: jane@example.com
+  Twitter: @janedoe
+  From: Lisbon, Portugal
+
+  /* THANKS */
+  Fonts by Google Fonts
+  Icons by Feather Icons
+
+  /* SITE */
+  Standards: HTML5, CSS3
+  Components: none (vanilla)
+  Software: VS Code, Git
+  Language: English
+  Doctype: HTML5
+  IDE: Visual Studio Code
+  Last update: 2025-01-15
+  -------------------------------------------------------------------------
+
+
+================================================================================
+ SECTION 2 · ADTECH FILES (ads.txt family)
+================================================================================
+
+--------------------------------------------------------------------------------
+ 2.1  ads.txt  (Authorized Digital Sellers)
+--------------------------------------------------------------------------------
+WHERE   : /ads.txt  (root, exact name, lowercase, ALL CAPS title case is
+          technically fine but stick to lowercase)
+FORMAT  : plain text, UTF-8, one record per line, comma-separated
+SERVED  : Content-Type: text/plain
+NOTES   : Required if you sell ad inventory programmatically.
+          Third-party ad networks give you the exact lines to paste.
+          One record = one authorized seller.
+
+FORMAT OF EACH LINE
+  <domain>, <publisher-account-ID>, <relationship>, [certification-authority-ID]
+
+  relationship        = DIRECT  or  RESELLER
+  certification-ID    = only if the exchange requires it (e.g. TAG ID)
+
+STRUCTURE
+  -------------------------------------------------------------------------
+  # ads.txt — authorized sellers
+  # Comments start with a hash.
+  # Copy-paste lines from every ad network you use.
+
+  # Google AdSense (example)
+  google.com, pub-0000000000000000, DIRECT, f08c47fec0942fa0
+
+  # Google Ad Manager (example)
+  google.com, pub-1111111111111111, DIRECT, f08c47fec0942fa0
+
+  # A reseller network (example)
+  someexchange.com, 12345, RESELLER, 0000000000000000
+
+  # Another direct network
+  adnetwork.com, account-ABC, DIRECT
+
+  # ---- You can also declare a domain you OWN ----
+  # ownerdomain=example.com    ← optional, if you own multiple domains
+  -------------------------------------------------------------------------
+
+WHERE TO GET THE LINES
+  · Google AdSense → “Ads.txt” in dashboard
+  · Google Ad Manager → “ads.txt” section
+  · Any ad network → their onboarding or dashboard
+  · Never invent lines. Wrong lines can hurt monetization.
+
+VALIDATE
+  · Open https://yourdomain.com/ads.txt → must return text/plain, 200 OK.
+  · It must be served by your domain, not redirected.
+
+
+--------------------------------------------------------------------------------
+ 2.2  app-ads.txt
+--------------------------------------------------------------------------------
+WHERE   : /app-ads.txt  (root of the domain listed on your app store page)
+FORMAT  : same as ads.txt
+WHEN    : You have mobile apps (iOS/Android) and serve ads in them.
+NOTES   : The developer website URL shown on the app store must point to a
+          domain that hosts /app-ads.txt. Same line format as ads.txt.
+
+STRUCTURE  (identical format to 2.1)
+
+
+--------------------------------------------------------------------------------
+ 2.3  sellers.json
+--------------------------------------------------------------------------------
+WHERE   : /sellers.json   (root)  — or wherever your ad network says
+FORMAT  : JSON
+WHEN    : You're a supply-side platform / ad exchange. Most publishers
+          don't need this; ad tech companies do.
+
+STRUCTURE
+  -------------------------------------------------------------------------
+  {
+    "contact_email": "adops@example.com",
+    "contact_address": "Example Ltd, 1 Main St, Lisbon",
+    "version": "1.0",
+    "identifiers": [
+      { "name": "TAG-ID", "value": "abc123" }
+    ],
+    "sellers": [
+      {
+        "seller_id": "12345",
+        "seller_type": "PUBLISHER",
+        "name": "Example Publisher",
+        "domain": "example.com"
+      },
+      {
+        "seller_id": "67890",
+        "seller_type": "INTERMEDIARY",
+        "name": "Reseller Inc",
+        "domain": "reseller.example"
+      }
+    ]
+  }
+  -------------------------------------------------------------------------
+
+
+================================================================================
+ SECTION 3 · PWA / WEB APP FILES
+================================================================================
+
+--------------------------------------------------------------------------------
+ 3.1  manifest.webmanifest  (or manifest.json)
+--------------------------------------------------------------------------------
+WHERE   : /manifest.webmanifest  (root or /assets/)
+LINKED  : From every HTML page:
+            <link rel="manifest" href="/manifest.webmanifest">
+FORMAT  : JSON
+NOTES   : Makes your site installable. Served with
+          Content-Type: application/manifest+json.
+
+STRUCTURE
+  -------------------------------------------------------------------------
+  {
+    "name": "My Site — Long Name",
+    "short_name": "MySite",
+    "description": "One-line description.",
+    "start_url": "/",
+    "scope": "/",
+    "display": "standalone",
+    "orientation": "any",
+    "background_color": "#ffffff",
+    "theme_color": "#0d3b66",
+    "lang": "en",
+    "dir": "ltr",
+    "icons": [
+      { "src": "/assets/icon-192.png",
+        "sizes": "192x192",
+        "type": "image/png",
+        "purpose": "any" },
+
+      { "src": "/assets/icon-512.png",
+        "sizes": "512x512",
+        "type": "image/png",
+        "purpose": "any" },
+
+      { "src": "/assets/icon-maskable-512.png",
+        "sizes": "512x512",
+        "type": "image/png",
+        "purpose": "maskable" }
+    ],
+    "screenshots": [
+      { "src": "/assets/screen-wide.png",
+        "sizes": "1280x720",
+        "type": "image/png",
+        "form_factor": "wide" },
+      { "src": "/assets/screen-narrow.png",
+        "sizes": "720x1280",
+        "type": "image/png",
+        "form_factor": "narrow" }
+    ],
+    "shortcuts": [
+      { "name": "Open Recipes",
+        "url": "/recipes",
+        "icons": [{ "src": "/assets/icon-96.png", "sizes": "96x96" }] }
+    ]
+  }
+  -------------------------------------------------------------------------
+
+KEY FIELDS
+  start_url   The page the app opens to. Should be a real URL under scope.
+  scope       Which URLs are "in" the app. Outside scope opens in browser.
+  display     standalone | fullscreen | minimal-ui | browser
+  theme_color Colours the status bar (Android).
+  icons       Must include 192x192 and 512x512 at minimum for installability.
+
+
+--------------------------------------------------------------------------------
+ 3.2  service-worker.js  (or sw.js)
+--------------------------------------------------------------------------------
+WHERE   : /service-worker.js  (root, exact path matters)
+LINKED  : From a page script — scope controls which URLs it controls:
+            navigator.serviceWorker.register('/service-worker.js')
+FORMAT  : JavaScript
+SERVED  : Content-Type: application/javascript
+NOTES   : If it's at /service-worker.js it can control ALL pages. If it's
+          at /assets/service-worker.js it can only control /assets/*.
+          Most people put it at root for that reason.
+
+STRUCTURE (minimal offline cache)
+  -------------------------------------------------------------------------
+  // service-worker.js — minimal offline cache
+  const CACHE = 'v1';
+  const ASSETS = [
+    '/',                 // home
+    '/offline.html',     // fallback when offline
+    '/assets/style.css',
+    '/assets/app.js',
+    '/assets/icon-192.png'
+  ];
+
+  // Install — pre-cache
+  self.addEventListener('install', e => {
+    e.waitUntil(
+      caches.open(CACHE).then(c => c.addAll(ASSETS))
+    );
+    self.skipWaiting();
+  });
+
+  // Activate — clear old caches
+  self.addEventListener('activate', e => {
+    e.waitUntil(
+      caches.keys().then(keys =>
+        Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
+      )
+    );
+    self.clients.claim();
+  });
+
+  // Fetch — serve cache first, then network
+  self.addEventListener('fetch', e => {
+    e.respondWith(
+      caches.match(e.request).then(cached =>
+        cached || fetch(e.request).catch(() => caches.match('/offline.html'))
+      )
+    );
+  });
+  -------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+ 3.3  offline.html
+--------------------------------------------------------------------------------
+WHERE   : /offline.html  (root)
+FORMAT  : HTML
+NOTES   : Pre-cached by the service worker. Shown when the network fails.
+          Keep it tiny — no external assets (they'll fail to load too).
+
+STRUCTURE
+  -------------------------------------------------------------------------
+  <!DOCTYPE html>
+  <html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Offline — Example.com</title>
+    <style>/* INLINE styles only */
+      body{ font-family:sans-serif; text-align:center; padding:4rem 1rem; }
+      h1{ font-size:2rem; }
+    </style>
+  </head>
+  <body>
+    <h1>You’re offline</h1>
+    <p>Check your connection and reload.</p>
+    <a href="/">Try again</a>
+  </body>
+  </html>
+  -------------------------------------------------------------------------
+
+
+================================================================================
+ SECTION 4 · .WELL-KNOWN FOLDER  (security / standards)
+================================================================================
+
+Every file here lives at: /<domain>/.well-known/<filename>
+The folder name must be EXACTLY ".well-known" (lowercase, with dot).
+Web server must serve it with correct Content-Type — do not block with
+.htaccess rules. Do not put HTML files here; the expected content types are
+plain text or JSON, depending on the file.
+
+
+--------------------------------------------------------------------------------
+ 4.1  .well-known/security.txt
+--------------------------------------------------------------------------------
+WHERE   : /.well-known/security.txt
+          (Also acceptable /security.txt for legacy)
+FORMAT  : plain text
+SERVED  : Content-Type: text/plain
+NOTES   : RFC 9116. Tells researchers where to report vulnerabilities.
+          Add a PGP or expiry if relevant.
+
+STRUCTURE
+  -------------------------------------------------------------------------
+  # security.txt — security contact
+  # Format: RFC 9116
+
+  Contact: mailto:security@example.com
+  # Contact: https://example.com/security/report
+  # Contact: +15555550100
+
+  Expires: 2026-01-01T00:00:00Z
+
+  Encryption: https://example.com/pgp-key.asc
+  Preferred-Languages: en, pt
+  Canonical: https://example.com/.well-known/security.txt
+  Policy: https://example.com/security/policy
+  Hiring: https://example.com/careers
+  Acknowledgments: https://example.com/security/thanks
+  -------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+ 4.2  .well-known/change-password
+--------------------------------------------------------------------------------
+WHERE   : /.well-known/change-password
+FORMAT  : empty file OR HTML redirect OR 302 redirect
+NOTES   : Browsers/OS use this when a password is compromised.
+          Simplest: make it a redirect to /account/change-password.
+
+STRUCTURE  (option A — redirect, works in Apache/Netlify _redirects/etc.)
+  -------------------------------------------------------------------------
+  / .well-known/change-password  /account/change-password  302
+  -------------------------------------------------------------------------
+
+STRUCTURE  (option B — tiny HTML file)
+  -------------------------------------------------------------------------
+  <!DOCTYPE html>
+  <html>
+  <head><meta charset="utf-8"><title>Change Password</title></head>
+  <body>
+    <p><a href="/account/change-password">Change your password</a></p>
+  </body>
+  </html>
+  -------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+ 4.3  .well-known/gpc.json  (Global Privacy Control)
+--------------------------------------------------------------------------------
+WHERE   : /.well-known/gpc.json
+FORMAT  : JSON
+NOTES   : Tells browsers/plugins you honour the GPC signal (California,
+          Colorado, etc.).
+
+STRUCTURE
+  -------------------------------------------------------------------------
+  {
+    "gpc": true,
+    "lastUpdate": "2025-01-15"
+  }
+  -------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+ 4.4  .well-known/dnt-policy.txt  (Do Not Track policy)
+--------------------------------------------------------------------------------
+WHERE   : /.well-known/dnt-policy.txt
+FORMAT  : plain text
+NOTES   : Choose one of the standard DNT policies maintained by EFF.
+
+STRUCTURE  (copy the standard text from
+            https://www.eff.org/dnt-policy and paste here)
+  -------------------------------------------------------------------------
+  Do Not Track Compliance Policy — Version 1.0
+
+  This domain complies with user opt-out signals as described
+  in EFF's Do Not Track Policy:
+  https://www.eff.org/dnt-policy
+
+  <paste full policy text>
+  -------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+ 4.5  .well-known/apple-app-site-association   (iOS Universal Links)
+--------------------------------------------------------------------------------
+WHERE   : /.well-known/apple-app-site-association
+FORMAT  : JSON (NO .json extension, no BOM)
+SERVED  : Content-Type: application/json  (a bare file is fine; Apple reads it)
+WHEN    : You have an iOS app and want example.com/app/* to open in the app.
+
+STRUCTURE
+  -------------------------------------------------------------------------
+  {
+    "applinks": {
+      "apps": [],
+      "details": [
+        {
+          "appID": "TEAMID.com.example.app",
+          "paths": [
+            "/recipes/*",
+            "/posts/*",
+            "NOT /admin/*"
+          ]
+        }
+      ]
+    },
+    "webcredentials": {
+      "apps": [ "TEAMID.com.example.app" ]
+    },
+    "appclips": {
+      "apps": [ "TEAMID.com.example.app" ]
+    }
+  }
+  -------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+ 4.6  .well-known/assetlinks.json   (Android App Links / Digital Asset Links)
+--------------------------------------------------------------------------------
+WHERE   : /.well-known/assetlinks.json
+FORMAT  : JSON
+SERVED  : Content-Type: application/json
+WHEN    : You have an Android app and want links to open in the app.
+
+STRUCTURE
+  -------------------------------------------------------------------------
+  [
+    {
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "com.example.app",
+        "sha256_cert_fingerprints": [
+          "AA:BB:CC:...:ZZ"     ← from `keytool -list -v -keystore`
+        ]
+      }
+    }
+  ]
+  -------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+ 4.7  .well-known/mta-sts.txt  (email, advanced)
+--------------------------------------------------------------------------------
+WHERE   : /.well-known/mta-sts.txt
+FORMAT  : plain text
+WHEN    : You set up SMTP MTA-STS (email encryption policy). Most sites don't.
+
+STRUCTURE
+  -------------------------------------------------------------------------
+  version: STSv1
+  mode: enforce
+  mx: mx1.example.com
+  mx: mx2.example.com
+  max_age: 604800
+  -------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+ 4.8  .well-known/webfinger  (fediverse / identity; advanced)
+--------------------------------------------------------------------------------
+WHERE   : /.well-known/webfinger?resource=acct:user@example.com
+NOTES   : Dynamic endpoint, usually generated by your server. Leave blank
+          HTML if you don't federate.
+
+STRUCTURE  (example JSON response)
+  -------------------------------------------------------------------------
+  {
+    "subject": "acct:user@example.com",
+    "links": [
+      { "rel": "self",
+        "type": "application/activity+json",
+        "href": "https://example.com/users/user" }
+    ]
+  }
+  -------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+ 4.9  .well-known/openid-configuration  (OIDC / SSO; advanced)
+--------------------------------------------------------------------------------
+WHERE   : /.well-known/openid-configuration
+FORMAT  : JSON (provided by your identity provider)
+NOTES   : You do not hand-write this. It's the discovery document of an
+          OpenID provider. Only relevant if you run auth.
+
+
+================================================================================
+ SECTION 5 · FEED FILES
+================================================================================
+
+--------------------------------------------------------------------------------
+ 5.1  rss.xml
+--------------------------------------------------------------------------------
+WHERE   : /rss.xml  (or /feed.xml, /feed/rss.xml — pick one and keep it)
+LINKED  : From every page:
+            <link rel="alternate" type="application/rss+xml"
+                  title="RSS" href="/rss.xml">
+FORMAT  : XML (RSS 2.0)
+NOTES   : Most common feed format. Include <pubDate>, <guid> per item.
+
+STRUCTURE
+  -------------------------------------------------------------------------
+  <?xml version="1.0" encoding="UTF-8"?>
+  <rss version="2.0"
+       xmlns:atom="http://www.w3.org/2005/Atom">
+    <channel>
+      <title>Example Site</title>
+      <link>https://example.com/</link>
+      <description>Latest from Example Site.</description>
+      <language>en</language>
+      <lastBuildDate>Wed, 15 Jan 2025 09:00:00 +0000</lastBuildDate>
+      <atom:link href="https://example.com/rss.xml"
+                 rel="self"
+                 type="application/rss+xml"/>
+
+      <!-- one item per post -->
+      <item>
+        <title>My First Post</title>
+        <link>https://example.com/blog/first</link>
+        <guid isPermaLink="true">https://example.com/blog/first</guid>
+        <pubDate>Wed, 15 Jan 2025 08:00:00 +0000</pubDate>
+        <description>Short excerpt or full HTML.</description>
+        <author>jane@example.com (Jane Doe)</author>
+      </item>
+
+      <item>
+        <title>Second Post</title>
+        <link>https://example.com/blog/second</link>
+        <guid isPermaLink="true">https://example.com/blog/second</guid>
+        <pubDate>Mon, 13 Jan 2025 15:30:00 +0000</pubDate>
+        <description>Excerpt.</description>
+      </item>
+
+    </channel>
+  </rss>
+  -------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+ 5.2  atom.xml
+--------------------------------------------------------------------------------
+WHERE   : /atom.xml
+FORMAT  : XML (Atom 1.0)
+NOTES   : Modern alternative to RSS. Always has <updated>.
+
+STRUCTURE
+  -------------------------------------------------------------------------
+  <?xml version="1.0" encoding="UTF-8"?>
+  <feed xmlns="http://www.w3.org/2005/Atom">
+    <title>Example Site</title>
+    <link href="https://example.com/"/>
+    <link rel="self" href="https://example.com/atom.xml"/>
+    <id>https://example.com/</id>
+    <updated>2025-01-15T09:00:00Z</updated>
+    <author>
+      <name>Jane Doe</name>
+      <email>jane@example.com</email>
+    </author>
+
+    <entry>
+      <title>My First Post</title>
+      <link href="https://example.com/blog/first"/>
+      <id>https://example.com/blog/first</id>
+      <updated>2025-01-15T08:00:00Z</updated>
+      <summary>Short excerpt.</summary>
+      <content type="html">&lt;p&gt;Body HTML.&lt;/p&gt;</content>
+    </entry>
+  </feed>
+  -------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+ 5.3  feed.json  (JSON Feed)
+--------------------------------------------------------------------------------
+WHERE   : /feed.json
+FORMAT  : JSON (JSON Feed 1.1)
+NOTES   : Simpler for developers than RSS/Atom.
+
+STRUCTURE
+  -------------------------------------------------------------------------
+  {
+    "version": "https://jsonfeed.org/version/1.1",
+    "title": "Example Site",
+    "home_page_url": "https://example.com/",
+    "feed_url": "https://example.com/feed.json",
+    "items": [
+      {
+        "id": "https://example.com/blog/first",
+        "url": "https://example.com/blog/first",
+        "title": "My First Post",
+        "content_text": "Excerpt text.",
+        "content_html": "<p>Excerpt HTML.</p>",
+        "date_published": "2025-01-15T08:00:00Z"
+      }
+    ]
+  }
+  -------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+ 5.4  opensearch.xml  (browser search hint)
+--------------------------------------------------------------------------------
+WHERE   : /opensearch.xml
+LINKED  : From every page:
+            <link rel="search"
+                  type="application/opensearchdescription+xml"
+                  title="Example Site"
+                  href="/opensearch.xml">
+
+STRUCTURE
+  -------------------------------------------------------------------------
+  <?xml version="1.0" encoding="UTF-8"?>
+  <OpenSearchDescription xmlns="http://a9.com/-/spec/opensearch/1.1/">
+    <ShortName>Example</ShortName>
+    <Description>Search Example Site</Description>
+    <InputEncoding>UTF-8</InputEncoding>
+    <Image width="16" height="16" type="image/x-icon">
+      https://example.com/favicon.ico
+    </Image>
+    <Url type="text/html"
+         method="get"
+         template="https://example.com/search?q={searchTerms}"/>
+  </OpenSearchDescription>
+  -------------------------------------------------------------------------
+
+
+================================================================================
+ SECTION 6 · FAVICON / ICON SET
+================================================================================
+
+WHERE   : /favicon.ico at root; all other sizes in /assets/ or /icons/
+LINKED  : In <head> of every HTML page.
+
+WHICH FILES TO MAKE
+  · favicon.ico                → 16,32,48 multi-size (root)
+  · favicon-16.png
+  · favicon-32.png
+  · favicon-48.png
+  · apple-touch-icon.png       → 180x180 (no transparency; iOS rounds it)
+  · icon-192.png               → PWA
+  · icon-512.png               → PWA
+  · icon-maskable-512.png      → PWA maskable
+  · mstile-150.png             → Windows tiles (via browserconfig.xml)
+  · safari-pinned-tab.svg      → monochrome SVG
+
+HEAD BLOCK TO PASTE IN EVERY PAGE
+  -------------------------------------------------------------------------
+  <!-- FAVICON SET -->
+  <link rel="icon"            href="/favicon.ico"       sizes="any">
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon-16.png">
+  <link rel="apple-touch-icon"                      href="/assets/apple-touch-icon.png">
+  <link rel="mask-icon" href="/assets/safari-pinned-tab.svg" color="#0d3b66">
+  <meta name="msapplication-TileColor" content="#0d3b66">
+  <meta name="msapplication-config" content="/browserconfig.xml">
+  <meta name="theme-color" content="#0d3b66">
+  -------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+ 6.1  browserconfig.xml  (Windows tiles)
+--------------------------------------------------------------------------------
+WHERE   : /browserconfig.xml
+REFERENCED from <meta name="msapplication-config" content="/browserconfig.xml">
+
+STRUCTURE
+  -------------------------------------------------------------------------
+  <?xml version="1.0" encoding="utf-8"?>
+  <browserconfig>
+    <msapplication>
+      <tile>
+        <square70x70logo src="/assets/mstile-70.png"/>
+        <square150x150logo src="/assets/mstile-150.png"/>
+        <wide310x150logo src="/assets/mstile-310x150.png"/>
+        <square310x310logo src="/assets/mstile-310.png"/>
+        <TileColor>#0d3b66</TileColor>
+      </tile>
+    </msapplication>
+  </browserconfig>
+  -------------------------------------------------------------------------
+
+
+================================================================================
+ SECTION 7 · HOSTING / DEPLOYMENT CONFIG FILES
+================================================================================
+
+These are NOT served to visitors. They configure how the host responds.
+
+--------------------------------------------------------------------------------
+ 7.1  .htaccess  (Apache)
+--------------------------------------------------------------------------------
+WHERE   : /.htaccess  (root or per-folder; inherits recursively)
+SERVED  : never (Apache reads it)
+NOTES   : Apache-only. Ignored by Nginx, Netlify, Vercel.
+          Any syntax error = 500 for the whole directory tree.
+
+STRUCTURE  (annotated; delete what you don't need)
+  -------------------------------------------------------------------------
+  # ---- 1. Force HTTPS ----
+  RewriteEngine On
+  RewriteCond %{HTTPS} !=on
+  RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+  # ---- 2. Force non-www ----
+  RewriteCond %{HTTP_HOST} ^www\.(.+)$ [NC]
+  RewriteRule ^ https://%1%{REQUEST_URI} [L,R=301]
+
+  # ---- 3. Serve index.html for clean URLs ----
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule ^([^\.]+)$ $1.html [NC,L]
+
+  # ---- 4. Custom error pages ----
+  ErrorDocument 404 /404.html
+  ErrorDocument 500 /500.html
+  ErrorDocument 403 /403.html
+
+  # ---- 5. Security headers (add these) ----
+  <IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set Permissions-Policy "geolocation=(), microphone=()"
+    Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    # Header always set Content-Security-Policy "default-src 'self'; ..."
+  </IfModule>
+
+  # ---- 6. Compression ----
+  <IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/css application/javascript \
+                                application/json image/svg+xml
+  </IfModule>
+
+  # ---- 7. Caching ----
+  <IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType image/png  "access plus 1 year"
+    ExpiresByType image/jpg  "access plus 1 year"
+    ExpiresByType text/css   "access plus 1 month"
+    ExpiresByType application/javascript "access plus 1 month"
+    ExpiresByType text/html  "access plus 1 hour"
+  </IfModule>
+
+  # ---- 8. Deny hidden files ----
+  <FilesMatch "^\.">
+    Require all denied
+  </FilesMatch>
+
+  # ---- 9. Force downloads for certain types (optional) ----
+  # AddType application/octet-stream .pdf
+
+  # ---- 10. Correct MIME for .webmanifest ----
+  AddType application/manifest+json .webmanifest
+  AddType application/xml .xml
+  AddType text/plain .txt
+
+  # ---- 11. Redirects ----
+  # Redirect 301 /old-page /new-page
+  -------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+ 7.2  web.config  (IIS / Windows Server)
+--------------------------------------------------------------------------------
+WHERE   : /web.config
+
+STRUCTURE
+  -------------------------------------------------------------------------
+  <?xml version="1.0" encoding="UTF-8"?>
+  <configuration>
+    <system.webServer>
+      <rewrite>
+        <rules>
+          <!-- Force HTTPS -->
+          <rule name="HTTPS" stopProcessing="true">
+            <match url="(.*)" />
+            <conditions>
+              <add input="{HTTPS}" pattern="^OFF$" />
+            </conditions>
+            <action type="Redirect"
+                    url="https://{HTTP_HOST}/{R:1}"
+                    redirectType="Permanent" />
+          </rule>
+          <!-- Clean URLs -->
+          <rule name="HTML extension" stopProcessing="true">
+            <match url="^(.*)$" />
+            <conditions>
+              <add input="{REQUEST_FILENAME}.html" matchType="IsFile" />
+            </conditions>
+            <action type="Rewrite" url="{R:1}.html" />
+          </rule>
+        </rules>
+      </rewrite>
+
+      <httpErrors>
+        <remove statusCode="404" />
+        <error statusCode="404" path="/404.html" responseMode="ExecuteURL" />
+        <remove statusCode="500" />
+        <error statusCode="500" path="/500.html" responseMode="ExecuteURL" />
+      </httpErrors>
+
+      <httpProtocol>
+        <customHeaders>
+          <add name="X-Content-Type-Options" value="nosniff" />
+          <add name="X-Frame-Options" value="SAMEORIGIN" />
+          <add name="Referrer-Policy" value="strict-origin-when-cross-origin" />
+        </customHeaders>
+      </httpProtocol>
+
+      <staticContent>
+        <mimeMap fileExtension=".webmanifest"
+                 mimeType="application/manifest+json" />
+      </staticContent>
+    </system.webServer>
+  </configuration>
+  -------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+ 7.3  _headers  (Netlify / Cloudflare Pages)
+--------------------------------------------------------------------------------
+WHERE   : /_headers  (root; exact name)
+
+STRUCTURE
+  -------------------------------------------------------------------------
+  # Apply to all paths
+  /*
+    X-Frame-Options: SAMEORIGIN
+    X-Content-Type-Options: nosniff
+    Referrer-Policy: strict-origin-when-cross-origin
+    Permissions-Policy: geolocation=(), microphone=()
+    Strict-Transport-Security: max-age=31536000; includeSubDomains
+
+  # Long cache for hashed assets
+  /assets/*
+    Cache-Control: public, max-age=31536000, immutable
+
+  # Short cache for HTML
+  /*.html
+    Cache-Control: public, max-age=3600
+
+  # Correct MIME for manifest
+  /manifest.webmanifest
+    Content-Type: application/manifest+json
+  -------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+ 7.4  _redirects  (Netlify / Cloudflare Pages)
+--------------------------------------------------------------------------------
+WHERE   : /_redirects  (root; exact name)
+FORMAT  : plain text, one rule per line:
+            FROM  TO  STATUS [condition]
+
+STRUCTURE
+  -------------------------------------------------------------------------
+  # 301 = permanent (use for moved pages)
+  # 302 = temporary
+  # 200 = rewrite (URL stays)
+
+  /old-page           /new-page            301
+  /blog/old-post      /blog/new-post       301
+  /docs/*             /documentation/:splat 301
+
+  # Proxy / rewrite
+  /api/*              https://api.example.com/:splat  200
+
+  # SPA fallback (React / Vue / etc.)
+  /*                  /index.html          200
+  -------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+ 7.5  netlify.toml
+--------------------------------------------------------------------------------
+WHERE   : /netlify.toml
+
+STRUCTURE
+  -------------------------------------------------------------------------
+  [build]
+    publish   = "public"          # output folder
+    command   = "npm run build"   # optional
+
+  [build.environment]
+    NODE_VERSION = "20"
+
+  # Redirects
+  [[redirects]]
+    from = "/old"
+    to   = "/new"
+    status = 301
+
+  # Headers
+  [[headers]]
+    for = "/*"
+    [headers.values]
+      X-Frame-Options = "SAMEORIGIN"
+      X-Content-Type-Options = "nosniff"
+
+  # Custom 404
+  [[redirects]]
+    from = "/*"
+    to   = "/404.html"
+    status = 404
+  -------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+ 7.6  vercel.json
+--------------------------------------------------------------------------------
+WHERE   : /vercel.json
+
+STRUCTURE
+  -------------------------------------------------------------------------
+  {
+    "redirects": [
+      { "source": "/old", "destination": "/new", "permanent": true }
+    ],
+    "headers": [
+      {
+        "source": "/(.*)",
+        "headers": [
+          { "key": "X-Frame-Options",
+            "value": "SAMEORIGIN" },
+          { "key": "X-Content-Type-Options",
+            "value": "nosniff" }
+        ]
+      }
+    ],
+    "cleanUrls": true,
+    "trailingSlash": false
+  }
+  -------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+ 7.7  CNAME  (GitHub Pages)
+--------------------------------------------------------------------------------
+WHERE   : /CNAME  (root; no extension; one line)
+NOTES   : Tells GitHub Pages your custom domain.
+
+STRUCTURE
+  -------------------------------------------------------------------------
+  example.com
+  -------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+ 7.8  .nojekyll  (GitHub Pages)
+--------------------------------------------------------------------------------
+WHERE   : /.nojekyll  (root; empty file)
+WHY     : Stops GitHub from running Jekyll on your files. Needed if your
+          folders start with underscores (_next, _assets, _headers, _redirects).
+
+STRUCTURE
+  -------------------------------------------------------------------------
+  (empty file — no content)
+  -------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+ 7.9  firebase.json  /  .firebaserc
+--------------------------------------------------------------------------------
+WHERE   : /firebase.json  (project root, not deployed)
+NOTES   : For Firebase Hosting. You do not hand-edit this on the server;
+          it's used by `firebase deploy`.
+
+STRUCTURE
+  -------------------------------------------------------------------------
+  {
+    "hosting": {
+      "public": "public",
+      "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+      "cleanUrls": true,
+      "rewrites": [
+        { "source": "**", "destination": "/index.html" }
+      ],
+      "headers": [
+        {
+          "source": "**/*.@(jpg|jpeg|png|svg|css|js)",
+          "headers": [
+            { "key": "Cache-Control",
+              "value": "public, max-age=31536000" }
+          ]
+        }
+      ]
+    }
+  }
+  -------------------------------------------------------------------------
+
+
+================================================================================
+ SECTION 8 · ERROR & FALLBACK HTML PAGES
+================================================================================
+
+For each of these, put the file at the root (or map with .htaccess /
+_redirects / netlify.toml) and reference it from the config.
+
+MINIMAL ANNOTATED TEMPLATE for any of them
+  -------------------------------------------------------------------------
+  <!DOCTYPE html>
+  <html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>PAGE-TITLE — Example.com</title>
+    <meta name="robots" content="noindex">   ← important for error pages
+    <link rel="stylesheet" href="/assets/style.css">
+  </head>
+  <body>
+
+    <!-- SITE HEADER (same as other pages, usually) -->
+    <header> … </header>
+
+    <!-- MAIN ERROR / INFO BLOCK -->
+    <main>
+      <h1>BIG HEADLINE</h1>
+      <p>Explanation.</p>
+      <p>
+        <a href="/">Go home</a>
+        &nbsp;·&nbsp;
+        <a href="/contact">Contact us</a>
+        &nbsp;·&nbsp;
+        <a href="/search">Search</a>
+      </p>
+    </main>
+
+    <!-- SITE FOOTER (same as other pages) -->
+    <footer> … </footer>
+
+  </body>
+  </html>
+  -------------------------------------------------------------------------
+
+WHERE EACH FILE GOES
+  8.1  404.html           → root; map via .htaccess ErrorDocument 404 /404.html
+  8.2  500.html           → root; ErrorDocument 500 /500.html
+  8.3  403.html           → root; ErrorDocument 403 /403.html
+  8.4  401.html           → root; login-required page
+  8.5  429.html           → root; rate-limit page
+  8.6  503.html           → root; service unavailable
+  8.7  maintenance.html   → root; use during downtime (usually via host toggle)
+  8.8  coming-soon.html   → root; pre-launch; serve at /index.html until live
+  8.9  offline.html       → root; PWA offline fallback
+  8.10 thankyou.html      → root; after any form (or per-form /thank-you-contact)
+
+
+================================================================================
+ SECTION 9 · SECURITY / PRIVACY / POLICY FILES
+================================================================================
+
+--------------------------------------------------------------------------------
+ 9.1  /.well-known/security.txt       (see 4.1)
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+ 9.2  /.well-known/gpc.json            (see 4.3)
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+ 9.3  /.well-known/dnt-policy.txt      (see 4.4)
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+ 9.4  privacy-policy.html   (or /privacy)
+--------------------------------------------------------------------------------
+WHERE   : /privacy.html  or /legal/privacy/index.html
+LINKED  : Every footer
+HEAD    : <link rel="privacy-policy" href="/privacy">  (optional hint)
+NOTES   : Full HTML page. Sections: what we collect, why, how long, who,
+          your rights, contact, last-updated date.
+
+--------------------------------------------------------------------------------
+ 9.5  terms.html   (or /terms)
+--------------------------------------------------------------------------------
+WHERE   : /terms.html  or /legal/terms/index.html
+LINKED  : Every footer
+
+--------------------------------------------------------------------------------
+ 9.6  cookies.html   (or /cookies)
+--------------------------------------------------------------------------------
+WHERE   : /cookies.html
+LINKED  : Every footer + from cookie banner
+
+--------------------------------------------------------------------------------
+ 9.7  accessibility.html
+--------------------------------------------------------------------------------
+WHERE   : /accessibility.html
+LINKED  : Footer
+NOTES   : WCAG level, known issues, contact for accessibility problems.
+
+--------------------------------------------------------------------------------
+ 9.8  dmca.html  /  takedown.html
+--------------------------------------------------------------------------------
+WHERE   : /dmca.html
+NOTES   : If you host user-generated content.
+
+--------------------------------------------------------------------------------
+ 9.9  report.html  /  abuse.html
+--------------------------------------------------------------------------------
+WHERE   : /report.html
+NOTES   : Form or instructions for reporting abuse.
+
+
+================================================================================
+ SECTION 10 · MISC ROOT FILES  (repos / project documentation)
+================================================================================
+
+These live in the REPO, not necessarily deployed. Never place secrets here.
+
+--------------------------------------------------------------------------------
+ 10.1  README.md
+--------------------------------------------------------------------------------
+WHERE   : /README.md  (repo root)
+SERVED  : Not served by web server (or served as plain text)
+
+STRUCTURE
+  -------------------------------------------------------------------------
+  # Project Name
+
+  One-paragraph description.
+
+  ## Stack
+  - HTML5, CSS3, vanilla JS
+
+  ## Local dev
+      python -m http.server 8000
+
+  ## Deploy
+  Push to `main`. Netlify auto-builds.
+
+  ## License
+  MIT — see LICENSE.
+  -------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+ 10.2  LICENSE
+--------------------------------------------------------------------------------
+WHERE   : /LICENSE  (no extension)
+NOTES   : MIT, Apache-2.0, GPL, proprietary, etc. Full text.
+
+STRUCTURE  (MIT example)
+  -------------------------------------------------------------------------
+  MIT License
+
+  Copyright (c) 2025 Your Name
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  … [full MIT text]
+  -------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+ 10.3  .gitignore
+--------------------------------------------------------------------------------
+WHERE   : /.gitignore
+NOTES   : Files Git must ignore. NEVER commit secrets.
+
+STRUCTURE
+  -------------------------------------------------------------------------
+  # OS
+  .DS_Store
+  Thumbs.db
+
+  # Editors
+  .vscode/
+  .idea/
+
+  # Env / secrets
+  .env
+  .env.*
+  !.env.example
+
+  # Dependencies
+  node_modules/
+  vendor/
+
+  # Build
+  dist/
+  .cache/
+  *.log
+
+  # Local
+  *.local
+  -------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+ 10.4  .env.example  (template only — never commit .env)
+--------------------------------------------------------------------------------
+WHERE   : /.env.example  (repo)
+STRUCTURE
+  -------------------------------------------------------------------------
+  # Copy to .env and fill in real values.
+  API_KEY=your-key-here
+  DB_URL=postgres://user:pass@host/db
+  -------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+ 10.5  .editorconfig
+--------------------------------------------------------------------------------
+WHERE   : /.editorconfig
+
+STRUCTURE
+  -------------------------------------------------------------------------
+  root = true
+
+  [*]
+  charset = utf-8
+  end_of_line = lf
+  insert_final_newline = true
+  indent_style = space
+  indent_size = 2
+  trim_trailing_whitespace = true
+
+  [*.md]
+  trim_trailing_whitespace = false
+  -------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+ 10.6  CHANGELOG.md
+--------------------------------------------------------------------------------
+WHERE   : /CHANGELOG.md
+STRUCTURE
+  -------------------------------------------------------------------------
+  # Changelog
+
+  ## [1.2.0] — 2025-01-15
+  ### Added
+  - Recipe filters.
+  ### Fixed
+  - Footer overlap on mobile.
+
+  ## [1.1.0] — 2025-01-01
+  …
+  -------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+ 10.7  CONTRIBUTING.md
+--------------------------------------------------------------------------------
+WHERE   : /CONTRIBUTING.md  (only if you take contributions)
+
+
+================================================================================
+ SECTION 11 · ANALYTICS / TRACKING SNIPPETS  (where to paste)
+================================================================================
+
+--------------------------------------------------------------------------------
+ 11.1  Google Analytics 4 (gtag.js)
+--------------------------------------------------------------------------------
+WHERE TO PASTE : In <head> of EVERY HTML page, as high as possible.
+ORDER         : Before any other <script> that fires events.
+
+STRUCTURE
+  -------------------------------------------------------------------------
+  <!-- Google Analytics 4 -->
+  <script async
+          src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX">
+  </script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){ dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', 'G-XXXXXXXXXX');
+  </script>
+  -------------------------------------------------------------------------
+
+REPLACE: G-XXXXXXXXXX with your Measurement ID (GA4 admin → Data Streams).
+
+
+--------------------------------------------------------------------------------
+ 11.2  Google Tag Manager (GTM)
+--------------------------------------------------------------------------------
+WHERE TO PASTE :
+  · HEAD snippet → just after <head> opens, every page.
+  · BODY snippet → just after <body> opens, every page (for <noscript>).
+
+STRUCTURE
+  -------------------------------------------------------------------------
+  <!-- HEAD -->
+  <script>
+    (function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+    new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+    j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;
+    j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;
+    f.parentNode.insertBefore(j,f);
+    })(window,document,'script','dataLayer','GTM-XXXXXXX');
+  </script>
+
+  <!-- BODY (immediately after <body>) -->
+  <noscript>
+    <iframe src="https://www.googletagmanager.com/ns.html?id=GTM-XXXXXXX"
+            height="0" width="0" style="display:none;visibility:hidden">
+    </iframe>
+  </noscript>
+  -------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+ 11.3  Plausible / Fathom / Umami (privacy-friendly)
+--------------------------------------------------------------------------------
+WHERE TO PASTE : In <head> of every page.
+
+STRUCTURE  (Plausible example)
+  -------------------------------------------------------------------------
+  <script defer
+          data-domain="example.com"
+          src="https://plausible.io/js/script.js"></script>
+  -------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+ 11.4  Facebook / Meta Pixel
+--------------------------------------------------------------------------------
+WHERE TO PASTE : In <head> of every page.
+NOTES         : Requires cookie consent in EU/UK.
+
+STRUCTURE
+  -------------------------------------------------------------------------
+  <script>
+    !function(f,b,e,v,n,t,s){...}(window,document,'script');
+    fbq('init', 'XXXXXXXXXXXXXXX');
+    fbq('track', 'PageView');
+  </script>
+  <noscript>
+    <img height="1" width="1" style="display:none"
+         src="https://www.facebook.com/tr?id=XXXXXXXXXXXXXXX&ev=PageView&noscript=1">
+  </noscript>
+  -------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+ 11.5  Google Search Console verification
+--------------------------------------------------------------------------------
+WHERE TO PASTE : In <head> of home page only (or all pages).
+
+STRUCTURE
+  -------------------------------------------------------------------------
+  <meta name="google-site-verification"
+        content="YOUR-VERIFICATION-TOKEN-HERE">
+  -------------------------------------------------------------------------
+
+ALTERNATIVE 1: Upload the HTML verification file Google gives you
+               (e.g. google1234abcd.html) to /.
+ALTERNATIVE 2: DNS TXT record at your domain registrar.
+
+
+--------------------------------------------------------------------------------
+ 11.6  Bing Webmaster verification
+--------------------------------------------------------------------------------
+WHERE : In <head> of home page only.
+
+STRUCTURE
+  -------------------------------------------------------------------------
+  <meta name="msvalidate.01" content="YOUR-BING-TOKEN">
+  -------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+ 11.7  Cookie consent banner snippet
+--------------------------------------------------------------------------------
+WHERE TO PASTE : Just before </body> of every page (or load from external JS).
+NOTES         : Must load BEFORE any tracking script that sets cookies.
+                For strict GDPR compliance, load analytics ONLY after consent.
+
+STRUCTURE  (skeleton — replace with your CMP library)
+  -------------------------------------------------------------------------
+  <script>
+    // Load this BEFORE analytics.
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){ dataLayer.push(arguments); }
+
+    // Default = denied for EU users
+    gtag('consent', 'default', {
+      'ad_storage': 'denied',
+      'analytics_storage': 'denied'
+    });
+
+    // When user clicks "Accept", update consent
+    window.grantConsent = function(){
+      gtag('consent', 'update', {
+        'ad_storage': 'granted',
+        'analytics_storage': 'granted'
+      });
+      localStorage.setItem('cookie-consent', 'granted');
+    };
+  </script>
+  -------------------------------------------------------------------------
+
+
+================================================================================
+ SECTION 12 · META TAGS  (what to paste in <head> — cheatsheet)
+================================================================================
+
+Structure of an ideal <head> for every page:
+
+  -------------------------------------------------------------------------
+  <!DOCTYPE html>
+  <html lang="en">                ← CHANGE per page language
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+
+    <!-- ============ PRIMARY SEO ============ -->
+    <title>PAGE TITLE (50–60 chars) — Brand</title>
+    <meta name="description"
+          content="PAGE DESCRIPTION (150–160 chars).">
+    <link rel="canonical" href="https://example.com/CURRENT-PATH">
+
+    <!-- ============ OPEN GRAPH (social share) ============ -->
+    <meta property="og:type"        content="website">
+    <meta property="og:site_name"   content="Example Site">
+    <meta property="og:title"       content="PAGE TITLE">
+    <meta property="og:description" content="PAGE DESCRIPTION">
+    <meta property="og:url"         content="https://example.com/CURRENT-PATH">
+    <meta property="og:image"       content="https://example.com/assets/share.jpg">
+    <meta property="og:image:alt"   content="Alt text for share image">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale"      content="en_US">
+
+    <!-- ============ TWITTER / X ============ -->
+    <meta name="twitter:card"        content="summary_large_image">
+    <meta name="twitter:site"        content="@yourhandle">
+    <meta name="twitter:creator"     content="@authorhandle">
+    <meta name="twitter:title"       content="PAGE TITLE">
+    <meta name="twitter:description" content="PAGE DESCRIPTION">
+    <meta name="twitter:image"       content="https://example.com/assets/share.jpg">
+
+    <!-- ============ ROBOTS ============ -->
+    <meta name="robots" content="index,follow">
+    <!-- Use "noindex,nofollow" for private/thank-you/error pages -->
+
+    <!-- ============ LANGUAGE / REGION ============ -->
+    <link rel="alternate" hreflang="en" href="https://example.com/en/">
+    <link rel="alternate" hreflang="pt" href="https://example.com/pt/">
+    <link rel="alternate" hreflang="x-default" href="https://example.com/">
+
+    <!-- ============ FAVICON SET (see Section 6) ============ -->
+    <link rel="icon" href="/favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+    <meta name="theme-color" content="#0d3b66">
+
+    <!-- ============ PWA ============ -->
+    <link rel="manifest" href="/manifest.webmanifest">
+
+    <!-- ============ FEEDS ============ -->
+    <link rel="alternate" type="application/rss+xml"
+          title="RSS" href="/rss.xml">
+    <link rel="alternate" type="application/atom+xml"
+          title="Atom" href="/atom.xml">
+
+    <!-- ============ SEARCH HINT ============ -->
+    <link rel="search"
+          type="application/opensearchdescription+xml"
+          title="Example Site" href="/opensearch.xml">
+
+    <!-- ============ ANALYTICS (see Section 11) ============ -->
+    <!-- Paste gtag / GTM / Plausible here -->
+
+    <!-- ============ STRUCTURED DATA (optional but good for SEO) ============ -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "name": "Example Site",
+      "url": "https://example.com/",
+      "logo": "https://example.com/assets/logo.png"
+    }
+    </script>
+
+    <!-- ============ CSS ============ -->
+    <link rel="stylesheet" href="/assets/style.css">
+
+    <!-- ============ PRELOADS (optional performance) ============ -->
+    <!-- <link rel="preload" href="/assets/font.woff2" as="font"
+              type="font/woff2" crossorigin> -->
+  </head>
+  <body>
+    <!-- ANALYTICS NOSCRIPT (GTM, Facebook Pixel etc.) -->
+    …
+  </body>
+  </html>
+  -------------------------------------------------------------------------
+
+
+================================================================================
+ SECTION 13 · QUICK REFERENCE TABLE — WHAT GOES WHERE
+================================================================================
+
+| File / Folder                     | Location          | Served to users? | Required? |
+|-----------------------------------|-------------------|------------------|-----------|
+| robots.txt                        | /                 | yes (text)       | YES       |
+| sitemap.xml                       | /                 | yes (xml)        | STRONGLY  |
+| sitemap-index.xml                 | /                 | yes              | optional  |
+| sitemap.html                      | /sitemap.html     | yes (html)       | optional  |
+| ads.txt                           | /                 | yes (text)       | if ads    |
+| app-ads.txt                       | /                 | yes (text)       | if mobile |
+| sellers.json                      | /                 | yes (json)       | if SSP    |
+| humans.txt                        | /                 | yes (text)       | optional  |
+| security.txt                      | /.well-known/     | yes (text)       | STRONGLY  |
+| change-password                   | /.well-known/     | yes (redirect)   | optional  |
+| gpc.json                          | /.well-known/     | yes (json)       | if CCPA   |
+| dnt-policy.txt                    | /.well-known/     | yes (text)       | optional  |
+| apple-app-site-association        | /.well-known/     | yes (json)       | iOS app   |
+| assetlinks.json                   | /.well-known/     | yes (json)       | Android   |
+| mta-sts.txt                       | /.well-known/     | yes (text)       | if email  |
+| manifest.webmanifest              | /                 | yes (json)       | PWA       |
+| service-worker.js                 | /                 | yes (js)         | PWA       |
+| offline.html                      | /                 | yes (html)       | PWA       |
+| favicon.ico                       | /                 | yes (img)        | YES       |
+| apple-touch-icon.png              | /assets/          | yes (img)        | YES       |
+| browserconfig.xml                 | /                 | yes (xml)        | Windows   |
+| opensearch.xml                    | /                 | yes (xml)        | optional  |
+| rss.xml                           | /                 | yes (xml)        | if content|
+| atom.xml                          | /                 | yes (xml)        | optional  |
+| feed.json                         | /                 | yes (json)       | optional  |
+| .htaccess                         | /                 | NO               | Apache    |
+| web.config                        | /                 | NO               | IIS       |
+| _headers                          | /                 | NO               | Netlify   |
+| _redirects                        | /                 | NO               | Netlify   |
+| netlify.toml                      | /                 | NO               | Netlify   |
+| vercel.json                       | /                 | NO               | Vercel    |
+| firebase.json                     | /                 | NO               | Firebase  |
+| CNAME                             | /                 | NO               | GitHub Pg |
+| .nojekyll                         | /                 | NO               | GitHub Pg |
+| 404.html                          | /                 | yes (html)       | YES       |
+| 500.html                          | /                 | yes (html)       | STRONGLY  |
+| 403.html, 401.html, 503.html      | /                 | yes (html)       | optional  |
+| maintenance.html                  | /                 | yes (html)       | optional  |
+| coming-soon.html                  | /                 | yes (html)       | optional  |
+| thankyou.html                     | /                 | yes (html)       | after form|
+| privacy.html, terms.html,         | /                 | yes (html)       | LEGAL     |
+|   cookies.html, accessibility     |                   |                  |           |
+| README.md, LICENSE, .gitignore    | /                 | not deployed     | repo      |
+| .env, .env.example                | /                 | NO               | repo      |
+| .editorconfig, CHANGELOG.md       | /                 | not deployed     | repo      |
+
+
+================================================================================
+ SECTION 14 · STEP-BY-STEP: HOW TO ADD A SPECIAL FILE
+================================================================================
+
+STEP 1 · Choose which file you need from the table above.
+STEP 2 · Create a plain text file with that EXACT NAME (case-sensitive).
+STEP 3 · Paste the STRUCTURE template from this document.
+STEP 4 · Replace placeholders (example.com, G-XXXX, etc.).
+STEP 5 · Upload to the correct location:
+           · FTP / SFTP clients (FileZilla, Cyberduck):
+               → connect, upload to the root folder (usually public_html/,
+                 htdocs/, or www/)
+           · cPanel:
+               → File Manager → upload
+           · GitHub Pages:
+               → commit to the branch GitHub serves (often main or gh-pages)
+           · Netlify / Vercel / Cloudflare Pages:
+               → commit to the repo; the config file is read at build
+           · WordPress (if you use it):
+               → some files (ads.txt, robots.txt) have admin UIs;
+                 others go in the site root via FTP or a plugin
+STEP 6 · Verify in a browser:
+           · robots.txt  → https://yourdomain.com/robots.txt
+           · ads.txt     → https://yourdomain.com/ads.txt
+           · sitemap.xml → https://yourdomain.com/sitemap.xml
+           · security.txt→ https://yourdomain.com/.well-known/security.txt
+           All must return 200 OK, correct Content-Type, no redirect.
+STEP 7 · Validate:
+           · robots.txt  → GSC → Robots.txt Tester
+           · sitemap.xml → GSC → Sitemaps
+           · ads.txt     → https://adstxt.guru (or IAB validator)
+           · security.txt→ https://securitytxt.org validator
+           · manifest    → Chrome DevTools → Application → Manifest
+           · PWA         → Chrome DevTools → Lighthouse → PWA audit
+STEP 8 · Submit in Google Search Console and Bing Webmaster Tools.
+STEP 9 · Add a plain-URL link to the file in your own notes/README so you
+         remember where it is 6 months from now.
+
+
+================================================================================
+ END OF SPECIAL-FILES-REFERENCE.TXT
+================================================================================
