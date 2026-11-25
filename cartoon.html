@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Series Cartoon Studio</title>
+    <!-- ✅ Correct Plyr CDN Links -->
+    <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css" />
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, sans-serif; }
+        body { background-color: #0c0d14; color: #ffffff; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        header { background-color: #141622; padding: 15px 20px; border-bottom: 2px solid #1f2336; display: flex; gap: 15px; align-items: center; flex-wrap: wrap; }
+        header h1 { font-size: 20px; color: #ff3e6c; margin-right: auto; }
+        select { padding: 8px 12px; border-radius: 6px; border: 1px solid #1f2336; background: #1b1e2e; color: #fff; font-size: 14px; cursor: pointer; }
+        .main-container { display: flex; flex: 1; overflow: hidden; }
+        .player-section { flex: 3; background-color: #000; display: flex; flex-direction: column; justify-content: center; }
+        .sidebar { flex: 1; background-color: #141622; border-left: 2px solid #1f2336; overflow-y: auto; padding: 15px; max-width: 420px; min-width: 300px; }
+        .sidebar h2 { font-size: 16px; margin-bottom: 12px; color: #a0a5c0; border-bottom: 1px solid #1f2336; padding-bottom: 8px; }
+        .playlist { list-style: none; }
+        .playlist-item { display: flex; padding: 10px; margin-bottom: 8px; background-color: #1b1e2e; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; border: 1px solid transparent; align-items: center; }
+        .playlist-item:hover { background-color: #24293f; border-color: #ff3e6c; }
+        .playlist-item.active { background-color: #ff3e6c; }
+        .thumbnail-placeholder { width: 65px; height: 38px; background-color: #0c0d14; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #ff3e6c; margin-right: 10px; font-weight: bold; flex-shrink: 0; text-align: center; overflow: hidden; }
+        .episode-info { flex: 1; min-width: 0; }
+        .episode-title { font-size: 13px; font-weight: 600; color: #e1e4f2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+        .loading-msg { text-align: center; color: #a0a5c0; padding: 20px; font-style: italic; }
+        @media (max-width: 768px) {
+            .main-container { flex-direction: column; }
+            .sidebar { max-width: 100%; min-width: 100%; height: 300px; }
+            body { overflow: auto; height: auto; }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>📺 Cartoon Studio</h1>
+        <select id="series-select">
+            <option value="conan">Detective Conan (Arabic Dub)</option>
+            <option value="dbz">Dragon Ball Z</option>
+            <option value="db_movies">Dragon Ball (Arabic Movies)</option>
+        </select>
+    </header>
+
+    <div class="main-container">
+        <div class="player-section">
+            <video id="player" playsinline controls crossorigin></video>
+        </div>
+
+        <div class="sidebar">
+            <h2 id="playlist-title">Episodes Library</h2>
+            <ul class="playlist" id="playlist-container">
+                <!-- JavaScript will populate this list -->
+            </ul>
+        </div>
+    </div>
+
+    <!-- ✅ Correct Plyr JS -->
+    <script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>
+    <script>
+        const player = new Plyr('#player', {
+            controls: ['play-large', 'play', 'progress', 'current-time', 'duration', 'mute', 'volume', 'captions', 'settings', 'pip', 'airplay', 'fullscreen']
+        });
+
+        const playlistContainer = document.getElementById('playlist-container');
+        const seriesSelect = document.getElementById('series-select');
+        const playlistTitle = document.getElementById('playlist-title');
+
+        // ---------------------------------------------------------
+        // CONFIG: Define your series sources here.
+        // ---------------------------------------------------------
+        const SERIES = {
+            conan: {
+                name: 'Detective Conan (Arabic Dub)',
+                identifier: 'anime-detective-conan-season10-arabic-dub',
+                type: 'api', // Use Archive.org metadata API to get exact filenames
+                filter: (file) => file.name.endsWith('.mp4') && !file.name.startsWith('__ia_thumb')
+            },
+            dbz: {
+                name: 'Dragon Ball Z',
+                identifier: 'dragon-ball-z-_202503',
+                type: 'pattern', // Use a predictable file naming pattern
+                pattern: (i) => `[Videoplaytv]Dragon Ball Z episode ${String(i).padStart(2, '0')}.mp4`,
+                maxEpisodes: 291 // Known total; adjust if needed
+            },
+            db_movies: {
+                name: 'Dragon Ball (Arabic Movies)',
+                identifier: 'dragon-ball-episodes-arabic-dub',
+                type: 'pattern',
+                pattern: (i) => `Dragon Ball Movie ${String(i).padStart(2, '0')} Arabic Dub.mp4`,
+                maxEpisodes: 3 // Only 3 movies found in this identifier
+            }
+        };
+
+        // ---------------------------------------------------------
+        // Core Logic
+        // ---------------------------------------------------------
+
+        async function loadSeries(seriesKey) {
+            const config = SERIES[seriesKey];
+            if (!config) return;
+
+            playlistTitle.textContent = config.name;
+            playlistContainer.innerHTML = '<li class="loading-msg">Loading episode list...</li>';
+            player.stop();
+
+            let files = [];
+
+            if (config.type === 'api') {
+                // Fetch the real file list from Archive.org metadata API
+                try {
+                    const metaUrl = `https://archive.org/metadata/${config.identifier}`;
+                    const response = await fetch(metaUrl);
+                    const data = await response.json();
+                    if (data.files) {
+                        files = data.files
+                            .filter(config.filter)
+                            .map(file => ({
+                                name: file.name,
+                                // Archive.org serves direct files via /download/IDENTIFIER/FILENAME
+                                url: `https://archive.org/download/${config.identifier}/${encodeURIComponent(file.name)}`
+                            }));
+                    }
+                } catch (error) {
+                    console.error('Failed to fetch metadata:', error);
+                    playlistContainer.innerHTML = '<li class="loading-msg">Could not load files. Check the console.</li>';
+                    return;
+                }
+            } else if (config.type === 'pattern') {
+                // Generate URLs using a known pattern
+                for (let i = 1; i <= config.maxEpisodes; i++) {
+                    const fileName = config.pattern(i);
+                    files.push({
+                        name: fileName.replace('.mp4', ''),
+                        url: `https://archive.org/download/${config.identifier}/${encodeURIComponent(fileName)}`
+                    });
+                }
+            }
+
+            renderPlaylist(files);
+        }
+
+        function renderPlaylist(files) {
+            playlistContainer.innerHTML = '';
+            if (files.length === 0) {
+                playlistContainer.innerHTML = '<li class="loading-msg">No playable files found.</li>';
+                return;
+            }
+
+            files.forEach((file, index) => {
+                const li = document.createElement('li');
+                li.className = 'playlist-item';
+                if (index === 0) li.classList.add('active');
+
+                // Try to extract an episode number for the thumbnail
+                let epLabel = `EP ${index + 1}`;
+                const numMatch = file.name.match(/(\d{1,3})/);
+                if (numMatch) epLabel = `EP ${numMatch[1].padStart(2, '0')}`;
+
+                li.innerHTML = `
+                    <div class="thumbnail-placeholder">${epLabel}</div>
+                    <div class="episode-info"><span class="episode-title">${file.name}</span></div>
+                `;
+
+                li.onclick = () => changeVideo(file.url, li);
+                playlistContainer.appendChild(li);
+            });
+
+            // Auto-load the first episode
+            if (files.length > 0) {
+                changeVideo(files[0].url, playlistContainer.firstChild);
+            }
+        }
+
+        function changeVideo(videoUrl, element) {
+            // Plyr's source API is the most reliable way to switch video streams
+            player.source = {
+                type: 'video',
+                sources: [{ src: videoUrl, type: 'video/mp4' }]
+            };
+            player.play().catch(e => console.log('Autoplay blocked:', e));
+
+            document.querySelectorAll('.playlist-item').forEach(item => item.classList.remove('active'));
+            if (element) element.classList.add('active');
+        }
+
+        // Event listeners
+        seriesSelect.addEventListener('change', (e) => loadSeries(e.target.value));
+
+        // Initial load
+        loadSeries('conan');
+    </script>
+</body>
+</html>

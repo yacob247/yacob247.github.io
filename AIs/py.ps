@@ -1,0 +1,38 @@
+# ============ BLIP downloader + R2 uploader (live progress) ============
+# Run from: C:\Users\youse\Downloads\AIs
+
+$files = @('tokenizer.json','tokenizer_config.json','vocab.txt','text_decoder_model.onnx','vision_model.onnx')
+$dir   = "blip_models"
+New-Item -ItemType Directory -Force -Path $dir | Out-Null
+$base  = "https://huggingface.co/Salesforce/blip-image-captioning-base/resolve/main/onnx"
+
+$allOk = $true
+foreach ($f in $files) {
+    $out = Join-Path $dir $f
+    if (Test-Path $out) {
+        Write-Host "[SKIP] $f already downloaded ($([math]::Round((Get-Item $out).Length/1MB,1)) MB)" -ForegroundColor DarkGray
+        continue
+    }
+    Write-Host "[GET ] $f" -ForegroundColor Cyan
+    # Use curl.exe for a proper progress bar (PowerShell's IWR hides it)
+    curl.exe -L --progress-bar --retry 3 -C - -o $out "$base/$f"
+    if ($LASTEXITCODE -ne 0) { Write-Host "FAILED: $f" -ForegroundColor Red; $allOk = $false }
+}
+
+Write-Host "`n=== Download summary ===" -ForegroundColor Yellow
+foreach ($f in $files) {
+    $p = Join-Path $dir $f
+    if (Test-Path $p) { Write-Host ("{0,-28} {1,8:N1} MB  OK" -f $f, ((Get-Item $p).Length/1MB)) -ForegroundColor Green }
+    else              { Write-Host ("{0,-28} MISSING" -f $f) -ForegroundColor Red; $allOk = $false }
+}
+
+if ($allOk) {
+    Write-Host "`n=== Uploading to r2:images-ai/blip/ ===" -ForegroundColor Yellow
+    rclone copy $dir r2:images-ai/blip/ --progress
+    Write-Host "`nDONE. Verify with:" -ForegroundColor Green
+    Write-Host "  rclone ls r2:images-ai/blip/" -ForegroundColor Green
+    # Public URLs will be like:
+    # https://pub-<ACCOUNT_ID>.r2.dev/blip/vision_model.onnx   (if R2 public access is on)
+} else {
+    Write-Host "`nSome downloads failed - re-run this script, it resumes with -C - (curl) and skips finished files." -ForegroundColor Red
+}

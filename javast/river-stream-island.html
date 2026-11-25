@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Procedural PBR Water — River / Lake / Waterfall</title>
+<style>
+  html,body{margin:0;height:100%;background:#05070a;overflow:hidden;font:12px/1.4 ui-monospace,Menlo,Consolas,monospace;color:#cfe3f5}
+  canvas{display:block;width:100vw;height:100vh}
+  #hud{position:fixed;left:12px;top:12px;padding:10px 12px;background:rgba(6,14,22,.55);
+       border:1px solid rgba(120,180,220,.25);border-radius:8px;backdrop-filter:blur(6px);pointer-events:none;max-width:260px}
+  #hud b{color:#8fd0ff;font-weight:600}
+  #hud span{color:#7d93a6}
+  #err{position:fixed;inset:0;display:none;place-items:center;background:#0a0f14;color:#ff9a9a;font-size:15px;padding:30px;text-align:center}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud">
+  <b>PROCEDURAL WATER — PBR</b><br>
+  <span>drag</span> orbit &nbsp; <span>wheel</span> zoom<br>
+  <span>WASD</span> pan &nbsp; <span>Q/E</span> up-down<br>
+  <span>1/2/3</span> quality
+</div>
+<div id="err"></div>
+
+<script id="vs" type="x-shader/x-vertex">#version 300 es
+void main(){
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}
+</script>
+
+<script id="fs" type="x-shader/x-fragment">#version 300 es
+precision highp float;
+
+out vec4 outColor;
+
+uniform vec2  uRes;
+uniform float uTime;
+uniform vec3  uCamPos;
+uniform vec3  uCamRight;
+uniform vec3  uCamUp;
+uniform vec3  uCamFwd;
+uniform float uFocal;
+uniform int   uSteps;
+
+const float PI = 3.14159265359;
+
+const float WATER_LOW  = 0.0;
+const float WATER_HIGH = 20.5;
+const float CLIFF_X    = 123.0;
+const float LAKE_X     = 40.0;
+
+const vec3 SUN_DIR   = normalize(vec3(0.42, 0.44, 0.79));
+const vec3 SUN_COLOR = vec3(1.0, 0.92, 0.78) * 3.4;
+
+/* ================================================================
+   NOISE
+   ================================================================ */
+float hash21(vec2 p){
+  p = fract(p * vec2(127.1, 311.7));
+  p += dot(p, p + 34.56);
+  return fract(p.x * p.y);
+}
+float vnoise(vec2 p){
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f*f*(3.0 - 2.0*f);
+  float a = hash21(i);
+  float b = hash21(i + vec2(1.0, 0.0));
+  float c = hash21(i + vec2(0.0, 1.0));
+  float d = hash21(i + vec2(1.0, 1.0));
+  return mix(mix(a,b,u.x), mix(c,d,u.x), u.y);
+}
+float fbm2(vec2 p){
+  float s = 0.6667 * vnoise(p); p = p*2.03 + vec2(13.7, 7.3);
+  s += 0.3333 * vnoise(p);
+  return s;
+}
+float fbm3(vec2 p){
+  float s = 0.5714 * vnoise(p); p = p*2.03 + vec2(13.7, 7.3);
+  s += 0.2857 * vnoise(p);      p = p*2.03 + vec2(13.7, 7.3);
+  s += 0.1429 * vnoise(p);
+  return s;
+}
+float fbm4(vec2 p){
+  float s = 0.5333 * vnoise(p); p = p*2.03 + vec2(13.7, 7.3);
+  s += 0.2667 * vnoise(p);      p = p*2.03 + vec2(13.7, 7.3);
+  s += 0.1333 * vnoise(p);      p = p*2.03 + vec2(13.7, 7.3);
+  s += 0.0667 * vnoise(p);
+  return s;
+}
+
+/* ================================================================
+   TERRAIN  (heightfield: river valley + lake basin + waterfall cliff)
+   ================================================================ */
+float channelCenter(float x){
+  return sin(x*0.0135)*26.0 + sin(x*0.0052 + 2.1)*52.0;
+}
+float channelCenterD(float x){
+  return cos(x*0.0135)*0.351 + cos(x*0.0052 + 2.1)*0.2704;
+}
+float lakeBump(float x){
+  float t = (x - LAKE_X) / 42.0;
+  return exp(-t*t);
+}
+float channelWidth(float x){
+  return 13.0 + 4.0*sin(x*0.041 + 0.7) + 50.0*lakeBump(x);
+}
+float channelMask(vec2 p){
+  float d = abs(p.y - channelCenter(p.x));
+  float w = channelWidth(p.x);
+  return smoothstep(w, w*1.9, d);
+}
+
+float terrain(vec2 p){
+  float m  = channelMask(p);
+  float cl = smoothstep(CLIFF_X - 3.5, CLIFF_X + 3.5, p.x);
+  float hi = fbm3(p * 0.011);
+  float bl = fbm2(p * 0.05);
+
+  float bedLow  = -2.6 - bl*2.2 - 9.0*lakeBump(p.x);
+  float hillLow =  3.0 + hi*17.0;
+  float bedHigh = 17.5 - bl*2.2;
+  float hillHigh= 26.0 + hi*14.0;
+
+  float hLow  = mix(bedLow,  hillLow,  m);
+  float hHigh = mix(bedHigh, hillHigh, m);
+  float h = mix(hLow, hHigh, cl);
+
+  h += (fbm2(p * 0.12) - 0.5) * 1.5 * m;
+  return h;
+}
+
+vec3 terrainNormal(vec2 p, float e){
+  float hL = terrain(p - vec2(e, 0.0));
+  float hR = terrain(p + vec2(e, 0.0));
+  float hD = terrain(p - vec2(0.0, e));
+  float hU = terrain(p + vec2(0.0, e));
+  return normalize(vec3(hL - hR, 2.0*e, hD - hU));
+}
+
+/* ================================================================
+   SKY / ATMOSPHERE
+   ================================================================ */
+vec3 skyColor(vec3 d, vec3 sd){
+  float y = max(d.y, 0.0);
+  vec3 zen = vec3(0.075, 0.19, 0.52);
+  vec3 hor = vec3(0.74, 0.82, 0.91);
+  vec3 col = mix(hor, zen, pow(y, 0.42));
+
+  float s = max(dot(d, sd), 0.0);
+  col += vec3(1.0, 0.86, 0.62) * pow(s, 1200.0) * 34.0;
+  col += vec3(1.0, 0.72, 0.44) * pow(s, 7.0)  * 0.30;
+
+  if (d.y > 0.015){
+    vec2 cp = d.xz / d.y;
+    float c = fbm4(cp * 0.55 + vec2(uTime*0.004, uTime*0.0016));
+    c = smoothstep(0.47, 0.80, c);
+    float c2 = fbm2(cp * 1.6 + vec2(uTime*0.011, 0.0));
+    c = clamp(c + (c2 - 0.5)*0.35, 0.0, 1.0);
+    col = mix(col, vec3(1.0, 0.98, 0.96), c*0.8);
+  }
+  col = mix(col, vec3(0.26, 0.29, 0.30), smoothstep(0.0, -0.09, d.y));
+  return col;
+}
+
+/* ================================================================
+   PBR MICROFACET
+   ================================================================ */
+float D_GGX(float NoH, float a){
+  float a2 = a*a;
+  float d  = NoH*NoH*(a2 - 1.0) + 1.0;
+  return a2 / (PI*d*d + 1e-7);
+}
+float V_SmithGGX(float NoV, float NoL, float a){
+  float a2 = a*a;
+  float gv = NoL * sqrt(NoV*NoV*(1.0 - a2) + a2);
+  float gl = NoV * sqrt(NoL*NoL*(1.0 - a2) + a2);
+  return 0.5 / max(gv + gl, 1e-6);
+}
+vec3 F_Schlick(vec3 F0, float VoH){
+  return F0 + (1.0 - F0) * pow(1.0 - VoH, 5.0);
+}
+
+/* ================================================================
+   FLOW FIELD  (water travels -X down the channel, over the cliff)
+   ================================================================ */
+vec2 flowDir(vec2 p){
+  vec2 t = normalize(vec2(1.0, channelCenterD(p.x)));
+  return -t;
+}
+float flowSpeed(vec2 p){
+  // fast in rapids / near the fall, slow in the lake
+  float lb = lakeBump(p.x);
+  float steep = smoothstep(0.0, 0.6, abs(channelCenterD(p.x)));
+  float fall  = 1.0 - smoothstep(6.0, 14.0, abs(p.x - CLIFF_X));
+  return mix(0.9, 0.22, lb) + steep*0.5 + fall*2.2;
+}
+
+/* ================================================================
+   WATER SURFACE NORMAL  (analytic derivative of summed waves)
+   ================================================================ */
+vec3 waterNormal(vec2 p, vec2 flow, float chop, float t, float dist){
+  float lod = clamp(dist * 0.012, 0.0, 1.0);
+  vec2 s = vec2(0.0);
+  float amp = 1.0, frq = 1.0;
+  for (int i = 0; i < 4; i++){
+    float ang = float(i)*2.1 + 0.9;
+    vec2 d = normalize(vec2(cos(ang), sin(ang)) + flow*1.15);
+    float ph = dot(p, d)*frq*0.9 + t*(1.15 + float(i)*0.37);
+    float a = amp * mix(1.0, 0.28, lod * float(i) * 0.5);
+    s += d * (a * frq * cos(ph));
+    amp *= 0.58;
+    frq *= 1.97;
+  }
+  float k = 0.038 * chop * (1.0 / (1.0 + dist*0.004));
+  return normalize(vec3(-s.x*k, 1.0, -s.y*k));
+}
+
+/* ================================================================
+   FOAM
+   ================================================================ */
+float foamNoise(vec2 p, float t){
+  float a = fbm4(p*0.55 + vec2(-t*0.22, t*0.17));
+  float b = fbm2(p*2.10 - vec2( t*0.55, t*0.42));
+  return a*0.62 + b*0.38;
+}
+
+/* ================================================================
+   WATER SHADING
+   ================================================================ */
+vec3 shadeWater(vec3 p, vec3 rd, float wl, float dist){
+  vec2 xz = p.xz;
+  vec2 flow = flowDir(xz);
+  float spd = flowSpeed(xz);
+
+  float chop = mix(0.75, 1.35, clamp(spd*0.5, 0.0, 1.0));
+  chop += 1.6 * (1.0 - smoothstep(4.0, 16.0, abs(xz.x - CLIFF_X)));  // rough below fall
+
+  vec3 n = waterNormal(xz, flow, chop, uTime, dist);
+
+  vec3 V = -rd;
+  float NoV = max(dot(n, V), 1e-4);
+
+  /* ---- reflected environment ---- */
+  vec3 R = reflect(rd, n);
+  R.y = max(R.y, 0.015);
+  vec3 refl = skyColor(R, SUN_DIR);
+
+  /* ---- Fresnel ---- */
+  vec3 F0 = vec3(0.02);
+  vec3 F = F_Schlick(F0, NoV);
+
+  /* ---- sun specular (GGX) ---- */
+  vec3 H = normalize(V + SUN_DIR);
+  float NoL = max(dot(n, SUN_DIR), 0.0);
+  float NoH = max(dot(n, H), 0.0);
+  float VoH = max(dot(V, H), 0.0);
+  float a   = 0.055;
+  float D   = D_GGX(NoH, a);
+  float Vis = V_SmithGGX(NoV, NoL, a);
+  vec3  spec = SUN_COLOR * (D * Vis) * F_Schlick(F0, VoH) * NoL;
+
+  /* ---- body / refraction ---- */
+  float hTer = terrain(xz);
+  float depth = max(wl - hTer, 0.0);
+
+  vec3 deepCol    = vec3(0.010, 0.052, 0.070);
+  vec3 shallowCol = vec3(0.055, 0.150, 0.155);
+  vec3 bedSand    = vec3(0.46, 0.40, 0.29);
+  vec3 bedRock    = vec3(0.19, 0.18, 0.16);
+
+  vec3 bed = mix(bedSand, bedRock, smoothstep(0.5, 4.0, depth));
+  float trans = exp(-depth * 0.42);
+  vec3 body = mix(mix(deepCol, shallowCol, exp(-depth*0.9)), bed, trans);
+
+  /* sky light scattered back out of the water */
+  vec3 scatter = vec3(0.05, 0.11, 0.13) * (1.0 - exp(-depth*0.35)) * 0.7;
+
+  /* ---- foam ---- */
+  vec2 fUV = xz - flow * uTime * spd * 2.2;
+  float fn = foamNoise(fUV, uTime);
+
+  // shoreline foam
+  float shore = 1.0 - smoothstep(0.0, 2.3, depth);
+  float shoreFoam = shore * (0.28 + 0.72*fn);
+
+  // wave-pulse at the very edge
+  float pulse = 0.5 + 0.5*sin(uTime*1.9 + depth*5.5 + fn*8.0);
+  shoreFoam *= mix(0.55, 1.0, pulse);
+
+  // rapids / whitewater where flow is fast
+  float rapid = smoothstep(1.1, 2.6, spd) * smoothstep(0.35, 0.85, fn);
+
+  // plunge pool below the waterfall
+  float belowFall = (1.0 - smoothstep(4.0, 30.0, abs(xz.x - CLIFF_X))) * (1.0 - smoothstep(0.0, 6.0, abs(xz.x - CLIFF_X))*0.0);
+  float fallFoam = (1.0 - smoothstep(3.0, 26.0, length(xz - vec2(CLIFF_X-4.0, channelCenter(CLIFF_X)))));
+  fallFoam = clamp(fallFoam, 0.0, 1.0) * (0.55 + 0.45*fn);
+
+  float foam = clamp(shoreFoam + rapid*0.85 + fallFoam*1.1, 0.0, 1.0);
+  foam = smoothstep(0.18, 0.72, foam);
+
+  /* ---- combine ---- */
+  vec3 waterCol = body + scatter;
+  waterCol = mix(waterCol, refl, clamp(F.x, 0.0, 1.0) * 0.92);
+  waterCol += spec;
+
+  // foam is a diffuse white, high roughness
+  vec3 foamCol = vec3(0.86, 0.90, 0.92) * (0.30 + 0.55*max(dot(n, SUN_DIR), 0.0)*0.35 + 0.35);
+  foamCol *= vec3(1.0, 0.98, 0.95);
+  foamCol += spec * 0.25;
+
+  vec3 col = mix(waterCol, foamCol, foam);
+  return col;
+}
+
+/* ================================================================
+   TERRAIN SHADING  (rock / grass / sand, wet shoreline, waterfall sheet)
+   ================================================================ */
+vec3 shadeTerrain(vec3 p, vec3 n, vec3 rd, float dist){
+  vec2 xz = p.xz;
+
+  float cl = smoothstep(CLIFF_X - 3.5, CLIFF_X + 3.5, p.x);
+  float wl = mix(WATER_LOW, WATER_HIGH, cl);
+
+  float slope = 1.0 - clamp(n.y, 0.0, 1.0);
+  float hi = fbm4(xz * 0.03);
+
+  vec3 rock  = mix(vec3(0.24, 0.22, 0.20), vec3(0.38, 0.35, 0.30), hi);
+  vec3 grass = mix(vec3(0.11, 0.20, 0.075), vec3(0.25, 0.33, 0.13), hi);
+  vec3 sand  = vec3(0.56, 0.50, 0.37);
+
+  vec3 alb = mix(grass, rock, smoothstep(0.30, 0.62, slope));
+  float above = p.y - wl;
+  alb = mix(sand, alb, smoothstep(0.4, 3.2, above));
+
+  float rough = mix(0.95, 0.70, smoothstep(0.30, 0.62, slope));
+
+  /* -------- wet shoreline: darker + glossy -------- */
+  float wet = 1.0 - smoothstep(0.0, 2.8, above);
+  wet = clamp(wet, 0.0, 1.0);
+  wet *= 0.55 + 0.45 * fbm2(xz * 0.6);            // irregular tide line
+  alb *= mix(1.0, 0.40, wet);
+  rough = mix(rough, 0.08, wet);
+
+  /* -------- waterfall sheet -------- */
+  float dch = abs(xz.y - channelCenter(xz.x));
+  float wch = max(channelWidth(xz.x), 1.0);
+  float inCh = 1.0 - smoothstep(wch*0.9, wch*1.5, dch);
+  float inZone = smoothstep(CLIFF_X-5.5, CLIFF_X-2.0, xz.x) *
+                 (1.0 - smoothstep(CLIFF_X+1.5, CLIFF_X+5.5, xz.x));
+  float fall = inCh * inZone;
+
+  if (fall > 0.01){
+    float u = (xz.y - channelCenter(xz.x)) / wch;
+    float v = p.y * 0.45 + uTime * 2.4;
+
+    float streak = fbm3(vec2(u*9.0,  v*1.6));
+    float sheet  = fbm2(vec2(u*3.0,  v*0.6 + uTime*0.35));
+    float churn  = fbm3(vec2(u*14.0, p.y*0.9 + uTime*4.6));
+
+    float a = clamp(0.55 + 0.55*streak - 0.30*sheet, 0.0, 1.0);
+    a = max(a, smoothstep(0.55, 0.95, churn) * 0.92);
+
+    float base = 1.0 - smoothstep(0.0, 9.0, p.y);
+    a = clamp(a + base*0.35, 0.0, 1.0);
+
+    vec3 wcol = vec3(0.74, 0.82, 0.86) * (0.65 + 0.55*a);
+    alb   = mix(alb, wcol, a * fall * 0.95);
+    rough = mix(rough, 0.16, a * fall);
+  }
+
+  /* -------- lighting -------- */
+  vec3 V = -rd;
+  vec3 H = normalize(V + SUN_DIR);
+  float NoL = max(dot(n, SUN_DIR), 0.0);
+  float NoV = max(dot(n, V), 1e-4);
+  float NoH = max(dot(n, H), 0.0);
+  float VoH = max(dot(V, H), 0.0);
+  float a   = max(rough*rough, 0.002);
+
+  vec3 F0 = vec3(0.04) * mix(1.0, 0.6, wet);
+  vec3 F  = F_Schlick(F0, VoH);
+  float D   = D_GGX(NoH, a);
+  float Vis = V_SmithGGX(NoV, NoL, a);
+
+  vec3 diff = alb * SUN_COLOR * NoL * (1.0 / PI);
+  vec3 spec = SUN_COLOR * (D * Vis) * F * NoL;
+
+  vec3 amb = alb * vec3(0.36, 0.46, 0.62) * (0.42 + 0.58 * n.y);
+  amb += alb * vec3(0.10, 0.09, 0.07) * max(-n.y*0.4 + 0.25, 0.0);
+
+  return diff + spec + amb;
+}
+
+/* ================================================================
+   MIST AROUND THE FALL
+   ================================================================ */
+vec3 fallBase(){
+  return vec3(CLIFF_X - 4.0, 2.0, channelCenter(CLIFF_X));
+}
+float mistAmount(vec3 ro, vec3 rd){
+  vec3 oc = fallBase() - ro;
+  float t = max(dot(oc, rd), 0.0);
+  vec3 q = ro + rd * t;
+  float d = length(q - fallBase());
+  float g = exp(-d*d*0.0032) * 0.85;
+  g *= 1.0 - exp(-t*0.03);
+  g *= smoothstep(-0.15, 0.25, rd.y + 0.4);
+  float turb = 0.55 + 0.45 * fbm2(rd.xz*14.0 + vec2(uTime*0.25, uTime*0.18));
+  return g * turb;
+}
+
+/* ================================================================
+   MAIN
+   ================================================================ */
+void main(){
+  vec2 uv = (gl_FragCoord.xy - 0.5*uRes) / uRes.y;
+
+  vec3 ro = uCamPos;
+  vec3 rd = normalize(uCamFwd
+                    + uCamRight * (uv.x * (uRes.x/uRes.y) / uFocal)
+                    + uCamUp    * (uv.y / uFocal));
+
+  float tMax = 900.0;
+
+  /* ---------- march terrain ---------- */
+  float tT = tMax;
+  bool hitT = false;
+
+  bool skyish = (ro.y > 45.0 && rd.y > 0.005);
+  if (!skyish){
+    float t = 0.0;
+    for (int i = 0; i < 220; i++){
+      if (i >= uSteps) break;
+      vec3 p = ro + rd*t;
+      float h = terrain(p.xz);
+      float dy = p.y - h;
+      if (dy < 0.02 + t*0.0012){ hitT = true; tT = t; break; }
+      t += max(dy * 0.52, 0.45 + t * 0.010);
+      if (t > tMax) break;
+    }
+  }
+
+  /* ---------- water planes ---------- */
+  float tW = 1e9;
+  float wl = WATER_LOW;
+
+  if (rd.y < -1e-6){
+    if (ro.y > WATER_HIGH){
+      float t = (WATER_HIGH - ro.y) / rd.y;
+      if (t > 0.0){
+        vec3 pw = ro + rd*t;
+        if (pw.x > CLIFF_X - 2.0 && terrain(pw.xz) < WATER_HIGH){ tW = t; wl = WATER_HIGH; }
+      }
+    }
+    if (ro.y > WATER_LOW){
+      float t = (WATER_LOW - ro.y) / rd.y;
+      if (t > 0.0 && t < tW){
+        vec3 pw = ro + rd*t;
+        if (pw.x < CLIFF_X + 2.5 && terrain(pw.xz) < WATER_LOW){ tW = t; wl = WATER_LOW; }
+      }
+    }
+  }
+
+  /* ---------- resolve ---------- */
+  vec3 col;
+  float dist;
+
+  if (tW < tT && tW < tMax){
+    vec3 pw = ro + rd*tW;
+    col  = shadeWater(pw, rd, wl, tW);
+    dist = tW;
+  } else if (hitT){
+    vec3 p = ro + rd*tT;
+    float e = max(0.25, tT * 0.006);
+    vec3 n = terrainNormal(p.xz, e);
+    col  = shadeTerrain(p, n, rd, tT);
+    dist = tT;
+  } else {
+    col  = skyColor(rd, SUN_DIR);
+    dist = tMax;
+  }
+
+  /* ---------- waterfall mist ---------- */
+  col += vec3(0.86, 0.91, 0.96) * mistAmount(ro, rd);
+
+  /* ---------- aerial perspective ---------- */
+  float fog = 1.0 - exp(-dist * 0.0030);
+  vec3 fogCol = skyColor(rd, SUN_DIR) * 0.92 + vec3(0.02);
+  col = mix(col, fogCol, fog);
+
+  /* ---------- underwater tint ---------- */
+  if (ro.y < WATER_LOW && rd.y < 0.0){
+    col = mix(col, vec3(0.02, 0.08, 0.10), clamp(-ro.y*0.08, 0.0, 0.75));
+  }
+
+  /* ---------- tonemap + gamma ---------- */
+  col *= 0.62;
+  col = (col*(2.51*col + 0.03)) / (col*(2.43*col + 0.59) + 0.14);
+  col = pow(max(col, 0.0), vec3(1.0/2.2));
+
+  // subtle vignette
+  vec2 q = gl_FragCoord.xy / uRes;
+  col *= 1.0 - 0.22 * pow(length(q - 0.5) * 1.35, 2.2);
+
+  outColor = vec4(col, 1.0);
+}
+</script>
+
+<script>
+(function(){
+  const canvas = document.getElementById('c');
+  const gl = canvas.getContext('webgl2', { antialias:false, powerPreference:'high-performance' });
+  if (!gl){
+    const e = document.getElementById('err');
+    e.style.display = 'grid';
+    e.textContent = 'WebGL2 is not available in this browser.';
+    return;
+  }
+
+  function compile(type, src){
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)){
+      console.error(gl.getShaderInfoLog(s));
+      console.error(src);
+      throw new Error('shader compile failed');
+    }
+    return s;
+  }
+
+  const vsSrc = document.getElementById('vs').textContent;
+  const fsSrc = document.getElementById('fs').textContent;
+
+  const prog = gl.createProgram();
+  gl.attachShader(prog, compile(gl.VERTEX_SHADER, vsSrc));
+  gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, fsSrc));
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)){
+    console.error(gl.getProgramInfoLog(prog));
+    throw new Error('link failed');
+  }
+  gl.useProgram(prog);
+
+  const U = {};
+  ['uRes','uTime','uCamPos','uCamRight','uCamUp','uCamFwd','uFocal','uSteps']
+    .forEach(n => U[n] = gl.getUniformLocation(prog, n));
+
+  // fullscreen triangle, no buffers needed
+  gl.bindVertexArray(gl.createVertexArray());
+
+  /* ---------------- camera ---------------- */
+  const cam = {
+    target: [60, 5, 48],
+    yaw:   -1.638,
+    pitch:  0.2366,
+    dist:  124,
+    fov:   55
+  };
+
+  function camPos(){
+    const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+    return [
+      cam.target[0] + cam.dist * cp * Math.sin(cam.yaw),
+      cam.target[1] + cam.dist * sp,
+      cam.target[2] + cam.dist * cp * Math.cos(cam.yaw)
+    ];
+  }
+
+  function sub(a,b){ return [a[0]-b[0], a[1]-b[1], a[2]-b[2]]; }
+  function cross(a,b){ return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]; }
+  function norm(a){ const l = Math.hypot(a[0],a[1],a[2]) || 1; return [a[0]/l, a[1]/l, a[2]/l]; }
+
+  /* ---------------- input ---------------- */
+  let drag = false, lastX = 0, lastY = 0;
+  const keys = {};
+
+  canvas.addEventListener('pointerdown', e => {
+    drag = true; lastX = e.clientX; lastY = e.clientY;
+    canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener('pointerup', e => {
+    drag = false;
+    try { canvas.releasePointerCapture(e.pointerId); } catch(_){}
+  });
+  canvas.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const dx = e.clientX - lastX, dy = e.clientY - lastY;
+    lastX = e.clientX; lastY = e.clientY;
+    cam.yaw   -= dx * 0.005;
+    cam.pitch += dy * 0.004;
+    cam.pitch = Math.max(0.10, Math.min(1.35, cam.pitch));
+  });
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    cam.dist *= Math.exp(e.deltaY * 0.0012);
+    cam.dist = Math.max(12, Math.min(600, cam.dist));
+  }, { passive:false });
+
+  window.addEventListener('keydown', e => { keys[e.code] = true; });
+  window.addEventListener('keyup',   e => { keys[e.code] = false; });
+
+  /* ---------------- quality ---------------- */
+  let scale = 0.75;
+  let steps = 150;
+  window.addEventListener('keydown', e => {
+    if (e.key === '1'){ scale = 0.5;  steps = 110; }
+    if (e.key === '2'){ scale = 0.75; steps = 150; }
+    if (e.key === '3'){ scale = 1.0;  steps = 200; }
+  });
+
+  function resize(){
+    const w = Math.max(1, Math.floor(canvas.clientWidth  * scale));
+    const h = Math.max(1, Math.floor(canvas.clientHeight * scale));
+    if (canvas.width !== w || canvas.height !== h){
+      canvas.width = w; canvas.height = h;
+    }
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  /* ---------------- loop ---------------- */
+  const t0 = performance.now();
+
+  function frame(now){
+    // quality may have changed via keys
+    if (canvas.clientWidth * scale !== canvas.width) resize();
+
+    const t = (now - t0) * 0.001;
+
+    // pan target
+    const fwd = norm(sub(cam.target, camPos()));
+    const right = norm(cross(fwd, [0,1,0]));
+    const spd = cam.dist * 0.012;
+    if (keys['KeyW']){ cam.target[0]+=fwd[0]*spd; cam.target[2]+=fwd[2]*spd; }
+    if (keys['KeyS']){ cam.target[0]-=fwd[0]*spd; cam.target[2]-=fwd[2]*spd; }
+    if (keys['KeyA']){ cam.target[0]-=right[0]*spd; cam.target[2]-=right[2]*spd; }
+    if (keys['KeyD']){ cam.target[0]+=right[0]*spd; cam.target[2]+=right[2]*spd; }
+    if (keys['KeyQ']) cam.target[1] -= spd;
+    if (keys['KeyE']) cam.target[1] += spd;
+    cam.target[1] = Math.max(2, Math.min(60, cam.target[1]));
+
+    const pos = camPos();
+    pos[1] = Math.max(pos[1], 2.2);   // never go under the world
+
+    const f = norm(sub(cam.target, pos));
+    const r = norm(cross(f, [0,1,0]));
+    const u = cross(r, f);
+
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.uniform2f(U.uRes, canvas.width, canvas.height);
+    gl.uniform1f(U.uTime, t);
+    gl.uniform3fv(U.uCamPos, pos);
+    gl.uniform3fv(U.uCamRight, r);
+    gl.uniform3fv(U.uCamUp, u);
+    gl.uniform3fv(U.uCamFwd, f);
+    gl.uniform1f(U.uFocal, 1.0 / Math.tan(cam.fov * Math.PI / 360));
+    gl.uniform1i(U.uSteps, steps);
+
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

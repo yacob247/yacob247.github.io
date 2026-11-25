@@ -1,0 +1,1240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HyperLive | In-Browser Local Server & Web Proxy</title>
+    
+    <!-- Tailwind CSS for Premium UI Styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- JSZip for exporting Workspaces -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+    <!-- Firebase SDK (Compat Version for ease of HTML integration) -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #020617; /* Slate 950 */
+        }
+        
+        .font-mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Beautiful Custom Scrollbars */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; border: 2px solid #0f172a; }
+        ::-webkit-scrollbar-thumb:hover { background: #6366f1; }
+
+        .sandbox-iframe {
+            width: 100%; height: 100%; border: none; background: #ffffff;
+        }
+
+        .tree-item-hover:hover { background-color: rgba(99, 102, 241, 0.15); color: #fff; }
+        
+        /* Proxy Toggle Switch Styling */
+        .toggle-checkbox:checked { right: 0; border-color: #10b981; }
+        .toggle-checkbox:checked + .toggle-label { background-color: #10b981; }
+
+        /* Full Screen Drop Overlay */
+        #global-drop-overlay {
+            transition: opacity 0.2s ease, backdrop-filter 0.2s ease;
+            pointer-events: none;
+        }
+        .drag-active #global-drop-overlay {
+            opacity: 1; backdrop-filter: blur(8px); pointer-events: all;
+        }
+
+        /* Loading Spinner */
+        .loader {
+            border: 3px solid rgba(255,255,255,0.1);
+            border-bottom-color: #6366f1;
+            border-radius: 50%;
+            display: inline-block;
+            box-sizing: border-box;
+            animation: rotation 1s linear infinite;
+        }
+        @keyframes rotation { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* Line numbers synchronization */
+        #editor-textarea {
+            resize: none;
+            outline: none;
+            white-space: pre;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body class="text-slate-200 h-screen flex flex-col overflow-hidden selection:bg-indigo-500/30 relative">
+
+    <!-- AUTH LOCK OVERLAY SCREEN -->
+    <div id="auth-lock-screen" class="fixed inset-0 z-50 bg-slate-950 flex items-center justify-center p-4">
+        <div class="relative w-full max-w-md">
+            <!-- Decorative Backlight Blur -->
+            <div class="absolute -inset-1 bg-gradient-to-r from-indigo-500 to-violet-600 rounded-2xl blur opacity-30 animate-pulse"></div>
+            
+            <div class="relative bg-slate-900 border border-slate-800 rounded-2xl p-8 shadow-2xl">
+                <!-- Header / Brand -->
+                <div class="text-center mb-8">
+                    <div class="inline-flex p-3 bg-indigo-600/10 text-indigo-400 border border-indigo-500/20 rounded-2xl mb-4">
+                        <i data-lucide="shield-check" class="w-8 h-8"></i>
+                    </div>
+                    <h2 class="text-2xl font-black text-white tracking-tight">Welcome to HyperLive</h2>
+                    <p class="text-xs text-slate-400 mt-1">Please sign in to access your secure offline workspace sandbox</p>
+                </div>
+
+                <!-- Form Controls -->
+                <div class="space-y-4">
+                    <div id="auth-error-banner" class="hidden p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl text-xs text-rose-400 flex items-center gap-2">
+                        <i data-lucide="alert-circle" class="w-4 h-4 shrink-0"></i>
+                        <span id="auth-error-msg">Incorrect email or password.</span>
+                    </div>
+
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Email Address</label>
+                        <input id="auth-email" type="email" placeholder="you@example.com" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Password</label>
+                        <input id="auth-password" type="password" placeholder="••••••••" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition">
+                    </div>
+
+                    <!-- Sign In Button -->
+                    <button id="auth-primary-btn" onclick="handleEmailPasswordAuth()" class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs transition shadow-lg shadow-indigo-600/15 flex items-center justify-center gap-2 mt-2">
+                        <i data-lucide="log-in" class="w-4 h-4"></i>
+                        <span id="auth-btn-label">Sign In to Dashboard</span>
+                    </button>
+
+                    <!-- Toggle Mode Link -->
+                    <div class="text-center text-xs text-slate-400 mt-4">
+                        <span id="auth-toggle-text">Don't have an account?</span>
+                        <button onclick="toggleAuthMode()" id="auth-toggle-btn" class="text-indigo-400 hover:text-indigo-300 font-semibold ml-1 underline">Sign Up</button>
+                    </div>
+
+                    <div class="relative flex py-2 items-center">
+                        <div class="flex-grow border-t border-slate-800"></div>
+                        <span class="flex-shrink mx-4 text-[10px] text-slate-500 font-bold uppercase tracking-wider">or</span>
+                        <div class="flex-grow border-t border-slate-800"></div>
+                    </div>
+
+                    <!-- Guest Mode Button -->
+                    <button onclick="handleAnonymousAuth()" class="w-full py-2.5 bg-slate-800 hover:bg-slate-750 text-slate-300 border border-slate-700 font-semibold rounded-xl text-xs transition flex items-center justify-center gap-2">
+                        <i data-lucide="user-cog" class="w-4 h-4 text-slate-400"></i>
+                        <span>Continue as Guest</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- GLOBAL DRAG & DROP OVERLAY -->
+    <div id="global-drop-overlay" class="fixed inset-0 z-50 opacity-0 bg-slate-950/80 flex flex-col items-center justify-center border-4 border-dashed border-indigo-500 m-4 rounded-3xl">
+        <div class="bg-indigo-600 p-6 rounded-full mb-6 shadow-2xl shadow-indigo-500/50 animate-bounce">
+            <i data-lucide="hard-drive-upload" class="w-16 h-16 text-white"></i>
+        </div>
+        <h2 class="text-4xl font-extrabold text-white mb-2 tracking-tight">Drop Folder to Host</h2>
+        <p class="text-indigo-200 text-lg font-medium">Release your mouse to instantly spin up a local server.</p>
+    </div>
+
+    <!-- MAIN APP HEADER -->
+    <header class="bg-slate-900 border-b border-slate-800 px-6 h-16 shrink-0 flex items-center justify-between z-20 shadow-md">
+        <div class="flex items-center space-x-4">
+            <div class="relative group cursor-pointer" onclick="switchMode('local')">
+                <div class="absolute -inset-0.5 bg-gradient-to-r from-indigo-500 to-violet-600 rounded-xl blur opacity-60 group-hover:opacity-100 transition duration-200"></div>
+                <div class="relative bg-slate-900 text-white p-2.5 rounded-xl border border-slate-700">
+                    <i data-lucide="box" class="w-6 h-6"></i>
+                </div>
+            </div>
+            <div>
+                <h1 class="text-lg font-bold tracking-tight text-white flex items-center gap-2">
+                    HyperLive <span class="text-[10px] bg-gradient-to-r from-indigo-500 to-violet-500 text-white px-2 py-0.5 rounded-full font-mono font-bold uppercase tracking-wider shadow-sm">Pro</span>
+                </h1>
+                <p class="text-[11px] text-slate-400 font-medium">In-Browser Local Host & Proxy Viewer</p>
+            </div>
+        </div>
+
+        <!-- Mode Switcher -->
+        <div class="flex bg-slate-950 p-1 rounded-xl border border-slate-800 shadow-inner">
+            <button onclick="switchMode('local')" id="btn-mode-local" class="px-5 py-2 text-xs font-bold rounded-lg bg-indigo-600 text-white shadow-md shadow-indigo-900/50 transition flex items-center gap-2">
+                <i data-lucide="folder-tree" class="w-4 h-4"></i>
+                Local Workspace
+            </button>
+            <button onclick="switchMode('browser')" id="btn-mode-browser" class="px-5 py-2 text-xs font-bold rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition flex items-center gap-2">
+                <i data-lucide="globe" class="w-4 h-4"></i>
+                Unrestricted Web
+            </button>
+        </div>
+
+        <!-- Global Workspace Actions -->
+        <div class="flex items-center space-x-3" id="header-local-actions">
+            <!-- User Status Panel -->
+            <div class="flex items-center gap-2 bg-slate-950/80 px-3.5 py-1.5 rounded-xl border border-slate-800/80 text-xs">
+                <div class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                <span id="active-user-badge" class="text-slate-300 font-semibold truncate max-w-[120px]">Guest User</span>
+                <button onclick="handleSignOut()" class="text-[10px] font-bold text-rose-400 hover:text-rose-300 ml-2 border-l border-slate-800 pl-2 transition">Sign Out</button>
+            </div>
+
+            <button onclick="triggerFolderUpload()" class="flex items-center space-x-1.5 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white border border-slate-600 font-bold rounded-xl text-xs transition shadow-sm">
+                <i data-lucide="folder-up" class="w-4 h-4 text-indigo-400"></i>
+                <span>Upload Folder</span>
+            </button>
+            <input type="file" id="folder-upload-input" class="hidden" webkitdirectory directory multiple onchange="handleFolderUpload(event)">
+            
+            <button onclick="exportWorkspaceToZip()" id="btn-export-zip" class="hidden flex items-center space-x-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition shadow-md shadow-emerald-900/50">
+                <i data-lucide="download" class="w-4 h-4"></i>
+                <span>Download as .ZIP</span>
+            </button>
+
+            <div class="w-px h-6 bg-slate-700 mx-1"></div>
+            
+            <button onclick="clearAllWorkspaces()" class="flex items-center justify-center p-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 border border-rose-500/20 font-semibold rounded-xl transition" title="Clear Workspace Memory">
+                <i data-lucide="trash-2" class="w-4 h-4"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- MAIN APP CONTAINER -->
+    <div class="flex-1 flex overflow-hidden relative bg-slate-950">
+
+        <!-- ========================================== -->
+        <!-- MODE 1: LOCAL FOLDER WORKSPACE ENGINE      -->
+        <!-- ========================================== -->
+        <div id="view-local-workspace" class="absolute inset-0 flex">
+            <!-- SIDEBAR: SITES REGISTRY & FILE EXPLORER -->
+            <aside class="w-72 bg-slate-900 border-r border-slate-800 flex flex-col shrink-0 z-10 shadow-xl">
+                <!-- Project Selector -->
+                <div class="p-4 border-b border-slate-800 bg-slate-900/50">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-[10px] font-bold text-slate-500 tracking-wider uppercase">Active Session</span>
+                        <span id="ram-badge" class="text-[9px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded flex items-center gap-1 font-mono" title="Files stored securely in RAM">
+                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> IN-MEMORY
+                        </span>
+                    </div>
+                    <select id="project-selector" onchange="switchProject(this.value)" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 font-semibold outline-none focus:ring-2 focus:ring-indigo-500 transition cursor-pointer appearance-none">
+                        <option value="">No project loaded</option>
+                    </select>
+                </div>
+
+                <!-- File Tree -->
+                <div class="flex-1 flex flex-col overflow-hidden">
+                    <div class="px-4 py-2.5 border-b border-slate-800 flex items-center justify-between bg-slate-950/30">
+                        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                            <i data-lucide="files" class="w-3 h-3"></i> Explorer
+                        </span>
+                        <span id="file-count-badge" class="text-[9px] text-slate-500 font-mono font-bold">0 files</span>
+                    </div>
+                    
+                    <div id="file-tree-container" class="flex-1 overflow-y-auto py-2 px-1 font-mono text-[11px] text-slate-400">
+                        <div class="text-center py-10 px-4">
+                            <i data-lucide="folder-search" class="w-8 h-8 text-slate-700 mx-auto mb-3"></i>
+                            <span class="text-slate-500 text-xs">Awaiting folder drop...</span>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- WORKSPACE EDITOR & VIEWER (Split Screen Workspace) -->
+            <main class="flex-1 flex flex-col overflow-hidden relative">
+                
+                <!-- Browser Tabs -->
+                <div class="bg-slate-900 border-b border-slate-800 h-11 flex items-end px-2 pt-2 shrink-0 overflow-x-auto select-none gap-1 justify-between">
+                    <div id="tabs-container" class="flex items-center space-x-1 h-full scrollbar-none"></div>
+                    <div class="px-3 pb-1.5 flex gap-2">
+                        <button onclick="toggleEditorPanel()" id="btn-toggle-editor" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold px-2.5 py-1 rounded transition flex items-center gap-1">
+                            <i data-lucide="code" class="w-3.5 h-3.5"></i>
+                            <span>Editor Panel</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Browser Address Bar -->
+                <div class="bg-slate-900 border-b border-slate-800 px-4 py-2 flex items-center space-x-3 shrink-0">
+                    <div class="flex items-center space-x-1">
+                        <button onclick="activeTabHistoryBack()" class="p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white rounded-lg transition"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
+                        <button onclick="activeTabHistoryForward()" class="p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white rounded-lg transition"><i data-lucide="chevron-right" class="w-4 h-4"></i></button>
+                        <button onclick="reloadActiveTab()" class="p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white rounded-lg transition"><i data-lucide="rotate-cw" class="w-3.5 h-3.5"></i></button>
+                    </div>
+
+                    <div class="flex-1 flex items-center bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-300 font-mono shadow-inner group focus-within:border-indigo-500 transition-colors">
+                        <i data-lucide="lock" class="w-3 h-3 text-emerald-500 mr-2"></i>
+                        <span class="text-slate-500 mr-0.5 select-none">localhost:3000/</span>
+                        <input id="virtual-address-bar" type="text" class="bg-transparent border-none outline-none flex-1 text-slate-200" readonly placeholder="Waiting for connection...">
+                    </div>
+
+                    <button onclick="toggleConsole()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 text-xs font-semibold rounded-lg transition flex items-center gap-1.5">
+                        <i data-lucide="terminal-square" class="w-4 h-4 text-indigo-400"></i>
+                        <span>Logs</span>
+                    </button>
+                </div>
+
+                <!-- Loading State overlay -->
+                <div id="loading-overlay" class="absolute inset-0 z-40 bg-slate-950 flex flex-col items-center justify-center hidden">
+                    <span class="loader w-12 h-12 mb-4"></span>
+                    <p class="text-sm font-bold text-indigo-400 animate-pulse">Processing Virtual File System...</p>
+                </div>
+
+                <!-- WORKBENCH: EDITOR & LIVE VIEW SPLIT -->
+                <div class="flex-1 flex overflow-hidden bg-slate-950 relative">
+                    <!-- Empty State -->
+                    <div id="no-tabs-state" class="absolute inset-0 bg-slate-950 flex flex-col items-center justify-center text-center p-8 z-10">
+                        <div class="relative group cursor-pointer mb-6" onclick="triggerFolderUpload()">
+                            <div class="absolute -inset-1 bg-gradient-to-r from-indigo-500 to-emerald-500 rounded-full blur opacity-25 group-hover:opacity-75 transition duration-500"></div>
+                            <div class="relative bg-slate-900 border border-slate-700 w-24 h-24 rounded-full flex items-center justify-center shadow-2xl">
+                                <i data-lucide="upload-cloud" class="w-10 h-10 text-indigo-400 group-hover:scale-110 transition-transform"></i>
+                            </div>
+                        </div>
+                        <h3 class="text-2xl font-bold text-white mb-2">Host Your Web Directory Natively</h3>
+                        <p class="text-slate-400 text-sm max-w-md mb-8">Drag and drop any local folder here. The engine will instantly resolve all relative links, CSS, Javascript, and Images offline.</p>
+                        
+                        <div class="flex gap-4">
+                            <button onclick="triggerFolderUpload()" class="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold rounded-xl transition shadow-lg shadow-indigo-900/50">
+                                Select Folder
+                            </button>
+                            <button onclick="loadDemoWorkspace()" class="px-6 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white text-sm font-bold rounded-xl transition">
+                                Load Demo
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- LEFT SPLIT: REAL-TIME CODE EDITOR -->
+                    <div id="editor-panel-split" class="w-1/2 border-r border-slate-800 flex flex-col bg-[#0b0f19] h-full hidden">
+                        <!-- File Meta details -->
+                        <div class="bg-slate-900 px-4 py-2 border-b border-slate-800 flex items-center justify-between text-xs text-slate-400">
+                            <span class="font-mono flex items-center gap-1.5">
+                                <i data-lucide="edit-3" class="w-3.5 h-3.5 text-indigo-400"></i>
+                                <span id="editor-current-filename">index.html</span>
+                            </span>
+                            <div class="flex gap-2">
+                                <button onclick="saveActiveFileEdits()" class="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold rounded-md transition flex items-center gap-1">
+                                    <i data-lucide="save" class="w-3 h-3"></i>
+                                    Save & Reload
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Editor Textarea Area -->
+                        <div class="flex-1 flex relative overflow-hidden font-mono text-sm leading-relaxed p-4 bg-[#0a0d16]">
+                            <!-- Synchronized line gutter -->
+                            <div id="editor-gutter" class="w-10 shrink-0 text-slate-600 text-right pr-3 select-none border-r border-slate-800 text-[12px] font-mono leading-[20px] pt-1">
+                                1
+                            </div>
+                            <!-- Editor Content Area -->
+                            <textarea id="editor-textarea" onscroll="syncEditorScroll()" oninput="updateLineNumbers()" class="flex-1 h-full pl-3 bg-transparent text-indigo-200 border-none outline-none overflow-y-auto overflow-x-auto text-[12px] font-mono leading-[20px] pt-1" placeholder="<!-- Open a text-based file from the Explorer to begin editing -->" spellcheck="false"></textarea>
+                        </div>
+                    </div>
+
+                    <!-- RIGHT SPLIT: PREVIEW SANDBOX PREVIEW -->
+                    <div class="flex-1 h-full bg-white relative">
+                        <div id="sandbox-iframe-container" class="w-full h-full relative"></div>
+                    </div>
+                </div>
+
+                <!-- Dev Console -->
+                <div id="developer-console" class="h-56 border-t border-slate-700 bg-slate-950 flex flex-col shrink-0 hidden shadow-2xl relative z-20">
+                    <div class="bg-slate-900 px-4 py-2 border-b border-slate-800 flex items-center justify-between text-xs text-slate-300">
+                        <div class="flex items-center gap-2 font-semibold text-indigo-400">
+                            <i data-lucide="terminal" class="w-4 h-4"></i><span>Live Server Output</span>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <button onclick="clearConsole()" class="text-slate-400 hover:text-white transition hover:underline">Clear</button>
+                            <button onclick="toggleConsole()" class="text-slate-400 hover:text-white transition"><i data-lucide="x" class="w-4 h-4"></i></button>
+                        </div>
+                    </div>
+                    <div id="console-logs-output" class="flex-1 overflow-y-auto p-3 font-mono text-[12px] space-y-1 text-slate-300 bg-[#0A0A0A]">
+                        <div class="text-slate-500 italic">Listening for sandbox events...</div>
+                    </div>
+                </div>
+            </main>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- MODE 2: UNRESTRICTED EXTERNAL WEB BROWSER  -->
+        <!-- ========================================== -->
+        <div id="view-external-browser" class="absolute inset-0 flex flex-col hidden bg-slate-950 z-30">
+            <!-- Sleek Browser Address Bar -->
+            <div class="bg-slate-900 border-b border-slate-800 p-3 flex items-center gap-3 shrink-0 shadow-md">
+                <div class="flex items-center space-x-1">
+                    <button class="p-1.5 text-slate-500 hover:text-slate-300 rounded transition"><i data-lucide="chevron-left" class="w-5 h-5"></i></button>
+                    <button class="p-1.5 text-slate-500 hover:text-slate-300 rounded transition"><i data-lucide="chevron-right" class="w-5 h-5"></i></button>
+                    <button onclick="loadExternalUrl()" class="p-1.5 text-slate-300 hover:text-white rounded transition"><i data-lucide="rotate-cw" class="w-4 h-4"></i></button>
+                </div>
+
+                <div class="flex-1 flex items-center bg-slate-950 border border-slate-700 focus-within:border-emerald-500 transition-colors rounded-full px-4 py-2 text-sm text-slate-200 shadow-inner group">
+                    <i data-lucide="search" class="w-4 h-4 text-slate-500 mr-2 group-focus-within:text-emerald-500"></i>
+                    <input id="external-url-input" type="url" class="bg-transparent border-none outline-none flex-1 text-white" placeholder="Enter URL (e.g., example.com)" onkeydown="if(event.key === 'Enter') loadExternalUrl()">
+                </div>
+                
+                <!-- CORS Bypass Toggle -->
+                <div class="flex items-center gap-2 bg-slate-800 px-3 py-1.5 rounded-full border border-slate-700" title="Bypasses X-Frame-Options to allow embedding">
+                    <span class="text-[11px] font-bold text-slate-300 uppercase tracking-wide">Proxy Bypass</span>
+                    <div class="relative inline-block w-8 mr-1 align-middle select-none transition duration-200 ease-in mt-0.5">
+                        <input type="checkbox" name="toggle" id="use-proxy-toggle" class="toggle-checkbox absolute block w-4 h-4 rounded-full bg-white border-4 appearance-none cursor-pointer border-slate-400 z-10" checked/>
+                        <label for="use-proxy-toggle" class="toggle-label block overflow-hidden h-4 rounded-full bg-slate-500 cursor-pointer"></label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Warning Banner -->
+            <div class="bg-amber-500/10 border-b border-amber-500/20 px-4 py-1.5 flex items-center justify-center gap-2 text-[11px] text-amber-200/80 font-medium">
+                <i data-lucide="shield-alert" class="w-3.5 h-3.5"></i>
+                <span>Proxy mode strips security headers to allow embedding. Complex dynamic sites (like Google/Facebook) may still fail due to advanced scripts.</span>
+            </div>
+
+            <div class="flex-1 relative bg-white">
+                <div id="browser-empty-state" class="absolute inset-0 bg-slate-950 flex flex-col items-center justify-center text-center p-8 z-10">
+                    <div class="w-24 h-24 bg-slate-900 border border-slate-800 text-emerald-500 rounded-3xl flex items-center justify-center mb-6 shadow-2xl">
+                        <i data-lucide="globe-2" class="w-12 h-12"></i>
+                    </div>
+                    <h3 class="text-2xl font-bold text-white mb-2">Unrestricted Proxy Viewer</h3>
+                    <p class="text-slate-400 text-sm max-w-md">Type a web address in the top bar and press Enter. Ensure the Proxy Bypass is turned ON to view sites that typically block iframe embedding.</p>
+                </div>
+                <iframe id="external-iframe" class="sandbox-iframe hidden" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- TOAST NOTIFICATIONS -->
+    <div id="toast-container" class="fixed bottom-6 right-6 z-[100] space-y-3 pointer-events-none flex flex-col items-end"></div>
+
+    <script>
+        // CORE STATE & USER SCHEMAS
+        let workspaces = []; 
+        let activeProjectId = null;
+        let activeTabs = []; 
+        let currentActiveTabId = null;
+        
+        let currentUser = null;
+        let isSignUpMode = false;
+        let activeEditorFilepath = null;
+
+        // INDEXEDDB MANAGER (Partitioned securely per authenticated User UID)
+        const DB_NAME = 'HyperLive_Secure_DB';
+        const DB_VERSION = 1;
+        const STORE_NAME = 'projects';
+        let db = null;
+
+        // Initialize IndexedDB
+        function initDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(DB_NAME, DB_VERSION);
+                request.onupgradeneeded = (e) => {
+                    const database = e.target.result;
+                    if (!database.objectStoreNames.contains(STORE_NAME)) {
+                        database.createObjectStore(STORE_NAME, { keyPath: 'storeKey' });
+                    }
+                };
+                request.onsuccess = (e) => {
+                    db = e.target.result;
+                    resolve(db);
+                };
+                request.onerror = (e) => reject(e);
+            });
+        }
+
+        // Save project specifically under the logged-in User's UID
+        function saveProjectToLocalDatabase(project) {
+            if (!db || !currentUser) return;
+            const transaction = db.transaction([STORE_NAME], 'readwrite');
+            const store = transaction.objectStore(STORE_NAME);
+            
+            // Format and pack for DB
+            const formattedProject = {
+                storeKey: `${currentUser.uid}_${project.id}`, // Securely scoped composite key
+                userId: currentUser.uid,
+                id: project.id,
+                name: project.name,
+                files: {}
+            };
+
+            Object.keys(project.files).forEach(path => {
+                const f = project.files[path];
+                formattedProject.files[path] = {
+                    filename: f.filename,
+                    vfsPath: f.vfsPath,
+                    isText: f.isText,
+                    content: f.content,
+                    mimeType: f.mimeType,
+                    fileObj: f.fileObj // File Blob values persist natively in IndexedDB
+                };
+            });
+
+            store.put(formattedProject);
+        }
+
+        // Delete project from database
+        function deleteProjectFromLocalDatabase(projectId) {
+            if (!db || !currentUser) return;
+            const transaction = db.transaction([STORE_NAME], 'readwrite');
+            const store = transaction.objectStore(STORE_NAME);
+            store.delete(`${currentUser.uid}_${projectId}`);
+        }
+
+        // Load files specifically saved by the active authenticated user
+        function loadProjectsFromLocalDatabase() {
+            return new Promise((resolve) => {
+                if (!db || !currentUser) { resolve([]); return; }
+                const transaction = db.transaction([STORE_NAME], 'readonly');
+                const store = transaction.objectStore(STORE_NAME);
+                const request = store.getAll();
+                request.onsuccess = (e) => {
+                    const allData = e.target.result || [];
+                    // Filter matching current user UID only
+                    const userProjects = allData.filter(p => p.userId === currentUser.uid);
+                    resolve(userProjects);
+                };
+                request.onerror = () => resolve([]);
+            });
+        }
+
+        /* ==================== FIREBASE AUTH SYSTEM ==================== */
+        // Read window Firebase configs or fallback to active parameters
+        const firebaseConfig = window.ENVIZION_FIREBASE_CONFIG || {
+            apiKey: "AIzaSyDLeM4MrsA1Q8zq7_QcQfTJKk049vOVOO4",
+            authDomain: "envizionwork.firebaseapp.com",
+            projectId: "envizionwork",
+            storageBucket: "envizionwork.firebasestorage.app",
+            messagingSenderId: "706251024837",
+            appId: "1:706251024837:web:4c931733d3a9f430a703ac",
+            measurementId: "G-9CL929H67Z"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+
+        // Monitor Auth state changes
+        auth.onAuthStateChanged(async (user) => {
+            if (user) {
+                currentUser = user;
+                document.getElementById('auth-lock-screen').classList.add('hidden');
+                document.getElementById('active-user-badge').innerText = user.isAnonymous ? "Guest Session" : user.email;
+                addLogToConsole(`User authenticated: ${user.uid}`, 'system');
+
+                // Initialize VFS directories stored securely inside browser persistent layers
+                await initDB();
+                await autoLoadOfflineFolders();
+            } else {
+                currentUser = null;
+                document.getElementById('auth-lock-screen').classList.remove('hidden');
+                updateFirebaseTriggerButtonState(false);
+                clearAllWorkspaceStates();
+            }
+        });
+
+        // Toggle Auth View Mode (Sign In / Sign Up)
+        function toggleAuthMode() {
+            isSignUpMode = !isSignUpMode;
+            const banner = document.getElementById('auth-error-banner');
+            banner.classList.add('hidden');
+
+            const btnLabel = document.getElementById('auth-btn-label');
+            const toggleText = document.getElementById('auth-toggle-text');
+            const toggleBtn = document.getElementById('auth-toggle-btn');
+
+            if (isSignUpMode) {
+                btnLabel.innerText = "Register New Account";
+                toggleText.innerText = "Already have an account?";
+                toggleBtn.innerText = "Sign In";
+            } else {
+                btnLabel.innerText = "Sign In to Dashboard";
+                toggleText.innerText = "Don't have an account?";
+                toggleBtn.innerText = "Sign Up";
+            }
+        }
+
+        // Email & Password Auth Execution Handler
+        async function handleEmailPasswordAuth() {
+            const email = document.getElementById('auth-email').value.trim();
+            const password = document.getElementById('auth-password').value;
+            const banner = document.getElementById('auth-error-banner');
+            const errorMsg = document.getElementById('auth-error-msg');
+
+            if (!email || !password) {
+                errorMsg.innerText = "Please complete both input parameters.";
+                banner.classList.remove('hidden');
+                return;
+            }
+
+            banner.classList.add('hidden');
+            document.getElementById('loading-overlay').classList.remove('hidden');
+
+            try {
+                if (isSignUpMode) {
+                    await auth.createUserWithEmailAndPassword(email, password);
+                    showToast("Account successfully registered!", "success");
+                } else {
+                    await auth.signInWithEmailAndPassword(email, password);
+                    showToast("Signed in successfully!", "success");
+                }
+            } catch (err) {
+                errorMsg.innerText = err.message;
+                banner.classList.remove('hidden');
+            } finally {
+                document.getElementById('loading-overlay').classList.add('hidden');
+            }
+        }
+
+        // Guest Anonymous login logic handler
+        async function handleAnonymousAuth() {
+            document.getElementById('loading-overlay').classList.remove('hidden');
+            try {
+                await auth.signInAnonymously();
+                showToast("Logged in securely as Guest.", "success");
+            } catch (err) {
+                showToast(`Guest login issue: ${err.message}`, "error");
+            } finally {
+                document.getElementById('loading-overlay').classList.add('hidden');
+            }
+        }
+
+        // Sign Out
+        async function handleSignOut() {
+            if (confirm("Are you sure you want to sign out?")) {
+                await auth.signOut();
+                showToast("Signed out successfully.", "info");
+            }
+        }
+
+        /* ==================== VIEW MODE SWITCHER ==================== */
+        function switchMode(mode) {
+            const localView = document.getElementById('view-local-workspace');
+            const browserView = document.getElementById('view-external-browser');
+            const localActions = document.getElementById('header-local-actions');
+            const btnLocal = document.getElementById('btn-mode-local');
+            const btnBrowser = document.getElementById('btn-mode-browser');
+
+            if (mode === 'local') {
+                localView.classList.remove('hidden');
+                browserView.classList.add('hidden');
+                localActions.classList.remove('hidden');
+                btnLocal.className = "px-5 py-2 text-xs font-bold rounded-lg bg-indigo-600 text-white shadow-md shadow-indigo-900/50 transition flex items-center gap-2";
+                btnBrowser.className = "px-5 py-2 text-xs font-bold rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition flex items-center gap-2";
+            } else {
+                localView.classList.add('hidden');
+                browserView.classList.remove('hidden');
+                localActions.classList.add('hidden');
+                btnBrowser.className = "px-5 py-2 text-xs font-bold rounded-lg bg-emerald-600 text-white shadow-md shadow-emerald-900/50 transition flex items-center gap-2";
+                btnLocal.className = "px-5 py-2 text-xs font-bold rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition flex items-center gap-2";
+                document.getElementById('external-url-input').focus();
+            }
+        }
+
+        /* ==================== IN-BROWSER CODE EDITOR ENGINE ==================== */
+        function toggleEditorPanel() {
+            const panel = document.getElementById('editor-panel-split');
+            const btn = document.getElementById('btn-toggle-editor');
+            if (panel.classList.contains('hidden')) {
+                panel.classList.remove('hidden');
+                btn.classList.add('bg-indigo-600', 'text-white');
+                btn.classList.remove('bg-slate-800', 'text-slate-300');
+            } else {
+                panel.classList.add('hidden');
+                btn.classList.remove('bg-indigo-600', 'text-white');
+                btn.classList.add('bg-slate-800', 'text-slate-300');
+            }
+        }
+
+        // Open an editable text file directly inside the code editor splitscreen
+        function openFileInEditor(vfsPath) {
+            const project = workspaces.find(p => p.id === activeProjectId);
+            if (!project) return;
+            const file = project.files[vfsPath];
+            if (!file) return;
+
+            // Update UI Details
+            activeEditorFilepath = vfsPath;
+            document.getElementById('editor-current-filename').innerText = vfsPath;
+            
+            // Pop open Editor view panel if closed
+            const panel = document.getElementById('editor-panel-split');
+            if (panel.classList.contains('hidden')) {
+                toggleEditorPanel();
+            }
+
+            // Put file contents into the Editor Textarea
+            const textarea = document.getElementById('editor-textarea');
+            textarea.value = file.content || "";
+            updateLineNumbers();
+        }
+
+        // Synchronize scroll on textarea with the line-number gutter
+        function syncEditorScroll() {
+            const textarea = document.getElementById('editor-textarea');
+            const gutter = document.getElementById('editor-gutter');
+            gutter.scrollTop = textarea.scrollTop;
+        }
+
+        // Update gutter counts in alignment with text breaks
+        function updateLineNumbers() {
+            const textarea = document.getElementById('editor-textarea');
+            const gutter = document.getElementById('editor-gutter');
+            const lines = textarea.value.split('\n').length;
+            
+            let gutterHTML = '';
+            for (let i = 1; i <= lines; i++) {
+                gutterHTML += `<div>${i}</div>`;
+            }
+            gutter.innerHTML = gutterHTML;
+        }
+
+        // Save modified file changes back into VFS and hot-reload active iframe
+        function saveActiveFileEdits() {
+            if (!activeProjectId || !activeEditorFilepath) return;
+            const project = workspaces.find(p => p.id === activeProjectId);
+            if (!project) return;
+            const file = project.files[activeEditorFilepath];
+            if (!file) return;
+
+            const updatedContent = document.getElementById('editor-textarea').value;
+            file.content = updatedContent;
+
+            // Push database updates locally
+            saveProjectToLocalDatabase(project);
+
+            showToast(`Saved changes successfully!`, "success");
+            addLogToConsole(`Code updated: /${activeEditorFilepath}. Hot-reloading active preview...`, 'system');
+
+            // Find matching tab session and reload frame instantly
+            const tab = activeTabs.find(t => t.projectId === activeProjectId && t.tabId === currentActiveTabId);
+            if (tab) {
+                compileAndLoadIFrame(tab);
+            }
+        }
+
+        /* ==================== DRAG & DROP FOLDER ENGINE ==================== */
+        function triggerFolderUpload() { document.getElementById('folder-upload-input').click(); }
+        
+        function setupDragAndDrop() {
+            const body = document.body;
+            ['dragenter', 'dragover'].forEach(evt => {
+                body.addEventListener(evt, (e) => {
+                    e.preventDefault(); e.stopPropagation();
+                    body.classList.add('drag-active');
+                }, false);
+            });
+            ['dragleave', 'drop'].forEach(evt => {
+                body.addEventListener(evt, (e) => {
+                    e.preventDefault(); e.stopPropagation();
+                    if (e.target === document.getElementById('global-drop-overlay') || evt === 'drop') {
+                        body.classList.remove('drag-active');
+                    }
+                }, false);
+            });
+
+            body.addEventListener('drop', async (e) => {
+                const items = e.dataTransfer.items;
+                if (!items || !currentUser) return;
+
+                document.getElementById('loading-overlay').classList.remove('hidden');
+                const projectFiles = {};
+                let projectName = "My_Project";
+
+                try {
+                    for (let i = 0; i < items.length; i++) {
+                        const item = items[i].webkitGetAsEntry();
+                        if (item) {
+                            if (item.isDirectory && projectName === "My_Project") projectName = item.name;
+                            await traverseFileTree(item, "", projectFiles);
+                        }
+                    }
+
+                    if (Object.keys(projectFiles).length > 0) {
+                        createNewProjectWorkspace(projectName, projectFiles);
+                    } else {
+                        showToast("No readable files found in drop.", "error");
+                    }
+                } catch (error) {
+                    showToast("Error reading dropped files.", "error");
+                } finally {
+                    document.getElementById('loading-overlay').classList.add('hidden');
+                }
+            });
+        }
+
+        async function traverseFileTree(item, path, projectFiles) {
+            path = path || "";
+            if (item.isFile) {
+                const file = await new Promise((resolve) => item.file(resolve));
+                const vfsPath = path + item.name;
+                const isText = isTextFile(item.name);
+                let content = null;
+                if (isText) content = await file.text();
+
+                projectFiles[vfsPath] = {
+                    filename: item.name,
+                    vfsPath: vfsPath,
+                    isText: isText,
+                    content: content,
+                    mimeType: file.type || getMimeType(item.name),
+                    fileObj: file 
+                };
+            } else if (item.isDirectory) {
+                const dirReader = item.createReader();
+                const entries = await new Promise((resolve) => dirReader.readEntries(resolve));
+                for (let i = 0; i < entries.length; i++) {
+                    await traverseFileTree(entries[i], path + item.name + "/", projectFiles);
+                }
+            }
+        }
+
+        async function handleFolderUpload(event) {
+            const files = event.target.files;
+            if (files.length === 0 || !currentUser) return;
+            document.getElementById('loading-overlay').classList.remove('hidden');
+            
+            setTimeout(async () => {
+                const projectFiles = {};
+                let projectName = "Uploaded_Folder";
+
+                for (let i = 0; i < files.length; i++) {
+                    const file = files[i];
+                    const parts = file.webkitRelativePath.split('/');
+                    projectName = parts[0];
+                    const vfsPath = parts.slice(1).join('/');
+
+                    const isText = isTextFile(file.name);
+                    let content = null;
+                    if (isText) content = await file.text();
+
+                    projectFiles[vfsPath] = {
+                        filename: file.name, vfsPath: vfsPath, isText: isText,
+                        content: content, mimeType: file.type || getMimeType(file.name), fileObj: file
+                    };
+                }
+                document.getElementById('loading-overlay').classList.add('hidden');
+                createNewProjectWorkspace(projectName, projectFiles);
+                event.target.value = ''; 
+            }, 100);
+        }
+
+        function createNewProjectWorkspace(name, projectFiles) {
+            if (!projectFiles['index.html']) {
+                projectFiles['index.html'] = {
+                    filename: 'index.html', vfsPath: 'index.html', isText: true,
+                    content: `<!DOCTYPE html><html><body style="background:#0f172a;color:#fff;font-family:sans-serif;padding:40px;text-align:center;"><h2>Local Host Active</h2><p>Folder mounted successfully. Total files: ${Object.keys(projectFiles).length}</p></body></html>`,
+                    mimeType: 'text/html', fileObj: null
+                };
+            }
+
+            const newProject = { id: 'proj-' + Date.now(), name: name, files: projectFiles };
+            workspaces.push(newProject);
+            
+            // Save to browser persistent database (IndexedDB)
+            saveProjectToLocalDatabase(newProject);
+            
+            // Show export button now that we have data
+            document.getElementById('btn-export-zip').classList.remove('hidden');
+            document.getElementById('btn-export-zip').classList.add('flex');
+
+            populateProjectSelector();
+            switchProject(newProject.id);
+            showToast(`Mounted folder "${name}"!`, "success");
+        }
+
+        function populateProjectSelector() {
+            const selector = document.getElementById('project-selector');
+            selector.innerHTML = '';
+            if (workspaces.length === 0) {
+                selector.innerHTML = '<option value="">No project loaded</option>';
+                return;
+            }
+            workspaces.forEach(proj => {
+                const opt = document.createElement('option');
+                opt.value = proj.id; opt.innerText = proj.name;
+                if (proj.id === activeProjectId) opt.selected = true;
+                selector.appendChild(opt);
+            });
+        }
+
+        function switchProject(projectId) {
+            activeProjectId = projectId;
+            const project = workspaces.find(p => p.id === projectId);
+            const fileTree = document.getElementById('file-tree-container');
+            const fileBadge = document.getElementById('file-count-badge');
+
+            if (!project) {
+                fileTree.innerHTML = `<div class="text-center py-10 px-4"><span class="text-slate-500 text-xs">Awaiting folder drop...</span></div>`;
+                fileBadge.innerText = '0 files';
+                return;
+            }
+
+            fileBadge.innerText = `${Object.keys(project.files).length} files`;
+            renderFileTreeStructure(project.files);
+            openAppInTab(project.id);
+        }
+
+        /* ==================== FILE EXPLORER UI ==================== */
+        function renderFileTreeStructure(files) {
+            const container = document.getElementById('file-tree-container');
+            container.innerHTML = '';
+            const root = { files: [], dirs: {} };
+
+            // Build hierarchical object
+            Object.keys(files).forEach(path => {
+                const parts = path.split('/');
+                let current = root;
+                for (let i = 0; i < parts.length; i++) {
+                    const part = parts[i];
+                    if (i === parts.length - 1) current.files.push({ name: part, fullPath: path });
+                    else {
+                        if (!current.dirs[part]) current.dirs[part] = { files: [], dirs: {} };
+                        current = current.dirs[part];
+                    }
+                }
+            });
+
+            // Render DOM recursively
+            function buildHtmlTree(node, depth, parentNode) {
+                Object.keys(node.dirs).sort().forEach(dirName => {
+                    const folderDiv = document.createElement('div');
+                    folderDiv.className = "flex flex-col select-none";
+                    const folderHeader = document.createElement('div');
+                    folderHeader.className = "flex items-center space-x-2 py-1.5 px-2 rounded cursor-pointer tree-item-hover transition";
+                    folderHeader.style.paddingLeft = `${depth * 12 + 8}px`;
+                    folderHeader.innerHTML = `<i data-lucide="folder" class="w-3.5 h-3.5 text-indigo-400 shrink-0 fill-indigo-900/30"></i><span class="font-medium truncate">${dirName}</span>`;
+                    
+                    const folderChildren = document.createElement('div');
+                    folderChildren.className = "flex flex-col border-l border-slate-800 ml-4 pl-1";
+                    
+                    folderHeader.onclick = () => folderChildren.classList.toggle('hidden');
+                    folderDiv.appendChild(folderHeader); folderDiv.appendChild(folderChildren);
+                    parentNode.appendChild(folderDiv);
+                    buildHtmlTree(node.dirs[dirName], depth + 1, folderChildren);
+                });
+
+                node.files.sort((a,b) => a.name.localeCompare(b.name)).forEach(file => {
+                    const fileDiv = document.createElement('div');
+                    fileDiv.className = "flex items-center space-x-2 py-1.5 px-2 rounded cursor-pointer tree-item-hover transition";
+                    fileDiv.style.paddingLeft = `${depth * 12 + 8}px`;
+                    
+                    let icon = 'file-code'; let iconColor = 'text-indigo-400';
+                    const ext = file.name.split('.').pop().toLowerCase();
+                    if (ext === 'html') { icon = 'file-html'; iconColor = 'text-orange-400'; }
+                    else if (ext === 'css') { icon = 'file-type-css'; iconColor = 'text-sky-400'; }
+                    else if (ext === 'js') { icon = 'file-type-js'; iconColor = 'text-yellow-400'; }
+                    else if (['png','jpg','jpeg','gif','svg','webp'].includes(ext)) { icon = 'image'; iconColor = 'text-emerald-400'; }
+                    
+                    fileDiv.innerHTML = `<i data-lucide="${icon}" class="w-3.5 h-3.5 ${iconColor} shrink-0"></i><span class="truncate text-slate-300 font-mono">${file.name}</span>`;
+                    fileDiv.onclick = () => {
+                        openFileInTab(file.fullPath);
+                        if (isTextFile(file.name)) {
+                            openFileInEditor(file.fullPath);
+                        }
+                    };
+                    parentNode.appendChild(fileDiv);
+                });
+            }
+            buildHtmlTree(root, 0, container);
+            lucide.createIcons();
+        }
+
+        /* ==================== TAB SYSTEM & ROUTER ==================== */
+        function openFileInTab(vfsPath) {
+            if (!activeProjectId) return;
+            const tab = activeTabs.find(t => t.projectId === activeProjectId && t.tabId === currentActiveTabId);
+            if (tab) routeToPage(activeProjectId, vfsPath);
+            else openAppInTab(activeProjectId, vfsPath);
+        }
+
+        function openAppInTab(projectId, startFile = 'index.html') {
+            const existingTab = activeTabs.find(t => t.projectId === projectId && t.currentFilename === startFile);
+            if (existingTab) { activateTab(existingTab.tabId); return; }
+            
+            const tabId = 'tab-' + Date.now();
+            activeTabs.push({ tabId, projectId, currentFilename: startFile, historyQueue: [startFile], historyIndex: 0 });
+            renderTabs(); activateTab(tabId);
+        }
+
+        function renderTabs() {
+            const container = document.getElementById('tabs-container');
+            container.innerHTML = '';
+            activeTabs.forEach(tab => {
+                const project = workspaces.find(p => p.id === tab.projectId);
+                if (!project) return;
+                const isActive = tab.tabId === currentActiveTabId;
+                const activeClasses = isActive 
+                    ? 'bg-slate-950 border-t-2 border-t-indigo-500 text-slate-100 border-x border-slate-800' 
+                    : 'bg-slate-900 text-slate-500 hover:text-slate-300 border-x border-transparent hover:bg-slate-850';
+                
+                const tabNode = document.createElement('div');
+                tabNode.className = `h-9 px-3 flex items-center space-x-2 text-[11px] font-medium cursor-pointer transition-all ${activeClasses} rounded-t-lg shrink-0 mt-1`;
+                tabNode.onclick = () => { if (activeProjectId !== tab.projectId) switchProject(tab.projectId); activateTab(tab.tabId); };
+                tabNode.innerHTML = `<span class="max-w-[120px] truncate font-mono">${tab.currentFilename}</span>
+                    <button onclick="closeTab('${tab.tabId}', event)" class="hover:text-rose-400 ml-1 rounded hover:bg-slate-800 p-0.5 transition"><i data-lucide="x" class="w-3 h-3"></i></button>`;
+                container.appendChild(tabNode);
+            });
+            lucide.createIcons();
+        }
+
+        function activateTab(tabId) {
+            currentActiveTabId = tabId; renderTabs();
+            const tab = activeTabs.find(t => t.tabId === tabId);
+            
+            if (!tab) {
+                document.getElementById('no-tabs-state').classList.remove('hidden');
+                document.getElementById('virtual-address-bar').value = '';
+                return;
+            }
+            document.getElementById('no-tabs-state').classList.add('hidden');
+            document.getElementById('virtual-address-bar').value = tab.currentFilename;
+            compileAndLoadIFrame(tab);
+        }
+
+        function closeTab(tabId, event) {
+            if (event) event.stopPropagation();
+            activeTabs = activeTabs.filter(t => t.tabId !== tabId); renderTabs();
+            if (currentActiveTabId === tabId) activateTab(activeTabs.length > 0 ? activeTabs[activeTabs.length - 1].tabId : null);
+        }
+
+        function closeAllTabs() { activeTabs = []; activateTab(null); }
+        function reloadActiveTab() { if(currentActiveTabId) activateTab(currentActiveTabId); }
+
+        function routeToPage(projectId, targetFilename) {
+            const activeTab = activeTabs.find(t => t.projectId === projectId && t.tabId === currentActiveTabId);
+            if (!activeTab) return;
+            const pure = targetFilename.split(/[?#]/)[0];
+            activeTab.historyQueue = activeTab.historyQueue.slice(0, activeTab.historyIndex + 1);
+            activeTab.historyQueue.push(pure); activeTab.historyIndex++;
+            activeTab.currentFilename = pure; activateTab(activeTab.tabId);
+        }
+
+        function activeTabHistoryBack() {
+            const tab = activeTabs.find(t => t.tabId === currentActiveTabId);
+            if (tab && tab.historyIndex > 0) { tab.historyIndex--; tab.currentFilename = tab.historyQueue[tab.historyIndex]; activateTab(tab.tabId); }
+        }
+
+        function activeTabHistoryForward() {
+            const tab = activeTabs.find(t => t.tabId === currentActiveTabId);
+            if (tab && tab.historyIndex < tab.historyQueue.length - 1) { tab.historyIndex++; tab.currentFilename = tab.historyQueue[tab.historyIndex]; activateTab(tab.tabId); }
+        }
+
+        /* ==================== VFS HTML COMPILER ==================== */
+        function compileHTML(project, filename) {
+            const page = project.files[filename];
+            if (!page) return null;
+
+            // Render non-HTML files gracefully in the sandbox view
+            if (!filename.toLowerCase().endsWith('.html') && !filename.toLowerCase().endsWith('.htm')) {
+                const ext = filename.split('.').pop().toLowerCase();
+                if (['png','jpg','jpeg','gif','webp','svg'].includes(ext)) {
+                    const url = page.fileObj ? URL.createObjectURL(page.fileObj) : '';
+                    return `<!DOCTYPE html><html><body style="background:#020617;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;"><img src="${url}" style="max-width:90%;max-height:90%;border-radius:8px;box-shadow:0 10px 25px rgba(0,0,0,0.5);"/></body></html>`;
+                }
+                const content = escapeHTML(page.content || "/* Binary Data */");
+                return `<!DOCTYPE html><html><body style="background:#020617;color:#38bdf8;font-family:'JetBrains Mono',monospace;white-space:pre-wrap;padding:20px;font-size:13px;line-height:1.5;">${content}</body></html>`;
+            }
+
+            // Parse HTML to inject local assets
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(page.content, 'text/html');
+
+            doc.querySelectorAll('link[rel="stylesheet"]').forEach(link => {
+                const href = link.getAttribute('href');
+                const res = project.files[resolveRelativePath(filename, href)];
+                if (res) { const s = doc.createElement('style'); s.textContent = res.content; link.replaceWith(s); }
+            });
+
+            doc.querySelectorAll('script[src]').forEach(script => {
+                const src = script.getAttribute('src');
+                const res = project.files[resolveRelativePath(filename, src)];
+                if (res) { const s = doc.createElement('script'); s.textContent = res.content; script.replaceWith(s); }
+            });
+
+            doc.querySelectorAll('img[src]').forEach(img => {
+                const src = img.getAttribute('src');
+                const res = project.files[resolveRelativePath(filename, src)];
+                if (res && res.fileObj) img.setAttribute('src', URL.createObjectURL(res.fileObj));
+            });
+
+            doc.querySelectorAll('a[href]').forEach(a => {
+                const href = a.getAttribute('href');
+                if (href && !/^(http|\/\/|#|javascript:)/i.test(href)) {
+                    const resolved = resolveRelativePath(filename, href);
+                    a.setAttribute('onclick', `window.parent.routeToPage('${project.id}', '${resolved}'); return false;`);
+                    a.setAttribute('href', '#');
+                }
+            });
+
+            // Inject Console Interceptor
+            const loggerScript = doc.createElement('script');
+            loggerScript.textContent = `
+                (function(){
+                    const p = window.parent;
+                    function send(lvl, msg) { p.postMessage({type:'SANDBOX_LOG', level:lvl, message:msg}, '*'); }
+                    const _log = console.log, _err = console.error;
+                    console.log = (...args) => { send('info', args.map(a => typeof a==='object'?JSON.stringify(a):String(a)).join(' ')); _log(...args); };
+                    console.error = (...args) => { send('error', args.map(a => typeof a==='object'?JSON.stringify(a):String(a)).join(' ')); _err(...args); };
+                    window.addEventListener('error', e => send('error', 'Uncaught: ' + e.message + ' at line ' + e.lineno));
+                })();
+            `;
+            doc.head.insertBefore(loggerScript, doc.head.firstChild);
+
+            // Reconstruct HTML with Doctype
+            return '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
+        }
+
+        function compileAndLoadIFrame(tab) {
+            const project = workspaces.find(p => p.id === tab.projectId);
+            const compiledSource = project ? compileHTML(project, tab.currentFilename) : null;
+            
+            const container = document.getElementById('sandbox-iframe-container');
+            container.innerHTML = '';
+            const iframe = document.createElement('iframe');
+            iframe.className = 'sandbox-iframe bg-white';
+            iframe.sandbox = 'allow-scripts allow-forms allow-popups allow-modals allow-same-origin';
+            container.appendChild(iframe);
+
+            const doc = iframe.contentWindow.document;
+            doc.open();
+            if (compiledSource) {
+                doc.write(compiledSource);
+                addLogToConsole(`Served: /${tab.currentFilename}`, 'system');
+            } else {
+                doc.write(`<!DOCTYPE html><html><body style="background:#0f172a;color:#fff;font-family:sans-serif;text-align:center;padding-top:100px;"><h1>404 - File Not Found</h1><p style="color:#94a3b8;">${tab.currentFilename}</p></body></html>`);
+            }
+            doc.close();
+        }
+
+        /* ==================== DEV CONSOLE ==================== */
+        function toggleConsole() { document.getElementById('developer-console').classList.toggle('hidden'); }
+        function clearConsole() { document.getElementById('console-logs-output').innerHTML = ''; }
+        function handleSandboxMessages(event) {
+            if (!event.data || !currentActiveTabId) return;
+            const tab = activeTabs.find(t => t.tabId === currentActiveTabId);
+            if (!tab) return;
+            if (event.data.type === 'SANDBOX_LOG') addLogToConsole(`[Frame] ${event.data.message}`, event.data.level);
+        }
+        function addLogToConsole(text, level) {
+            const c = document.getElementById('console-logs-output');
+            const d = document.createElement('div');
+            d.className = `font-mono pb-1 border-b border-[#222] ${level==='error'?'text-rose-400': level==='system'?'text-indigo-400':'text-slate-300'}`;
+            d.innerText = `> ${text}`;
+            c.appendChild(d); c.scrollTop = c.scrollHeight;
+        }
+
+        function updateFirebaseTriggerButtonState(active) {
+            // Unused as config triggers were replaced by premium Auth states.
+        }
+
+        // Auto Load offline workspaces from persistent repository DB
+        async function autoLoadOfflineFolders() {
+            document.getElementById('loading-overlay').classList.remove('hidden');
+            try {
+                const localProjects = await loadProjectsFromLocalDatabase();
+                if (localProjects && localProjects.length > 0) {
+                    workspaces = localProjects;
+                    populateProjectSelector();
+                    switchProject(workspaces[workspaces.length - 1].id);
+                    document.getElementById('btn-export-zip').classList.remove('hidden');
+                    document.getElementById('btn-export-zip').classList.add('flex');
+                    showToast(`Restored ${workspaces.length} projects from local database!`, "success");
+                } else {
+                    workspaces = [];
+                    populateProjectSelector();
+                    switchProject(null);
+                    closeAllTabs();
+                }
+            } catch (err) {
+                console.error("VFS retrieval error:", err);
+            } finally {
+                document.getElementById('loading-overlay').classList.add('hidden');
+            }
+        }
+
+        /* ==================== EXPORT & UTILS ==================== */
+        async function exportWorkspaceToZip() {
+            if (!activeProjectId) return;
+            const project = workspaces.find(p => p.id === activeProjectId);
+            if (!project) return;
+            
+            if (typeof JSZip === 'undefined') {
+                showToast("ZIP Engine loading, please wait...", "info");
+                return;
+            }
+
+            const zip = new JSZip();
+            const root = zip.folder(project.name);
+
+            // Add all files to the ZIP
+            Object.values(project.files).forEach(file => {
+                if (file.fileObj) {
+                    root.file(file.vfsPath, file.fileObj); // Binary / native objects
+                } else {
+                    root.file(file.vfsPath, file.content); // Text contents
+                }
+            });
+
+            showToast("Packaging ZIP file...", "info");
+            try {
+                const content = await zip.generateAsync({ type: "blob" });
+                const url = window.URL.createObjectURL(content);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = `${project.name}_export.zip`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                showToast("Workspace Exported Successfully!", "success");
+            } catch (err) {
+                showToast("Failed to create ZIP package.", "error");
+            }
+        }
+
+        function clearAllWorkspaceStates() {
+            workspaces = []; activeTabs = []; currentActiveTabId = null; activeProjectId = null;
+            document.getElementById('btn-export-zip').classList.add('hidden');
+            populateProjectSelector(); switchProject(null); closeAllTabs();
+        }
+
+        function clearAllWorkspaces() {
+            if (workspaces.length === 0) return;
+            if (confirm("Clear all active projects from browser memory and IndexedDB storage?")) {
+                workspaces.forEach(proj => deleteProjectFromLocalDatabase(proj.id));
+                clearAllWorkspaceStates();
+                showToast("Memory databases purged completely.", "info");
+            }
+        }
+
+        function loadDemoWorkspace() {
+            const demoFiles = {
+                'index.html': { filename: 'index.html', vfsPath: 'index.html', isText: true, mimeType: 'text/html', content: `<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="UTF-8">\n<title>Demo Site</title>\n<link rel="stylesheet" href="css/style.css">\n</head>\n<body>\n<div class="container">\n<h1>Hello HyperLive</h1>\n<p>This is an offline demo running via an isolated Virtual File System.</p>\n<a href="pages/about.html" class="btn">Go to About Page</a>\n<button class="btn" onclick="console.log('Button clicked!')">Test Console Log</button>\n</div>\n</body>\n</html>`},
+                'css/style.css': { filename: 'style.css', vfsPath: 'css/style.css', isText: true, mimeType: 'text/css', content: `body { font-family: system-ui, sans-serif; background: #0f172a; color: #fff; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }\n.container { background: #1e293b; padding: 40px; border-radius: 16px; border: 1px solid #334155; text-align: center; }\n.btn { display: inline-block; margin-top: 16px; padding: 10px 20px; background: #6366f1; color: white; text-decoration: none; border-radius: 8px; border: none; cursor: pointer; }\n.btn:hover { background: #4f46e5; }`},
+                'pages/about.html': { filename: 'about.html', vfsPath: 'pages/about.html', isText: true, mimeType: 'text/html', content: `<!DOCTYPE html>\n<html lang="en">\n<head>\n<title>About</title>\n<link rel="stylesheet" href="../css/style.css">\n</head>\n<body>\n<div class="container">\n<h1>Relative Routing Works!</h1>\n<p>The stylesheet was successfully linked using "../css/style.css".</p>\n<a href="../index.html" class="btn">Back to Home</a>\n</div>\n</body>\n</html>`}
+            };
+            createNewProjectWorkspace("Demo_Project", demoFiles);
+        }
+
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            const icon = type === 'success' ? 'check-circle' : (type === 'error' ? 'alert-triangle' : 'info');
+            const color = type === 'success' ? 'text-emerald-400 border-emerald-500/50' : (type === 'error' ? 'text-rose-400 border-rose-500/50' : 'text-indigo-400 border-indigo-500/50');
+            toast.className = `flex items-center gap-3 p-3 rounded-lg bg-slate-900 border ${color} shadow-xl transition-all duration-300 translate-x-12 opacity-0 text-sm font-medium`;
+            toast.innerHTML = `<i data-lucide="${icon}" class="w-4 h-4 shrink-0"></i> <span>${message}</span>`;
+            container.appendChild(toast);
+            lucide.createIcons();
+            setTimeout(() => toast.classList.remove('translate-x-12', 'opacity-0'), 10);
+            setTimeout(() => { toast.classList.add('translate-x-12', 'opacity-0'); setTimeout(() => toast.remove(), 300); }, 3000);
+        }
+
+        function isTextFile(fn) { return ['html', 'htm', 'css', 'js', 'json', 'txt', 'svg', 'md'].includes(fn.split('.').pop().toLowerCase()); }
+        function getMimeType(fn) {
+            const map = { 'html':'text/html', 'css':'text/css', 'js':'application/javascript', 'png':'image/png', 'jpg':'image/jpeg', 'svg':'image/svg+xml' };
+            return map[fn.split('.').pop().toLowerCase()] || 'application/octet-stream';
+        }
+        function escapeHTML(str) { return str.replace(/[&<>'"]/g, t => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[t]||t)); }
+    </script>
+</body>
+</html>

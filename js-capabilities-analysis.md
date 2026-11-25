@@ -1,0 +1,2533 @@
+# JavaScript Capabilities Analysis
+
+- Files analyzed: 50
+- Total functions extracted: 2061
+- Operational candidate functions: 112
+
+## AI-Invokable Capabilities (by tool/file)
+- `_apply_seo_ads`
+- `animator_studio`
+- `bulk_webp_converter`
+- `envizion_editor`
+- `envizion_playground`
+- `envizion_pro_studio_editor`
+- `envizion_resources`
+- `fbx_to_glb_converter`
+- `image_resizer`
+- `local_glb_viewer`
+- `local_video_image_mask_merger`
+- `local_vocal_remover`
+- `luma_dashboard_clone`
+- `main...3d_model_viewer`
+- `mp3_editor_mp4_converter`
+- `pdf_merger`
+- `secure_converter`
+- `secure_pdf_compressor`
+- `superfast_video_compressor`
+- `toolkit-enhance`
+- `visual_level_builder`
+- `Envizionomniconvertpro`
+- `Image-Text-Extractor`
+- `InstantDictionary`
+- `Local-Anymediafilesizeconverter`
+- `advanced-video-watermarker`
+- `background-remover`
+- `firebase-config`
+- `htmlviewer`
+- `image-optimizer-pro`
+- `imagesupscaler`
+- `life-tools`
+- `local_video_image_mask_merger`
+- `media-library`
+- `mediaconverter`
+- `mediaforge`
+- `mediaplayer`
+- `mp4tomp3`
+- `pdfmerger`
+- `pdfstotext`
+- `pdfstotxt`
+- `steganovault`
+- `teleprompter`
+- `the-new-project`
+- `tools-guide`
+- `u8`
+- `universal-file-encryption`
+- `velolink`
+- `vocal-music-separator`
+- `voice-recorder`
+
+## Operational Candidate Functions
+- `abortExport`
+- `addMaskPoint`
+- `afterExport`
+- `applyHighQualityImageCompression`
+- `batchExportZip`
+- `buildMergedSnippet`
+- `bundleAndExport`
+- `compressProject`
+- `convertFileToJpgUnified`
+- `convertFileToPdf`
+- `convertHtmlToPdf`
+- `convertHtmlToSearchablePdfBytes`
+- `convertPdfToCsv`
+- `convertPdfToHtml`
+- `convertPdfToImagesAndWord`
+- `convertPdfToJpg`
+- `convertPdfToPptx`
+- `convertPdfToPurePngPdf`
+- `convertPdfToText`
+- `convertPdfToWord`
+- `convertPptToPdf`
+- `convertToExcelUnified`
+- `convertToWebP`
+- `convertWordToPdf`
+- `decodeBase64`
+- `decodeBlob`
+- `decryptFile`
+- `downloadGeneratedQr`
+- `downloadSelectedMerged`
+- `downloadSelectedSeparately`
+- `drawAllWatermarks`
+- `drawMaskShape`
+- `drawWatermark`
+- `encodeBase64`
+- `encodeM4a`
+- `encodeMp3`
+- `encodeWav`
+- `encryptFile`
+- `exportCSV`
+- `exportFile`
+- `exportLoop`
+- `exportSelection`
+- `exportToGLB`
+- `exportVideoClip`
+- `exportZip`
+- `extractAll`
+- `extractAndEncodeAudio`
+- `extractHandoffId`
+- `extractJSXSource`
+- `extractPdf`
+- `extractTargetWord`
+- `generateChart`
+- `generateColormap`
+- `generateDefaultClip`
+- `generateLineChart`
+- `generateLocalImage`
+- `generateMaskText`
+- `generatePdfFromText`
+- `generatePieChart`
+- `generateQrCode`
+- `handleCSVImport`
+- `handleFileImport`
+- `handleMergePdfSelection`
+- `handleOcrConversion`
+- `importAudioFile`
+- `importCSVFile`
+- `importLatestRecording`
+- `importRecorderLibraryExport`
+- `importTeleprompterLibraryExport`
+- `loadVideoForOCR`
+- `mask`
+- `maskX`
+- `maskY`
+- `mergeAssetsBlock`
+- `mergeIntoWoodbury`
+- `mergePdfBytes`
+- `mergePreloadBlock`
+- `onWindowResize`
+- `openExportModal`
+- `optimizeFile`
+- `performOCR`
+- `processAIIntent`
+- `processAllImages`
+- `processAndOCR`
+- `processFastFrame`
+- `processFile`
+- `processImage`
+- `processImages`
+- `processMedia`
+- `processMergePdfs`
+- `processPDF`
+- `processSingleImage`
+- `processSlice`
+- `processUploadedFile`
+- `putExport`
+- `queueProcessing`
+- `resize`
+- `resizeGridCanvas`
+- `runBatchOcr`
+- `runVideoOCR`
+- `setTransformMode`
+- `splitEditorRight`
+- `startCanvasResize`
+- `startCompilationExport`
+- `startExport`
+- `startResize`
+- `startSearchProcess`
+- `startVideoExport`
+- `trackExportProgress`
+- `updateCanvasTransform`
+- `updateExportButtons`
+- `validateProcessButton`
+
+## Per-File Details
+### tools2\_apply_seo_ads.js
+- Size: 26518 chars
+- Functions: 14
+- Operational candidates: None detected
+- Function list:
+  - `escapeHtml`
+  - `headInsert`
+  - `list`
+  - `paletteStyle`
+  - `qualityNotes`
+  - `relatedFiles`
+  - `removeExisting`
+  - `schema`
+  - `seoSection`
+  - `siteFooter`
+  - `titleFromHtml`
+  - `troubleshooting`
+  - `useCases`
+  - `workflowNoun`
+
+### tools2\animator_studio.js
+- Size: 112223 chars
+- Functions: 71
+- Operational candidates: buildMergedSnippet, mergeAssetsBlock, mergeIntoWoodbury, mergePreloadBlock, onWindowResize, openExportModal
+- Function list:
+  - `animate`
+  - `arrayBufferToBase64`
+  - `base64ToArrayBuffer`
+  - `bl`
+  - `buildAnimBlock`
+  - `buildAssetsSnippet`
+  - `buildInteractivePlayerCharacter`
+  - `buildMergedSnippet`
+  - `buildSlotBlock`
+  - `buildVelocityLine`
+  - `buildWorkspaceSnapshot`
+  - `checkActiveKeyTriggers`
+  - `checkScrollPosition`
+  - `cleanName`
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `copyCodeToClipboard`
+  - `createEmptySlot`
+  - `deleteWoodburyAsset`
+  - `dl`
+  - `escHtml`
+  - `getSlotGroups`
+  - `handleError`
+  - `handleFilesLoaded`
+  - `handleFilesUpload`
+  - `handleGlobalKeydown`
+  - `handleGlobalKeyup`
+  - `hasUnassigned`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `idbGet`
+  - `idbPut`
+  - `init`
+  - `initOutstream`
+  - `initRewarded`
+  - `isValidSlot`
+  - `k`
+  - `loadIndex`
+  - `loadWoodburyAsset`
+  - `makeTabBtn`
+  - `mergeAssetsBlock`
+  - `mergeIntoWoodbury`
+  - `mergePreloadBlock`
+  - `name`
+  - `onWindowResize`
+  - `openAnimDB`
+  - `openExportModal`
+  - `openRewarded`
+  - `playAnimationIsolated`
+  - `playRawAction`
+  - `playSequence`
+  - `promptNewSlot`
+  - `readFileAsArrayBuffer`
+  - `refreshTabOutput`
+  - `renderAnimationList`
+  - `renderGroupBadges`
+  - `renderSlotTabs`
+  - `renderWoodburyAssetList`
+  - `restoreWorkspaceSnapshot`
+  - `s`
+  - `sanitizeToCamelCase`
+  - `score`
+  - `setupCharacterMesh`
+  - `setupToggle`
+  - `showToast`
+  - `src`
+  - `tl`
+  - `updateBulkPanelVisibility`
+  - `updatePlayButtonsState`
+  - `updatePlayer`
+
+### tools2\bulk_webp_converter.js
+- Size: 17596 chars
+- Functions: 18
+- Operational candidates: convertToWebP
+- Function list:
+  - `bl`
+  - `checkScrollPosition`
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `convertToWebP`
+  - `dl`
+  - `escHtml`
+  - `handleFiles`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `initOutstream`
+  - `initRewarded`
+  - `loadIndex`
+  - `openRewarded`
+  - `score`
+  - `setupToggle`
+  - `tl`
+
+### tools2\envizion_editor.js
+- Size: 102148 chars
+- Functions: 91
+- Operational candidates: abortExport, startCanvasResize, startExport, trackExportProgress
+- Function list:
+  - `abortExport`
+  - `addAssetFromDataUrl`
+  - `addAssetFromFile`
+  - `addClipToTrack`
+  - `addCutoutPoint`
+  - `addTextClip`
+  - `addTrack`
+  - `bl`
+  - `bootEditor`
+  - `canvasToScreenScale`
+  - `checkScrollPosition`
+  - `closeAssetPreview`
+  - `closeRewarded`
+  - `closeToolPopover`
+  - `collapseOutstream`
+  - `createNewProject`
+  - `debouncedSave`
+  - `deleteAsset`
+  - `dismissAlert`
+  - `dl`
+  - `drawBentImage`
+  - `drawBentText`
+  - `drawChromaKeyed`
+  - `drawClip`
+  - `drawCutoutPreview`
+  - `dt`
+  - `dx`
+  - `escHtml`
+  - `finalizeCutout`
+  - `formatDuration`
+  - `goAssetPreviewFullscreen`
+  - `handler`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `idbDelete`
+  - `idbGet`
+  - `idbGetAll`
+  - `idbPut`
+  - `initBoardHandoffAfterBoot`
+  - `initOutstream`
+  - `initRewarded`
+  - `loadFromUrl`
+  - `loadIndex`
+  - `loadProject`
+  - `maxOffset`
+  - `onMove`
+  - `onUp`
+  - `openAssetPreview`
+  - `openBendControls`
+  - `openChromaKeyPicker`
+  - `openDB`
+  - `openRewarded`
+  - `playLoop`
+  - `quotaMB`
+  - `rebuildAssetElement`
+  - `renderAssetList`
+  - `renderAssetTree`
+  - `renderClipBlock`
+  - `renderComposerFrame`
+  - `renderKeyframeList`
+  - `renderPropsPanel`
+  - `renderRuler`
+  - `renderTimeline`
+  - `renderXformOverlay`
+  - `requestFrameRedraw`
+  - `saveProject`
+  - `score`
+  - `scrubToClientX`
+  - `selectClip`
+  - `sendToPlayground`
+  - `setSaveStatus`
+  - `setupToggle`
+  - `startCanvasMove`
+  - `startCanvasResize`
+  - `startCanvasRotate`
+  - `startClipDrag`
+  - `startClipTrim`
+  - `startExport`
+  - `sx`
+  - `t`
+  - `tl`
+  - `trackExportProgress`
+  - `triggerAlert`
+  - `uid`
+  - `updateStorageDisplay`
+  - `updateTransportUI`
+  - `usedMB`
+  - `waitAndAddClip`
+  - `x`
+  - `y`
+
+### tools2\envizion_playground.js
+- Size: 88127 chars
+- Functions: 90
+- Operational candidates: processAIIntent, resizeGridCanvas, startResize, updateCanvasTransform
+- Function list:
+  - `_buildAndDownloadZip`
+  - `addStickyCard`
+  - `addTableCard`
+  - `addTextCard`
+  - `addWorkspacePage`
+  - `adjustZoom`
+  - `appendChatMsg`
+  - `batchClearSelection`
+  - `bl`
+  - `buildTable`
+  - `canvasX`
+  - `canvasY`
+  - `checkScrollPosition`
+  - `clearSelections`
+  - `closePreview`
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `createCustomCard`
+  - `deleteCard`
+  - `deselectCard`
+  - `dl`
+  - `downloadCardFile`
+  - `downloadGroupAsZip`
+  - `downloadSelectedAsZip`
+  - `drawGrid`
+  - `escHtml`
+  - `escapeWorkspaceText`
+  - `ext`
+  - `goNativeFullscreen`
+  - `groupSelected`
+  - `handleFilesSelected`
+  - `handleSendAssistantMsg`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `initOutstream`
+  - `initRewarded`
+  - `layerCard`
+  - `loadEditorHandoff`
+  - `loadIndex`
+  - `loadWorkspaceDirectory`
+  - `minimizeChatPanel`
+  - `normalizeWorkspaceUrl`
+  - `offsetX`
+  - `offsetY`
+  - `openPreview`
+  - `openRewarded`
+  - `overlaps`
+  - `persistWorkspacePages`
+  - `processAIIntent`
+  - `readWorkspacePages`
+  - `render`
+  - `renderCardElement`
+  - `renderWorkspaceDirectory`
+  - `renderWorkspacePages`
+  - `resizeGridCanvas`
+  - `score`
+  - `screenToCanvasCoords`
+  - `selectCard`
+  - `sendSelectedToEditor`
+  - `setSelectedColor`
+  - `setTool`
+  - `setupToggle`
+  - `showNotification`
+  - `spawnFileCard`
+  - `startResize`
+  - `startRotate`
+  - `tableAddCol`
+  - `tableAddRow`
+  - `tl`
+  - `toggleActiveFrameRegion`
+  - `toggleAudioPlay`
+  - `toggleChatPanel`
+  - `toggleFullscreen`
+  - `toggleGridPattern`
+  - `toggleRenameDropdown`
+  - `toggleSelectCard`
+  - `toggleSettingsModal`
+  - `toggleVideoPlay`
+  - `triggerAudioUpload`
+  - `triggerFileInput`
+  - `triggerSearchBoard`
+  - `triggerShare`
+  - `triggerShowExtensions`
+  - `triggerUpgrade`
+  - `triggerVoiceInput`
+  - `updateCanvasTransform`
+  - `updateCardElement`
+  - `updateCardText`
+  - `updateSelectedPanel`
+
+### tools2\envizion_pro_studio_editor.js
+- Size: 58741 chars
+- Functions: 55
+- Operational candidates: abortExport, addMaskPoint, exportLoop, generateDefaultClip, startCanvasResize
+- Function list:
+  - `abortExport`
+  - `addAssetFromFile`
+  - `addClipToTrack`
+  - `addMaskPoint`
+  - `addTextClip`
+  - `addTrack`
+  - `bl`
+  - `checkScrollPosition`
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `createSlider`
+  - `dismissAlert`
+  - `dl`
+  - `drawClip`
+  - `dt`
+  - `dx`
+  - `escHtml`
+  - `exportLoop`
+  - `formatDuration`
+  - `generateDefaultClip`
+  - `getCanvasScale`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `initAudioContext`
+  - `initOutstream`
+  - `initRewarded`
+  - `loadIndex`
+  - `localTime`
+  - `onMove`
+  - `onUp`
+  - `openChromaKeyTool`
+  - `openRewarded`
+  - `pickHandler`
+  - `playLoop`
+  - `renderAssetList`
+  - `renderComposerFrame`
+  - `renderPropsPanel`
+  - `renderTimeline`
+  - `renderXformOverlay`
+  - `requestFrameRedraw`
+  - `score`
+  - `selectClip`
+  - `setPlayhead`
+  - `setupToggle`
+  - `startCanvasMove`
+  - `startCanvasResize`
+  - `startCanvasRotate`
+  - `startClipDrag`
+  - `startClipTrim`
+  - `tl`
+  - `trackWidth`
+  - `triggerAlert`
+  - `uid`
+  - `updateTransportUI`
+
+### tools2\envizion_resources.js
+- Size: 8901 chars
+- Functions: 7
+- Operational candidates: None detected
+- Function list:
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `href`
+  - `initOutstream`
+  - `initRewarded`
+  - `openRewarded`
+  - `setupToggle`
+
+### tools2\fbx_to_glb_converter.js
+- Size: 22062 chars
+- Functions: 24
+- Operational candidates: exportToGLB
+- Function list:
+  - `bl`
+  - `checkScrollPosition`
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `dl`
+  - `escHtml`
+  - `exportToGLB`
+  - `handleFile`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `initOutstream`
+  - `initRewarded`
+  - `loadIndex`
+  - `openRewarded`
+  - `percentComplete`
+  - `preventDefaults`
+  - `resetUI`
+  - `score`
+  - `setStatus`
+  - `setupToggle`
+  - `showError`
+  - `showSuccess`
+  - `tl`
+
+### tools2\image_resizer.js
+- Size: 16902 chars
+- Functions: 17
+- Operational candidates: None detected
+- Function list:
+  - `bl`
+  - `checkScrollPosition`
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `dl`
+  - `escHtml`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `initOutstream`
+  - `initRewarded`
+  - `loadFile`
+  - `loadIndex`
+  - `openRewarded`
+  - `score`
+  - `setupToggle`
+  - `tl`
+
+### tools2\local_glb_viewer.js
+- Size: 23583 chars
+- Functions: 23
+- Operational candidates: onWindowResize
+- Function list:
+  - `animate`
+  - `bl`
+  - `checkScrollPosition`
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `dl`
+  - `escHtml`
+  - `fitCameraToModel`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `init`
+  - `initOutstream`
+  - `initRewarded`
+  - `loadIndex`
+  - `loadModelFromFile`
+  - `onWindowResize`
+  - `openRewarded`
+  - `score`
+  - `setupFileHandlers`
+  - `setupToggle`
+  - `showError`
+  - `tl`
+
+### tools2\local_video_image_mask_merger.js
+- Size: 66286 chars
+- Functions: 68
+- Operational candidates: abortExport, extractHandoffId, startCanvasResize, startExport, trackExportProgress
+- Function list:
+  - `abortExport`
+  - `addAssetFromDataUrl`
+  - `addAssetFromFile`
+  - `addClipToTrack`
+  - `addCutoutPoint`
+  - `addTextClip`
+  - `addTrack`
+  - `bl`
+  - `canvasToScreenScale`
+  - `checkScrollPosition`
+  - `closeRewarded`
+  - `closeToolPopover`
+  - `collapseOutstream`
+  - `dismissAlert`
+  - `dl`
+  - `drawBentImage`
+  - `drawBentText`
+  - `drawChromaKeyed`
+  - `drawClip`
+  - `drawCutoutPreview`
+  - `dt`
+  - `dx`
+  - `escHtml`
+  - `extractHandoffId`
+  - `finalizeCutout`
+  - `formatDuration`
+  - `handler`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `initBoardHandoff`
+  - `initOutstream`
+  - `initRewarded`
+  - `loadIndex`
+  - `maxOffset`
+  - `onMove`
+  - `onUp`
+  - `openBendControls`
+  - `openChromaKeyPicker`
+  - `openRewarded`
+  - `playLoop`
+  - `renderAssetList`
+  - `renderClipBlock`
+  - `renderComposerFrame`
+  - `renderPropsPanel`
+  - `renderRuler`
+  - `renderTimeline`
+  - `renderXformOverlay`
+  - `requestFrameRedraw`
+  - `score`
+  - `scrubToClientX`
+  - `selectClip`
+  - `setupToggle`
+  - `startCanvasMove`
+  - `startCanvasResize`
+  - `startCanvasRotate`
+  - `startClipDrag`
+  - `startClipTrim`
+  - `startExport`
+  - `sx`
+  - `t`
+  - `tl`
+  - `trackExportProgress`
+  - `triggerAlert`
+  - `uid`
+  - `updateTransportUI`
+  - `x`
+  - `y`
+
+### tools2\local_vocal_remover.js
+- Size: 27201 chars
+- Functions: 27
+- Operational candidates: None detected
+- Function list:
+  - `audioBufferToWav`
+  - `bl`
+  - `checkScrollPosition`
+  - `closeError`
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `dl`
+  - `escHtml`
+  - `executeVocalRemoval`
+  - `handleFile`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `initOutstream`
+  - `initRewarded`
+  - `loadIndex`
+  - `normalizeAudio`
+  - `openRewarded`
+  - `resetApp`
+  - `score`
+  - `setUint16`
+  - `setUint32`
+  - `setupPlayers`
+  - `setupToggle`
+  - `showError`
+  - `showSection`
+  - `tl`
+
+### tools2\luma_dashboard_clone.js
+- Size: 38435 chars
+- Functions: 56
+- Operational candidates: None detected
+- Function list:
+  - `addRecent`
+  - `bl`
+  - `checkScrollPosition`
+  - `clearNotifications`
+  - `closeModal`
+  - `closeRewarded`
+  - `closeURLModal`
+  - `collapseOutstream`
+  - `createBoard`
+  - `createBoardAndOpen`
+  - `deleteBoard`
+  - `discoverCard`
+  - `dl`
+  - `escHtml`
+  - `escapeHTML`
+  - `getTimeAgo`
+  - `handleLocalFileOpen`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `idbDelete`
+  - `idbGetAll`
+  - `idbPut`
+  - `initOutstream`
+  - `initRewarded`
+  - `item`
+  - `loadIndex`
+  - `openBoard`
+  - `openDB`
+  - `openLocalFilePicker`
+  - `openModal`
+  - `openRewarded`
+  - `openURLInPlayground`
+  - `openURLModal`
+  - `projectCard`
+  - `pushNotification`
+  - `readJSON`
+  - `renderBoards`
+  - `renderCards`
+  - `renderCurrentPage`
+  - `renderDiscover`
+  - `renderExtensions`
+  - `renderNotifications`
+  - `renderRecents`
+  - `renderStarred`
+  - `renderUsage`
+  - `saveAppsScriptUrl`
+  - `score`
+  - `sendTestNotification`
+  - `setBoardType`
+  - `setExtension`
+  - `setupToggle`
+  - `showPage`
+  - `tl`
+  - `toggleStar`
+  - `writeJSON`
+
+### tools2\main...3d_model_viewer.js
+- Size: 99735 chars
+- Functions: 73
+- Operational candidates: afterExport, exportFile, onWindowResize, setTransformMode
+- Function list:
+  - `afterExport`
+  - `animB64`
+  - `animFromB64`
+  - `animHandleFiles`
+  - `animIDBGet`
+  - `animIDBPut`
+  - `animOpenDB`
+  - `animPlay`
+  - `animRenderList`
+  - `animate`
+  - `bl`
+  - `centerModelToOrigin`
+  - `checkScrollPosition`
+  - `cleanup`
+  - `cloneModel`
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `createUVCheckerTexture`
+  - `deleteModel`
+  - `dl`
+  - `escHtml`
+  - `exportFile`
+  - `flipNormals`
+  - `handleDrop`
+  - `handleError`
+  - `handleFileUpload`
+  - `handleNormalMapUpload`
+  - `handleTextureUpload`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `init`
+  - `initOutstream`
+  - `initRewarded`
+  - `lbCreatePlaceholderBox`
+  - `lbDeserialize`
+  - `lbGetHistory`
+  - `lbLoadAndPlace`
+  - `lbOpenDatabase`
+  - `lbPackageAndDownload`
+  - `lbRenderHistory`
+  - `lbRetrieveCustomModel`
+  - `lbSaveHistory`
+  - `lbSelectObject`
+  - `lbSerialize`
+  - `lbShowConfirm`
+  - `lbStoreCustomModel`
+  - `lbUpdateObjectFromUI`
+  - `lbUpdateUIFromObject`
+  - `loadFile`
+  - `loadFromURL`
+  - `loadIndex`
+  - `onWindowResize`
+  - `openRewarded`
+  - `populateSamples`
+  - `resetCamera`
+  - `saveArrayBuffer`
+  - `saveBlob`
+  - `saveString`
+  - `score`
+  - `setMode`
+  - `setTransformMode`
+  - `setupModel`
+  - `setupToggle`
+  - `showToast`
+  - `takeScreenshot`
+  - `tl`
+  - `toggleExplode`
+  - `toggleWireframe`
+  - `updateEmissive`
+  - `updateMaterialProp`
+  - `updateModelColor`
+  - `updateStats`
+
+### tools2\mp3_editor_mp4_converter.js
+- Size: 59471 chars
+- Functions: 52
+- Operational candidates: handleFileImport, startVideoExport
+- Function list:
+  - `angle`
+  - `applyCanvasFilters`
+  - `autoTrimSilence`
+  - `barHeight`
+  - `barLen`
+  - `bl`
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `dl`
+  - `drawCanvasBackground`
+  - `drawTypographyOverlays`
+  - `elapsed`
+  - `escHtml`
+  - `filterVizGrid`
+  - `freqVal`
+  - `handleFileImport`
+  - `hideToast`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `initOutstream`
+  - `initRewarded`
+  - `initThreeJS`
+  - `initWaveSurfer`
+  - `loadIndex`
+  - `openRewarded`
+  - `populateVizPresets`
+  - `r`
+  - `rebuild3DScene`
+  - `render2DVisualizer`
+  - `render3DVisualizer`
+  - `renderFrame`
+  - `reverseAudioBuffer`
+  - `score`
+  - `setupAspectRatios`
+  - `setupDSPEventHandlers`
+  - `setupGradientPresets`
+  - `setupPlaybackDSPNodes`
+  - `setupSliderValMonitors`
+  - `setupToggle`
+  - `showToast`
+  - `startLiveCanvasAnimation`
+  - `startVideoExport`
+  - `startX`
+  - `switchToolTab`
+  - `tl`
+  - `updateSelectedVizCard`
+  - `updateTrimLabels`
+  - `v`
+  - `val`
+  - `x`
+  - `y`
+
+### tools2\pdf_merger.js
+- Size: 17403 chars
+- Functions: 17
+- Operational candidates: None detected
+- Function list:
+  - `bl`
+  - `checkScrollPosition`
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `dl`
+  - `escHtml`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `initOutstream`
+  - `initRewarded`
+  - `loadIndex`
+  - `openRewarded`
+  - `renderList`
+  - `score`
+  - `setupToggle`
+  - `tl`
+
+### tools2\secure_converter.js
+- Size: 22649 chars
+- Functions: 24
+- Operational candidates: generateMaskText, processPDF
+- Function list:
+  - `bl`
+  - `checkScrollPosition`
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `dl`
+  - `escHtml`
+  - `generateMaskText`
+  - `handleFiles`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `initOutstream`
+  - `initRewarded`
+  - `loadImage`
+  - `loadIndex`
+  - `openRewarded`
+  - `processPDF`
+  - `removeImage`
+  - `renderGallery`
+  - `score`
+  - `setupToggle`
+  - `tl`
+  - `x`
+  - `y`
+
+### tools2\secure_pdf_compressor.js
+- Size: 17981 chars
+- Functions: 17
+- Operational candidates: processPDF
+- Function list:
+  - `bl`
+  - `checkScrollPosition`
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `dl`
+  - `escHtml`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `initOutstream`
+  - `initRewarded`
+  - `loadIndex`
+  - `openRewarded`
+  - `processPDF`
+  - `score`
+  - `setupToggle`
+  - `tl`
+
+### tools2\superfast_video_compressor.js
+- Size: 69272 chars
+- Functions: 41
+- Operational candidates: encodeM4a, encodeMp3, encodeWav, extractAndEncodeAudio, processFastFrame
+- Function list:
+  - `bl`
+  - `checkScrollPosition`
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `dl`
+  - `encodeM4a`
+  - `encodeMp3`
+  - `encodeWav`
+  - `escHtml`
+  - `extractAndEncodeAudio`
+  - `floatTo16`
+  - `formatBytes`
+  - `formatDuration`
+  - `getSupportedVideoConfig`
+  - `handleAudioFile`
+  - `handleFile`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `initOutstream`
+  - `initRewarded`
+  - `loadIndex`
+  - `onProgress`
+  - `openRewarded`
+  - `p`
+  - `pctSaved`
+  - `processFastFrame`
+  - `progress`
+  - `resetAudioState`
+  - `resetState`
+  - `score`
+  - `setMode`
+  - `setupToggle`
+  - `showAudioResults`
+  - `showResults`
+  - `showToast`
+  - `tl`
+  - `updateAudioEstimates`
+  - `updateAudioFormatUI`
+  - `updateEstimates`
+  - `writeString`
+
+### tools2\toolkit-enhance.js
+- Size: 6998 chars
+- Functions: 12
+- Operational candidates: None detected
+- Function list:
+  - `applyChatGptGreyTheme`
+  - `close`
+  - `currentFile`
+  - `ensureAdsScript`
+  - `ensureCanonical`
+  - `ensureConsentScript`
+  - `ensureMeta`
+  - `init`
+  - `onKeydown`
+  - `pushAds`
+  - `showGuideOnce`
+  - `title`
+
+### tools2\visual_level_builder.js
+- Size: 47660 chars
+- Functions: 33
+- Operational candidates: None detected
+- Function list:
+  - `animate`
+  - `bl`
+  - `checkScrollPosition`
+  - `cleanup`
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `createPlaceholderBox`
+  - `deserializeLayout`
+  - `dl`
+  - `escHtml`
+  - `getSaveHistory`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `initOutstream`
+  - `initRewarded`
+  - `loadAndPlaceModel`
+  - `loadIndex`
+  - `openDatabase`
+  - `openRewarded`
+  - `packageAndDownloadLayout`
+  - `renderHistoryUI`
+  - `retrieveCustomModel`
+  - `score`
+  - `selectObject`
+  - `serializeLayout`
+  - `setupToggle`
+  - `showConfirm`
+  - `showToast`
+  - `storeCustomModel`
+  - `tl`
+  - `updateObjectFromUI`
+  - `updateUIFromObject`
+
+### tools\Envizionomniconvertpro.js
+- Size: 129968 chars
+- Functions: 78
+- Operational candidates: convertFileToJpgUnified, convertHtmlToPdf, convertPdfToCsv, convertPdfToHtml, convertPdfToImagesAndWord, convertPdfToJpg, convertPdfToPptx, convertPdfToText, convertPdfToWord, convertPptToPdf, convertToExcelUnified, convertWordToPdf, downloadGeneratedQr, generateLocalImage, generatePdfFromText, generateQrCode, handleMergePdfSelection, handleOcrConversion, loadVideoForOCR, processMergePdfs, runBatchOcr, runVideoOCR
+- Function list:
+  - `bl`
+  - `checkScrollPosition`
+  - `clearConsoleLogs`
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `compileImagesToPdf`
+  - `compileTextToPptx`
+  - `consoleLog`
+  - `convertFileToJpgUnified`
+  - `convertHtmlToPdf`
+  - `convertPdfToCsv`
+  - `convertPdfToHtml`
+  - `convertPdfToImagesAndWord`
+  - `convertPdfToJpg`
+  - `convertPdfToPptx`
+  - `convertPdfToText`
+  - `convertPdfToWord`
+  - `convertPptToPdf`
+  - `convertToExcelUnified`
+  - `convertWordToPdf`
+  - `copyToClipboard`
+  - `dl`
+  - `downloadAsDocx`
+  - `downloadAsDocxWithEmbed`
+  - `downloadExcelData`
+  - `downloadGeneratedQr`
+  - `downloadInvertedImage`
+  - `downloadPdfImagesWord`
+  - `downloadPdfPptx`
+  - `downloadPresentationPdf`
+  - `downloadSnapshotJpg`
+  - `downloadTextareaContent`
+  - `downloadWordPdf`
+  - `draw`
+  - `el`
+  - `escHtml`
+  - `evaluateFlipState`
+  - `finishJpgPrep`
+  - `flipConversion`
+  - `generateLocalImage`
+  - `generatePdfFromText`
+  - `generateQrCode`
+  - `handleImgToPdfSelection`
+  - `handleMergePdfSelection`
+  - `handleOcrConversion`
+  - `handleSourceChange`
+  - `handleTargetChange`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `image`
+  - `initOutstream`
+  - `initRewarded`
+  - `invertImage`
+  - `loadImgForVideo`
+  - `loadIndex`
+  - `loadVideoForOCR`
+  - `loadVideoForSlicing`
+  - `openRewarded`
+  - `processMergePdfs`
+  - `renderImageToVideo`
+  - `renderTextToVideo`
+  - `renderToolUI`
+  - `runBatchOcr`
+  - `runVideoOCR`
+  - `scanBarcodeFile`
+  - `scanQrFile`
+  - `score`
+  - `setupToggle`
+  - `showToast`
+  - `sliceVideoToFrames`
+  - `startBarcodeCamera`
+  - `startQrCamera`
+  - `sx`
+  - `tickQr`
+  - `tl`
+  - `translateImage`
+  - `updateTextToGraphicPreview`
+
+### tools\Image-Text-Extractor.js
+- Size: 37010 chars
+- Functions: 28
+- Operational candidates: performOCR, processAndOCR
+- Function list:
+  - `bl`
+  - `checkScrollPosition`
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `dl`
+  - `escHtml`
+  - `handleFile`
+  - `height`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `initOutstream`
+  - `initRewarded`
+  - `loadIndex`
+  - `openRewarded`
+  - `performOCR`
+  - `preventDefaults`
+  - `processAndOCR`
+  - `renderOverlayForContainer`
+  - `renderTextOverlay`
+  - `renderTheaterTextOverlay`
+  - `score`
+  - `setupToggle`
+  - `tl`
+  - `toggleAboutModal`
+  - `toggleTheaterMode`
+  - `updateOpacityForContainer`
+  - `width`
+
+### tools\InstantDictionary.js
+- Size: 34466 chars
+- Functions: 29
+- Operational candidates: extractTargetWord, startSearchProcess
+- Function list:
+  - `autoPlayBestAudio`
+  - `bl`
+  - `checkScrollPosition`
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `dl`
+  - `escHtml`
+  - `extractTargetWord`
+  - `fetchTranslation`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `initOutstream`
+  - `initRewarded`
+  - `loadIndex`
+  - `openRewarded`
+  - `playAudio`
+  - `playTTSFallback`
+  - `playTranslatedAudio`
+  - `renderPrimaryData`
+  - `renderUltimateFallback`
+  - `renderWiktionaryData`
+  - `resetApp`
+  - `resetAudioUI`
+  - `score`
+  - `setupToggle`
+  - `showView`
+  - `startSearchProcess`
+  - `tl`
+
+### tools\Local-Anymediafilesizeconverter.js
+- Size: 30344 chars
+- Functions: 24
+- Operational candidates: None detected
+- Function list:
+  - `addLog`
+  - `bl`
+  - `bufferToWav`
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `dl`
+  - `escHtml`
+  - `formatBytes`
+  - `handleFile`
+  - `hideAlert`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `initOutstream`
+  - `initRewarded`
+  - `loadIndex`
+  - `openRewarded`
+  - `resetUI`
+  - `score`
+  - `setUint16`
+  - `setUint32`
+  - `setupToggle`
+  - `showAlert`
+  - `tl`
+
+### tools\advanced-video-watermarker.js
+- Size: 41711 chars
+- Functions: 76
+- Operational candidates: drawAllWatermarks, drawWatermark
+- Function list:
+  - `addLayer`
+  - `ask`
+  - `baseName`
+  - `beginDrag`
+  - `bestMimeType`
+  - `bl`
+  - `canvasPoint`
+  - `checkScrollPosition`
+  - `clamp`
+  - `closeConfirm`
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `currentTime`
+  - `deleteSelectedLayer`
+  - `dl`
+  - `done`
+  - `drawAllWatermarks`
+  - `drawEmpty`
+  - `drawFrame`
+  - `drawGlass`
+  - `drawGlow`
+  - `drawLightSweep`
+  - `drawLowerThird`
+  - `drawOrbit`
+  - `drawPrism`
+  - `drawSelection`
+  - `drawSerif`
+  - `drawSpark`
+  - `drawStamp`
+  - `drawStill`
+  - `drawWatermark`
+  - `drawWaveText`
+  - `duplicateSelectedLayer`
+  - `endDrag`
+  - `escHtml`
+  - `escapeHtml`
+  - `fitCanvasToVideo`
+  - `fontFor`
+  - `formatTime`
+  - `getSelectedLayer`
+  - `getSourceStream`
+  - `hexToRgba`
+  - `highlight`
+  - `hitTest`
+  - `hl`
+  - `href`
+  - `init`
+  - `initOutstream`
+  - `initRewarded`
+  - `isLayerVisible`
+  - `layerBounds`
+  - `loadIndex`
+  - `loadVideo`
+  - `moveDrag`
+  - `openRewarded`
+  - `previewLoop`
+  - `renderLayerList`
+  - `renderVideo`
+  - `score`
+  - `seekVideo`
+  - `setFooterYear`
+  - `setProgress`
+  - `setStatus`
+  - `setupToggle`
+  - `sweep`
+  - `syncControls`
+  - `tick`
+  - `tl`
+  - `toggleBusy`
+  - `togglePreview`
+  - `updateLabels`
+  - `updateSelectedFromControls`
+  - `waitForRenderTimeout`
+  - `wireAds`
+  - `wireConfirm`
+  - `wireIntro`
+
+### tools\background-remover.js
+- Size: 43139 chars
+- Functions: 35
+- Operational candidates: processAllImages, processSingleImage, queueProcessing
+- Function list:
+  - `applyFinalRender`
+  - `bindSlider`
+  - `bl`
+  - `checkScrollPosition`
+  - `closeCompareModal`
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `contrastFactor`
+  - `createGridItem`
+  - `dl`
+  - `escHtml`
+  - `factor`
+  - `handleFiles`
+  - `hexToRgb`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `i`
+  - `initOutstream`
+  - `initRewarded`
+  - `loadIndex`
+  - `normalizedDist`
+  - `openCompareModal`
+  - `openRewarded`
+  - `processAllImages`
+  - `processSingleImage`
+  - `queueProcessing`
+  - `readFileAsDataURL`
+  - `removeImage`
+  - `score`
+  - `setupToggle`
+  - `showToast`
+  - `tl`
+  - `updateCompareSlider`
+  - `updateImageCount`
+
+### tools\firebase-config.js
+- Size: 499 chars
+- Functions: 0
+- Operational candidates: None detected
+- Function list:
+
+### tools\htmlviewer.js
+- Size: 158023 chars
+- Functions: 156
+- Operational candidates: bundleAndExport, decodeBase64, encodeBase64, exportZip, extractJSXSource, processFile, splitEditorRight
+- Function list:
+  - `App`
+  - `_installJSXEditorListener`
+  - `_renderJSXPreview`
+  - `add`
+  - `addBreakpointAtLine`
+  - `addTerminalLine`
+  - `applyBookmarkDecorations`
+  - `bl`
+  - `buildProject`
+  - `buildReactSandbox`
+  - `buildTree`
+  - `bundleAndExport`
+  - `changeIndent`
+  - `changeLanguage`
+  - `checkJSSyntax`
+  - `checkScrollPosition`
+  - `cleanProject`
+  - `clearAllBookmarks`
+  - `clearAllBreakpoints`
+  - `clearBottomPanel`
+  - `clearTerminal`
+  - `closeAllMenus`
+  - `closeAllTabs`
+  - `closeBottomPanel`
+  - `closeMobileSidebar`
+  - `closeRewarded`
+  - `closeSidebar`
+  - `closeTab`
+  - `collapseAllFolders`
+  - `collapseOutstream`
+  - `compileCSS`
+  - `compileVFS`
+  - `createNewFile`
+  - `createNewFolder`
+  - `cssId`
+  - `cycleTab`
+  - `decodeBase64`
+  - `deleteFile`
+  - `dl`
+  - `encodeBase64`
+  - `escHtml`
+  - `execEditorCmd`
+  - `exportZip`
+  - `extractJSXSource`
+  - `finalizeMount`
+  - `getFileIcon`
+  - `getLang`
+  - `getMimeType`
+  - `gitAction`
+  - `gitCommit`
+  - `gitRefresh`
+  - `goToFile`
+  - `handleDebugConsoleInput`
+  - `handleTerminalInput`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `initOutstream`
+  - `initPyodide`
+  - `initRewarded`
+  - `insertGUID`
+  - `insertTimestamp`
+  - `inspectElement`
+  - `isAbsolute`
+  - `isReactJSX`
+  - `jumpToBookmark`
+  - `jumpToResult`
+  - `lines`
+  - `loadDemo`
+  - `loadIndex`
+  - `logDebugOutput`
+  - `logOutput`
+  - `markGitChanged`
+  - `matches`
+  - `minifyActiveFile`
+  - `navigateBack`
+  - `navigateForward`
+  - `navigateTo`
+  - `next`
+  - `nfCreate`
+  - `nfSetExt`
+  - `nfUpdatePlaceholder`
+  - `openBottomPanel`
+  - `openCommandPalette`
+  - `openDevTools`
+  - `openFile`
+  - `openPreviewInNewWindow`
+  - `openRewarded`
+  - `openSettings`
+  - `openSnippetsPanel`
+  - `performGlobalSearch`
+  - `processFile`
+  - `r`
+  - `readAllEntries`
+  - `rebuildProject`
+  - `refreshPreview`
+  - `removeBookmark`
+  - `renameFile`
+  - `renderBookmarks`
+  - `renderFileTree`
+  - `renderMenuBar`
+  - `renderTabs`
+  - `renderTreeNode`
+  - `resetLayout`
+  - `resolveRelative`
+  - `resolveTermPath`
+  - `result`
+  - `runAccessibilityCheck`
+  - `runActiveFile`
+  - `runPython`
+  - `runSelectedText`
+  - `runTests`
+  - `saveActiveFile`
+  - `saveActiveFileAs`
+  - `score`
+  - `send`
+  - `setAllBreakpoints`
+  - `setupResizers`
+  - `setupToggle`
+  - `showAbout`
+  - `showContextMenu`
+  - `showKeyboardShortcuts`
+  - `showLicense`
+  - `sortLines`
+  - `splitEditorRight`
+  - `stopDebugging`
+  - `switchBottomTab`
+  - `switchSidebar`
+  - `termSetMode`
+  - `tl`
+  - `toggleBookmark`
+  - `toggleBottomPanel`
+  - `toggleBreakpoint`
+  - `toggleDeviceMode`
+  - `toggleExplanation`
+  - `toggleFullScreen`
+  - `toggleGitPanel`
+  - `toggleLineNumbers`
+  - `toggleMenu`
+  - `toggleMinimap`
+  - `toggleMobilePreview`
+  - `toggleMobileSidebar`
+  - `togglePreviewPane`
+  - `toggleSearchOption`
+  - `toggleSidebar`
+  - `toggleWhitespace`
+  - `toggleWordWrap`
+  - `traverseEntry`
+  - `triggerFileUpload`
+  - `triggerFolderUpload`
+  - `unclosed`
+  - `updateGitBadge`
+  - `updateGitPanel`
+  - `validateCSS`
+  - `validateHTML`
+  - `zoomEditor`
+
+### tools\image-optimizer-pro.js
+- Size: 29476 chars
+- Functions: 51
+- Operational candidates: optimizeFile, processImages, updateExportButtons
+- Function list:
+  - `addFiles`
+  - `ask`
+  - `baseName`
+  - `bl`
+  - `canvasToBlob`
+  - `checkScrollPosition`
+  - `clearAll`
+  - `closeConfirm`
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `dl`
+  - `downloadAll`
+  - `downloadAllFallback`
+  - `downloadBlob`
+  - `downloadZip`
+  - `escHtml`
+  - `escapeHtml`
+  - `extensionFor`
+  - `formatBytes`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `init`
+  - `initOutstream`
+  - `initRewarded`
+  - `loadIndex`
+  - `onDragOver`
+  - `onDrop`
+  - `openRewarded`
+  - `optimizeFile`
+  - `originalExtension`
+  - `processImages`
+  - `renderResults`
+  - `resolveOutputFormat`
+  - `sanitizeName`
+  - `saveFolder`
+  - `savingText`
+  - `score`
+  - `setFooterYear`
+  - `setProgress`
+  - `setStatus`
+  - `setupToggle`
+  - `tl`
+  - `toggleBusy`
+  - `type`
+  - `updateExportButtons`
+  - `updateLabels`
+  - `wait`
+  - `wireAds`
+  - `wireConfirm`
+  - `wireIntro`
+
+### tools\imagesupscaler.js
+- Size: 25208 chars
+- Functions: 20
+- Operational candidates: processImage
+- Function list:
+  - `bl`
+  - `checkScrollPosition`
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `dl`
+  - `downloadImage`
+  - `escHtml`
+  - `handleFile`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `initOutstream`
+  - `initRewarded`
+  - `loadIndex`
+  - `openRewarded`
+  - `processImage`
+  - `score`
+  - `setupToggle`
+  - `showNotification`
+  - `tl`
+
+### tools\life-tools.js
+- Size: 104949 chars
+- Functions: 114
+- Operational candidates: exportCSV, generateChart, generateLineChart, generatePieChart, handleCSVImport, importCSVFile
+- Function list:
+  - `addSheet`
+  - `adrev`
+  - `appendRows`
+  - `applyCellStyle`
+  - `applyColor`
+  - `bl`
+  - `cell`
+  - `cellObj`
+  - `checkScrollPosition`
+  - `clearGrid`
+  - `clearSelectedCells`
+  - `closeRewarded`
+  - `closeToolPanel`
+  - `closeWelcomeModal`
+  - `collapseOutstream`
+  - `copyCurrentWorkbook`
+  - `createNewWorkbookFromApp`
+  - `d`
+  - `darken`
+  - `deleteChart`
+  - `deleteSelectedCol`
+  - `deleteSelectedRow`
+  - `deleteSheet`
+  - `diff`
+  - `displayToolsList`
+  - `dl`
+  - `editCell`
+  - `ensureDefaultWorkbook`
+  - `escHtml`
+  - `escapeHtml`
+  - `evaluateCell`
+  - `execCopy`
+  - `execCut`
+  - `execPaste`
+  - `exportCSV`
+  - `filterAddons`
+  - `filterCategory`
+  - `finalVal`
+  - `formatActiveCell`
+  - `freezeTopRow`
+  - `generateChart`
+  - `generateLineChart`
+  - `generatePieChart`
+  - `getRangeBounds`
+  - `getRangeCells`
+  - `getWorkbookIdFromUrl`
+  - `getWorkbookStorageKey`
+  - `handleCSVImport`
+  - `handleFormulaBarInput`
+  - `handleFormulaBarKeyDown`
+  - `handleGlobalKeyDown`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `importCSVFile`
+  - `initOutstream`
+  - `initRewarded`
+  - `initWelcomeModal`
+  - `injectCompiledFormula`
+  - `insertColumnLeft`
+  - `insertQuickFormula`
+  - `insertRowAbove`
+  - `insertTemplateMenu`
+  - `lighten`
+  - `loadIndex`
+  - `lum`
+  - `makeWorkbookId`
+  - `openAddonTool`
+  - `openRewarded`
+  - `openWelcomeModal`
+  - `ratio`
+  - `readWorkbookIndex`
+  - `rebuildGrid`
+  - `redo`
+  - `reevaluateAll`
+  - `removeDuplicates`
+  - `renameCurrentWorkbook`
+  - `renderAddonsList`
+  - `renderCharts`
+  - `renderFormulaGlossary`
+  - `renderSheetTabs`
+  - `runCustomFormula`
+  - `saveCellEditingValue`
+  - `saveStateForHistory`
+  - `saveToLocalStorage`
+  - `score`
+  - `selectCell`
+  - `setCellValue`
+  - `setZoom`
+  - `setupFormulaParser`
+  - `setupGridEvents`
+  - `setupToggle`
+  - `shareCurrentWorkbookByEmail`
+  - `sortSelectedRange`
+  - `style`
+  - `switchRibbonTab`
+  - `switchSheet`
+  - `syncWorkbookIndex`
+  - `t`
+  - `tl`
+  - `toggleFormulaHelp`
+  - `toggleGridlines`
+  - `toggleShowFormulas`
+  - `toggleSidebar`
+  - `toggleTheme`
+  - `total`
+  - `undo`
+  - `updateCellDisplay`
+  - `updateSelectionVisuals`
+  - `updateStatsPanel`
+  - `va`
+  - `val`
+  - `vb`
+  - `writeWorkbookIndex`
+
+### tools\local_video_image_mask_merger.js
+- Size: 49380 chars
+- Functions: 43
+- Operational candidates: drawMaskShape, maskX, maskY, startCompilationExport
+- Function list:
+  - `abortCompilation`
+  - `bl`
+  - `checkIntegrityAndEnableUI`
+  - `checkScrollPosition`
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `dismissAlert`
+  - `dl`
+  - `drawImageLayer`
+  - `drawMaskShape`
+  - `drawPreviewLoop`
+  - `escHtml`
+  - `formatDuration`
+  - `getCanvasCoordinates`
+  - `handleDrag`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `imgX`
+  - `imgY`
+  - `initOutstream`
+  - `initRewarded`
+  - `loadIndex`
+  - `mHeight`
+  - `mSize`
+  - `mX`
+  - `mY`
+  - `maskX`
+  - `maskY`
+  - `openRewarded`
+  - `renderComposerFrame`
+  - `requestFrameRedraw`
+  - `score`
+  - `setShape`
+  - `setupToggle`
+  - `startCompilationExport`
+  - `startDrag`
+  - `stopDrag`
+  - `syncSlidersToState`
+  - `tl`
+  - `trackRecordingProgress`
+  - `triggerAlert`
+  - `updateStateFromSliders`
+
+### tools\media-library.js
+- Size: 20123 chars
+- Functions: 26
+- Operational candidates: putExport
+- Function list:
+  - `bl`
+  - `checkScrollPosition`
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `deleteFiles`
+  - `dl`
+  - `escHtml`
+  - `files`
+  - `getAllFiles`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `initOutstream`
+  - `initRewarded`
+  - `loadIndex`
+  - `openDb`
+  - `openRewarded`
+  - `putExport`
+  - `render`
+  - `saveFiles`
+  - `score`
+  - `selectedIds`
+  - `setStatus`
+  - `setupToggle`
+  - `tl`
+  - `txStore`
+
+### tools\mediaconverter.js
+- Size: 37717 chars
+- Functions: 21
+- Operational candidates: processMedia, validateProcessButton
+- Function list:
+  - `buildWorkspace`
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `handleRouting`
+  - `handleSuccessOutput`
+  - `href`
+  - `init`
+  - `initFFmpeg`
+  - `initOutstream`
+  - `initRewarded`
+  - `num`
+  - `openRewarded`
+  - `processMedia`
+  - `renderSidebar`
+  - `resetOutput`
+  - `selectTool`
+  - `setupEventListeners`
+  - `setupToggle`
+  - `showEmptyState`
+  - `showToast`
+  - `validateProcessButton`
+
+### tools\mediaforge.js
+- Size: 41070 chars
+- Functions: 44
+- Operational candidates: batchExportZip, exportVideoClip, processUploadedFile
+- Function list:
+  - `batchExportZip`
+  - `bl`
+  - `captureCurrentFrame`
+  - `checkScrollPosition`
+  - `clearFrameQueue`
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `deleteFrame`
+  - `dl`
+  - `drawWaveform`
+  - `drawWaveformFallback`
+  - `endPct`
+  - `escHtml`
+  - `exportVideoClip`
+  - `formatPreciseTime`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `initOutstream`
+  - `initRewarded`
+  - `loadIndex`
+  - `openRewarded`
+  - `playbackTrackerLoop`
+  - `processUploadedFile`
+  - `ripLosslessAudio`
+  - `score`
+  - `seekTimeline`
+  - `selectAudioCh`
+  - `setClipPoint`
+  - `setupDragAndDrop`
+  - `setupInteractiveCanvas`
+  - `setupToggle`
+  - `signalGooglefcPresent`
+  - `startAudioChannelScanner`
+  - `startPct`
+  - `stepFrames`
+  - `switchUtilityTab`
+  - `tl`
+  - `togglePlay`
+  - `triggerToast`
+  - `updateClampingVisualMarkers`
+  - `updateFrameQueueUI`
+  - `updateTimeDisplay`
+  - `writeStr`
+
+### tools\mediaplayer.js
+- Size: 44114 chars
+- Functions: 40
+- Operational candidates: resize
+- Function list:
+  - `addBookmark`
+  - `barHeight`
+  - `barWidth`
+  - `bl`
+  - `checkScrollPosition`
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `dl`
+  - `draw`
+  - `escHtml`
+  - `formatTime`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `hue`
+  - `initOutstream`
+  - `initRewarded`
+  - `insertTimestamp`
+  - `loadIndex`
+  - `name`
+  - `onPlay`
+  - `openRewarded`
+  - `pctA`
+  - `pctB`
+  - `playTrack`
+  - `removeTrack`
+  - `renderBookmarks`
+  - `renderPlaylist`
+  - `resetLoop`
+  - `resize`
+  - `score`
+  - `setupToggle`
+  - `showToast`
+  - `startVisualizer`
+  - `stopPlayback`
+  - `stopVisualizer`
+  - `takeScreenshot`
+  - `tl`
+  - `updateLoopUI`
+  - `updateVolumeIcon`
+
+### tools\mp4tomp3.js
+- Size: 40388 chars
+- Functions: 27
+- Operational candidates: None detected
+- Function list:
+  - `addToHistory`
+  - `bl`
+  - `checkScrollPosition`
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `dl`
+  - `durationSec`
+  - `escHtml`
+  - `floatTo16BitPCM`
+  - `handleFileSelect`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `initOutstream`
+  - `initRewarded`
+  - `loadIndex`
+  - `openRewarded`
+  - `renderHistory`
+  - `resetButtons`
+  - `rightInt16`
+  - `score`
+  - `setupToggle`
+  - `showToast`
+  - `signalGooglefcPresent`
+  - `tl`
+  - `updateProgressBar`
+  - `updateStepState`
+
+### tools\pdfmerger.js
+- Size: 36815 chars
+- Functions: 30
+- Operational candidates: applyHighQualityImageCompression, convertFileToPdf, convertHtmlToSearchablePdfBytes, convertPdfToPurePngPdf, downloadSelectedMerged, downloadSelectedSeparately, mergePdfBytes
+- Function list:
+  - `applyHighQualityImageCompression`
+  - `clearAllFiles`
+  - `closeModal`
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `convertFileToPdf`
+  - `convertHtmlToSearchablePdfBytes`
+  - `convertPdfToPurePngPdf`
+  - `createBtn`
+  - `downloadPdfPagesAsPngs`
+  - `downloadSelectedMerged`
+  - `downloadSelectedSeparately`
+  - `executeDownload`
+  - `formatImageForPdf`
+  - `getPdfBytesForFile`
+  - `handleFiles`
+  - `href`
+  - `initOutstream`
+  - `initRewarded`
+  - `mergePdfBytes`
+  - `openRewarded`
+  - `removeFile`
+  - `renderFileList`
+  - `setLoading`
+  - `setupToggle`
+  - `showModal`
+  - `sizeInMB`
+  - `toggleSelectAll`
+  - `toggleSelection`
+  - `triggerDownload`
+
+### tools\pdfstotext.js
+- Size: 8577 chars
+- Functions: 10
+- Operational candidates: extractAll, extractPdf
+- Function list:
+  - `buildOutputs`
+  - `cleanText`
+  - `copyValue`
+  - `extractAll`
+  - `extractPdf`
+  - `log`
+  - `setFiles`
+  - `setProgress`
+  - `subjectGuess`
+  - `titleFromFile`
+
+### tools\pdfstotxt.js
+- Size: 15496 chars
+- Functions: 17
+- Operational candidates: None detected
+- Function list:
+  - `bl`
+  - `checkScrollPosition`
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `dl`
+  - `escHtml`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `initOutstream`
+  - `initRewarded`
+  - `loadIndex`
+  - `openRewarded`
+  - `score`
+  - `setupToggle`
+  - `signalGooglefcPresent`
+  - `tl`
+
+### tools\steganovault.js
+- Size: 64585 chars
+- Functions: 27
+- Operational candidates: mask
+- Function list:
+  - `availableBits`
+  - `bl`
+  - `checkScrollPosition`
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `dl`
+  - `escHtml`
+  - `expected`
+  - `handleFiles`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `initOutstream`
+  - `initRewarded`
+  - `lenBits`
+  - `loadImage`
+  - `loadIndex`
+  - `mask`
+  - `openRewarded`
+  - `preventDefaults`
+  - `removeImage`
+  - `score`
+  - `setupDropzone`
+  - `setupToggle`
+  - `showToast`
+  - `tl`
+  - `updateCapacity`
+
+### tools\teleprompter.js
+- Size: 31429 chars
+- Functions: 41
+- Operational candidates: importAudioFile, importLatestRecording, importTeleprompterLibraryExport
+- Function list:
+  - `activateWord`
+  - `bl`
+  - `checkScrollPosition`
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `dl`
+  - `escHtml`
+  - `escapeHtml`
+  - `findWord`
+  - `getRecording`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `importAudioFile`
+  - `importLatestRecording`
+  - `importTeleprompterLibraryExport`
+  - `initOutstream`
+  - `initRewarded`
+  - `loadIndex`
+  - `loadVoices`
+  - `makeChunks`
+  - `openDb`
+  - `openFullscreen`
+  - `openMediaLibraryDb`
+  - `openRewarded`
+  - `pause`
+  - `play`
+  - `readFile`
+  - `renderText`
+  - `resetReader`
+  - `restoreSettings`
+  - `saveSettings`
+  - `score`
+  - `selectedVoice`
+  - `setStatus`
+  - `setTheme`
+  - `setupToggle`
+  - `speakChunk`
+  - `stopSpeech`
+  - `tl`
+  - `updateControls`
+
+### tools\the-new-project.js
+- Size: 15065 chars
+- Functions: 16
+- Operational candidates: None detected
+- Function list:
+  - `bl`
+  - `checkScrollPosition`
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `dl`
+  - `escHtml`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `initOutstream`
+  - `initRewarded`
+  - `loadIndex`
+  - `openRewarded`
+  - `score`
+  - `setupToggle`
+  - `tl`
+
+### tools\tools-guide.js
+- Size: 15520 chars
+- Functions: 16
+- Operational candidates: None detected
+- Function list:
+  - `bl`
+  - `checkScrollPosition`
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `dl`
+  - `escHtml`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `initOutstream`
+  - `initRewarded`
+  - `loadIndex`
+  - `openRewarded`
+  - `score`
+  - `setupToggle`
+  - `tl`
+
+### tools\u8.js
+- Size: 52475 chars
+- Functions: 45
+- Operational candidates: generateColormap
+- Function list:
+  - `audioBufferToWav`
+  - `bl`
+  - `centerFreq`
+  - `checkScrollPosition`
+  - `clickX`
+  - `clickY`
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `currentX`
+  - `currentY`
+  - `destroyWaveSurfer`
+  - `dl`
+  - `endTime`
+  - `escHtml`
+  - `formatTime`
+  - `freq`
+  - `generateColormap`
+  - `getCurrentRegions`
+  - `height`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `initOutstream`
+  - `initRewarded`
+  - `initWaveSurfer`
+  - `loadIndex`
+  - `maxFreq`
+  - `minFreq`
+  - `newHeight`
+  - `openRewarded`
+  - `pushRegionsHistory`
+  - `renderStoredRegions`
+  - `replaceCurrentRegionsState`
+  - `score`
+  - `setUint16`
+  - `setUint32`
+  - `setupToggle`
+  - `syncInspector`
+  - `targetScrollLeft`
+  - `tl`
+  - `updateFilterGains`
+  - `updateLivePreviewFilters`
+  - `updateSelectedRegionParameter`
+  - `updateUndoRedoButtons`
+  - `width`
+
+### tools\universal-file-encryption.js
+- Size: 25698 chars
+- Functions: 43
+- Operational candidates: decryptFile, encryptFile
+- Function list:
+  - `addFiles`
+  - `ask`
+  - `bl`
+  - `checkScrollPosition`
+  - `clearFiles`
+  - `closeConfirm`
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `decryptFile`
+  - `deriveKey`
+  - `dl`
+  - `downloadBlob`
+  - `encryptFile`
+  - `escHtml`
+  - `escapeHtml`
+  - `formatBytes`
+  - `fromBase64`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `init`
+  - `initOutstream`
+  - `initRewarded`
+  - `loadIndex`
+  - `normalizePassword`
+  - `onDragOver`
+  - `onDrop`
+  - `openRewarded`
+  - `renderFileList`
+  - `runBatch`
+  - `sanitizeName`
+  - `score`
+  - `setFooterYear`
+  - `setProgress`
+  - `setStatus`
+  - `setupToggle`
+  - `tl`
+  - `toBase64`
+  - `toggleBusy`
+  - `wait`
+  - `wireAds`
+  - `wireConfirm`
+  - `wireIntro`
+
+### tools\velolink.js
+- Size: 27572 chars
+- Functions: 40
+- Operational candidates: None detected
+- Function list:
+  - `bl`
+  - `bps`
+  - `checkScrollPosition`
+  - `clearFile`
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `copyLink`
+  - `dl`
+  - `doTransfer`
+  - `elapsed`
+  - `escHtml`
+  - `formatBytes`
+  - `formatExt`
+  - `goHome`
+  - `handleChunk`
+  - `handleDone`
+  - `handleFileSelect`
+  - `handleMeta`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `initOutstream`
+  - `initRewarded`
+  - `loadFile`
+  - `loadIndex`
+  - `loadPeerJS`
+  - `openRewarded`
+  - `score`
+  - `sendFileMeta`
+  - `sendNext`
+  - `setConnStatus`
+  - `setRecvStatus`
+  - `setupToggle`
+  - `showRecvError`
+  - `showToast`
+  - `showView`
+  - `startReceiver`
+  - `startSender`
+  - `tl`
+  - `triggerDownload`
+
+### tools\vocal-music-separator.js
+- Size: 66771 chars
+- Functions: 56
+- Operational candidates: decodeBlob, processSlice
+- Function list:
+  - `a`
+  - `addResultToPlayground`
+  - `b`
+  - `bl`
+  - `boost`
+  - `buildPreviewBuffer`
+  - `centroidScore`
+  - `checkScrollPosition`
+  - `clamp`
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `computeVAD`
+  - `cur`
+  - `decodeBlob`
+  - `deleteCardToTrash`
+  - `dl`
+  - `drawMasterWaveform`
+  - `drawPeaks`
+  - `elapsed`
+  - `escHtml`
+  - `fft`
+  - `formatTime`
+  - `freq`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `ifft`
+  - `initOutstream`
+  - `initRewarded`
+  - `isSelected`
+  - `loadIndex`
+  - `midIm`
+  - `midRe`
+  - `normalize`
+  - `openRewarded`
+  - `peaks`
+  - `processSlice`
+  - `projectToWav`
+  - `renderCard`
+  - `runSpectralSeparation`
+  - `s`
+  - `score`
+  - `setStatus`
+  - `setupToggle`
+  - `startAudioPreview`
+  - `stopAudioPreview`
+  - `target`
+  - `tl`
+  - `updateRange`
+  - `updateSliderUI`
+  - `updateTrashUI`
+  - `updateWaveformText`
+  - `writeString`
+  - `x`
+  - `zcrHz`
+  - `zcrScore`
+
+### tools\voice-recorder.js
+- Size: 54861 chars
+- Functions: 78
+- Operational candidates: compressProject, decodeBlob, exportSelection, importRecorderLibraryExport
+- Function list:
+  - `applyGainEnvelope`
+  - `autoAlignInstrumental`
+  - `bestMimeType`
+  - `bl`
+  - `bufferToProject`
+  - `canvasTime`
+  - `centerRemoveBassSafe`
+  - `centerVocalOnly`
+  - `checkScrollPosition`
+  - `clamp`
+  - `cloneProject`
+  - `closeRewarded`
+  - `collapseOutstream`
+  - `compressProject`
+  - `copySelection`
+  - `decodeBlob`
+  - `deleteSelection`
+  - `dl`
+  - `downloadBlob`
+  - `drawWaveform`
+  - `durationOf`
+  - `endX`
+  - `escHtml`
+  - `exportSelection`
+  - `highlight`
+  - `hl`
+  - `href`
+  - `importRecorderLibraryExport`
+  - `initOutstream`
+  - `initRewarded`
+  - `insertX`
+  - `loadIndex`
+  - `loadInstrumentalBlob`
+  - `loadMainBlob`
+  - `loadMusicBlob`
+  - `mixMusicUnderVoice`
+  - `noiseGate`
+  - `normalizeProject`
+  - `onePoleHighpass`
+  - `onePoleLowpass`
+  - `openDb`
+  - `openMediaLibraryDb`
+  - `openRewarded`
+  - `operateSelection`
+  - `pasteClipboard`
+  - `pauseRecording`
+  - `peakOf`
+  - `phaseCancelInstrumental`
+  - `projectToWav`
+  - `pushUndo`
+  - `refreshRanges`
+  - `removeCenterVocal`
+  - `replaceProject`
+  - `sampleFrom`
+  - `saveBlobToTeleprompter`
+  - `score`
+  - `seconds`
+  - `selectedFrames`
+  - `setEditorEnabled`
+  - `setStatus`
+  - `setupToggle`
+  - `side`
+  - `sideOnly`
+  - `sliceProject`
+  - `smoothMusic`
+  - `startMeter`
+  - `startRecording`
+  - `startX`
+  - `stopMeter`
+  - `stopRecording`
+  - `tick`
+  - `tl`
+  - `trimSilence`
+  - `updateLabels`
+  - `updatePreview`
+  - `vocalEqFilter`
+  - `voiceCleanup`
+  - `writeString`

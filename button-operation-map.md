@@ -1,0 +1,1788 @@
+# Button Operation Map
+
+Total triggers: 552
+
+## tools2\about.html
+- Button/trigger: `What is this page about?` — text: What is this page about?
+  - onclick: `(function(b){var p=b.parentElement,c=p.querySelector('.envizion-seo-collapse-body');var open=b.getAttribute('aria-expanded')==='true';c.style.display=open?'none':'block';b.setAttribute('aria-expanded',open?'false':'true');b.querySelector('.envizion-seo-toggle-label').textContent=open?'What is this page about?':'Hide page info';})(this)`
+  - calls: function, querySelector, getAttribute, setAttribute, querySelector
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+
+## tools2\animator_studio.html
+- Button/trigger: `unnamed` — text: 
+  - onclick: `resetWorkspace()`
+  - calls: resetWorkspace
+- Button/trigger: `Quick Save` — text: Quick Save
+  - onclick: `quickSaveWorkspace()`
+  - calls: quickSaveWorkspace
+- Button/trigger: `Quick Load` — text: Quick Load
+  - onclick: `quickLoadWorkspace()`
+  - calls: quickLoadWorkspace
+- Button/trigger: `Export` — text: Export
+  - onclick: `exportWorkspaceFile()`
+  - calls: exportWorkspaceFile
+- Button/trigger: `Import` — text: Import
+  - onclick: `document.getElementById('import-workspace-input').click()`
+  - calls: getElementById, click
+- Button/trigger: `Save` — text: Save
+  - onclick: `saveWoodburyFile()`
+  - calls: saveWoodburyFile
+- Button/trigger: `btn-reset-pos` — text: Recenter
+  - onclick: `resetCharacterPos()`
+  - calls: resetCharacterPos
+- Button/trigger: `Upload Initial FBX(s)` — text: Upload Initial FBX(s)
+  - onclick: `document.getElementById('upload-files').click()`
+  - calls: getElementById, click
+- Button/trigger: `Add More Animation File(s)` — text: Add More Animation File(s)
+  - onclick: `document.getElementById('upload-files').click()`
+  - calls: getElementById, click
+- Button/trigger: `Clear` — text: Clear
+  - onclick: `clearSelection()`
+  - calls: clearSelection
+- Button/trigger: `Apply` — text: Apply
+  - onclick: `applyBulkKey()`
+  - calls: applyBulkKey
+- Button/trigger: `btn-tab-assets` — text: 1. ASSETS Config
+  - onclick: `switchTab('tab-assets')`
+  - calls: switchTab
+- Button/trigger: `btn-tab-preload` — text: 2. Loading Queue
+  - onclick: `switchTab('tab-preload')`
+  - calls: switchTab
+- Button/trigger: `btn-tab-builder` — text: 3. Scene Builder
+  - onclick: `switchTab('tab-builder')`
+  - calls: switchTab
+- Button/trigger: `btn-tab-controller` — text: 4. Player Controller
+  - onclick: `switchTab('tab-controller')`
+  - calls: switchTab
+- Button/trigger: `btn-tab-merge` — text: ✦ Merge into Woodbury
+  - onclick: `switchTab('tab-merge')`
+  - calls: switchTab
+- Button/trigger: `What is this page about?` — text: What is this page about?
+  - onclick: `(function(b){var p=b.parentElement,c=p.querySelector('.envizion-seo-collapse-body');var open=b.getAttribute('aria-expanded')==='true';c.style.display=open?'none':'block';b.setAttribute('aria-expanded',open?'false':'true');b.querySelector('.envizion-seo-toggle-label').textContent=open?'What is this page about?':'Hide page info';})(this)`
+  - calls: function, querySelector, getAttribute, setAttribute, querySelector
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+
+## tools2\bulk_webp_converter.html
+- Button/trigger: `What is this page about?` — text: What is this page about?
+  - onclick: `(function(b){var p=b.parentElement,c=p.querySelector('.envizion-seo-collapse-body');var open=b.getAttribute('aria-expanded')==='true';c.style.display=open?'none':'block';b.setAttribute('aria-expanded',open?'false':'true');b.querySelector('.envizion-seo-toggle-label').textContent=open?'What is this page about?':'Hide page info';})(this)`
+  - calls: function, querySelector, getAttribute, setAttribute, querySelector
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+
+## tools2\contact.html
+- Button/trigger: `What is this page about?` — text: What is this page about?
+  - onclick: `(function(b){var p=b.parentElement,c=p.querySelector('.envizion-seo-collapse-body');var open=b.getAttribute('aria-expanded')==='true';c.style.display=open?'none':'block';b.setAttribute('aria-expanded',open?'false':'true');b.querySelector('.envizion-seo-toggle-label').textContent=open?'What is this page about?':'Hide page info';})(this)`
+  - calls: function, querySelector, getAttribute, setAttribute, querySelector
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+
+## tools2\envizion_editor.html
+- Button/trigger: `? Close` — text: ? Close
+  - onclick: `closeAssetPreview()`
+  - calls: closeAssetPreview
+- Button/trigger: `? Fullscreen` — text: ? Fullscreen
+  - onclick: `goAssetPreviewFullscreen()`
+  - calls: goAssetPreviewFullscreen
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `unnamed` — text: 
+  - onclick: `dismissAlert()`
+  - calls: dismissAlert
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+
+## tools2\envizion_playground.html
+- Button/trigger: `My Workspace` — text: My Workspace
+  - onclick: `toggleWorkspacePanel()`
+  - calls: toggleWorkspacePanel
+- Button/trigger: `Upgrade` — text: Upgrade
+  - onclick: `triggerUpgrade()`
+  - calls: triggerUpgrade
+- Button/trigger: `unnamed` — text: 
+  - onclick: `toggleSettingsModal()`
+  - calls: toggleSettingsModal
+- Button/trigger: `Share` — text: Share
+  - onclick: `triggerShare()`
+  - calls: triggerShare
+- Button/trigger: `unnamed` — text: 
+  - onclick: `adjustZoom(-0.1)`
+  - calls: adjustZoom
+- Button/trigger: `unnamed` — text: 
+  - onclick: `adjustZoom(0.1)`
+  - calls: adjustZoom
+- Button/trigger: `tool-select` — text: 
+  - onclick: `setTool('select')`
+  - calls: setTool
+- Button/trigger: `tool-image` — text: 
+  - onclick: `triggerFileInput('image')`
+  - calls: triggerFileInput
+- Button/trigger: `tool-video` — text: 
+  - onclick: `triggerFileInput('video')`
+  - calls: triggerFileInput
+- Button/trigger: `tool-audio` — text: 
+  - onclick: `triggerAudioUpload()`
+  - calls: triggerAudioUpload
+- Button/trigger: `tool-frame` — text: 
+  - onclick: `toggleActiveFrameRegion()`
+  - calls: toggleActiveFrameRegion
+- Button/trigger: `tool-draw` — text: 
+  - onclick: `setTool('draw')`
+  - calls: setTool
+- Button/trigger: `tool-text` — text: 
+  - onclick: `addTextCard()`
+  - calls: addTextCard
+- Button/trigger: `tool-sticky` — text: 
+  - onclick: `addStickyCard()`
+  - calls: addStickyCard
+- Button/trigger: `unnamed` — text: 
+  - onclick: `setSelectedColor('#10b981')`
+  - calls: setSelectedColor
+- Button/trigger: `unnamed` — text: 
+  - onclick: `setSelectedColor('#f59e0b')`
+  - calls: setSelectedColor
+- Button/trigger: `unnamed` — text: 
+  - onclick: `setSelectedColor('#f43f5e')`
+  - calls: setSelectedColor
+- Button/trigger: `unnamed` — text: 
+  - onclick: `setSelectedColor('#0ea5e9')`
+  - calls: setSelectedColor
+- Button/trigger: `unnamed` — text: 
+  - onclick: `setSelectedColor('#6366f1')`
+  - calls: setSelectedColor
+- Button/trigger: `unnamed` — text: 
+  - onclick: `addTableCard()`
+  - calls: addTableCard
+- Button/trigger: `unnamed` — text: 
+  - onclick: `triggerShowExtensions()`
+  - calls: triggerShowExtensions
+- Button/trigger: `unnamed` — text: 
+  - onclick: `downloadSelectedAsZip()`
+  - calls: downloadSelectedAsZip
+- Button/trigger: `unnamed` — text: 
+  - onclick: `groupSelected()`
+  - calls: groupSelected
+- Button/trigger: `unnamed` — text: 
+  - onclick: `toggleFullscreen()`
+  - calls: toggleFullscreen
+- Button/trigger: `unnamed` — text: 
+  - onclick: `document.getElementById('any-file-input').click()`
+  - calls: getElementById, click
+- Button/trigger: `unnamed` — text: 
+  - onclick: `toggleChatPanel()`
+  - calls: toggleChatPanel
+- Button/trigger: `unnamed` — text: 
+  - onclick: `triggerSearchBoard()`
+  - calls: triggerSearchBoard
+- Button/trigger: `unnamed` — text: 
+  - onclick: `minimizeChatPanel()`
+  - calls: minimizeChatPanel
+- Button/trigger: `unnamed` — text: 
+  - onclick: `toggleChatPanel()`
+  - calls: toggleChatPanel
+- Button/trigger: `unnamed` — text: 
+  - onclick: `triggerVoiceInput()`
+  - calls: triggerVoiceInput
+- Button/trigger: `Send to Editor` — text: Send to Editor
+  - onclick: `sendSelectedToEditor()`
+  - calls: sendSelectedToEditor
+- Button/trigger: `Deselect` — text: Deselect
+  - onclick: `batchClearSelection()`
+  - calls: batchClearSelection
+- Button/trigger: `unnamed` — text: 
+  - onclick: `toggleSettingsModal()`
+  - calls: toggleSettingsModal
+- Button/trigger: `Apply Changes` — text: Apply Changes
+  - onclick: `toggleSettingsModal()`
+  - calls: toggleSettingsModal
+- Button/trigger: `&times;` — text: &times;
+  - onclick: `toggleWorkspacePanel()`
+  - calls: toggleWorkspacePanel
+- Button/trigger: `Capture this page` — text: Capture this page
+  - onclick: `captureCurrentWorkspacePage()`
+  - calls: captureCurrentWorkspacePage
+- Button/trigger: `Export list` — text: Export list
+  - onclick: `exportWorkspacePages()`
+  - calls: exportWorkspacePages
+- Button/trigger: `Import list` — text: Import list
+  - onclick: `document.getElementById('workspace-import-input').click()`
+  - calls: getElementById, click
+- Button/trigger: `Add URLs` — text: Add URLs
+  - onclick: `addWorkspaceBulkUrls()`
+  - calls: addWorkspaceBulkUrls
+- Button/trigger: `workspace-tab-saved` — text: Saved pages
+  - onclick: `setWorkspaceTab('saved')`
+  - calls: setWorkspaceTab
+- Button/trigger: `workspace-tab-directory` — text: Envizion directory
+  - onclick: `setWorkspaceTab('directory')`
+  - calls: setWorkspaceTab
+- Button/trigger: `✕ Close` — text: ✕ Close
+  - onclick: `closePreview()`
+  - calls: closePreview
+- Button/trigger: `preview-fs-btn` — text: â›¶ Native Fullscreen
+  - onclick: `goNativeFullscreen()`
+  - calls: goNativeFullscreen
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Untitled Project` — text: Untitled Project
+  - onclick: `toggleRenameDropdown()`
+  - calls: toggleRenameDropdown
+- Button/trigger: `workspace-panel` — text: My Local Workspace
+                    Saved page names, URLs, and your Envizion
+  - onclick: `if(event.target === this) toggleWorkspacePanel()`
+  - calls: if, toggleWorkspacePanel
+
+## tools2\envizion_pro_studio_editor.html
+- Button/trigger: `unnamed` — text: 
+  - onclick: `dismissAlert()`
+  - calls: dismissAlert
+- Button/trigger: `What is this page about?` — text: What is this page about?
+  - onclick: `(function(b){var p=b.parentElement,c=p.querySelector('.envizion-seo-collapse-body');var open=b.getAttribute('aria-expanded')==='true';c.style.display=open?'none':'block';b.setAttribute('aria-expanded',open?'false':'true');b.querySelector('.envizion-seo-toggle-label').textContent=open?'What is this page about?':'Hide page info';})(this)`
+  - calls: function, querySelector, getAttribute, setAttribute, querySelector
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+
+## tools2\envizion_resources.html
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+
+## tools2\fbx_to_glb_converter.html
+- Button/trigger: `What is this page about?` — text: What is this page about?
+  - onclick: `(function(b){var p=b.parentElement,c=p.querySelector('.envizion-seo-collapse-body');var open=b.getAttribute('aria-expanded')==='true';c.style.display=open?'none':'block';b.setAttribute('aria-expanded',open?'false':'true');b.querySelector('.envizion-seo-toggle-label').textContent=open?'What is this page about?':'Hide page info';})(this)`
+  - calls: function, querySelector, getAttribute, setAttribute, querySelector
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+
+## tools2\image_resizer.html
+- Button/trigger: `What is this page about?` — text: What is this page about?
+  - onclick: `(function(b){var p=b.parentElement,c=p.querySelector('.envizion-seo-collapse-body');var open=b.getAttribute('aria-expanded')==='true';c.style.display=open?'none':'block';b.setAttribute('aria-expanded',open?'false':'true');b.querySelector('.envizion-seo-toggle-label').textContent=open?'What is this page about?':'Hide page info';})(this)`
+  - calls: function, querySelector, getAttribute, setAttribute, querySelector
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+
+## tools2\index.html
+- Button/trigger: `What is this page about?` — text: What is this page about?
+  - onclick: `(function(b){var p=b.parentElement,c=p.querySelector('.envizion-seo-collapse-body');var open=b.getAttribute('aria-expanded')==='true';c.style.display=open?'none':'block';b.setAttribute('aria-expanded',open?'false':'true');b.querySelector('.envizion-seo-toggle-label').textContent=open?'What is this page about?':'Hide page info';})(this)`
+  - calls: function, querySelector, getAttribute, setAttribute, querySelector
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+
+## tools2\local_glb_viewer.html
+- Button/trigger: `Dismiss` — text: Dismiss
+  - onclick: `document.getElementById('error-modal').classList.replace('flex', 'hidden')`
+  - calls: getElementById, replace
+- Button/trigger: `What is this page about?` — text: What is this page about?
+  - onclick: `(function(b){var p=b.parentElement,c=p.querySelector('.envizion-seo-collapse-body');var open=b.getAttribute('aria-expanded')==='true';c.style.display=open?'none':'block';b.setAttribute('aria-expanded',open?'false':'true');b.querySelector('.envizion-seo-toggle-label').textContent=open?'What is this page about?':'Hide page info';})(this)`
+  - calls: function, querySelector, getAttribute, setAttribute, querySelector
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+
+## tools2\local_video_image_mask_merger.html
+- Button/trigger: `unnamed` — text: 
+  - onclick: `dismissAlert()`
+  - calls: dismissAlert
+- Button/trigger: `What is this page about?` — text: What is this page about?
+  - onclick: `(function(b){var p=b.parentElement,c=p.querySelector('.envizion-seo-collapse-body');var open=b.getAttribute('aria-expanded')==='true';c.style.display=open?'none':'block';b.setAttribute('aria-expanded',open?'false':'true');b.querySelector('.envizion-seo-toggle-label').textContent=open?'What is this page about?':'Hide page info';})(this)`
+  - calls: function, querySelector, getAttribute, setAttribute, querySelector
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+
+## tools2\local_vocal_remover.html
+- Button/trigger: `Browse Files` — text: Browse Files
+  - onclick: `document.getElementById('file-input').click()`
+  - calls: getElementById, click
+- Button/trigger: `Process Another` — text: Process Another
+  - onclick: `resetApp()`
+  - calls: resetApp
+- Button/trigger: `Dismiss` — text: Dismiss
+  - onclick: `closeError()`
+  - calls: closeError
+- Button/trigger: `What is this page about?` — text: What is this page about?
+  - onclick: `(function(b){var p=b.parentElement,c=p.querySelector('.envizion-seo-collapse-body');var open=b.getAttribute('aria-expanded')==='true';c.style.display=open?'none':'block';b.setAttribute('aria-expanded',open?'false':'true');b.querySelector('.envizion-seo-toggle-label').textContent=open?'What is this page about?':'Hide page info';})(this)`
+  - calls: function, querySelector, getAttribute, setAttribute, querySelector
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+
+## tools2\luma_dashboard_clone.html
+- Button/trigger: `primary-action-btn` — text: New Board
+  - onclick: `openModal()`
+  - calls: openModal
+- Button/trigger: `Open Local FileAny file from your device` — text: Open Local FileAny file from your device
+  - onclick: `openLocalFilePicker()`
+  - calls: openLocalFilePicker
+- Button/trigger: `Open URLDrive, Docs, Slides, any link` — text: Open URLDrive, Docs, Slides, any link
+  - onclick: `openURLModal()`
+  - calls: openURLModal
+- Button/trigger: `New BoardStart a fresh project` — text: New BoardStart a fresh project
+  - onclick: `openModal()`
+  - calls: openModal
+- Button/trigger: `create-board-btn` — text: New Board
+                                ⌃⌘O
+  - onclick: `openModal()`
+  - calls: openModal
+- Button/trigger: `Save` — text: Save
+  - onclick: `saveAppsScriptUrl()`
+  - calls: saveAppsScriptUrl
+- Button/trigger: `Test` — text: Test
+  - onclick: `sendTestNotification()`
+  - calls: sendTestNotification
+- Button/trigger: `Clear all` — text: Clear all
+  - onclick: `clearNotifications()`
+  - calls: clearNotifications
+- Button/trigger: `unnamed` — text: 
+  - onclick: `closeModal()`
+  - calls: closeModal
+- Button/trigger: `type-playground` — text: Playground
+  - onclick: `setBoardType('playground')`
+  - calls: setBoardType
+- Button/trigger: `Cancel` — text: Cancel
+  - onclick: `closeModal()`
+  - calls: closeModal
+- Button/trigger: `Create Board` — text: Create Board
+  - onclick: `createBoardAndOpen()`
+  - calls: createBoardAndOpen
+- Button/trigger: `unnamed` — text: 
+  - onclick: `closeURLModal()`
+  - calls: closeURLModal
+- Button/trigger: `Cancel` — text: Cancel
+  - onclick: `closeURLModal()`
+  - calls: closeURLModal
+- Button/trigger: `Open in Playground` — text: Open in Playground
+  - onclick: `openURLInPlayground()`
+  - calls: openURLInPlayground
+- Button/trigger: `Open Local File` — text: Open Local File
+  - onclick: `openLocalFilePicker()`
+  - calls: openLocalFilePicker
+- Button/trigger: `Open URL / Drive Link
+                            Preview Google Docs, Slides, S` — text: Open URL / Drive Link
+                            Preview Google Docs, Slides, S
+  - onclick: `openURLModal()`
+  - calls: openURLModal
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+- Button/trigger: `Recents` — text: Recents
+  - onclick: `showPage('recents');return false;`
+  - calls: showPage
+- Button/trigger: `Starred` — text: Starred
+  - onclick: `showPage('starred');return false;`
+  - calls: showPage
+- Button/trigger: `Notifications
+                    0` — text: Notifications
+                    0
+  - onclick: `showPage('notifications');return false;`
+  - calls: showPage
+- Button/trigger: `nav-boards` — text: Boards
+  - onclick: `showPage('boards');return false;`
+  - calls: showPage
+- Button/trigger: `nav-discover` — text: Discover
+  - onclick: `showPage('discover');return false;`
+  - calls: showPage
+- Button/trigger: `Extensions` — text: Extensions
+  - onclick: `showPage('extensions');return false;`
+  - calls: showPage
+- Button/trigger: `Usage` — text: Usage
+  - onclick: `showPage('usage');return false;`
+  - calls: showPage
+
+## tools2\main...3d_model_viewer.html
+- Button/trigger: `What is this page about?` — text: What is this page about?
+  - onclick: `(function(b){var p=b.parentElement,c=p.querySelector('.envizion-seo-collapse-body');var open=b.getAttribute('aria-expanded')==='true';c.style.display=open?'none':'block';b.setAttribute('aria-expanded',open?'false':'true');b.querySelector('.envizion-seo-toggle-label').textContent=open?'What is this page about?':'Hide page info';})(this)`
+  - calls: function, querySelector, getAttribute, setAttribute, querySelector
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+
+## tools2\mp3_editor_mp4_converter.html
+- Button/trigger: `50 Visualizer Forms` — text: 50 Visualizer Forms
+  - onclick: `switchToolTab('tab-viz')`
+  - calls: switchToolTab
+- Button/trigger: `Audio DSP &amp; FX Rack` — text: Audio DSP &amp; FX Rack
+  - onclick: `switchToolTab('tab-audio')`
+  - calls: switchToolTab
+- Button/trigger: `Canvas &amp; Background` — text: Canvas &amp; Background
+  - onclick: `switchToolTab('tab-bg')`
+  - calls: switchToolTab
+- Button/trigger: `Text &amp; Typography` — text: Text &amp; Typography
+  - onclick: `switchToolTab('tab-text')`
+  - calls: switchToolTab
+- Button/trigger: `Format &amp; Export` — text: Format &amp; Export
+  - onclick: `switchToolTab('tab-export')`
+  - calls: switchToolTab
+- Button/trigger: `unnamed` — text: 
+  - onclick: `hideToast()`
+  - calls: hideToast
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+
+## tools2\pdf_merger.html
+- Button/trigger: `What is this page about?` — text: What is this page about?
+  - onclick: `(function(b){var p=b.parentElement,c=p.querySelector('.envizion-seo-collapse-body');var open=b.getAttribute('aria-expanded')==='true';c.style.display=open?'none':'block';b.setAttribute('aria-expanded',open?'false':'true');b.querySelector('.envizion-seo-toggle-label').textContent=open?'What is this page about?':'Hide page info';})(this)`
+  - calls: function, querySelector, getAttribute, setAttribute, querySelector
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+
+## tools2\privacy.html
+- Button/trigger: `What is this page about?` — text: What is this page about?
+  - onclick: `(function(b){var p=b.parentElement,c=p.querySelector('.envizion-seo-collapse-body');var open=b.getAttribute('aria-expanded')==='true';c.style.display=open?'none':'block';b.setAttribute('aria-expanded',open?'false':'true');b.querySelector('.envizion-seo-toggle-label').textContent=open?'What is this page about?':'Hide page info';})(this)`
+  - calls: function, querySelector, getAttribute, setAttribute, querySelector
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+
+## tools2\secure_converter.html
+- Button/trigger: `What is this page about?` — text: What is this page about?
+  - onclick: `(function(b){var p=b.parentElement,c=p.querySelector('.envizion-seo-collapse-body');var open=b.getAttribute('aria-expanded')==='true';c.style.display=open?'none':'block';b.setAttribute('aria-expanded',open?'false':'true');b.querySelector('.envizion-seo-toggle-label').textContent=open?'What is this page about?':'Hide page info';})(this)`
+  - calls: function, querySelector, getAttribute, setAttribute, querySelector
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+
+## tools2\secure_pdf_compressor.html
+- Button/trigger: `What is this page about?` — text: What is this page about?
+  - onclick: `(function(b){var p=b.parentElement,c=p.querySelector('.envizion-seo-collapse-body');var open=b.getAttribute('aria-expanded')==='true';c.style.display=open?'none':'block';b.setAttribute('aria-expanded',open?'false':'true');b.querySelector('.envizion-seo-toggle-label').textContent=open?'What is this page about?':'Hide page info';})(this)`
+  - calls: function, querySelector, getAttribute, setAttribute, querySelector
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+
+## tools2\superfast_video_compressor.html
+- Button/trigger: `What is this page about?` — text: What is this page about?
+  - onclick: `(function(b){var p=b.parentElement,c=p.querySelector('.envizion-seo-collapse-body');var open=b.getAttribute('aria-expanded')==='true';c.style.display=open?'none':'block';b.setAttribute('aria-expanded',open?'false':'true');b.querySelector('.envizion-seo-toggle-label').textContent=open?'What is this page about?':'Hide page info';})(this)`
+  - calls: function, querySelector, getAttribute, setAttribute, querySelector
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+
+## tools2\visual_level_builder.html
+- Button/trigger: `What is this page about?` — text: What is this page about?
+  - onclick: `(function(b){var p=b.parentElement,c=p.querySelector('.envizion-seo-collapse-body');var open=b.getAttribute('aria-expanded')==='true';c.style.display=open?'none':'block';b.setAttribute('aria-expanded',open?'false':'true');b.querySelector('.envizion-seo-toggle-label').textContent=open?'What is this page about?':'Hide page info';})(this)`
+  - calls: function, querySelector, getAttribute, setAttribute, querySelector
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+
+## tools\Image-Text-Extractor.html
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+
+## tools\InstantDictionary.html
+- Button/trigger: `unnamed` — text: 
+  - onclick: `playAudio('uk')`
+  - calls: playAudio
+- Button/trigger: `unnamed` — text: 
+  - onclick: `playAudio('us')`
+  - calls: playAudio
+- Button/trigger: `unnamed` — text: 
+  - onclick: `playAudio('general')`
+  - calls: playAudio
+- Button/trigger: `unnamed` — text: 
+  - onclick: `playTranslatedAudio()`
+  - calls: playTranslatedAudio
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+
+## tools\Local-Anymediafilesizeconverter.html
+- Button/trigger: `Back to Converter` — text: Back to Converter
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+
+## tools\advanced-video-watermarker.html
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+
+## tools\background-remover-home.html
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+
+## tools\background-remover.html
+- Button/trigger: `mode-auto` — text: Auto Detect
+  - onclick: `setRemovalMode('auto')`
+  - calls: setRemovalMode
+- Button/trigger: `mode-custom` — text: Pick Color
+  - onclick: `setRemovalMode('custom')`
+  - calls: setRemovalMode
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+
+## tools\envizionomniconvertpro.html
+- Button/trigger: `master-flip-btn` — text: 
+  - onclick: `flipConversion()`
+  - calls: flipConversion
+- Button/trigger: `Clear logs` — text: Clear logs
+  - onclick: `clearConsoleLogs()`
+  - calls: clearConsoleLogs
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+
+## tools\htmlviewer.html
+- Button/trigger: `mobile-new-file-btn` — text: + New File
+  - onclick: `createNewFile()`
+  - calls: createNewFile
+- Button/trigger: `what-is-btn` — text: What is this?
+  - onclick: `toggleExplanation()`
+  - calls: toggleExplanation
+- Button/trigger: `unnamed` — text: 
+  - onclick: `createNewFile()`
+  - calls: createNewFile
+- Button/trigger: `unnamed` — text: 
+  - onclick: `createNewFolder()`
+  - calls: createNewFolder
+- Button/trigger: `unnamed` — text: 
+  - onclick: `collapseAllFolders()`
+  - calls: collapseAllFolders
+- Button/trigger: `unnamed` — text: 
+  - onclick: `closeSidebar()`
+  - calls: closeSidebar
+- Button/trigger: `Upload Folder` — text: Upload Folder
+  - onclick: `triggerFolderUpload()`
+  - calls: triggerFolderUpload
+- Button/trigger: `Upload File` — text: Upload File
+  - onclick: `triggerFileUpload()`
+  - calls: triggerFileUpload
+- Button/trigger: `New File` — text: New File
+  - onclick: `createNewFile()`
+  - calls: createNewFile
+- Button/trigger: `unnamed` — text: 
+  - onclick: `closeSidebar()`
+  - calls: closeSidebar
+- Button/trigger: `search-opt-case` — text: Aa
+  - onclick: `toggleSearchOption('case')`
+  - calls: toggleSearchOption
+- Button/trigger: `search-opt-word` — text: W
+  - onclick: `toggleSearchOption('word')`
+  - calls: toggleSearchOption
+- Button/trigger: `search-opt-regex` — text: .*
+  - onclick: `toggleSearchOption('regex')`
+  - calls: toggleSearchOption
+- Button/trigger: `unnamed` — text: 
+  - onclick: `gitCommit()`
+  - calls: gitCommit
+- Button/trigger: `unnamed` — text: 
+  - onclick: `gitRefresh()`
+  - calls: gitRefresh
+- Button/trigger: `unnamed` — text: 
+  - onclick: `closeSidebar()`
+  - calls: closeSidebar
+- Button/trigger: `Commit` — text: Commit
+  - onclick: `gitAction('commit')`
+  - calls: gitAction
+- Button/trigger: `↑` — text: ↑
+  - onclick: `gitAction('push')`
+  - calls: gitAction
+- Button/trigger: `↓` — text: ↓
+  - onclick: `gitAction('pull')`
+  - calls: gitAction
+- Button/trigger: `unnamed` — text: 
+  - onclick: `clearAllBookmarks()`
+  - calls: clearAllBookmarks
+- Button/trigger: `unnamed` — text: 
+  - onclick: `closeSidebar()`
+  - calls: closeSidebar
+- Button/trigger: `term-mode-shell` — text: SH
+  - onclick: `termSetMode('shell')`
+  - calls: termSetMode
+- Button/trigger: `term-mode-js` — text: JS
+  - onclick: `termSetMode('js')`
+  - calls: termSetMode
+- Button/trigger: `unnamed` — text: 
+  - onclick: `clearTerminal()`
+  - calls: clearTerminal
+- Button/trigger: `unnamed` — text: 
+  - onclick: `closeSidebar()`
+  - calls: closeSidebar
+- Button/trigger: `unnamed` — text: 
+  - onclick: `execEditorCmd('editor.action.formatDocument')`
+  - calls: execEditorCmd
+- Button/trigger: `unnamed` — text: 
+  - onclick: `toggleWordWrap()`
+  - calls: toggleWordWrap
+- Button/trigger: `unnamed` — text: 
+  - onclick: `splitEditorRight()`
+  - calls: splitEditorRight
+- Button/trigger: `Upload Folder` — text: Upload Folder
+  - onclick: `triggerFolderUpload()`
+  - calls: triggerFolderUpload
+- Button/trigger: `Upload File` — text: Upload File
+  - onclick: `triggerFileUpload()`
+  - calls: triggerFileUpload
+- Button/trigger: `New File` — text: New File
+  - onclick: `createNewFile()`
+  - calls: createNewFile
+- Button/trigger: `bp-tab-console` — text: Console
+  - onclick: `switchBottomTab('console')`
+  - calls: switchBottomTab
+- Button/trigger: `bp-tab-output` — text: Output
+  - onclick: `switchBottomTab('output')`
+  - calls: switchBottomTab
+- Button/trigger: `bp-tab-problems` — text: Problems
+  - onclick: `switchBottomTab('problems')`
+  - calls: switchBottomTab
+- Button/trigger: `bp-tab-debug` — text: Debug Console
+  - onclick: `switchBottomTab('debug')`
+  - calls: switchBottomTab
+- Button/trigger: `unnamed` — text: 
+  - onclick: `clearBottomPanel()`
+  - calls: clearBottomPanel
+- Button/trigger: `unnamed` — text: 
+  - onclick: `closeBottomPanel()`
+  - calls: closeBottomPanel
+- Button/trigger: `unnamed` — text: 
+  - onclick: `navigateBack()`
+  - calls: navigateBack
+- Button/trigger: `unnamed` — text: 
+  - onclick: `navigateForward()`
+  - calls: navigateForward
+- Button/trigger: `unnamed` — text: 
+  - onclick: `refreshPreview()`
+  - calls: refreshPreview
+- Button/trigger: `unnamed` — text: 
+  - onclick: `openPreviewInNewWindow()`
+  - calls: openPreviewInNewWindow
+- Button/trigger: `device-mode-btn` — text: 
+  - onclick: `toggleDeviceMode()`
+  - calls: toggleDeviceMode
+- Button/trigger: `unnamed` — text: 
+  - onclick: `toggleBottomPanel()`
+  - calls: toggleBottomPanel
+- Button/trigger: `unnamed` — text: 
+  - onclick: `togglePreviewPane()`
+  - calls: togglePreviewPane
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `unnamed` — text: 
+  - onclick: `toggleExplanation()`
+  - calls: toggleExplanation
+- Button/trigger: `Got it, Close Reference` — text: Got it, Close Reference
+  - onclick: `toggleExplanation()`
+  - calls: toggleExplanation
+- Button/trigger: `New File` — text: New File
+  - onclick: `createNewFile()`
+  - calls: createNewFile
+- Button/trigger: `Upload` — text: Upload
+  - onclick: `triggerFileUpload()`
+  - calls: triggerFileUpload
+- Button/trigger: `New Folder` — text: New Folder
+  - onclick: `createNewFolder()`
+  - calls: createNewFolder
+- Button/trigger: `Upload Folder` — text: Upload Folder
+  - onclick: `triggerFolderUpload()`
+  - calls: triggerFolderUpload
+- Button/trigger: `mob-btn-explorer` — text: Files
+  - onclick: `toggleMobileSidebar()`
+  - calls: toggleMobileSidebar
+- Button/trigger: `mob-btn-preview` — text: Preview
+  - onclick: `toggleMobilePreview()`
+  - calls: toggleMobilePreview
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+- Button/trigger: `activity-search` — text: Search (Ctrl+Shift+F)
+  - onclick: `switchSidebar('search')`
+  - calls: switchSidebar
+- Button/trigger: `activity-git` — text: Source Control (Ctrl+Shift+G)
+        0
+  - onclick: `switchSidebar('git')`
+  - calls: switchSidebar
+- Button/trigger: `activity-bookmarks` — text: Bookmarks
+  - onclick: `switchSidebar('bookmarks')`
+  - calls: switchSidebar
+- Button/trigger: `activity-terminal` — text: Terminal (Ctrl+`)
+  - onclick: `switchSidebar('terminal')`
+  - calls: switchSidebar
+- Button/trigger: `Settings` — text: Settings
+  - onclick: `openSettings()`
+  - calls: openSettings
+
+## tools\image-optimizer-pro.html
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+
+## tools\imagesupscaler.html
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+
+## tools\index.html
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+
+## tools\instant-dictionary-home.html
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+
+## tools\life-tools-home.html
+- Button/trigger: `Rename` — text: Rename
+  - onclick: `renameWorkbook('${item.id}')`
+  - calls: renameWorkbook
+- Button/trigger: `Copy` — text: Copy
+  - onclick: `copyWorkbook('${item.id}')`
+  - calls: copyWorkbook
+- Button/trigger: `Delete` — text: Delete
+  - onclick: `deleteWorkbook('${item.id}')`
+  - calls: deleteWorkbook
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+
+## tools\life-tools.html
+- Button/trigger: `New File` — text: New File
+  - onclick: `createNewWorkbookFromApp()`
+  - calls: createNewWorkbookFromApp
+- Button/trigger: `Rename` — text: Rename
+  - onclick: `renameCurrentWorkbook()`
+  - calls: renameCurrentWorkbook
+- Button/trigger: `Copy` — text: Copy
+  - onclick: `copyCurrentWorkbook()`
+  - calls: copyCurrentWorkbook
+- Button/trigger: `Share` — text: Share
+  - onclick: `shareCurrentWorkbookByEmail()`
+  - calls: shareCurrentWorkbookByEmail
+- Button/trigger: `unnamed` — text: 
+  - onclick: `undo()`
+  - calls: undo
+- Button/trigger: `unnamed` — text: 
+  - onclick: `redo()`
+  - calls: redo
+- Button/trigger: `Add-ons` — text: Add-ons
+  - onclick: `toggleSidebar()`
+  - calls: toggleSidebar
+- Button/trigger: `Create Chart` — text: Create Chart
+  - onclick: `generateChart()`
+  - calls: generateChart
+- Button/trigger: `Clear Sheet` — text: Clear Sheet
+  - onclick: `clearGrid()`
+  - calls: clearGrid
+- Button/trigger: `theme-toggle` — text: 
+  - onclick: `toggleTheme()`
+  - calls: toggleTheme
+- Button/trigger: `tab-btn-home` — text: Home
+  - onclick: `switchRibbonTab('home')`
+  - calls: switchRibbonTab
+- Button/trigger: `tab-btn-insert` — text: Insert
+  - onclick: `switchRibbonTab('insert')`
+  - calls: switchRibbonTab
+- Button/trigger: `tab-btn-formulas` — text: Formulas
+  - onclick: `switchRibbonTab('formulas')`
+  - calls: switchRibbonTab
+- Button/trigger: `tab-btn-data` — text: Data
+  - onclick: `switchRibbonTab('data')`
+  - calls: switchRibbonTab
+- Button/trigger: `tab-btn-view` — text: View
+  - onclick: `switchRibbonTab('view')`
+  - calls: switchRibbonTab
+- Button/trigger: `unnamed` — text: 
+  - onclick: `execCopy()`
+  - calls: execCopy
+- Button/trigger: `unnamed` — text: 
+  - onclick: `execCut()`
+  - calls: execCut
+- Button/trigger: `unnamed` — text: 
+  - onclick: `execPaste()`
+  - calls: execPaste
+- Button/trigger: `B` — text: B
+  - onclick: `formatActiveCell('bold')`
+  - calls: formatActiveCell
+- Button/trigger: `I` — text: I
+  - onclick: `formatActiveCell('italic')`
+  - calls: formatActiveCell
+- Button/trigger: `U` — text: U
+  - onclick: `formatActiveCell('underline')`
+  - calls: formatActiveCell
+- Button/trigger: `unnamed` — text: 
+  - onclick: `formatActiveCell('align-left')`
+  - calls: formatActiveCell
+- Button/trigger: `unnamed` — text: 
+  - onclick: `formatActiveCell('align-center')`
+  - calls: formatActiveCell
+- Button/trigger: `unnamed` — text: 
+  - onclick: `formatActiveCell('align-right')`
+  - calls: formatActiveCell
+- Button/trigger: `+Row` — text: +Row
+  - onclick: `insertRowAbove()`
+  - calls: insertRowAbove
+- Button/trigger: `-Row` — text: -Row
+  - onclick: `deleteSelectedRow()`
+  - calls: deleteSelectedRow
+- Button/trigger: `+Col` — text: +Col
+  - onclick: `insertColumnLeft()`
+  - calls: insertColumnLeft
+- Button/trigger: `-Col` — text: -Col
+  - onclick: `deleteSelectedCol()`
+  - calls: deleteSelectedCol
+- Button/trigger: `Insert Add-on Template` — text: Insert Add-on Template
+  - onclick: `insertTemplateMenu()`
+  - calls: insertTemplateMenu
+- Button/trigger: `Bar Chart` — text: Bar Chart
+  - onclick: `generateChart()`
+  - calls: generateChart
+- Button/trigger: `Line Chart` — text: Line Chart
+  - onclick: `generateLineChart()`
+  - calls: generateLineChart
+- Button/trigger: `Pie Chart` — text: Pie Chart
+  - onclick: `generatePieChart()`
+  - calls: generatePieChart
+- Button/trigger: `New Sheet` — text: New Sheet
+  - onclick: `addSheet()`
+  - calls: addSheet
+- Button/trigger: `Insert Row` — text: Insert Row
+  - onclick: `insertRowAbove()`
+  - calls: insertRowAbove
+- Button/trigger: `Insert Col` — text: Insert Col
+  - onclick: `insertColumnLeft()`
+  - calls: insertColumnLeft
+- Button/trigger: `AutoSum` — text: AutoSum
+  - onclick: `insertQuickFormula('SUM')`
+  - calls: insertQuickFormula
+- Button/trigger: `Average` — text: Average
+  - onclick: `insertQuickFormula('AVERAGE')`
+  - calls: insertQuickFormula
+- Button/trigger: `Count` — text: Count
+  - onclick: `insertQuickFormula('COUNT')`
+  - calls: insertQuickFormula
+- Button/trigger: `Max` — text: Max
+  - onclick: `insertQuickFormula('MAX')`
+  - calls: insertQuickFormula
+- Button/trigger: `Min` — text: Min
+  - onclick: `insertQuickFormula('MIN')`
+  - calls: insertQuickFormula
+- Button/trigger: `btn-show-formulas` — text: Show Formulas
+  - onclick: `toggleShowFormulas()`
+  - calls: toggleShowFormulas
+- Button/trigger: `Formula Glossary` — text: Formula Glossary
+  - onclick: `toggleFormulaHelp()`
+  - calls: toggleFormulaHelp
+- Button/trigger: `Sort A-Z` — text: Sort A-Z
+  - onclick: `sortSelectedRange('asc')`
+  - calls: sortSelectedRange
+- Button/trigger: `Sort Z-A` — text: Sort Z-A
+  - onclick: `sortSelectedRange('desc')`
+  - calls: sortSelectedRange
+- Button/trigger: `Remove Dupes` — text: Remove Dupes
+  - onclick: `removeDuplicates()`
+  - calls: removeDuplicates
+- Button/trigger: `Clear Cells` — text: Clear Cells
+  - onclick: `clearSelectedCells()`
+  - calls: clearSelectedCells
+- Button/trigger: `Export CSV` — text: Export CSV
+  - onclick: `exportCSV()`
+  - calls: exportCSV
+- Button/trigger: `Import CSV` — text: Import CSV
+  - onclick: `importCSVFile()`
+  - calls: importCSVFile
+- Button/trigger: `75%` — text: 75%
+  - onclick: `setZoom(0.75)`
+  - calls: setZoom
+- Button/trigger: `100%` — text: 100%
+  - onclick: `setZoom(1)`
+  - calls: setZoom
+- Button/trigger: `125%` — text: 125%
+  - onclick: `setZoom(1.25)`
+  - calls: setZoom
+- Button/trigger: `150%` — text: 150%
+  - onclick: `setZoom(1.5)`
+  - calls: setZoom
+- Button/trigger: `btn-gridlines` — text: Gridlines
+  - onclick: `toggleGridlines()`
+  - calls: toggleGridlines
+- Button/trigger: `Freeze Top Row` — text: Freeze Top Row
+  - onclick: `freezeTopRow()`
+  - calls: freezeTopRow
+- Button/trigger: `unnamed` — text: 
+  - onclick: `toggleSidebar()`
+  - calls: toggleSidebar
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `unnamed` — text: 
+  - onclick: `toggleFormulaHelp()`
+  - calls: toggleFormulaHelp
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+- Button/trigger: `fx` — text: fx
+  - onclick: `toggleFormulaHelp()`
+  - calls: toggleFormulaHelp
+
+## tools\local_video_image_mask_merger.html
+- Button/trigger: `unnamed` — text: 
+  - onclick: `dismissAlert()`
+  - calls: dismissAlert
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+
+## tools\media-library.html
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+
+## tools\mediaconverter.html
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+
+## tools\mediaforge-home.html
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+
+## tools\mediaforge.html
+- Button/trigger: `unnamed` — text: 
+  - onclick: `stepFrames(-30)`
+  - calls: stepFrames
+- Button/trigger: `-1F` — text: -1F
+  - onclick: `stepFrames(-1)`
+  - calls: stepFrames
+- Button/trigger: `btnPlayPause` — text: PLAY
+  - onclick: `togglePlay()`
+  - calls: togglePlay
+- Button/trigger: `+1F` — text: +1F
+  - onclick: `stepFrames(1)`
+  - calls: stepFrames
+- Button/trigger: `unnamed` — text: 
+  - onclick: `stepFrames(30)`
+  - calls: stepFrames
+- Button/trigger: `[ Set In` — text: [ Set In
+  - onclick: `setClipPoint('start')`
+  - calls: setClipPoint
+- Button/trigger: `Set Out ]` — text: Set Out ]
+  - onclick: `setClipPoint('end')`
+  - calls: setClipPoint
+- Button/trigger: `tabFrameBtn` — text: Frame Grab
+  - onclick: `switchUtilityTab('frame')`
+  - calls: switchUtilityTab
+- Button/trigger: `tabVideoBtn` — text: MP4 Clip
+  - onclick: `switchUtilityTab('video')`
+  - calls: switchUtilityTab
+- Button/trigger: `tabAudioBtn` — text: WAV Rip
+  - onclick: `switchUtilityTab('audio')`
+  - calls: switchUtilityTab
+- Button/trigger: `Grab Current Frame` — text: Grab Current Frame
+  - onclick: `captureCurrentFrame()`
+  - calls: captureCurrentFrame
+- Button/trigger: `Clear` — text: Clear
+  - onclick: `clearFrameQueue()`
+  - calls: clearFrameQueue
+- Button/trigger: `Export ZIP` — text: Export ZIP
+  - onclick: `batchExportZip()`
+  - calls: batchExportZip
+- Button/trigger: `btnExportVideo` — text: Export Video Clip
+  - onclick: `exportVideoClip()`
+  - calls: exportVideoClip
+- Button/trigger: `btnAudioStereo` — text: Stereo
+  - onclick: `selectAudioCh(2)`
+  - calls: selectAudioCh
+- Button/trigger: `btnAudioMono` — text: Mono Mix
+  - onclick: `selectAudioCh(1)`
+  - calls: selectAudioCh
+- Button/trigger: `btnRipAudio` — text: Rip Lossless WAV
+  - onclick: `ripLosslessAudio()`
+  - calls: ripLosslessAudio
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+
+## tools\mediaplayer-home.html
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+
+## tools\mediaplayer.html
+- Button/trigger: `Add Media` — text: Add Media
+  - onclick: `document.getElementById('fileInput').click()`
+  - calls: getElementById, click
+- Button/trigger: `Add` — text: Add
+  - onclick: `document.getElementById('fileInput').click()`
+  - calls: getElementById, click
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+
+## tools\mp4tomp3-home.html
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+
+## tools\mp4tomp3.html
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+
+## tools\omniconvert-home.html
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+
+## tools\pdf-to-text-home.html
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+
+## tools\pdfmerger.html
+- Button/trigger: `Select All` — text: Select All
+  - onclick: `toggleSelectAll(true)`
+  - calls: toggleSelectAll
+- Button/trigger: `Deselect All` — text: Deselect All
+  - onclick: `toggleSelectAll(false)`
+  - calls: toggleSelectAll
+- Button/trigger: `Clear All` — text: Clear All
+  - onclick: `clearAllFiles()`
+  - calls: clearAllFiles
+- Button/trigger: `Download Separately` — text: Download Separately
+  - onclick: `downloadSelectedSeparately()`
+  - calls: downloadSelectedSeparately
+- Button/trigger: `Merge & Download` — text: Merge & Download
+  - onclick: `downloadSelectedMerged()`
+  - calls: downloadSelectedMerged
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+
+## tools\pdfstotxt.html
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+
+## tools\steganovault.html
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+
+## tools\teleprompter-home.html
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+
+## tools\teleprompter.html
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+
+## tools\the-new-project.html
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+
+## tools\tools-guide.html
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+
+## tools\u8.html
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+
+## tools\universal-file-encryption.html
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+
+## tools\velolink.html
+- Button/trigger: `unnamed` — text: 
+  - onclick: `clearFile()`
+  - calls: clearFile
+- Button/trigger: `generateBtn` — text: Generate VeloLink
+  - onclick: `startSender()`
+  - calls: startSender
+- Button/trigger: `copyBtn` — text: Copy link
+  - onclick: `copyLink()`
+  - calls: copyLink
+- Button/trigger: `Send another file` — text: Send another file
+  - onclick: `goHome()`
+  - calls: goHome
+- Button/trigger: `downloadBtn` — text: Save to device permanently
+  - onclick: `triggerDownload()`
+  - calls: triggerDownload
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+- Button/trigger: `VeloLink
+            envizion.work` — text: VeloLink
+            envizion.work
+  - onclick: `goHome()`
+  - calls: goHome
+
+## tools\vocal-music-separator.html
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+
+## tools\voice-recorder.html
+- Button/trigger: `envizion-scroll-up-btn` — text: &#x2191; Go Back Up
+  - onclick: `window.scrollTo({top: 0, behavior: 'smooth'})`
+  - calls: scrollTo
+- Button/trigger: `&#10005;` — text: &#10005;
+  - onclick: `ezClose()`
+  - calls: ezClose
+- Button/trigger: `&#128269;` — text: &#128269;
+  - onclick: `ezOpen()`
+  - calls: ezOpen
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove
+- Button/trigger: `Hide` — text: Hide
+  - onclick: `this.closest('.evz-col-box').remove()`
+  - calls: closest, remove

@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Abyss — Photorealistic Ocean Engine</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --deep:    #020a14;
+    --mid:     #0a1e33;
+    --accent:  #2ee6c8;
+    --accent2: #4ea9ff;
+    --glass:   rgba(255, 255, 255, 0.05);
+    --border:  rgba(255, 255, 255, 0.12);
+    --text:    #e8f4ff;
+    --muted:   #8ba8c4;
+  }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    color: var(--text);
+    background: var(--deep);
+    overflow-x: hidden;
+    line-height: 1.6;
+  }
+  a { color: inherit; text-decoration: none; }
+
+  /* ================== HERO CANVAS ================== */
+  #hero {
+    position: relative;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  #ocean-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+  }
+  #hero::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(ellipse at 50% 20%, rgba(0,0,0,0) 0%, rgba(2,10,20,0.55) 60%, rgba(2,10,20,0.95) 100%),
+      linear-gradient(180deg, rgba(2,10,20,0) 40%, rgba(2,10,20,0.9) 85%, var(--deep) 100%);
+    z-index: 1;
+    pointer-events: none;
+  }
+
+  /* ================== NAV ================== */
+  nav {
+    position: relative;
+    z-index: 3;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 22px 48px;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    background: rgba(2, 10, 20, 0.35);
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+  .logo {
+    display: flex; align-items: center; gap: 10px;
+    font-weight: 700; font-size: 20px; letter-spacing: 0.5px;
+  }
+  .logo svg { width: 26px; height: 26px; }
+  nav .links {
+    display: flex; gap: 32px; font-size: 14px; color: var(--muted);
+  }
+  nav .links a { transition: color .2s; }
+  nav .links a:hover { color: var(--text); }
+  .nav-cta {
+    padding: 8px 18px; font-size: 13px; font-weight: 600;
+    border-radius: 8px; border: 1px solid var(--border);
+    background: var(--glass);
+    transition: all .2s;
+  }
+  .nav-cta:hover { background: rgba(46,230,200,0.15); border-color: var(--accent); }
+
+  /* ================== HERO CONTENT ================== */
+  .hero-inner {
+    position: relative;
+    z-index: 2;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    padding: 40px 24px 120px;
+    max-width: 960px;
+    margin: 0 auto;
+  }
+  .badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 14px; border-radius: 999px;
+    background: rgba(46,230,200,0.10);
+    border: 1px solid rgba(46,230,200,0.30);
+    font-size: 12px; color: var(--accent);
+    font-weight: 600; letter-spacing: 0.6px; text-transform: uppercase;
+    margin-bottom: 28px;
+  }
+  .badge .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 12px var(--accent);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%,100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+  h1 {
+    font-size: clamp(38px, 6.5vw, 76px);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1.05;
+    margin-bottom: 24px;
+    text-shadow: 0 2px 40px rgba(0,0,0,0.5);
+  }
+  h1 .grad {
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .subtitle {
+    font-size: clamp(15px, 1.6vw, 19px);
+    color: var(--muted);
+    max-width: 620px;
+    margin-bottom: 40px;
+    text-shadow: 0 1px 20px rgba(0,0,0,0.6);
+  }
+  .cta-row {
+    display: flex; flex-wrap: wrap; gap: 14px; justify-content: center;
+  }
+  .btn {
+    display: inline-flex; align-items: center; gap: 10px;
+    padding: 14px 26px; border-radius: 10px;
+    font-size: 15px; font-weight: 600;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all .2s cubic-bezier(.2,.8,.3,1);
+    text-shadow: none;
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
+    color: #001a20;
+    box-shadow: 0 8px 30px rgba(46,230,200,0.35);
+  }
+  .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 40px rgba(46,230,200,0.55);
+  }
+  .btn-ghost {
+    background: var(--glass);
+    border: 1px solid var(--border);
+    color: var(--text);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+  .btn-ghost:hover {
+    background: rgba(255,255,255,0.10);
+    transform: translateY(-2px);
+  }
+  .btn svg { width: 18px; height: 18px; }
+
+  .stats {
+    display: flex; gap: 48px; flex-wrap: wrap; justify-content: center;
+    margin-top: 70px;
+  }
+  .stat-value {
+    font-size: 26px; font-weight: 700;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .stat-label {
+    font-size: 12px; color: var(--muted); text-transform: uppercase;
+    letter-spacing: 1px; margin-top: 4px;
+  }
+
+  /* ================== SECTIONS ================== */
+  section {
+    padding: 100px 24px;
+    position: relative;
+  }
+  .container { max-width: 1180px; margin: 0 auto; }
+  .section-title {
+    text-align: center;
+    margin-bottom: 60px;
+  }
+  .section-title .eyebrow {
+    color: var(--accent);
+    font-size: 12px; font-weight: 700;
+    letter-spacing: 2px; text-transform: uppercase;
+    margin-bottom: 14px;
+  }
+  .section-title h2 {
+    font-size: clamp(28px, 3.8vw, 46px);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+    margin-bottom: 14px;
+  }
+  .section-title p {
+    color: var(--muted); max-width: 620px;
+    margin: 0 auto; font-size: 16px;
+  }
+
+  /* ================== FEATURE GRID ================== */
+  .features {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 18px;
+  }
+  .feature {
+    padding: 28px;
+    border-radius: 16px;
+    background: var(--glass);
+    border: 1px solid var(--border);
+    transition: all .3s;
+    position: relative;
+    overflow: hidden;
+  }
+  .feature:hover {
+    transform: translateY(-4px);
+    border-color: rgba(46,230,200,0.35);
+    background: rgba(46,230,200,0.04);
+  }
+  .feature::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(46,230,200,0.5), transparent);
+    opacity: 0;
+    transition: opacity .3s;
+  }
+  .feature:hover::before { opacity: 1; }
+  .feature .icon {
+    width: 44px; height: 44px;
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(135deg, rgba(46,230,200,0.15), rgba(78,169,255,0.15));
+    border: 1px solid rgba(46,230,200,0.25);
+    margin-bottom: 18px;
+    color: var(--accent);
+  }
+  .feature h3 { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
+  .feature p { font-size: 14px; color: var(--muted); line-height: 1.6; }
+
+  /* ================== DOWNLOADS ================== */
+  #downloads {
+    background: linear-gradient(180deg, transparent, rgba(46,230,200,0.03) 50%, transparent);
+  }
+  .files {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    gap: 20px;
+  }
+  .file-card {
+    padding: 24px;
+    border-radius: 16px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+    border: 1px solid var(--border);
+    transition: all .25s;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .file-card:hover {
+    border-color: rgba(46,230,200,0.35);
+    transform: translateY(-3px);
+    box-shadow: 0 20px 50px -20px rgba(46,230,200,0.35);
+  }
+  .file-head {
+    display: flex; align-items: flex-start; gap: 14px;
+  }
+  .file-icon {
+    width: 46px; height: 46px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 10px;
+    background: linear-gradient(135deg, rgba(46,230,200,0.15), rgba(78,169,255,0.15));
+    border: 1px solid rgba(46,230,200,0.25);
+    font-weight: 800; font-size: 13px;
+    color: var(--accent);
+  }
+  .file-info { flex: 1; min-width: 0; }
+  .file-name {
+    font-family: 'SF Mono', Monaco, Consolas, monospace;
+    font-size: 14px; font-weight: 600;
+    color: var(--text);
+    margin-bottom: 4px;
+    word-break: break-all;
+  }
+  .file-meta {
+    font-size: 12px; color: var(--muted);
+    display: flex; gap: 12px; flex-wrap: wrap;
+  }
+  .file-meta .tag {
+    padding: 2px 8px; border-radius: 4px;
+    background: rgba(46,230,200,0.10);
+    color: var(--accent);
+    font-weight: 600;
+    font-size: 11px;
+  }
+  .file-desc {
+    font-size: 13px; color: var(--muted);
+    line-height: 1.6;
+  }
+  .download-btn {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 11px 18px; border-radius: 8px;
+    background: rgba(46,230,200,0.10);
+    border: 1px solid rgba(46,230,200,0.30);
+    color: var(--accent);
+    font-size: 13px; font-weight: 600;
+    cursor: pointer;
+    transition: all .2s;
+  }
+  .download-btn:hover {
+    background: rgba(46,230,200,0.20);
+    border-color: var(--accent);
+    transform: translateY(-1px);
+  }
+  .download-btn svg { width: 15px; height: 15px; }
+
+  /* ================== FOOTER ================== */
+  footer {
+    padding: 40px 24px;
+    border-top: 1px solid var(--border);
+    text-align: center;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  footer a { color: var(--accent); }
+
+  @media (max-width: 640px) {
+    nav { padding: 16px 20px; }
+    nav .links { display: none; }
+    section { padding: 70px 20px; }
+    .stats { gap: 28px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ============================================================
+     HERO
+     ============================================================ -->
+<div id="hero">
+  <canvas id="ocean-canvas"></canvas>
+
+  <nav>
+    <div class="logo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#2ee6c8" stroke-width="1.8" stroke-linecap="round">
+        <path d="M2 12c3-3 5-3 8 0s5 3 8 0"/>
+        <path d="M2 17c3-3 5-3 8 0s5 3 8 0"/>
+        <path d="M2 7c3-3 5-3 8 0s5 3 8 0"/>
+      </svg>
+      ABYSS
+    </div>
+    <div class="links">
+      <a href="#features">Features</a>
+      <a href="#downloads">Download</a>
+      <a href="#contact">Support</a>
+    </div>
+    <a class="nav-cta" href="#downloads">Get the kit</a>
+  </nav>
+
+  <div class="hero-inner">
+    <div class="badge">
+      <span class="dot"></span>
+      Zero dependencies · Pure WebGL2
+    </div>
+    <h1>
+      Photorealistic<br>
+      <span class="grad">Ocean Engine</span>
+    </h1>
+    <p class="subtitle">
+      Realistic Gerstner waves, PBR water, underwater fog, caustics and
+      schooling fish. One JavaScript file. No Three.js. No libraries. Just the raw WebGL2 spec.
+    </p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="#downloads">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3v13m0 0l-5-5m5 5l5-5"/>
+          <path d="M3 20h18"/>
+        </svg>
+        Download files
+      </a>
+      <a class="btn btn-ghost" href="#features">
+        See features
+      </a>
+    </div>
+
+    <div class="stats">
+      <div>
+        <div class="stat-value">0 KB</div>
+        <div class="stat-label">Dependencies</div>
+      </div>
+      <div>
+        <div class="stat-value">60 FPS</div>
+        <div class="stat-label">Locked framerate</div>
+      </div>
+      <div>
+        <div class="stat-value">150</div>
+        <div class="stat-label">Instanced fish</div>
+      </div>
+      <div>
+        <div class="stat-value">5</div>
+        <div class="stat-label">Fish variants</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     FEATURES
+     ============================================================ -->
+<section id="features">
+  <div class="container">
+    <div class="section-title">
+      <div class="eyebrow">What's inside</div>
+      <h2>Everything in one file</h2>
+      <p>Hand-written GLSL ES 3.0, custom matrix math, custom geometry — no imports, no CDN, no build step.</p>
+    </div>
+
+    <div class="features">
+      <div class="feature">
+        <div class="icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+            <path d="M2 12c3-3 5-3 8 0s5 3 8 0"/>
+            <path d="M2 17c3-3 5-3 8 0s5 3 8 0"/>
+          </svg>
+        </div>
+        <h3>Gerstner wave stack</h3>
+        <p>Six stacked waves with deep-water dispersion and irrational wavelength ratios so the surface never tiles.</p>
+      </div>
+
+      <div class="feature">
+        <div class="icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="9"/>
+            <path d="M12 3v18M3 12h18"/>
+          </svg>
+        </div>
+        <h3>PBR water shading</h3>
+        <p>GGX specular, Schlick Fresnel, Beer-Lambert absorption, subsurface scattering on crests and sky-matched reflections.</p>
+      </div>
+
+      <div class="feature">
+        <div class="icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 12h18M3 6h18M3 18h18"/>
+          </svg>
+        </div>
+        <h3>Underwater world</h3>
+        <p>Dive below the surface and the whole scene switches: exponential fog, Snell's window, dimmed sky, blue-shifted lighting.</p>
+      </div>
+
+      <div class="feature">
+        <div class="icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2L4 8l8 4 8-4-8-6z"/>
+            <path d="M4 14l8 4 8-4"/>
+          </svg>
+        </div>
+        <h3>Procedural fish</h3>
+        <p>Parametric body with proper radial profile, five fin sheets, per-eye sphere geometry, and vertex-shader swimming motion.</p>
+      </div>
+
+      <div class="feature">
+        <div class="icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 4h16v16H4z"/>
+            <path d="M4 12h16M12 4v16"/>
+          </svg>
+        </div>
+        <h3>Seabed with caustics</h3>
+        <p>Analytic dunes, four-octave value noise sand color, and animated caustic light ribbons under the water.</p>
+      </div>
+
+      <div class="feature">
+        <div class="icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>
+          </svg>
+        </div>
+        <h3>Free camera + swim</h3>
+        <p>Pointer-lock mouse look, WASD movement, Space/Shift vertical. Fly above water or dive below with the same controls.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     DOWNLOADS
+     ============================================================ -->
+<section id="downloads">
+  <div class="container">
+    <div class="section-title">
+      <div class="eyebrow">Download</div>
+      <h2>Get the files</h2>
+      <p>Click any card below to download that file directly. No signup, no tracker, no archive.</p>
+    </div>
+
+    <div class="files" id="files-grid">
+      <!-- Cards are generated by JS from FILES array -->
+    </div>
+  </div>
+</section>
+
+<footer id="contact">
+  <p>© <span id="year"></span> Abyss Engine · Built with pure WebGL2 · <a href="#hero">Back to top</a></p>
+</footer>
+
+<!-- ============================================================
+     CONFIG — EDIT THIS SECTION
+     ============================================================
+     To add a file, push an entry to FILES:
+
+       {
+         name: 'ocean.js',
+         tag:  'JavaScript',      // small badge
+         size: '48 KB',            // shown in the meta line (optional)
+         desc: 'The full ocean engine.',
+         url:  'ocean.js'          // path to the file on your server
+                                  // OR use code: 'console.log(1)' to
+                                  //     embed the code inline as a blob
+       }
+
+     The download button will:
+       - If `url` is set: fetch it (or link directly) and download it.
+       - If `code` is set: blob the string and download it.
+
+     ============================================================ -->
+<script>
+const FILES = [
+  {
+    name: 'ocean.js',
+    tag:  'JavaScript',
+    size: '~48 KB',
+    desc: 'The complete ocean engine — sky, water, seabed, caustics, fish AI and swim camera. Just drop it into a page with <script src="ocean.js"><\/script>.',
+    url:  'ocean.js'
+  },
+  {
+    name: 'index.html',
+    tag:  'HTML',
+    size: '1 KB',
+    desc: 'A minimal host page that loads ocean.js and gives it a canvas + fullscreen layout.',
+    code:
+`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ocean</title>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #020a14; }
+    canvas { display: block; width: 100vw; height: 100vh; }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <script src="ocean.js"><\/script>
+</body>
+</html>`
+  },
+  {
+    name: 'README.md',
+    tag:  'Docs',
+    size: '3 KB',
+    desc: 'Controls, browser support, tuning tips and integration guide.',
+    code:
+`# Abyss Ocean Engine
+
+A single-file WebGL2 ocean with realistic water, underwater fog,
+caustics, procedural fish and a swim camera. No dependencies.
+
+## Usage
+
+\`\`\`html
+<canvas id="c"></canvas>
+<script src="ocean.js"><\/script>\`\`\`
+
+## Controls
+
+| Key | Action |
+|-----|--------|
+| Click canvas | Lock mouse |
+| WASD | Move |
+| Mouse | Look |
+| Space | Fly up |
+| Shift | Fly down |
+
+## Tuning
+
+- Wave height → edit \`steep\` in the Gerstner calls (oceanVS)
+- Water color → \`uDeep\` and \`uShallow\` uniforms
+- Fish count → \`FISH_COUNT\`
+- Underwater fog density → \`0.028\` in the ocean + bed fragment shaders
+
+## Browser support
+
+Any browser with WebGL2: Chrome 56+, Firefox 51+, Safari 15+, Edge 79+.
+
+## License
+
+Yours to use, modify and sell.
+`
+  },
+  {
+    name: 'LICENSE',
+    tag:  'Legal',
+    size: '<1 KB',
+    desc: 'MIT-style license template. Replace "Your Name" before publishing.',
+    code:
+`MIT License
+
+Copyright (c) ${new Date().getFullYear()} Your Name
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
+`
+  },
+];
+
+/* ============================================================
+   BUILD THE DOWNLOAD CARDS
+   ============================================================ */
+const grid = document.getElementById('files-grid');
+const dlIcon = `
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+       stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 3v13m0 0l-5-5m5 5l5-5"/>
+    <path d="M3 20h18"/>
+  </svg>`;
+
+FILES.forEach((f, i) => {
+  const card = document.createElement('div');
+  card.className = 'file-card';
+  const ext = f.name.split('.').pop().toUpperCase().slice(0, 4);
+  card.innerHTML = `
+    <div class="file-head">
+      <div class="file-icon">${ext}</div>
+      <div class="file-info">
+        <div class="file-name">${f.name}</div>
+        <div class="file-meta">
+          <span class="tag">${f.tag}</span>
+          ${f.size ? `<span>${f.size}</span>` : ''}
+        </div>
+      </div>
+    </div>
+    <div class="file-desc">${f.desc}</div>
+    <button class="download-btn" data-idx="${i}">
+      ${dlIcon}
+      Download
+    </button>
+  `;
+  grid.appendChild(card);
+});
+
+/* ============================================================
+   DOWNLOAD HANDLER
+   ============================================================ */
+function triggerDownload(filename, blob) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+grid.addEventListener('click', async (e) => {
+  const btn = e.target.closest('.download-btn');
+  if (!btn) return;
+  const file = FILES[Number(btn.dataset.idx)];
+  if (!file) return;
+
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = 'Preparing…';
+
+  try {
+    let blob;
+    if (file.code !== undefined) {
+      // Inline code → blob
+      blob = new Blob([file.code], { type: 'text/plain;charset=utf-8' });
+    } else if (file.url) {
+      // Fetch the real file from the server
+      const res = await fetch(file.url);
+      if (!res.ok) throw new Error('fetch failed: ' + res.status);
+      const buf = await res.arrayBuffer();
+      blob = new Blob([buf]);
+    } else {
+      throw new Error('No url or code supplied for ' + file.name);
+    }
+
+    triggerDownload(file.name, blob);
+    btn.innerHTML = '✓ Downloaded';
+    setTimeout(() => {
+      btn.innerHTML = orig;
+      btn.disabled = false;
+    }, 1500);
+  } catch (err) {
+    console.error(err);
+    btn.innerHTML = '✗ Failed — check console';
+    setTimeout(() => {
+      btn.innerHTML = orig;
+      btn.disabled = false;
+    }, 2200);
+  }
+});
+
+/* ============================================================
+   YEAR IN FOOTER
+   ============================================================ */
+document.getElementById('year').textContent = new Date().getFullYear();
+
+/* ============================================================
+   LIVE OCEAN HERO BACKGROUND
+   (compact version of the engine — pure WebGL2, no libs)
+   ============================================================ */
+(function heroOcean() {
+  const canvas = document.getElementById('ocean-canvas');
+  const gl = canvas.getContext('webgl2', { antialias: true, alpha: true });
+  if (!gl) return; // graceful fallback: static dark bg
+
+  function compile(type, src) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) { console.error(gl.getShaderInfoLog(s), src); return null; }
+    return s;
+  }
+  function link(vs, fs) {
+    const p = gl.createProgram();
+    const v = compile(gl.VERTEX_SHADER, vs), f = compile(gl.FRAGMENT_SHADER, fs);
+    if (!v || !f) return null;
+    gl.attachShader(p, v); gl.attachShader(p, f);
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { console.error(gl.getProgramInfoLog(p)); return null; }
+    const u = {};
+    const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+    for (let i = 0; i < n; i++) {
+      const info = gl.getActiveUniform(p, i);
+      u[info.name] = gl.getUniformLocation(p, info.name);
+    }
+    return { p, u };
+  }
+
+  const vs = `#version 300 es
+    layout(location=0) in vec3 aPos;
+    uniform mat4 uVP;
+    uniform vec2 uOffset;
+    uniform float uTime;
+    uniform vec3 uCamPos;
+    out vec3 vWorldPos, vNormal, vViewDir;
+    out float vHeight, vSteep;
+    vec3 gerstner(vec2 p, vec2 dir, float steep, float wl, float speed, float t, out vec3 T, out vec3 B){
+      float k=6.2831853/wl, c=sqrt(9.81/k);
+      vec2 d=normalize(dir);
+      float f=k*(dot(d,p)-c*speed*t);
+      float a=steep/k; float s=sin(f), co=cos(f);
+      T=vec3(1.0-d.x*d.x*steep*s, d.x*steep*co, -d.x*d.y*steep*s);
+      B=vec3(-d.x*d.y*steep*s, d.y*steep*co, 1.0-d.y*d.y*steep*s);
+      return vec3(d.x*a*co, a*s, d.y*a*co);
+    }
+    void main(){
+      vec2 wp = aPos.xz + uOffset;
+      vec3 t1,b1,t2,b2,t3,b3,t4,b4,t5,b5,t6,b6;
+      vec3 d1=gerstner(wp,vec2( 1.00, 0.22),0.30,61.3,1.00,uTime,t1,b1);
+      vec3 d2=gerstner(wp,vec2(-0.63, 0.78),0.24,37.7,1.09,uTime,t2,b2);
+      vec3 d3=gerstner(wp,vec2( 0.35,-0.94),0.20,21.9,1.21,uTime,t3,b3);
+      vec3 d4=gerstner(wp,vec2(-0.86,-0.36),0.16,12.7,1.35,uTime,t4,b4);
+      vec3 d5=gerstner(wp,vec2( 0.55, 0.83),0.10, 7.3,1.55,uTime,t5,b5);
+      vec3 d6=gerstner(wp,vec2(-0.27, 0.96),0.07, 4.3,1.75,uTime,t6,b6);
+      vec3 disp = d1+d2+d3+d4+d5+d6;
+      vec3 P = vec3(wp.x, 0.0, wp.y) + disp;
+      vec3 ts = t1+t2+t3+t4+t5+t6;
+      vec3 bs = b1+b2+b3+b4+b5+b6;
+      vec3 N = normalize(cross(ts, bs));
+      vWorldPos = P; vNormal = N; vViewDir = normalize(uCamPos - P);
+      vHeight = disp.y;
+      vSteep = clamp(length(vec2(disp.x, disp.z))*0.30, 0.0, 1.0);
+      gl_Position = uVP * vec4(P, 1.0);
+    }`;
+
+  const fs = `#version 300 es
+    precision highp float;
+    in vec3 vWorldPos, vNormal, vViewDir;
+    in float vHeight, vSteep;
+    out vec4 outColor;
+    uniform float uTime;
+    uniform vec3 uSunDir, uSunColor, uCamPos;
+    uniform vec3 uDeep, uShallow, uFoam;
+    #define PI 3.14159265
+    float hash21(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+45.32);return fract(p.x*p.y);}
+    float vn(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);
+      return mix(mix(hash21(i),hash21(i+vec2(1,0)),f.x),
+                 mix(hash21(i+vec2(0,1)),hash21(i+vec2(1,1)),f.x),f.y);}
+    float fbm2(vec2 p){return 0.55*vn(p)+0.30*vn(p*2.07+vec2(5.2,1.3))+0.15*vn(p*4.13+vec2(1.7,9.1));}
+    float fbm3(vec2 p){return 0.5*vn(p)+0.25*vn(p*2.11+vec2(3.1,7.7))+0.15*vn(p*4.23+vec2(8.3,1.9))+0.10*vn(p*8.37+vec2(2.7,4.4));}
+    float D_GGX(float NoH, float a){float a2=a*a;float d=NoH*NoH*(a2-1.0)+1.0;return a2/(PI*d*d);}
+    float G_Smith(float NoV,float NoL,float a){float r=a+1.0;float k=(r*r)/8.0;
+      return (NoV/(NoV*(1.0-k)+k))*(NoL/(NoL*(1.0-k)+k));}
+    vec3 F_Schlick(float c, vec3 F0){return F0+(1.0-F0)*pow(1.0-c,5.0);}
+    vec3 skySample(vec3 d){
+      float y=d.y;
+      vec3 zen=vec3(0.11,0.29,0.63), hor=vec3(0.74,0.83,0.92), bel=vec3(0.02,0.05,0.10);
+      vec3 s = y>=0.0 ? mix(hor,zen,pow(y,0.55)) : mix(hor,bel,pow(-y,0.6));
+      float sd=max(dot(d,uSunDir),0.0);
+      s += uSunColor*pow(sd,2000.0)*12.0;
+      s += uSunColor*pow(sd,24.0)*0.28;
+      s += uSunColor*pow(sd,6.0)*0.10;
+      return s;
+    }
+    void main(){
+      vec3 N=normalize(vNormal), V=normalize(vViewDir), L=normalize(uSunDir);
+      vec2 wp = vWorldPos.xz;
+      float t=uTime, e=0.35;
+      float hL=fbm3((wp+vec2(-e,0.0))*0.9+vec2(t*0.35,0.0));
+      float hR=fbm3((wp+vec2( e,0.0))*0.9+vec2(t*0.35,0.0));
+      float hD=fbm3((wp+vec2(0.0,-e))*0.9+vec2(0.0,t*0.30));
+      float hU=fbm3((wp+vec2(0.0, e))*0.9+vec2(0.0,t*0.30));
+      vec3 dN = normalize(vec3(-(hR-hL),1.0,-(hU-hD)));
+      N = normalize(N + vec3(dN.x,0.0,dN.z)*0.85);
+      float NoV=max(dot(N,V),1e-3), NoL=max(dot(N,L),0.0);
+      vec3 H=normalize(L+V);
+      float NoH=max(dot(N,H),0.0), VoH=max(dot(V,H),0.0);
+      vec3 R=reflect(-V,N); R.y=abs(R.y)*0.985+0.015;
+      vec3 refl = skySample(R);
+      vec3 F0=vec3(0.020), F=F_Schlick(VoH,F0);
+      float fres = 0.02 + 0.98*pow(1.0-NoV,5.0);
+      float D=D_GGX(NoH,0.045), G=G_Smith(NoV,NoL,0.045);
+      vec3 spec = (D*G*F)/max(4.0*NoV*NoL,1e-3)*uSunColor*4.5;
+      float depth = clamp(0.35+vHeight*0.16,0.0,1.0);
+      vec3 body = mix(uShallow, uDeep, depth);
+      float sss = pow(max(dot(-V,L),0.0),4.0)*smoothstep(0.10,0.90,vHeight);
+      vec3 sssCol = vec3(0.06,0.55,0.48)*sss*1.25;
+      vec3 color = mix(body, refl, fres) + spec + sssCol;
+      float nA = fbm2(wp*1.10+vec2(t*0.25,-t*0.20));
+      float nB = fbm2(wp*3.20-vec2(t*0.40, t*0.30));
+      float foamMask = nA*0.62+nB*0.38;
+      float crest = smoothstep(0.30,0.85,vSteep);
+      float foam = crest*smoothstep(0.52,0.90,foamMask+crest*0.35);
+      foam = clamp(foam*1.7,0.0,1.0);
+      color = mix(color, uFoam, foam);
+      float dist = length(vWorldPos - uCamPos);
+      vec3 haze = mix(vec3(0.74,0.83,0.92), vec3(0.55,0.70,0.85), 0.5);
+      color = mix(color, haze, smoothstep(250.0,1000.0,dist)*0.85);
+      outColor = vec4(color, 1.0);
+    }`;
+
+  const prog = link(vs, fs);
+  if (!prog) return;
+
+  // Low-poly ocean grid
+  const SIZE = 800, SEGS = 160;
+  const verts = new Float32Array((SEGS+1)*(SEGS+1)*3);
+  let k = 0;
+  for (let j = 0; j <= SEGS; j++) for (let i = 0; i <= SEGS; i++) {
+    verts[k++] = -SIZE/2 + (i/SEGS)*SIZE;
+    verts[k++] = 0;
+    verts[k++] = -SIZE/2 + (j/SEGS)*SIZE;
+  }
+  const idx = new Uint32Array(SEGS*SEGS*6);
+  let m = 0;
+  for (let j = 0; j < SEGS; j++) for (let i = 0; i < SEGS; i++) {
+    const a = j*(SEGS+1)+i, b = a+1, c = a+SEGS+1, d = c+1;
+    idx[m++]=a; idx[m++]=c; idx[m++]=b;
+    idx[m++]=b; idx[m++]=c; idx[m++]=d;
+  }
+
+  const vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+  {
+    const b = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, b);
+    gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+    const eb = gl.createBuffer();
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, eb);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idx, gl.STATIC_DRAW);
+  }
+
+  // Matrices
+  function perspective(o, fovy, asp, n, f) {
+    const t = 1/Math.tan(fovy/2);
+    o[0]=t/asp;o[1]=0;o[2]=0;o[3]=0;
+    o[4]=0;o[5]=t;o[6]=0;o[7]=0;
+    o[8]=0;o[9]=0;o[10]=(f+n)/(n-f);o[11]=-1;
+    o[12]=0;o[13]=0;o[14]=2*f*n/(n-f);o[15]=0;
+  }
+  function lookAt(o, ex,ey,ez, cx,cy,cz, ux,uy,uz) {
+    let zx=ex-cx, zy=ey-cy, zz=ez-cz;
+    let l=Math.hypot(zx,zy,zz); zx/=l;zy/=l;zz/=l;
+    let xx=uy*zz-uz*zy, xy=uz*zx-ux*zz, xz=ux*zy-uy*zx;
+    l=Math.hypot(xx,xy,xz); xx/=l;xy/=l;xz/=l;
+    let yx=zy*xz-zz*xy, yy=zz*xx-zx*xz, yz=zx*xy-zy*xx;
+    o[0]=xx;o[1]=yx;o[2]=zx;o[3]=0;
+    o[4]=xy;o[5]=yy;o[6]=zy;o[7]=0;
+    o[8]=xz;o[9]=yz;o[10]=zz;o[11]=0;
+    o[12]=-(xx*ex+xy*ey+xz*ez);
+    o[13]=-(yx*ex+yy*ey+yz*ez);
+    o[14]=-(zx*ex+zy*ey+zz*ez);
+    o[15]=1;
+  }
+  function mul(o,a,b){for(let i=0;i<4;i++){const a0=a[i],a1=a[i+4],a2=a[i+8],a3=a[i+12];
+    o[i]=a0*b[0]+a1*b[1]+a2*b[2]+a3*b[3];
+    o[i+4]=a0*b[4]+a1*b[5]+a2*b[6]+a3*b[7];
+    o[i+8]=a0*b[8]+a1*b[9]+a2*b[10]+a3*b[11];
+    o[i+12]=a0*b[12]+a1*b[13]+a2*b[14]+a3*b[15];}return o;}
+
+  const proj = new Float32Array(16), view = new Float32Array(16), vp = new Float32Array(16);
+  const sunDir = [0.55, 0.35, 0.35];
+  {const l=Math.hypot(...sunDir); sunDir[0]/=l;sunDir[1]/=l;sunDir[2]/=l;}
+  const sunColor = [1.0, 0.94, 0.85];
+
+  let camX = 0, camY = 14, camZ = 34;
+
+  function resize() {
+    const dpr = Math.min(devicePixelRatio, 1.75);
+    const w = Math.floor(canvas.clientWidth  * dpr);
+    const h = Math.floor(canvas.clientHeight * dpr);
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w; canvas.height = h;
+    }
+    gl.viewport(0, 0, w, h);
+  }
+  addEventListener('resize', resize);
+
+  let t0 = performance.now();
+  function render(now) {
+    const time = (now - t0) / 1000;
+    resize();
+
+    // Gentle camera bob so the hero feels alive
+    const bobY = camY + Math.sin(time * 0.35) * 0.6;
+    const bobX = camX + Math.cos(time * 0.22) * 1.5;
+
+    perspective(proj, 55*Math.PI/180, canvas.width/canvas.height, 0.1, 3000);
+    lookAt(view, bobX, bobY, camZ, bobX, 1, camZ - 40, 0, 1, 0);
+    mul(vp, proj, view);
+
+    gl.disable(gl.DEPTH_TEST);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthFunc(gl.LEQUAL);
+
+    gl.useProgram(prog.p);
+    gl.uniformMatrix4fv(prog.u.uVP, false, vp);
+    gl.uniform2f(prog.u.uOffset, 0, 0);
+    gl.uniform1f(prog.u.uTime, time);
+    gl.uniform3f(prog.u.uCamPos, bobX, bobY, camZ);
+    gl.uniform3fv(prog.u.uSunDir, sunDir);
+    gl.uniform3fv(prog.u.uSunColor, sunColor);
+    gl.uniform3f(prog.u.uDeep,    0.012, 0.105, 0.200);
+    gl.uniform3f(prog.u.uShallow, 0.114, 0.490, 0.549);
+    gl.uniform3f(prog.u.uFoam,    0.95, 0.97, 0.98);
+    gl.bindVertexArray(vao);
+    gl.drawElements(gl.TRIANGLES, idx.length, gl.UNSIGNED_INT, 0);
+    gl.bindVertexArray(null);
+
+    requestAnimationFrame(render);
+  }
+  requestAnimationFrame(render);
+})();
+</script>
+</body>
+</html>

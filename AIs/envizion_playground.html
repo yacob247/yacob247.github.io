@@ -1,0 +1,2359 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <link rel="icon" type="image/png" href="https://envizion.work/logo.png">
+    <meta charset="UTF-8">
+  <meta content="noindex, nofollow" name="robots"/>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com https://esm.sh https://raw.githack.com https://www.googletagmanager.com https://www.google-analytics.com https://pagead2.googlesyndication.com https://fundingchoicesmessages.google.com https://script.google.com https://relieved-understanding.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com; font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; img-src 'self' data: blob: https://images.unsplash.com https://repository-images.githubusercontent.com https://raw.githubusercontent.com https://image.pollinations.ai https://image.tmdb.org https://img.youtube.com https://covers.openlibrary.org https://randomuser.me https://placehold.co https://tile.openstreetmap.org https://pagead2.googlesyndication.com https://*.googlesyndication.com https://*.doubleclick.net https://www.gstatic.com https://static.hilltopads.com; media-src 'self' blob: https://audio.pollinations.ai; worker-src 'self' blob:; connect-src 'self' blob: https://api.envizion.work https://train.envizion.work https://multipleimagesbackgroundremover.envizion.work https://api.allorigins.win https://api.dictionaryapi.dev https://api.fda.gov https://api.github.com https://api.lsm.link https://api.nasa.gov https://api.open-meteo.com https://api.themoviedb.org https://audio.pollinations.ai https://image.pollinations.ai https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com https://esm.sh https://raw.githubusercontent.com https://raw.githack.com https://ipapi.co https://itunes.apple.com https://open.er-api.com https://openlibrary.org https://covers.openlibrary.org https://p.oceansaver.in https://pokeapi.co https://restcountries.com https://swapi.dev https://v2.jokeapi.dev https://zenquotes.io https://noembed.com https://newsapi.org https://loader.to https://search.projectsegfau.lt https://searx.be https://static.seeles.ai https://yacob-okour14342-llama-engine.hf.space https://www.themealdb.com https://www.googleapis.com https://upload.googleapis.com https://www.google-analytics.com https://ep1.adtrafficquality.google https://fundingchoicesmessages.google.com https://*.googlesyndication.com https://*.doubleclick.net https://relieved-understanding.com https://subtle-injury.com; frame-src 'self' https://googleads.g.doubleclick.net https://*.googlesyndication.com https://docs.google.com https://www.youtube.com https://sandbox.babylonjs.com https://yacob-okour14342-llama-engine.hf.space https://relieved-understanding.com https://subtle-injury.com; ">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Envizion — Playground</title>
+  <meta name="description" content="Experimental sandbox for testing tools, code snippets, and UI prototypes in your browser."/>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome for robust, crisp icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- JSZip for ZIP download -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0d0d0d;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        /* Infinite dot grid — fixed canvas in screen space, never clips */
+        #grid-canvas {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            pointer-events: none;
+            z-index: 0;
+            background: #0e0e11;
+        }
+
+        #infinite-canvas {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            background: transparent;
+            cursor: grab;
+            transform-origin: 0 0;
+            will-change: transform;
+            z-index: 1;
+        }
+
+        #infinite-canvas:active { cursor: grabbing; }
+
+        /* Layer-order controls shown above selected card */
+        .layer-controls {
+            position: absolute;
+            bottom: calc(100% + 4px); left: 0;
+            display: flex; gap: 2px;
+            pointer-events: auto;
+        }
+        .layer-btn {
+            padding: 2px 6px; font-size: 9px; font-weight: 600;
+            background: #18181b; border: 1px solid #3f3f46;
+            color: #a1a1aa; border-radius: 5px; cursor: pointer;
+            white-space: nowrap; line-height: 1.6;
+        }
+        .layer-btn:hover { background: #27272a; color: #fff; }
+
+        /* Custom Scrollbars */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #27272a;
+            border-radius: 9999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #3f3f46;
+        }
+
+        /* Active highlight for selected tool */
+        .active-tool {
+            background-color: #ffffff !important;
+            color: #000000 !important;
+            box-shadow: 0 4px 14px rgba(255, 255, 255, 0.25);
+        }
+
+        /* Lasso selection box style */
+        #lasso-box {
+            position: absolute;
+            border: 1px dashed #3b82f6;
+            background-color: rgba(59, 130, 246, 0.15);
+            pointer-events: none;
+            display: none;
+            z-index: 99999;
+        }
+
+        /* Blur backdrop styling matching macOS/modern WebUI */
+        .premium-blur {
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+        }
+
+        /* Handle styles for card transformations */
+        .resize-handle {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background-color: #ffffff;
+            border: 1.5px solid #3b82f6;
+            border-radius: 50%;
+            pointer-events: auto;
+        }
+        .rotate-handle {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            background-color: #3b82f6;
+            border: 2px solid #ffffff;
+            border-radius: 50%;
+            top: -24px;
+            left: calc(50% - 6px);
+            cursor: grab;
+        }
+        .rotate-line {
+            position: absolute;
+            width: 2px;
+            height: 14px;
+            background-color: #3b82f6;
+            top: -14px;
+            left: calc(50% - 1px);
+        }
+
+        /* Rotation state styling pointer */
+        .rotating { cursor: grabbing !important; }
+
+        /* Drop zone highlight */
+        body.drag-over::after {
+            content: 'Drop files anywhere';
+            position: fixed; inset: 0;
+            background: rgba(99,102,241,0.08);
+            border: 2px dashed #6366f1;
+            z-index: 9999; pointer-events: none;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 18px; color: #818cf8; font-weight: 600;
+        }
+
+        /* Group card */
+        .group-card-wrapper {
+            border: 2px dashed #6366f1 !important;
+            background: rgba(99,102,241,0.04) !important;
+        }
+
+        /* Fullscreen preview modal */
+        #preview-modal {
+            position: fixed; inset: 0; z-index: 9999;
+            background: rgba(0,0,0,0.92);
+            display: flex; align-items: center; justify-content: center;
+            flex-direction: column; gap: 12px;
+        }
+        #preview-modal.hidden { display: none; }
+        #preview-modal-inner {
+            max-width: 92vw; max-height: 84vh;
+            border-radius: 12px; overflow: hidden;
+            box-shadow: 0 40px 80px rgba(0,0,0,0.7);
+            background: #111;
+        }
+        #preview-modal iframe, #preview-modal img,
+        #preview-modal video, #preview-modal audio {
+            display: block; max-width: 92vw; max-height: 84vh;
+        }
+
+        /* Audio card */
+        .audio-card-inner { padding: 12px; display: flex; flex-direction: column; gap: 8px; height: 100%; }
+        .audio-wave { flex: 1; background: linear-gradient(180deg,#1e293b,#0f172a); border-radius: 8px;
+            display: flex; align-items: center; justify-content: center; gap: 2px; overflow: hidden; padding: 8px; }
+        .audio-wave span { display: inline-block; width: 3px; border-radius: 2px; background: #6366f1;
+            animation: wave 1.2s ease-in-out infinite; }
+        .audio-wave span:nth-child(2n) { animation-delay: 0.2s; }
+        .audio-wave span:nth-child(3n) { animation-delay: 0.4s; }
+        @keyframes wave { 0%,100% { height: 8px; } 50% { height: 28px; } }
+        .audio-wave.paused span { animation-play-state: paused; height: 8px !important; }
+
+        /* File card (OBJ/FBX/HTML/JS etc) */
+        .file-card-inner { display: flex; flex-direction: column; align-items: center; justify-content: center;
+            height: 100%; gap: 8px; padding: 12px; text-align: center; }
+
+        /* Table card */
+        .table-card-inner { overflow: auto; height: 100%; }
+        .table-card-inner table { border-collapse: collapse; width: 100%; font-size: 11px; }
+        .table-card-inner td { border: 1px solid #3f3f46; padding: 4px 8px; color: #e4e4e7;
+            outline: none; min-width: 60px; }
+        .table-card-inner td:focus { background: #27272a; }
+        .table-card-inner .add-row-btn, .table-card-inner .add-col-btn {
+            font-size: 10px; color: #6366f1; cursor: pointer; padding: 2px 6px;
+            background: none; border: none; }
+
+        /* Local workspace library */
+        .workspace-overlay { position: fixed; inset: 0; z-index: 100000; display: flex; justify-content: flex-end; background: rgba(0,0,0,.65); backdrop-filter: blur(5px); }
+        .workspace-overlay.hidden { display: none; }
+        .workspace-panel { width: min(560px, 96vw); height: 100%; overflow-y: auto; background: #101014; border-left: 1px solid #2f2f3b; padding: 22px; user-select: text; box-shadow: -20px 0 60px rgba(0,0,0,.45); }
+        .workspace-panel input, .workspace-panel textarea { user-select: text; }
+        .workspace-page-row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 0; border-bottom:1px solid #292934; }
+        .workspace-page-row a { min-width:0; color:#b7d4ff; text-decoration:none; }
+        .workspace-page-row a:hover { text-decoration:underline; }
+        .workspace-page-row small { display:block; color:#71717a; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:330px; }
+        .workspace-tab-active { color:#fff !important; background:#2563eb !important; }
+    </style>
+  <link href="https://envizion.work/tools2/envizion_playground.html" rel="canonical"/>
+  <meta content="Envizion — Playground" property="og:title"/>
+  <meta content="Experimental sandbox for testing tools, code snippets, and UI prototypes in your browser." property="og:description"/>
+  <meta content="website" property="og:type"/>
+  <meta content="https://envizion.work/logo.png" property="og:image"/>
+
+  <!-- Open Graph -->
+  <meta property="og:type"        content="website">
+  <meta property="og:site_name"   content="Envizion">
+  <meta property="og:title"       content="Envizion — Playground">
+  <meta property="og:description" content="Envizion – Your digital workspace for tools, guides, and resources.">
+  <meta property="og:url"         content="https://envizion.work/tools2/envizion_playground.html">
+  <meta property="og:image"       content="https://envizion.work/logo.png">
+  <!-- Twitter Card -->
+  <meta name="twitter:card"        content="summary_large_image">
+  <meta name="twitter:site"        content="@envizionwork">
+  <meta name="twitter:title"       content="Envizion — Playground">
+  <meta name="twitter:description" content="Envizion – Your digital workspace for tools, guides, and resources.">
+  <meta name="twitter:image"       content="https://envizion.work/logo.png">
+    <meta name="referrer" content="no-referrer-when-downgrade" /></head>
+<body class="text-zinc-200 w-screen h-screen relative select-none">
+<nav class="global-nav" style="background:#f8fafc;border-bottom:1px solid #e2e8f0;padding:8px 0;">
+  <div style="max-width:1200px;margin:0 auto;padding:0 20px;font-size:13px;">
+    <a href="/">Home</a> |
+    <a href="/tools/">All Tools</a> |
+    <a href="/privacy.html">Privacy Policy</a> |
+    <a href="/terms.html">Terms of Service</a> |
+    <a href="/contact.html">Contact Us</a>
+  </div>
+</nav>
+<h1>Envizion Playground - Test & Prototype</h1>
+
+    <!-- Infinite dot grid drawn in screen space — never clips regardless of pan/zoom -->
+    <canvas id="grid-canvas"></canvas>
+
+    <!-- The Infinite Board Container -->
+    <div id="infinite-canvas">
+        <div id="cards-container" class="relative w-full h-full">
+            <!-- Dynamic interactive cards are generated and appended here -->
+        </div>
+    </div>
+
+    <!-- Lasso Selection Drag Box Overlay -->
+    <div id="lasso-box"></div>
+
+    <!-- Top Bar Navigation (Left/Right elements matching image_ab2522.png) -->
+    <div class="absolute top-5 left-5 right-5 flex justify-between items-center pointer-events-none z-50">
+        <!-- Left Title Action Dropdown -->
+        <div class="flex items-center gap-3 bg-zinc-900/80 border border-zinc-800/80 px-4 py-2 rounded-xl premium-blur pointer-events-auto shadow-2xl">
+            <a href="luma_dashboard_clone.html" class="text-zinc-400 hover:text-white transition" title="Back to Home">
+                <i class="fa-solid fa-arrow-left text-sm"></i>
+            </a>
+            <div class="h-4 w-[1px] bg-zinc-800"></div>
+            <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-indigo-500 shadow-[0_0_8px_#6366f1]"></span>
+                <span class="font-bold text-xs tracking-wider text-zinc-100">envizion</span>
+            </div>
+            <div class="h-4 w-[1px] bg-zinc-800"></div>
+            <div class="flex items-center gap-2 cursor-pointer group" onclick="toggleRenameDropdown()">
+                <span id="project-title-display" class="font-semibold text-xs tracking-wider uppercase text-zinc-100">Untitled Project</span>
+                <i class="fa-solid fa-chevron-down text-[10px] text-zinc-500 group-hover:text-zinc-300 transition-colors"></i>
+            </div>
+        </div>
+
+        <!-- Right Side Header Panel -->
+        <div class="flex items-center gap-2 pointer-events-auto">
+            <button onclick="toggleChatPanel()" class="bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-400/30 text-indigo-200 px-4 py-2 rounded-xl text-xs font-medium transition flex items-center gap-2">
+                <i class="fa-solid fa-wand-magic-sparkles text-xs"></i> Ask AI
+            </button>
+            <button class="bg-sky-500/20 hover:bg-sky-500/30 border border-sky-400/30 text-sky-200 px-4 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-2" onclick="toggleWorkspacePanel()" title="Open your local workspace library">
+                <i class="fa-solid fa-folder-open text-xs"></i> My Workspace
+            </button>
+            <button class="bg-white hover:bg-zinc-100 text-black px-4 py-2 rounded-full font-semibold text-xs tracking-wide shadow-md transition flex items-center gap-1.5" onclick="triggerUpgrade()">
+                <i class="fa-solid fa-plus text-[10px]"></i> Upgrade
+            </button>
+            <button class="w-9 h-9 bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white rounded-xl flex items-center justify-center transition" onclick="toggleSettingsModal()">
+                <i class="fa-solid fa-gear text-sm"></i>
+            </button>
+            <button class="bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 hover:text-white px-4 py-2 rounded-xl text-xs font-medium transition flex items-center gap-2" onclick="triggerShare()">
+                <i class="fa-solid fa-share text-xs"></i> Share
+            </button>
+        </div>
+    </div>
+
+    <!-- Bottom Left Zoom Indicators (Matching image_ab2522.png placement) -->
+    <div class="absolute bottom-6 left-6 flex items-center gap-3 bg-zinc-950/90 border border-zinc-800/80 px-4 py-2.5 rounded-2xl premium-blur z-50 text-xs text-zinc-400">
+        <button class="hover:text-white transition p-1" onclick="adjustZoom(-0.1)">
+            <i class="fa-solid fa-minus"></i>
+        </button>
+        <span id="zoom-indicator" class="font-medium text-zinc-200 min-w-[36px] text-center">100%</span>
+        <button class="hover:text-white transition p-1" onclick="adjustZoom(0.1)">
+            <i class="fa-solid fa-plus"></i>
+        </button>
+    </div>
+
+    <!-- Floating Bottom Navigation Toolbar -->
+    <div class="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center bg-zinc-950/90 border border-zinc-800/80 p-2.5 rounded-[22px] premium-blur z-50 shadow-2xl gap-1">
+        <!-- Selection Tool -->
+        <button id="tool-select" class="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all active-tool" title="Select Pointer" onclick="setTool('select')">
+            <i class="fa-solid fa-arrow-pointer text-sm"></i>
+        </button>
+
+        <!-- Media Selector: Image -->
+        <button id="tool-image" class="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all" title="Upload Image" onclick="triggerFileInput('image')">
+            <i class="fa-regular fa-image text-sm"></i>
+        </button>
+
+        <!-- Media Selector: Video -->
+        <button id="tool-video" class="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all" title="Upload Video" onclick="triggerFileInput('video')">
+            <i class="fa-solid fa-circle-play text-sm"></i>
+        </button>
+
+        <!-- Media Selector: Audio -->
+        <button id="tool-audio" class="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all" title="Add Audio Track" onclick="triggerAudioUpload()">
+            <i class="fa-solid fa-wave-square text-sm"></i>
+        </button>
+
+        <!-- Frame / Clip bounds Selection -->
+        <button id="tool-frame" class="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all" title="Clip Region Boundary" onclick="toggleActiveFrameRegion()">
+            <i class="fa-solid fa-crop-simple text-sm"></i>
+        </button>
+
+        <!-- Pencil Free Draw Cutout Tool -->
+        <button id="tool-draw" class="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all" title="Freehand Path Canvas Draw" onclick="setTool('draw')">
+            <i class="fa-solid fa-signature text-sm"></i>
+        </button>
+
+        <!-- Text Addition Tool -->
+        <button id="tool-text" class="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all" title="Add Text Layer" onclick="addTextCard()">
+            <i class="fa-solid fa-t text-sm"></i>
+        </button>
+
+        <!-- Sticky Card Component -->
+        <button id="tool-sticky" class="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all" title="Add Sticky Note Card" onclick="addStickyCard()">
+            <i class="fa-regular fa-sticky-note text-sm"></i>
+        </button>
+
+        <!-- Dynamic Color Picker Palette Trigger -->
+        <div class="relative group">
+            <button id="tool-color" class="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all" title="Set Theme Color">
+                <span class="w-4.5 h-4.5 rounded-full border border-zinc-700 bg-emerald-500" id="color-wheel-preview"></span>
+            </button>
+            <div class="absolute bottom-14 left-1/2 -translate-x-1/2 hidden group-hover:flex bg-zinc-900 border border-zinc-800 p-2 rounded-xl flex-row gap-2 shadow-xl">
+                <button class="w-5 h-5 rounded-full bg-emerald-500 border border-white/20" onclick="setSelectedColor('#10b981')"></button>
+                <button class="w-5 h-5 rounded-full bg-amber-500 border border-white/20" onclick="setSelectedColor('#f59e0b')"></button>
+                <button class="w-5 h-5 rounded-full bg-rose-500 border border-white/20" onclick="setSelectedColor('#f43f5e')"></button>
+                <button class="w-5 h-5 rounded-full bg-sky-500 border border-white/20" onclick="setSelectedColor('#0ea5e9')"></button>
+                <button class="w-5 h-5 rounded-full bg-indigo-500 border border-white/20" onclick="setSelectedColor('#6366f1')"></button>
+            </div>
+        </div>
+
+        <!-- Plus Overlay Module -->
+        <button class="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all" title="Add Table" onclick="addTableCard()">
+            <i class="fa-solid fa-table text-sm"></i>
+        </button>
+        <button class="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all" title="Add Elements / Extension Templates" onclick="triggerShowExtensions()">
+            <i class="fa-solid fa-circle-plus text-sm"></i>
+        </button>
+        <div class="w-[1px] h-6 bg-zinc-800 mx-1"></div>
+        <button class="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all" title="Download selected as ZIP" onclick="downloadSelectedAsZip()">
+            <i class="fa-solid fa-file-zipper text-sm"></i>
+        </button>
+        <button class="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all" title="Group selected" onclick="groupSelected()">
+            <i class="fa-solid fa-object-group text-sm"></i>
+        </button>
+        <button class="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all" title="Fullscreen" onclick="toggleFullscreen()">
+            <i class="fa-solid fa-expand text-sm"></i>
+        </button>
+    </div>
+
+    <!-- Hidden native file input triggers -->
+    <input type="file" id="image-file-input" accept="image/*" multiple class="hidden" onchange="handleFilesSelected(this, 'image')">
+    <input type="file" id="video-file-input" accept="video/*" multiple class="hidden" onchange="handleFilesSelected(this, 'video')">
+    <input type="file" id="audio-file-input" accept="audio/*" multiple class="hidden" onchange="handleFilesSelected(this, 'audio')">
+    <input type="file" id="any-file-input" accept="*/*" multiple class="hidden" onchange="handleFilesSelected(this, 'any')">
+
+    <!-- Bottom Right Supplementary Controls -->
+    <div class="absolute bottom-6 right-6 flex items-center gap-2.5 z-50">
+        <button class="w-10 h-10 bg-zinc-950/90 hover:bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white rounded-2xl flex items-center justify-center transition premium-blur shadow-xl" onclick="document.getElementById('any-file-input').click()" title="Upload any file (HTML, JS, OBJ, FBX, MP3...)">
+            <i class="fa-solid fa-upload text-sm"></i>
+        </button>
+        <button class="w-10 h-10 bg-zinc-950/90 hover:bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white rounded-2xl flex items-center justify-center transition premium-blur shadow-xl" onclick="toggleChatPanel()" title="Open Creative AI Assistant">
+            <i class="fa-regular fa-comment text-sm"></i>
+        </button>
+        <button class="w-10 h-10 bg-zinc-950/90 hover:bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white rounded-2xl flex items-center justify-center transition premium-blur shadow-xl" onclick="triggerSearchBoard()" title="Search Elements">
+            <i class="fa-solid fa-magnifying-glass text-xs"></i>
+        </button>
+    </div>
+
+    <!-- Right Panel Interactive AI Assistant (Fidelity matching image_ab2522.png) -->
+    <div id="ai-chat-panel" class="absolute bottom-20 right-6 w-96 max-w-[calc(100vw-48px)] h-[480px] bg-zinc-950/95 border border-zinc-800/80 rounded-2xl premium-blur shadow-2xl z-50 flex flex-col transition-all duration-300 transform scale-100 opacity-100">
+        <!-- Panel Header -->
+        <div class="flex items-center justify-between px-4 py-3.5 border-b border-zinc-800/80">
+            <div class="flex items-center gap-2">
+                <div class="w-2.5 h-2.5 rounded-full bg-sky-500 animate-pulse"></div>
+                <span class="font-semibold text-xs text-zinc-100 tracking-wider">CREATIVE ENVIZION AI</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <button class="text-zinc-500 hover:text-zinc-300 p-1" onclick="minimizeChatPanel()">
+                    <i class="fa-solid fa-minus text-xs"></i>
+                </button>
+                <button class="text-zinc-500 hover:text-zinc-300 p-1" onclick="toggleChatPanel()">
+                    <i class="fa-solid fa-xmark text-xs"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Chat Logs Container -->
+        <div id="chat-logs" class="flex-1 overflow-y-auto p-4 space-y-4 text-xs scroll-smooth">
+            <div class="flex gap-2">
+                <div class="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center flex-shrink-0 text-[10px] text-zinc-400">
+                    <i class="fa-solid fa-robot"></i>
+                </div>
+                <div class="bg-zinc-900/80 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-zinc-300 max-w-[85%] leading-relaxed shadow-sm">
+                    Hi! Drag or paste images/videos onto the playground board to organize your space. Or type below & I'll automatically add styled items for you! Try typing: <span class="text-sky-400 italic font-mono">"create red sticky note"</span>.
+                </div>
+            </div>
+        </div>
+
+        <!-- Chat Input Form Controls -->
+        <div class="p-3 border-t border-zinc-800/80 bg-zinc-950/80">
+            <form onsubmit="handleSendAssistantMsg(event)" class="relative">
+                <input type="text" id="assistant-input" placeholder="What do you want to do?" autocomplete="off" class="w-full bg-zinc-900/90 border border-zinc-800 rounded-xl pl-4 pr-24 py-3 text-xs text-zinc-100 placeholder-zinc-500 outline-none focus:border-zinc-700 focus:ring-1 focus:ring-zinc-700 transition">
+                <div class="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                    <button type="button" class="w-8 h-8 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 flex items-center justify-center transition" title="Voice Assist" onclick="triggerVoiceInput()">
+                        <i class="fa-solid fa-microphone text-xs"></i>
+                    </button>
+                    <button type="submit" class="w-8 h-8 rounded-lg bg-sky-500 hover:bg-sky-400 text-white flex items-center justify-center transition shadow-lg shadow-sky-500/10">
+                        <i class="fa-solid fa-arrow-up text-xs"></i>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Batch Action/Selected Multi-Layer Send HUD Overlay -->
+    <div id="batch-export-panel" class="absolute top-24 left-1/2 -translate-x-1/2 bg-zinc-900/95 border border-sky-500/30 text-zinc-200 px-6 py-3.5 rounded-2xl flex items-center gap-4 shadow-2xl premium-blur z-50 transform translate-y-[-100px] opacity-0 transition-all pointer-events-none duration-300 border border-zinc-800">
+        <div class="flex items-center gap-2">
+            <div class="w-5 h-5 rounded-full bg-sky-500/20 flex items-center justify-center text-[10px] text-sky-400 font-bold" id="selected-items-badge">0</div>
+            <span class="text-xs font-semibold text-zinc-300">Elements Selected</span>
+        </div>
+        <div class="h-4 w-[1px] bg-zinc-800"></div>
+        <div class="flex items-center gap-1.5">
+            <button class="bg-sky-500 hover:bg-sky-400 text-black px-4 py-2 rounded-xl text-xs font-bold transition shadow-lg shadow-sky-500/10 flex items-center gap-1.5" onclick="applySelectionWithAI()">
+                Apply with AI <i class="fa-solid fa-wand-magic-sparkles text-[10px]"></i>
+            </button>
+            <button class="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white px-3 py-2 rounded-xl text-xs transition" onclick="batchClearSelection()">
+                Deselect
+            </button>
+        </div>
+    </div>
+
+    <!-- Toast Notifications Window overlay -->
+    <div id="toast-wrapper" class="absolute top-6 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 z-50 pointer-events-none"></div>
+
+    <!-- Settings dialog Modal -->
+    <div id="settings-modal" class="hidden absolute inset-0 bg-black/60 z-50 backdrop-blur-sm flex items-center justify-center">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-2xl w-96 p-6 shadow-2xl relative">
+            <h3 class="font-bold text-sm tracking-wide text-zinc-200 uppercase mb-4">Board settings</h3>
+            <button class="absolute top-4 right-4 text-zinc-400 hover:text-white" onclick="toggleSettingsModal()">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+            <div class="space-y-4 text-xs">
+                <div class="flex justify-between items-center">
+                    <span>Show Grid Alignment</span>
+                    <input type="checkbox" id="settings-grid" checked class="accent-sky-500 h-4 w-4 rounded" onchange="toggleGridPattern(this.checked)">
+                </div>
+                <div class="flex justify-between items-center">
+                    <span>Smooth Pan & Zoom</span>
+                    <input type="checkbox" id="settings-smooth" checked class="accent-sky-500 h-4 w-4 rounded">
+                </div>
+                <div class="flex justify-between items-center">
+                    <span>Automatic Project Backups</span>
+                    <input type="checkbox" id="settings-backup" checked class="accent-sky-500 h-4 w-4">
+                </div>
+            </div>
+            <button class="mt-6 w-full bg-zinc-800 hover:bg-zinc-700 text-white font-medium py-2.5 rounded-xl text-xs transition" onclick="toggleSettingsModal()">Apply Changes</button>
+        </div>
+    </div>
+
+    <!-- User-owned local workspace library. URLs and names stay in this browser's local storage. -->
+    <div id="workspace-panel" class="workspace-overlay hidden" onclick="if(event.target === this) toggleWorkspacePanel()">
+        <section class="workspace-panel" aria-labelledby="workspace-panel-title">
+            <div class="flex items-start justify-between gap-4 mb-5">
+                <div>
+                    <h2 id="workspace-panel-title" class="text-lg font-bold text-white">My Local Workspace</h2>
+                    <p class="text-xs text-zinc-400 mt-1 leading-relaxed">Saved page names, URLs, and your Envizion directory stay on this device. Opening a saved web page still requires internet access unless the page is available offline.</p>
+                </div>
+                <button class="text-zinc-400 hover:text-white text-xl" onclick="toggleWorkspacePanel()" aria-label="Close workspace">&times;</button>
+            </div>
+
+            <form id="workspace-page-form" class="space-y-2 mb-3" onsubmit="saveWorkspacePage(event)">
+                <input id="workspace-page-name" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-sky-500" placeholder="Page name (for example: My research notes)" autocomplete="off">
+                <div class="flex gap-2">
+                    <input id="workspace-page-url" class="min-w-0 flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-sky-500" placeholder="https://example.com/page" type="text" required>
+                    <button class="bg-sky-500 hover:bg-sky-400 text-white rounded-lg px-3 py-2 text-xs font-bold" type="submit">Save page</button>
+                </div>
+            </form>
+            <div class="flex flex-wrap gap-2 mb-5">
+                <button class="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg px-3 py-2 text-xs" onclick="captureCurrentWorkspacePage()" type="button">Capture this page</button>
+                <button class="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg px-3 py-2 text-xs" onclick="exportWorkspacePages()" type="button">Export list</button>
+                <button class="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg px-3 py-2 text-xs" onclick="document.getElementById('workspace-import-input').click()" type="button">Import list</button>
+                <input id="workspace-import-input" type="file" accept="application/json" class="hidden" onchange="importWorkspacePages(this)">
+            </div>
+
+            <label for="workspace-bulk-urls" class="block text-xs font-semibold text-zinc-300 mb-1">Add several URLs at once</label>
+            <textarea id="workspace-bulk-urls" rows="3" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-sky-500 mb-2" placeholder="Paste one URL per line. Names default to the page host until you rename them."></textarea>
+            <button class="bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg px-3 py-2 text-xs font-bold mb-5" onclick="addWorkspaceBulkUrls()" type="button">Add URLs</button>
+
+            <div class="flex gap-2 border-b border-zinc-800 pb-3 mb-3" role="tablist" aria-label="Workspace sections">
+                <button id="workspace-tab-saved" class="workspace-tab-active rounded-lg px-3 py-2 text-xs font-bold" onclick="setWorkspaceTab('saved')" type="button">Saved pages</button>
+                <button id="workspace-tab-directory" class="bg-zinc-900 text-zinc-400 rounded-lg px-3 py-2 text-xs font-bold" onclick="setWorkspaceTab('directory')" type="button">Envizion directory</button>
+            </div>
+            <div id="workspace-saved-view">
+                <div class="flex items-center justify-between mb-2"><h3 class="text-sm font-semibold text-zinc-200">Your pages</h3><span id="workspace-page-count" class="text-[11px] text-zinc-500">0 saved</span></div>
+                <div id="workspace-saved-pages" class="text-xs text-zinc-400">No pages saved yet.</div>
+            </div>
+            <div id="workspace-directory-view" class="hidden">
+                <input id="workspace-directory-search" class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-sky-500 mb-3" placeholder="Search all Envizion pages" oninput="filterWorkspaceDirectory(this.value)">
+                <div id="workspace-directory-status" class="text-xs text-zinc-500 mb-2">Open this tab to load the directory.</div>
+                <div id="workspace-directory-pages" class="text-xs text-zinc-400"></div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Fullscreen Preview Modal -->
+    <div id="preview-modal" class="hidden">
+        <div id="preview-modal-inner"></div>
+        <div class="flex items-center gap-3 mt-2">
+            <button onclick="closePreview()" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white text-xs rounded-lg border border-zinc-700">✕ Close</button>
+            <button id="preview-fs-btn" onclick="goNativeFullscreen()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs rounded-lg">â›¶ Native Fullscreen</button>
+        </div>
+    </div>
+
+    <script>
+        /* Immersive interactive Canvas Data Variables */
+        let panX = window.innerWidth / 2 - 150;
+        let panY = window.innerHeight / 2 - 150;
+        let zoom = 1.0;
+        const minZoom = 0.1;
+        const maxZoom = 4.0;
+        let activeTool = 'select'; // select, draw
+        let isPanning = false;
+        let startPanX = 0, startPanY = 0;
+        let startMouseX = 0, startMouseY = 0;
+
+        /* Selection & Transform trackers */
+        let cards = [];
+        let selectedCards = [];
+        let isLassoing = false;
+        let lassoStartX = 0, lassoStartY = 0;
+        let activeColor = '#10b981';
+
+        /* Drag/Resize element state variables */
+        let draggedCard = null;
+        let transformAction = null; // 'drag', 'resize-se', 'resize-sw', 'resize-ne', 'resize-nw', 'rotate'
+        let transformCard = null;
+        let dragOffsetX = 0, dragOffsetY = 0;
+        let initialTransform = {};
+
+        const canvas = document.getElementById('infinite-canvas');
+        const cardsContainer = document.getElementById('cards-container');
+        const zoomIndicator = document.getElementById('zoom-indicator');
+        const lassoBox = document.getElementById('lasso-box');
+        const batchExportPanel = document.getElementById('batch-export-panel');
+        const selectedBadge = document.getElementById('selected-items-badge');
+
+        // Set up IndexedDB — stores blobs so editor can actually receive them
+        let db;
+        const request = indexedDB.open("envizion_studio_db", 3);
+        request.onupgradeneeded = function(e) {
+            db = e.target.result;
+            if(!db.objectStoreNames.contains("handoffs")) db.createObjectStore("handoffs", { keyPath: "id" });
+            if(!db.objectStoreNames.contains("assets"))   db.createObjectStore("assets",   { keyPath: "id" });
+            if(!db.objectStoreNames.contains("boardItems")) db.createObjectStore("boardItems", { keyPath: "id" });
+        };
+        request.onsuccess = function(e) { db = e.target.result; };
+        request.onerror   = function(e) { console.warn("IDB error", e); };
+
+        // blob cache: cardId -> { blob, objectUrl, fileName, mimeType }
+        const blobCache = {};
+
+        /* ── User-owned local workspace library ──────────────────────────────
+           This library intentionally uses localStorage only for page metadata.
+           Nothing is uploaded to Envizion, and the saved links remain on the
+           visitor's device. Web pages themselves still need network access. */
+        const WORKSPACE_PAGES_KEY = 'envizion_local_workspace_pages_v1';
+        const WORKSPACE_PROJECT_NAME_KEY = 'envizion_local_workspace_project_name_v1';
+        let workspacePages = readWorkspacePages();
+        let workspaceDirectory = [];
+        let workspaceDirectoryLoaded = false;
+
+        function readWorkspacePages() {
+            try {
+                const saved = JSON.parse(localStorage.getItem(WORKSPACE_PAGES_KEY) || '[]');
+                return Array.isArray(saved) ? saved.filter(p => p && p.url && p.name) : [];
+            } catch (e) {
+                return [];
+            }
+        }
+
+        function persistWorkspacePages() {
+            try {
+                localStorage.setItem(WORKSPACE_PAGES_KEY, JSON.stringify(workspacePages));
+                return true;
+            } catch (e) {
+                showNotification('This browser blocked local storage. Your list was not saved.');
+                return false;
+            }
+        }
+
+        function escapeWorkspaceText(value) {
+            return String(value || '').replace(/[&<>'"]/g, function(ch) {
+                return ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'})[ch];
+            });
+        }
+
+        function normalizeWorkspaceUrl(raw) {
+            let value = String(raw || '').trim();
+            if (/^[\w.-]+\.[A-Za-z]{2,}(\/|$)/.test(value)) value = 'https://' + value;
+            const url = new URL(value, window.location.href);
+            if (!['http:', 'https:', 'file:'].includes(url.protocol)) throw new Error('Only web or local file URLs can be saved.');
+            return url.href;
+        }
+
+        function addWorkspacePage(name, rawUrl) {
+            const url = normalizeWorkspaceUrl(rawUrl);
+            const cleanName = String(name || '').trim() || new URL(url).hostname || new URL(url).pathname;
+            const existing = workspacePages.find(p => p.url === url);
+            if (existing) {
+                existing.name = cleanName;
+                existing.updatedAt = new Date().toISOString();
+            } else {
+                workspacePages.unshift({ id: 'page-' + Date.now() + '-' + Math.floor(Math.random() * 10000), name: cleanName, url, createdAt: new Date().toISOString(), lastOpened: null });
+            }
+            persistWorkspacePages();
+            renderWorkspacePages();
+        }
+
+        window.saveWorkspacePage = function(event) {
+            event.preventDefault();
+            const name = document.getElementById('workspace-page-name').value;
+            const url = document.getElementById('workspace-page-url').value;
+            try {
+                addWorkspacePage(name, url);
+                document.getElementById('workspace-page-name').value = '';
+                document.getElementById('workspace-page-url').value = '';
+                showNotification('Page saved to your local workspace.');
+            } catch (e) {
+                showNotification(e.message || 'Could not save that URL.');
+            }
+        };
+
+        window.captureCurrentWorkspacePage = function() {
+            try {
+                addWorkspacePage(document.title || 'Current Envizion page', window.location.href);
+                showNotification('Current page captured with its title.');
+            } catch (e) {
+                showNotification('Could not capture this page.');
+            }
+        };
+
+        window.addWorkspaceBulkUrls = function() {
+            const input = document.getElementById('workspace-bulk-urls');
+            const urls = input.value.split(/\r?\n/).map(v => v.trim()).filter(Boolean);
+            if (!urls.length) { showNotification('Paste one or more URLs first.'); return; }
+            let added = 0;
+            urls.forEach(url => {
+                try { addWorkspacePage('', url); added++; } catch (e) { /* skip invalid lines */ }
+            });
+            input.value = '';
+            showNotification(`Added ${added} URL${added === 1 ? '' : 's'} to your workspace.`);
+        };
+
+        window.toggleWorkspacePanel = function() {
+            const panel = document.getElementById('workspace-panel');
+            panel.classList.toggle('hidden');
+            if (!panel.classList.contains('hidden')) renderWorkspacePages();
+        };
+
+        window.deleteWorkspacePage = function(id) {
+            workspacePages = workspacePages.filter(p => p.id !== id);
+            persistWorkspacePages();
+            renderWorkspacePages();
+        };
+
+        window.renameWorkspacePage = function(id) {
+            const page = workspacePages.find(p => p.id === id);
+            if (!page) return;
+            const nextName = prompt('Rename saved page:', page.name);
+            if (nextName && nextName.trim()) {
+                page.name = nextName.trim();
+                persistWorkspacePages();
+                renderWorkspacePages();
+            }
+        };
+
+        window.openWorkspacePage = function(id) {
+            const page = workspacePages.find(p => p.id === id);
+            if (!page) return;
+            page.lastOpened = new Date().toISOString();
+            persistWorkspacePages();
+            window.open(page.url, '_blank', 'noopener');
+        };
+
+        function renderWorkspacePages() {
+            const list = document.getElementById('workspace-saved-pages');
+            const count = document.getElementById('workspace-page-count');
+            if (!list || !count) return;
+            count.textContent = `${workspacePages.length} saved`;
+            list.innerHTML = '';
+            if (!workspacePages.length) {
+                list.textContent = 'No pages saved yet. Add a URL or capture the current page.';
+                return;
+            }
+            workspacePages.forEach(page => {
+                const row = document.createElement('div');
+                row.className = 'workspace-page-row';
+                const info = document.createElement('a');
+                info.href = page.url;
+                info.target = '_blank';
+                info.rel = 'noopener';
+                info.innerHTML = `<strong>${escapeWorkspaceText(page.name)}</strong><small>${escapeWorkspaceText(page.url)}</small>`;
+                const actions = document.createElement('div');
+                actions.className = 'flex gap-1 shrink-0';
+                const rename = document.createElement('button');
+                rename.className = 'bg-zinc-800 hover:bg-zinc-700 rounded px-2 py-1 text-[10px] text-zinc-300';
+                rename.textContent = 'Rename';
+                rename.onclick = () => renameWorkspacePage(page.id);
+                const remove = document.createElement('button');
+                remove.className = 'bg-rose-950/60 hover:bg-rose-900 rounded px-2 py-1 text-[10px] text-rose-200';
+                remove.textContent = 'Remove';
+                remove.onclick = () => deleteWorkspacePage(page.id);
+                actions.append(rename, remove);
+                row.append(info, actions);
+                list.appendChild(row);
+            });
+        }
+
+        window.setWorkspaceTab = function(tab) {
+            const saved = tab === 'saved';
+            document.getElementById('workspace-saved-view').classList.toggle('hidden', !saved);
+            document.getElementById('workspace-directory-view').classList.toggle('hidden', saved);
+            document.getElementById('workspace-tab-saved').classList.toggle('workspace-tab-active', saved);
+            document.getElementById('workspace-tab-directory').classList.toggle('workspace-tab-active', !saved);
+            if (!saved && !workspaceDirectoryLoaded) loadWorkspaceDirectory();
+        };
+
+        function loadWorkspaceDirectory() {
+            const status = document.getElementById('workspace-directory-status');
+            status.textContent = 'Loading Envizion pages...';
+            fetch('/workspace-pages.json').then(r => r.json()).then(items => {
+                workspaceDirectory = Array.isArray(items) ? items : [];
+                workspaceDirectoryLoaded = true;
+                renderWorkspaceDirectory('');
+            }).catch(() => {
+                fetch('/search-index.json').then(r => r.json()).then(items => {
+                    workspaceDirectory = Array.isArray(items) ? items : [];
+                    workspaceDirectoryLoaded = true;
+                    status.textContent = 'Showing the searchable directory. The complete page manifest is unavailable offline.';
+                    renderWorkspaceDirectory('');
+                }).catch(() => {
+                    workspaceDirectory = [
+                        { title: 'Envizion Home', url: '/' },
+                        { title: 'Reviews & Blog', url: '/reviews-blog/' },
+                        { title: 'All Tools', url: '/tools/' },
+                        { title: 'Tools2', url: '/tools2/' },
+                        { title: 'Guides', url: '/guides/' },
+                        { title: 'Envizion Playground', url: '/tools2/envizion_playground.html' },
+                        { title: 'Envizion Editor', url: '/tools2/envizion_editor.html' }
+                    ];
+                    workspaceDirectoryLoaded = true;
+                    status.textContent = 'Showing the core directory. Saved pages remain available offline.';
+                    renderWorkspaceDirectory('');
+                });
+            });
+        }
+
+        window.filterWorkspaceDirectory = function(query) { renderWorkspaceDirectory(query); };
+
+        function renderWorkspaceDirectory(query) {
+            const list = document.getElementById('workspace-directory-pages');
+            const status = document.getElementById('workspace-directory-status');
+            if (!list || !status) return;
+            const q = String(query || '').toLowerCase().trim();
+            const hits = workspaceDirectory.filter(item => !q || `${item.title || ''} ${item.url || ''} ${item.desc || ''}`.toLowerCase().includes(q)).slice(0, 120);
+            status.textContent = `${hits.length} page${hits.length === 1 ? '' : 's'} shown${workspaceDirectory.length > hits.length ? ' (type to filter)' : ''}.`;
+            list.innerHTML = '';
+            hits.forEach(item => {
+                const row = document.createElement('div');
+                row.className = 'workspace-page-row';
+                const link = document.createElement('a');
+                link.href = item.url || '#';
+                link.target = '_blank';
+                link.rel = 'noopener';
+                link.innerHTML = `<strong>${escapeWorkspaceText(item.title || 'Envizion page')}</strong><small>${escapeWorkspaceText(item.url || '')}</small>`;
+                const save = document.createElement('button');
+                save.className = 'bg-indigo-600 hover:bg-indigo-500 rounded px-2 py-1 text-[10px] text-white shrink-0';
+                save.textContent = 'Save';
+                save.onclick = () => { try { addWorkspacePage(item.title || '', item.url); showNotification('Directory page saved.'); } catch (e) { showNotification('Could not save that page.'); } };
+                row.append(link, save);
+                list.appendChild(row);
+            });
+        }
+
+        window.exportWorkspacePages = function() {
+            const blob = new Blob([JSON.stringify(workspacePages, null, 2)], { type: 'application/json' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'envizion-workspace-pages.json';
+            link.click();
+            URL.revokeObjectURL(link.href);
+        };
+
+        window.importWorkspacePages = function(input) {
+            const file = input.files && input.files[0];
+            if (!file) return;
+            file.text().then(text => {
+                const imported = JSON.parse(text);
+                if (!Array.isArray(imported)) throw new Error('Invalid workspace list');
+                imported.forEach(item => { if (item && item.url) { try { addWorkspacePage(item.name, item.url); } catch (e) {} } });
+                renderWorkspacePages();
+                showNotification('Workspace list imported on this device.');
+            }).catch(() => showNotification('Could not import that workspace list.'));
+            input.value = '';
+        };
+
+        renderWorkspacePages();
+        try {
+            const savedProjectName = localStorage.getItem(WORKSPACE_PROJECT_NAME_KEY);
+            if (savedProjectName) document.getElementById('project-title-display').textContent = savedProjectName;
+        } catch (e) {}
+
+        // Body-level drag & drop for ANY file type
+        document.body.addEventListener('dragover', e => { e.preventDefault(); document.body.classList.add('drag-over'); });
+        document.body.addEventListener('dragleave', e => { if(!e.relatedTarget) document.body.classList.remove('drag-over'); });
+        document.body.addEventListener('drop', e => {
+            e.preventDefault();
+            document.body.classList.remove('drag-over');
+            if(e.target.closest('.canvas-card')) return; // don't fire on existing cards
+            const files = Array.from(e.dataTransfer.files);
+            const mid = screenToCanvasCoords(e.clientX, e.clientY);
+            let offsetX = 0;
+            files.forEach((file, i) => {
+                spawnFileCard(file, mid.x - 130 + offsetX, mid.y - 100);
+                offsetX += 280;
+            });
+        });
+
+        // Preload Mock Elements matching visual reference
+        window.addEventListener('load', () => {
+            updateCanvasTransform();
+
+            // Add a welcome image card and dummy video to make the board look full and beautiful
+            createCustomCard({
+                type: 'image',
+                url: 'https://placehold.co/400x300/1e1e24/a0a0b0?text=Design+Layout+1',
+                x: 100,
+                y: 50,
+                width: 320,
+                height: 240,
+                rotation: -3
+            });
+
+            createCustomCard({
+                type: 'sticky',
+                content: '✨ Welcome to Envizion Creative Board! Drag, Zoom, double-click or use Ctrl+V to paste screens.',
+                x: 460,
+                y: 90,
+                width: 250,
+                height: 200,
+                rotation: 5,
+                color: '#10b981'
+            });
+
+            createCustomCard({
+                type: 'text',
+                content: 'PROJECT ENVIZION',
+                x: 200,
+                y: -120,
+                width: 300,
+                height: 80,
+                rotation: 0
+            });
+
+            showNotification("Infinite canvas active. Press SPACE + drag or scroll to pan/zoom!");
+
+            // Load assets sent from the Editor (editor→playground handoff)
+            const urlParams = new URLSearchParams(window.location.search);
+            const editorHandoff = urlParams.get('handoff');
+            if (editorHandoff) loadEditorHandoff(editorHandoff);
+        });
+
+        function loadEditorHandoff(handoffId) {
+            const req = indexedDB.open('envizion_studio_db', 3);
+            req.onsuccess = (e) => {
+                const idb = e.target.result;
+                const tx = idb.transaction(['handoffs', 'assets'], 'readonly');
+                tx.objectStore('handoffs').get(handoffId).onsuccess = (ev) => {
+                    const record = ev.target.result;
+                    if (!record || !Array.isArray(record.assets)) return;
+                    const mid = screenToCanvasCoords(window.innerWidth / 2, window.innerHeight / 2);
+                    let offsetX = 0;
+                    record.assets.forEach(item => {
+                        if (item.blobStored) {
+                            tx.objectStore('assets').get(item.id).onsuccess = (bev) => {
+                                const br = bev.target.result;
+                                if (br && br.blob) {
+                                    const file = new File([br.blob], br.fileName || item.fileName, { type: br.mimeType || '' });
+                                    spawnFileCard(file, mid.x - 130 + offsetX, mid.y - 100);
+                                    offsetX += 280;
+                                }
+                            };
+                        } else if (item.url) {
+                            const type = item.type || 'image';
+                            const card = createCustomCard({
+                                type, url: item.url,
+                                fileName: item.fileName,
+                                content: item.fileName || type,
+                                x: mid.x - 130 + offsetX, y: mid.y - 100,
+                                width: 260, height: 200
+                            });
+                            offsetX += 280;
+                        }
+                    });
+                    showNotification(`Loaded ${record.assets.length} item(s) from Editor.`);
+                };
+            };
+        }
+
+        function updateCanvasTransform() {
+            canvas.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+            zoomIndicator.textContent = `${Math.round(zoom * 100)}%`;
+            if (typeof drawGrid === 'function') drawGrid();
+        }
+
+        function adjustZoom(delta) {
+            let nextZoom = zoom + delta;
+            if (nextZoom < minZoom) nextZoom = minZoom;
+            if (nextZoom > maxZoom) nextZoom = maxZoom;
+
+            // Zoom centered on viewport center coordinates
+            const cx = window.innerWidth / 2;
+            const cy = window.innerHeight / 2;
+            const canvasX = (cx - panX) / zoom;
+            const canvasY = (cy - panY) / zoom;
+
+            zoom = nextZoom;
+            panX = cx - canvasX * zoom;
+            panY = cy - canvasY * zoom;
+
+            updateCanvasTransform();
+        }
+
+        // Pointer/Wheel Zoom anchoring to the cursor
+        window.addEventListener('wheel', (e) => {
+            if (e.target.closest('#ai-chat-panel') || e.target.closest('#chat-logs') || e.target.closest('.modal')) return;
+            e.preventDefault();
+
+            const zoomFactor = 1.15;
+            let nextZoom = e.deltaY < 0 ? zoom * zoomFactor : zoom / zoomFactor;
+            if (nextZoom < minZoom) nextZoom = minZoom;
+            if (nextZoom > maxZoom) nextZoom = maxZoom;
+
+            const mouseX = e.clientX;
+            const mouseY = e.clientY;
+
+            panX = mouseX - (mouseX - panX) * (nextZoom / zoom);
+            panY = mouseY - (mouseY - panY) * (nextZoom / zoom);
+            zoom = nextZoom;
+
+            updateCanvasTransform();
+        }, { passive: false });
+
+        // Canvas Drag Navigation (Pan via SPACE or Middle Mouse)
+        let isSpacePressed = false;
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'Space' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+                isSpacePressed = true;
+                canvas.style.cursor = 'grab';
+            }
+        });
+        window.addEventListener('keyup', (e) => {
+            if (e.code === 'Space') {
+                isSpacePressed = false;
+                canvas.style.cursor = 'default';
+            }
+        });
+
+        // Convert screen coordinate coordinates to infinite canvas coordinate positions
+        function screenToCanvasCoords(screenX, screenY) {
+            return {
+                x: (screenX - panX) / zoom,
+                y: (screenY - panY) / zoom
+            };
+        }
+
+        window.addEventListener('paste', function(e) {
+            // Prevent paste triggering inside input boxes
+            if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') return;
+
+            const items = e.clipboardData.items;
+            for (let i = 0; i < items.length; i++) {
+                if (items[i].type.indexOf('image') !== -1) {
+                    const file = items[i].getAsFile();
+                    const reader = new FileReader();
+                    reader.onload = function(evt) {
+                        const midScreen = screenToCanvasCoords(window.innerWidth / 2, window.innerHeight / 2);
+                        createCustomCard({
+                            type: 'image',
+                            url: evt.target.result,
+                            x: midScreen.x - 150,
+                            y: midScreen.y - 120,
+                            width: 300,
+                            height: 240
+                        });
+                        showNotification("Image pasted directly from clipboard!");
+                    };
+                    reader.readAsDataURL(file);
+                }
+            }
+        });
+
+        window.addEventListener('mousedown', (e) => {
+            if (e.target.closest('.premium-blur') || e.target.closest('#settings-modal') || e.target.closest('.resize-handle') || e.target.closest('.rotate-handle')) return;
+
+            const isMiddleMouse = e.button === 1;
+
+            if (isSpacePressed || isMiddleMouse) {
+                isPanning = true;
+                startPanX = e.clientX - panX;
+                startPanY = e.clientY - panY;
+                e.preventDefault();
+                return;
+            }
+
+            const canvasCoords = screenToCanvasCoords(e.clientX, e.clientY);
+            const clickedCardEl = e.target.closest('.canvas-card');
+
+            if (activeTool === 'select') {
+                if (clickedCardEl) {
+                    const cardId = clickedCardEl.dataset.id;
+                    const card = cards.find(c => c.id === cardId);
+
+                    if (e.shiftKey) {
+                        // Multi select toggle
+                        toggleSelectCard(card);
+                    } else if (!selectedCards.includes(card)) {
+                        // Clear previous selection and choose this card
+                        clearSelections();
+                        selectCard(card);
+                    }
+
+                    draggedCard = card;
+                    dragOffsetX = canvasCoords.x - card.x;
+                    dragOffsetY = canvasCoords.y - card.y;
+                    transformAction = 'drag';
+                } else {
+                    // Start lasso select on empty canvas clicks
+                    clearSelections();
+                    isLassoing = true;
+                    lassoStartX = e.clientX;
+                    lassoStartY = e.clientY;
+                    lassoBox.style.display = 'block';
+                    lassoBox.style.width = '0px';
+                    lassoBox.style.height = '0px';
+                }
+            }
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            const canvasCoords = screenToCanvasCoords(e.clientX, e.clientY);
+
+            if (isPanning) {
+                panX = e.clientX - startPanX;
+                panY = e.clientY - startPanY;
+                updateCanvasTransform();
+                return;
+            }
+
+            if (isLassoing) {
+                const currentX = e.clientX;
+                const currentY = e.clientY;
+                const left = Math.min(lassoStartX, currentX);
+                const top = Math.min(lassoStartY, currentY);
+                const width = Math.abs(lassoStartX - currentX);
+                const height = Math.abs(lassoStartY - currentY);
+
+                lassoBox.style.left = `${left}px`;
+                lassoBox.style.top = `${top}px`;
+                lassoBox.style.width = `${width}px`;
+                lassoBox.style.height = `${height}px`;
+
+                // Calculate which elements are falling into the lasso bounding limits
+                const lassoCanvasStart = screenToCanvasCoords(left, top);
+                const lassoCanvasEnd = screenToCanvasCoords(left + width, top + height);
+
+                cards.forEach(card => {
+                    const overlaps = (
+                        card.x + card.width > lassoCanvasStart.x &&
+                        card.x < lassoCanvasEnd.x &&
+                        card.y + card.height > lassoCanvasStart.y &&
+                        card.y < lassoCanvasEnd.y
+                    );
+                    if (overlaps) {
+                        if (!selectedCards.includes(card)) selectCard(card);
+                    } else {
+                        deselectCard(card);
+                    }
+                });
+                return;
+            }
+
+            if (transformAction === 'drag' && draggedCard) {
+                // Dragging selected cards as an entire batch Group
+                const deltaX = canvasCoords.x - dragOffsetX - draggedCard.x;
+                const deltaY = canvasCoords.y - dragOffsetY - draggedCard.y;
+
+                selectedCards.forEach(c => {
+                    c.x += deltaX;
+                    c.y += deltaY;
+                    updateCardElement(c);
+                });
+            } else if (transformAction && transformAction.startsWith('resize') && transformCard) {
+                const card = transformCard;
+                const rad = card.rotation * Math.PI / 180;
+
+                // Simplified dynamic responsive diagonal coordinate resize maths 
+                const dx = canvasCoords.x - card.x;
+                const dy = canvasCoords.y - card.y;
+
+                if (transformAction === 'resize-se') {
+                    card.width = Math.max(50, dx);
+                    card.height = Math.max(50, dy);
+                } else if (transformAction === 'resize-sw') {
+                    const previousRight = card.x + card.width;
+                    card.x = Math.min(previousRight - 50, canvasCoords.x);
+                    card.width = previousRight - card.x;
+                    card.height = Math.max(50, dy);
+                }
+                updateCardElement(card);
+            } else if (transformAction === 'rotate' && transformCard) {
+                const card = transformCard;
+                const centerX = card.x + card.width / 2;
+                const centerY = card.y + card.height / 2;
+
+                // Measure angle to compute element rotation accurately
+                const angleRad = Math.atan2(canvasCoords.y - centerY, canvasCoords.x - centerX);
+                let angleDeg = angleRad * (180 / Math.PI) - 90; // Align offset of visual handler handle
+                card.rotation = Math.round(angleDeg);
+                updateCardElement(card);
+            }
+        });
+
+        window.addEventListener('mouseup', () => {
+            isPanning = false;
+            isLassoing = false;
+            lassoBox.style.display = 'none';
+            draggedCard = null;
+            transformAction = null;
+            transformCard = null;
+            document.body.classList.remove('rotating');
+        });
+
+        // Double click empty board space to instantly spawn a new sticky note
+        window.addEventListener('dblclick', (e) => {
+            if (e.target.closest('.premium-blur') || e.target.closest('.canvas-card') || e.target.closest('.modal')) return;
+            const canvasCoords = screenToCanvasCoords(e.clientX, e.clientY);
+            createCustomCard({
+                type: 'text',
+                content: 'Double Click Draft',
+                x: canvasCoords.x - 100,
+                y: canvasCoords.y - 25,
+                width: 200,
+                height: 50
+            });
+        });
+
+        let _zCounter = 10; // global z counter for stacking order
+
+        function createCustomCard(props) {
+            const id = 'card-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
+            // Tables start at z=1 (behind everything), others get next layer
+            const defaultZ = props.type === 'table' ? 1 : ++_zCounter;
+            const card = {
+                id: id,
+                type: props.type || 'image',
+                url: props.url || '',
+                content: props.content || 'Dummy Text Template',
+                x: props.x || 0,
+                y: props.y || 0,
+                width: props.width || 240,
+                height: props.height || 180,
+                rotation: props.rotation || 0,
+                color: props.color || activeColor,
+                fileName: props.fileName || '',
+                mimeType: props.mimeType || '',
+                zIndex: props.zIndex !== undefined ? props.zIndex : defaultZ
+            };
+
+            cards.push(card);
+            renderCardElement(card);
+            return card;
+        }
+
+        function renderCardElement(card) {
+            const el = document.createElement('div');
+            const isGroup = card.type === 'group';
+            el.className = 'canvas-card absolute bg-zinc-900 border border-zinc-800/80 rounded-xl overflow-visible p-1.5 shadow-xl select-none group pointer-events-auto transition-shadow duration-150 hover:shadow-2xl' + (isGroup ? ' group-card-wrapper' : '');
+            el.dataset.id = card.id;
+            el.style.width = `${card.width}px`;
+            el.style.height = `${card.height}px`;
+
+            let innerMarkup = '';
+
+            if (card.type === 'image') {
+                innerMarkup = `<div class="w-full h-full rounded-lg overflow-hidden relative">
+                    <img src="${card.url}" class="w-full h-full object-cover pointer-events-none">
+                    <button class="absolute top-1.5 right-1.5 w-6 h-6 bg-black/60 hover:bg-indigo-600 rounded-md text-white text-[10px] flex items-center justify-center" onclick="openPreview('${card.id}')" title="Preview fullscreen">â›¶</button>
+                </div>`;
+
+            } else if (card.type === 'video') {
+                innerMarkup = `<div class="w-full h-full rounded-lg overflow-hidden relative bg-black">
+                    <video id="vid-${card.id}" src="${card.url}" loop class="w-full h-full object-cover pointer-events-none"></video>
+                    <div class="absolute bottom-2 left-2 right-2 flex items-center gap-1.5">
+                        <button onclick="toggleVideoPlay('${card.id}')" class="w-7 h-7 bg-black/70 hover:bg-indigo-600 rounded-lg text-white text-[10px] flex items-center justify-center"><i class="fa-solid fa-play" id="vplay-${card.id}"></i></button>
+                        <button onclick="openPreview('${card.id}')" class="w-7 h-7 bg-black/70 hover:bg-indigo-600 rounded-lg text-white text-[10px] flex items-center justify-center">â›¶</button>
+                    </div>
+                </div>`;
+
+            } else if (card.type === 'audio') {
+                innerMarkup = `<div class="audio-card-inner">
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-music text-indigo-400 text-xs"></i>
+                        <span class="text-[10px] text-zinc-300 truncate flex-1">${card.fileName || 'Audio'}</span>
+                    </div>
+                    <div class="audio-wave paused" id="wave-${card.id}">
+                        ${Array(16).fill(0).map((_,i)=>`<span style="animation-delay:${i*0.07}s"></span>`).join('')}
+                    </div>
+                    <audio id="aud-${card.id}" src="${card.url}"></audio>
+                    <div class="flex items-center gap-2">
+                        <button onclick="toggleAudioPlay('${card.id}')" class="flex-1 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-white text-[10px] font-semibold flex items-center justify-center gap-1">
+                            <i class="fa-solid fa-play" id="aplay-${card.id}"></i> <span id="alabel-${card.id}">Play</span>
+                        </button>
+                        <button onclick="openPreview('${card.id}')" class="w-8 h-8 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-white text-[10px] flex items-center justify-center">â›¶</button>
+                    </div>
+                </div>`;
+
+            } else if (card.type === 'html') {
+                innerMarkup = `<div class="w-full h-full rounded-lg overflow-hidden relative bg-white">
+                    <iframe src="${card.url}" class="w-full h-full border-0 pointer-events-none" sandbox="allow-scripts allow-same-origin"></iframe>
+                    <button onclick="openPreview('${card.id}')" class="absolute top-1.5 right-1.5 w-6 h-6 bg-indigo-600/90 hover:bg-indigo-500 rounded-md text-white text-[10px] flex items-center justify-center z-10">â›¶</button>
+                </div>`;
+
+            } else if (card.type === 'file') {
+                const ext = (card.fileName || '').split('.').pop().toUpperCase();
+                const iconMap = { OBJ:'cube', FBX:'cube', JS:'code', TS:'code', CSS:'palette', JSON:'brackets-curly', PDF:'file-pdf', ZIP:'file-zipper', MP3:'music', WAV:'music' };
+                const icon = iconMap[ext] || 'file';
+                innerMarkup = `<div class="file-card-inner">
+                    <i class="fa-solid fa-${icon} text-3xl text-indigo-400"></i>
+                    <span class="text-xs text-zinc-200 font-semibold truncate w-full text-center">${card.fileName || 'File'}</span>
+                    <span class="text-[10px] text-zinc-500">${ext}</span>
+                    <button onclick="openPreview('${card.id}')" class="mt-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-white text-[10px]">â›¶ Preview</button>
+                </div>`;
+
+            } else if (card.type === 'text') {
+                innerMarkup = `<div class="w-full h-full flex items-start p-3">
+                    <textarea class="w-full h-full bg-transparent resize-none outline-none text-zinc-100 font-medium text-sm leading-relaxed" placeholder="Write anything…" onchange="updateCardText('${card.id}', this.value)">${card.content || ''}</textarea>
+                </div>`;
+
+            } else if (card.type === 'sticky') {
+                innerMarkup = `<div class="w-full h-full p-4 rounded-lg flex flex-col justify-between" style="background-color:${card.color}22;border-left:4px solid ${card.color}">
+                    <textarea class="w-full flex-1 bg-transparent resize-none outline-none text-xs text-zinc-200 leading-normal" onchange="updateCardText('${card.id}', this.value)">${card.content || ''}</textarea>
+                    <span class="text-[8px] text-zinc-500 font-semibold text-right">STICKY</span>
+                </div>`;
+
+            } else if (card.type === 'table') {
+                innerMarkup = `<div class="table-card-inner" id="tbl-${card.id}"></div>`;
+
+            } else if (card.type === 'group') {
+                innerMarkup = `<div class="w-full h-full flex flex-col items-center justify-center gap-2">
+                    <i class="fa-solid fa-object-group text-indigo-400 text-2xl"></i>
+                    <span class="text-[10px] text-zinc-400">Group · ${(card.children||[]).length} items</span>
+                    <button onclick="downloadGroupAsZip('${card.id}')" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-white text-[10px]"><i class="fa-solid fa-file-zipper mr-1"></i>Download ZIP</button>
+                </div>`;
+            }
+
+            el.innerHTML = `
+                ${innerMarkup}
+                <div class="selection-ring absolute -inset-[2px] border-2 border-transparent rounded-xl pointer-events-none transition-colors group-hover:border-zinc-700/60"></div>
+                <div class="edit-controls hidden">
+                    <div class="layer-controls">
+                        <button class="layer-btn" onclick="layerCard('${card.id}','front')" title="Bring to Front">Front</button>
+                        <button class="layer-btn" onclick="layerCard('${card.id}','forward')" title="Bring Forward">â–²</button>
+                        <button class="layer-btn" onclick="layerCard('${card.id}','back')" title="Send Back">â–¼</button>
+                        <button class="layer-btn" onclick="layerCard('${card.id}','behind')" title="Send to Back">Behind</button>
+                    </div>
+                    <div class="rotate-line"></div>
+                    <div class="rotate-handle" onmousedown="startRotate(event,'${card.id}')"></div>
+                    <div class="resize-handle bottom-right -right-1 -bottom-1 cursor-se-resize" onmousedown="startResize(event,'${card.id}','resize-se')"></div>
+                    <div class="resize-handle bottom-left -left-1 -bottom-1 cursor-sw-resize" onmousedown="startResize(event,'${card.id}','resize-sw')"></div>
+                    <button class="absolute -top-3 -right-3 w-6 h-6 rounded-full bg-red-600 hover:bg-red-500 text-white flex items-center justify-center shadow-lg cursor-pointer text-xs" onclick="deleteCard('${card.id}')">
+                        <i class="fa-solid fa-xmark text-[10px]"></i>
+                    </button>
+                </div>
+            `;
+
+            cardsContainer.appendChild(el);
+            updateCardElement(card);
+
+            // Build table after DOM insertion
+            if (card.type === 'table') buildTable(card);
+        }
+
+        function updateCardElement(card) {
+            const el = document.querySelector(`[data-id="${card.id}"]`);
+            if (el) {
+                el.style.transform = `translate3d(${card.x}px, ${card.y}px, 0) rotate(${card.rotation}deg)`;
+                el.style.width = `${card.width}px`;
+                el.style.height = `${card.height}px`;
+                el.style.zIndex = card.zIndex ?? 10;
+            }
+        }
+
+        function layerCard(id, direction) {
+            const card = cards.find(c => c.id === id);
+            if (!card) return;
+            const zValues = cards.map(c => c.zIndex);
+            const minZ = Math.min(...zValues);
+            const maxZ = Math.max(...zValues);
+
+            if (direction === 'front') {
+                card.zIndex = maxZ + 1;
+            } else if (direction === 'behind') {
+                // push all others up by 1 so this one can be 1 below them
+                cards.forEach(c => { if (c.id !== id) c.zIndex += 1; });
+                card.zIndex = Math.max(1, minZ - 1);
+            } else if (direction === 'forward') {
+                // find the next card above and swap
+                const above = cards
+                    .filter(c => c.id !== id && c.zIndex > card.zIndex)
+                    .sort((a, b) => a.zIndex - b.zIndex)[0];
+                if (above) {
+                    const tmp = above.zIndex;
+                    above.zIndex = card.zIndex;
+                    card.zIndex = tmp;
+                    updateCardElement(above);
+                }
+            } else if (direction === 'back') {
+                const below = cards
+                    .filter(c => c.id !== id && c.zIndex < card.zIndex)
+                    .sort((a, b) => b.zIndex - a.zIndex)[0];
+                if (below) {
+                    const tmp = below.zIndex;
+                    below.zIndex = card.zIndex;
+                    card.zIndex = tmp;
+                    updateCardElement(below);
+                }
+            }
+            updateCardElement(card);
+            showNotification(`Layer: ${direction}`);
+        }
+
+        function updateCardText(id, newVal) {
+            const card = cards.find(c => c.id === id);
+            if (card) {
+                card.content = newVal;
+            }
+        }
+
+        function deleteCard(id) {
+            cards = cards.filter(c => c.id !== id);
+            selectedCards = selectedCards.filter(c => c.id !== id);
+            const el = document.querySelector(`[data-id="${id}"]`);
+            if (el) el.remove();
+            updateSelectedPanel();
+        }
+
+        function selectCard(card) {
+            if (selectedCards.includes(card)) return;
+            selectedCards.push(card);
+
+            const el = document.querySelector(`[data-id="${card.id}"]`);
+            if (el) {
+                el.querySelector('.selection-ring').style.borderColor = '#3b82f6';
+                el.querySelector('.edit-controls').classList.remove('hidden');
+            }
+            updateSelectedPanel();
+        }
+
+        function deselectCard(card) {
+            selectedCards = selectedCards.filter(c => c.id !== card.id);
+            const el = document.querySelector(`[data-id="${card.id}"]`);
+            if (el) {
+                el.querySelector('.selection-ring').style.borderColor = 'transparent';
+                el.querySelector('.edit-controls').classList.add('hidden');
+            }
+            updateSelectedPanel();
+        }
+
+        function toggleSelectCard(card) {
+            if (selectedCards.includes(card)) {
+                deselectCard(card);
+            } else {
+                selectCard(card);
+            }
+        }
+
+        function clearSelections() {
+            [...selectedCards].forEach(c => deselectCard(c));
+            selectedCards = [];
+            updateSelectedPanel();
+        }
+
+        function startResize(e, cardId, action) {
+            e.stopPropagation();
+            e.preventDefault();
+            const card = cards.find(c => c.id === cardId);
+            if (card) {
+                transformAction = action;
+                transformCard = card;
+            }
+        }
+
+        function startRotate(e, cardId) {
+            e.stopPropagation();
+            e.preventDefault();
+            const card = cards.find(c => c.id === cardId);
+            if (card) {
+                transformAction = 'rotate';
+                transformCard = card;
+                document.body.classList.add('rotating');
+            }
+        }
+
+        function setTool(toolName) {
+            activeTool = toolName;
+            document.querySelectorAll('[id^="tool-"]').forEach(btn => {
+                btn.classList.remove('active-tool');
+            });
+            const selectedBtn = document.getElementById(`tool-${toolName}`);
+            if (selectedBtn) selectedBtn.classList.add('active-tool');
+
+            if (toolName === 'draw') {
+                showNotification("Draw tool selected! Sketch or draw directly.");
+            }
+        }
+
+        function toggleActiveFrameRegion() {
+            if (!selectedCards.length) {
+                setTool('select');
+                showNotification('Select a card first, then use Clip Region Boundary.');
+                return;
+            }
+
+            const shouldShowFrame = !selectedCards.every((card) => {
+                const element = document.querySelector(`[data-id="${card.id}"]`);
+                return element && element.dataset.frameRegion === 'visible';
+            });
+
+            selectedCards.forEach((card) => {
+                const element = document.querySelector(`[data-id="${card.id}"]`);
+                if (!element) return;
+                element.dataset.frameRegion = shouldShowFrame ? 'visible' : '';
+                element.style.outline = shouldShowFrame ? '2px dashed #f59e0b' : '';
+                element.style.outlineOffset = shouldShowFrame ? '4px' : '';
+            });
+
+            setTool('select');
+            document.getElementById('tool-frame').classList.toggle('active-tool', shouldShowFrame);
+            showNotification(shouldShowFrame ? 'Clip boundary shown for the selected item.' : 'Clip boundary hidden.');
+        }
+
+        function triggerFileInput(type) {
+            document.getElementById(`${type}-file-input`).click();
+        }
+
+        function handleFilesSelected(input, hint) {
+            const files = Array.from(input.files || []);
+            if (!files.length) return;
+            const mid = screenToCanvasCoords(window.innerWidth / 2, window.innerHeight / 2);
+            files.forEach((file, i) => {
+                spawnFileCard(file, mid.x - 130 + i * 280, mid.y - 100);
+            });
+            input.value = ''; // reset so same file can be re-selected
+        }
+
+        function triggerAudioUpload() {
+            document.getElementById('audio-file-input').click();
+        }
+
+        function addTextCard() {
+            const mid = screenToCanvasCoords(window.innerWidth / 2, window.innerHeight / 2);
+            createCustomCard({
+                type: 'text',
+                content: 'Edit Text Block',
+                x: mid.x - 100,
+                y: mid.y - 40,
+                width: 200,
+                height: 80
+            });
+        }
+
+        function addStickyCard() {
+            const mid = screenToCanvasCoords(window.innerWidth / 2, window.innerHeight / 2);
+            createCustomCard({
+                type: 'sticky',
+                content: 'Enter custom ideas or design drafts here...',
+                x: mid.x - 110,
+                y: mid.y - 100,
+                width: 220,
+                height: 200,
+                color: activeColor
+            });
+        }
+
+        // ── spawnFileCard ──────────────────────────────────────────────────────
+        function spawnFileCard(file, x, y) {
+            const mime = file.type;
+            const name = file.name;
+            const ext  = name.split('.').pop().toLowerCase();
+            const id   = 'card-' + Date.now() + '-' + Math.floor(Math.random() * 9999);
+            const url  = URL.createObjectURL(file);
+
+            // store blob for ZIP / send-to-editor
+            blobCache[id] = { blob: file, objectUrl: url, fileName: name, mimeType: mime };
+
+            let type = 'file';
+            let w = 240, h = 180;
+
+            if (mime.startsWith('image/'))       { type = 'image'; w = 280; h = 210; }
+            else if (mime.startsWith('video/'))  { type = 'video'; w = 300; h = 200; }
+            else if (mime.startsWith('audio/'))  { type = 'audio'; w = 240; h = 140; }
+            else if (ext === 'html' || ext === 'htm') { type = 'html'; w = 340; h = 240; }
+
+            const card = {
+                id, type, url,
+                fileName: name, mimeType: mime,
+                content: name,
+                x: x ?? 0, y: y ?? 0,
+                width: w, height: h, rotation: 0,
+                color: activeColor
+            };
+            cards.push(card);
+            renderCardElement(card);
+            showNotification(`Added: ${name}`);
+            return card;
+        }
+
+        // ── Preview modal ──────────────────────────────────────────────────────
+        let _previewCardId = null;
+        function openPreview(cardId) {
+            _previewCardId = cardId;
+            const card = cards.find(c => c.id === cardId);
+            if (!card) return;
+            const modal = document.getElementById('preview-modal');
+            const inner = document.getElementById('preview-modal-inner');
+            inner.innerHTML = '';
+
+            if (card.type === 'image') {
+                const img = document.createElement('img');
+                img.src = card.url;
+                img.style.cssText = 'max-width:90vw;max-height:82vh;border-radius:8px;display:block;';
+                inner.appendChild(img);
+            } else if (card.type === 'video') {
+                const vid = document.createElement('video');
+                vid.src = card.url; vid.controls = true; vid.autoplay = true;
+                vid.style.cssText = 'max-width:90vw;max-height:82vh;border-radius:8px;display:block;background:#000;';
+                inner.appendChild(vid);
+            } else if (card.type === 'audio') {
+                const wrap = document.createElement('div');
+                wrap.style.cssText = 'padding:32px;text-align:center;min-width:320px;';
+                wrap.innerHTML = `<i class="fa-solid fa-music" style="font-size:48px;color:#6366f1;margin-bottom:16px;display:block;"></i>
+                    <p style="color:#e4e4e7;font-size:14px;margin-bottom:16px;">${card.fileName||'Audio'}</p>`;
+                const aud = document.createElement('audio');
+                aud.src = card.url; aud.controls = true; aud.autoplay = true;
+                aud.style.width = '100%';
+                wrap.appendChild(aud);
+                inner.appendChild(wrap);
+            } else if (card.type === 'html') {
+                const iframe = document.createElement('iframe');
+                iframe.src = card.url;
+                iframe.style.cssText = 'width:90vw;height:82vh;border:0;border-radius:8px;background:#fff;';
+                iframe.sandbox = 'allow-scripts allow-same-origin allow-forms allow-popups';
+                inner.appendChild(iframe);
+            } else {
+                // Generic file
+                const ext = (card.fileName||'').split('.').pop().toUpperCase();
+                const wrap = document.createElement('div');
+                wrap.style.cssText = 'padding:40px;text-align:center;min-width:280px;';
+                wrap.innerHTML = `<i class="fa-solid fa-file" style="font-size:56px;color:#6366f1;margin-bottom:16px;display:block;"></i>
+                    <p style="color:#e4e4e7;font-size:14px;margin-bottom:8px;">${card.fileName||'File'}</p>
+                    <span style="color:#71717a;font-size:12px;">${ext}</span>
+                    <br><br>
+                    <button onclick="downloadCardFile('${cardId}')" style="padding:8px 20px;background:#6366f1;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px;">Download File</button>`;
+                inner.appendChild(wrap);
+            }
+            modal.classList.remove('hidden');
+        }
+
+        function closePreview() {
+            const modal = document.getElementById('preview-modal');
+            modal.classList.add('hidden');
+            // stop any playing media
+            const inner = document.getElementById('preview-modal-inner');
+            inner.querySelectorAll('video,audio').forEach(el => { el.pause(); el.src = ''; });
+            inner.innerHTML = '';
+            _previewCardId = null;
+        }
+
+        function goNativeFullscreen() {
+            const inner = document.getElementById('preview-modal-inner');
+            const el = inner.firstElementChild || inner;
+            if (el.requestFullscreen) el.requestFullscreen();
+            else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+        }
+
+        function downloadCardFile(cardId) {
+            const cache = blobCache[cardId];
+            if (!cache) return;
+            const a = document.createElement('a');
+            a.href = cache.objectUrl;
+            a.download = cache.fileName || 'download';
+            a.click();
+        }
+
+        // Close preview on backdrop click
+        document.getElementById('preview-modal').addEventListener('click', function(e) {
+            if (e.target === this) closePreview();
+        });
+
+        // ── Video / Audio play controls ────────────────────────────────────────
+        function toggleVideoPlay(cardId) {
+            const vid = document.getElementById('vid-' + cardId);
+            const icon = document.getElementById('vplay-' + cardId);
+            if (!vid) return;
+            if (vid.paused) {
+                vid.play();
+                icon.className = 'fa-solid fa-pause';
+            } else {
+                vid.pause();
+                icon.className = 'fa-solid fa-play';
+            }
+        }
+
+        function toggleAudioPlay(cardId) {
+            const aud = document.getElementById('aud-' + cardId);
+            const icon = document.getElementById('aplay-' + cardId);
+            const label = document.getElementById('alabel-' + cardId);
+            const wave = document.getElementById('wave-' + cardId);
+            if (!aud) return;
+            if (aud.paused) {
+                aud.play();
+                icon.className = 'fa-solid fa-pause';
+                if (label) label.textContent = 'Stop';
+                if (wave) wave.classList.remove('paused');
+            } else {
+                aud.pause();
+                icon.className = 'fa-solid fa-play';
+                if (label) label.textContent = 'Play';
+                if (wave) wave.classList.add('paused');
+            }
+        }
+
+        // ── Fullscreen canvas ──────────────────────────────────────────────────
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen && document.documentElement.requestFullscreen();
+            } else {
+                document.exitFullscreen && document.exitFullscreen();
+            }
+        }
+
+        // ── Table card ────────────────────────────────────────────────────────
+        function addTableCard() {
+            const mid = screenToCanvasCoords(window.innerWidth / 2, window.innerHeight / 2);
+            const card = createCustomCard({
+                type: 'table',
+                content: '',
+                x: mid.x - 150, y: mid.y - 100,
+                width: 300, height: 200
+            });
+            // tableData stored on card object
+            card.tableRows = [['Header A','Header B','Header C'],['','',''],['','','']];
+        }
+
+        function buildTable(card) {
+            const container = document.getElementById('tbl-' + card.id);
+            if (!container) return;
+            if (!card.tableRows) card.tableRows = [['Col A','Col B'],['','']];
+
+            function render() {
+                container.innerHTML = '';
+                const tbl = document.createElement('table');
+                card.tableRows.forEach((row, ri) => {
+                    const tr = document.createElement('tr');
+                    row.forEach((cell, ci) => {
+                        const td = document.createElement('td');
+                        td.contentEditable = true;
+                        td.textContent = cell;
+                        td.addEventListener('input', () => { card.tableRows[ri][ci] = td.textContent; });
+                        tr.appendChild(td);
+                    });
+                    tbl.appendChild(tr);
+                });
+                container.appendChild(tbl);
+                // Add row / col buttons
+                const btnRow = document.createElement('div');
+                btnRow.style.cssText = 'display:flex;gap:4px;padding:4px;';
+                btnRow.innerHTML = `<button class="add-row-btn" onclick="tableAddRow('${card.id}')">+ Row</button>
+                    <button class="add-col-btn" onclick="tableAddCol('${card.id}')">+ Col</button>`;
+                container.appendChild(btnRow);
+            }
+            render();
+        }
+
+        function tableAddRow(cardId) {
+            const card = cards.find(c => c.id === cardId);
+            if (!card || !card.tableRows) return;
+            const cols = card.tableRows[0]?.length || 2;
+            card.tableRows.push(Array(cols).fill(''));
+            buildTable(card);
+        }
+
+        function tableAddCol(cardId) {
+            const card = cards.find(c => c.id === cardId);
+            if (!card || !card.tableRows) return;
+            card.tableRows.forEach(row => row.push(''));
+            buildTable(card);
+        }
+
+        // ── Group selected ────────────────────────────────────────────────────
+        function groupSelected() {
+            if (selectedCards.length < 2) { showNotification('Select 2+ cards to group.'); return; }
+            // Compute bounding box
+            const minX = Math.min(...selectedCards.map(c => c.x));
+            const minY = Math.min(...selectedCards.map(c => c.y));
+            const maxX = Math.max(...selectedCards.map(c => c.x + c.width));
+            const maxY = Math.max(...selectedCards.map(c => c.y + c.height));
+            const pad = 16;
+            const groupCard = createCustomCard({
+                type: 'group',
+                x: minX - pad, y: minY - pad,
+                width: (maxX - minX) + pad*2,
+                height: (maxY - minY) + pad*2,
+                color: activeColor
+            });
+            groupCard.children = selectedCards.map(c => c.id);
+            clearSelections();
+            showNotification(`Grouped ${groupCard.children.length} items.`);
+        }
+
+        // ── ZIP download ──────────────────────────────────────────────────────
+        async function downloadSelectedAsZip() {
+            const targets = selectedCards.length > 0 ? selectedCards : cards;
+            if (!targets.length) { showNotification('Nothing to download.'); return; }
+            await _buildAndDownloadZip(targets, 'envizion-selection.zip');
+        }
+
+        async function downloadGroupAsZip(groupId) {
+            const group = cards.find(c => c.id === groupId);
+            if (!group || !group.children) return;
+            const children = cards.filter(c => group.children.includes(c.id));
+            await _buildAndDownloadZip(children, `group-${groupId}.zip`);
+        }
+
+        async function _buildAndDownloadZip(targets, filename) {
+            if (typeof JSZip === 'undefined') { showNotification('JSZip not loaded.'); return; }
+            const zip = new JSZip();
+            let added = 0;
+            for (const card of targets) {
+                const cache = blobCache[card.id];
+                if (cache && cache.blob) {
+                    zip.file(cache.fileName || `file-${card.id}`, cache.blob);
+                    added++;
+                } else if (card.url && card.url.startsWith('data:')) {
+                    // data URL fallback — convert to blob
+                    const res = await fetch(card.url);
+                    const blob = await res.blob();
+                    const ext = card.type === 'image' ? 'png' : card.type === 'video' ? 'mp4' : 'bin';
+                    zip.file(card.fileName || `${card.id}.${ext}`, blob);
+                    added++;
+                }
+            }
+            if (!added) { showNotification('No downloadable files in selection.'); return; }
+            const blob = await zip.generateAsync({ type: 'blob' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = filename;
+            a.click();
+            showNotification(`Downloaded ${added} file(s) as ZIP.`);
+        }
+
+        function setSelectedColor(colorCode) {
+            activeColor = colorCode;
+            document.getElementById('color-wheel-preview').style.backgroundColor = colorCode;
+            showNotification(`Theme tint adjusted to ${colorCode}!`);
+
+            // Adjust current selection note theme colors dynamically too
+            selectedCards.forEach(card => {
+                if (card.type === 'sticky') {
+                    card.color = colorCode;
+                    const cardEl = document.querySelector(`[data-id="${card.id}"]`);
+                    if (cardEl) {
+                        const notesContainer = cardEl.querySelector('.p-4');
+                        if (notesContainer) {
+                            notesContainer.style.backgroundColor = colorCode + '22';
+                            notesContainer.style.borderLeftColor = colorCode;
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateSelectedPanel() {
+            if (selectedCards.length > 0) {
+                batchExportPanel.style.transform = 'translateY(0)';
+                batchExportPanel.style.opacity = '1';
+                batchExportPanel.style.pointerEvents = 'auto';
+                selectedBadge.textContent = selectedCards.length;
+            } else {
+                batchExportPanel.style.transform = 'translateY(-100px)';
+                batchExportPanel.style.opacity = '0';
+                batchExportPanel.style.pointerEvents = 'none';
+            }
+        }
+
+        function batchClearSelection() {
+            clearSelections();
+        }
+
+        // ============ LOCAL AI EDITING ENGINE (replaces the Editor) ============
+        // All edits happen right here on the board — nothing leaves the device.
+        function _getTargetImageCard() {
+            const imgs = cards.filter(c => c.type === 'image');
+            const sel = selectedCards.filter(c => c.type === 'image');
+            return sel[0] || imgs[imgs.length - 1] || null;
+        }
+
+        const AI_EDITS = {
+            'grayscale / black & white': { re: /(gray|greyscale|grayscale|black\s*(and|&)?\s*white|b&w|monochrome)/, fn: (ctx, cv) => { ctx.filter = 'grayscale(1)'; ctx.drawImage(cv, 0, 0); } },
+            'sepia': { re: /(sepia|vintage|old.?style)/, fn: (ctx, cv) => { ctx.filter = 'sepia(1)'; ctx.drawImage(cv, 0, 0); } },
+            'invert colors': { re: /(invert|negative)/, fn: (ctx, cv) => { ctx.filter = 'invert(1)'; ctx.drawImage(cv, 0, 0); } },
+            'brighten': { re: /(brighten|brighter|lighten|lighter|too dark)/, fn: (ctx, cv) => { ctx.filter = 'brightness(1.35)'; ctx.drawImage(cv, 0, 0); } },
+            'darken': { re: /(darken|darker|too bright)/, fn: (ctx, cv) => { ctx.filter = 'brightness(0.7)'; ctx.drawImage(cv, 0, 0); } },
+            'boost contrast': { re: /(contrast|punch|pop)/, fn: (ctx, cv) => { ctx.filter = 'contrast(1.4)'; ctx.drawImage(cv, 0, 0); } },
+            'saturate colors': { re: /(saturat|vibrant|more colou?r)/, fn: (ctx, cv) => { ctx.filter = 'saturate(1.6)'; ctx.drawImage(cv, 0, 0); } },
+            'desaturate': { re: /(desaturat|muted|faded)/, fn: (ctx, cv) => { ctx.filter = 'saturate(0.45)'; ctx.drawImage(cv, 0, 0); } },
+            'blur': { re: /(?<!de)blur/, fn: (ctx, cv) => { ctx.filter = 'blur(6px)'; ctx.drawImage(cv, 0, 0); } },
+            'sharpen': { re: /(sharpen|sharper|deblur|unblur|crisper)/, fn: (ctx, cv) => { ctx.filter = 'contrast(1.15) saturate(1.1)'; ctx.drawImage(cv, 0, 0); const d = ctx.getImageData(0, 0, cv.width, cv.height); const out = _convolve(d, cv.width, cv.height, [0, -1, 0, -1, 5, -1, 0, -1, 0]); ctx.putImageData(out, 0, 0); } },
+            'warm tone': { re: /(warm|golden|sunset)/, fn: (ctx, cv) => { ctx.filter = 'sepia(0.35) saturate(1.25)'; ctx.drawImage(cv, 0, 0); } },
+            'cool tone': { re: /(cool|cold|icy)/, fn: (ctx, cv) => { ctx.filter = 'hue-rotate(15deg) saturate(1.1) brightness(1.05)'; ctx.drawImage(cv, 0, 0); } },
+            'rotate 90°': { re: /(rotate|turn)/, fn: null, rot: 90 },
+            'flip horizontally': { re: /(flip|mirror)/, fn: null, flip: 'h' },
+            'vignette': { re: /vignette/, fn: (ctx, cv) => { const g = ctx.createRadialGradient(cv.width/2, cv.height/2, Math.min(cv.width,cv.height)*0.35, cv.width/2, cv.height/2, Math.max(cv.width,cv.height)*0.75); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.65)'); ctx.fillStyle = g; ctx.fillRect(0, 0, cv.width, cv.height); } },
+            'background removal': { re: /(remove.*(background|backdrop|bg)|cut\s?out|isolate|transparent background|no background)/, fn: null, bg: true },
+            'upscale 2x': { re: /(upscale|enlarge|bigger|2x|higher resolution)/, fn: null, scale: 2 }
+        };
+
+        function _convolve(imgData, w, h, kernel) {
+            const side = Math.round(Math.sqrt(kernel.length)), half = Math.floor(side / 2);
+            const src = imgData.data, out = new ImageData(w, h), dst = out.data;
+            for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+                let r = 0, g = 0, b = 0;
+                for (let ky = 0; ky < side; ky++) for (let kx = 0; kx < side; kx++) {
+                    const sy = y + ky - half, sx = x + kx - half;
+                    if (sy < 0 || sx < 0 || sy >= h || sx >= w) continue;
+                    const o = (sy * w + sx) * 4, k = kernel[ky * side + kx];
+                    r += src[o] * k; g += src[o + 1] * k; b += src[o + 2] * k;
+                }
+                const di = (y * w + x) * 4;
+                dst[di] = Math.max(0, Math.min(255, r)); dst[di + 1] = Math.max(0, Math.min(255, g)); dst[di + 2] = Math.max(0, Math.min(255, b)); dst[di + 3] = src[di + 3];
+            }
+            return out;
+        }
+
+        async function _applyEditToCard(card, label) {
+            const edit = AI_EDITS[label];
+            if (!edit) return false;
+            const src = await new Promise((res, rej) => {
+                const im = new Image();
+                im.crossOrigin = 'anonymous';
+                im.onload = () => res(im);
+                im.onerror = rej;
+                im.src = card.url || (blobCache[card.id] ? URL.createObjectURL(blobCache[card.id].blob) : '');
+            });
+            let w = src.naturalWidth, h = src.naturalHeight;
+            if (edit.scale) { w *= edit.scale; h *= edit.scale; }
+            if (edit.rot) { const t = w; w = h; h = t; }
+            const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+            const ctx = cv.getContext('2d');
+            ctx.save();
+            if (edit.rot) { ctx.translate(w/2, h/2); ctx.rotate(edit.rot * Math.PI / 180); ctx.drawImage(src, -src.naturalWidth/2, -src.naturalHeight/2); }
+            else if (edit.flip) { ctx.translate(w/2, h/2); ctx.scale(edit.flip === 'v' ? 1 : -1, edit.flip === 'v' ? -1 : 1); ctx.drawImage(src, -w/2, -h/2, w, h); }
+            else { ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; ctx.drawImage(src, 0, 0, w, h); }
+            ctx.restore();
+            if (edit.fn) { ctx.save(); edit.fn(ctx, cv); ctx.restore(); }
+            let bgStats = null;
+            if (edit.bg) bgStats = _removeBackground(ctx, cv);
+            const newUrl = cv.toDataURL('image/png');
+            card.url = newUrl; card.width = w; card.height = h;
+            if (blobCache[card.id]) blobCache[card.id] = { blob: _dataURLtoBlob(newUrl), fileName: blobCache[card.id].fileName, mimeType: 'image/png' };
+            // Refresh the card visually: update image + dimensions, or rebuild the card element
+            const el = document.querySelector(`[data-id="${card.id}"] img`);
+            if (el) { el.src = newUrl; }
+            updateCardElement(card);
+            if (!el) { const old = document.querySelector(`[data-id="${card.id}"]`); if (old) { old.remove(); renderCardElement(card); } }
+            showNotification(`✅ Applied "${label}" with AI.`);
+            if (bgStats) {
+                const pct = ((bgStats.removed / bgStats.total) * 100).toFixed(1);
+                const leftoverPct = (bgStats.remaining / bgStats.total) * 100;
+                appendChatMsg('assistant',
+                    `Done — removed <b>${pct}%</b> of the image as background. I also <b>reviewed the result pixel-by-pixel</b>` +
+                    (leftoverPct < 2
+                        ? ` and confirmed the cutout is clean — including enclosed middle regions, not just the outer edges. ✅`
+                        : ` — ~${leftoverPct.toFixed(1)}% of pixels still resemble the background color (possibly part of the subject). Ask me to "remove more background" if you want a more aggressive cut.`));
+            } else {
+                appendChatMsg('assistant', `Done — applied <b>${label}</b> to your image, right here on the board. Ask for another edit any time!`);
+            }
+            return true;
+        }
+
+        // Tolerance for "is this pixel the background color" (sum of channel diffs).
+        const _BG_TOL = 90;
+        function _isBgColor(px, o, br, bg, bb, tol) {
+            return (Math.abs(px[o]-br) + Math.abs(px[o+1]-bg) + Math.abs(px[o+2]-bb)) <= tol;
+        }
+        // Sample the background color from corners + edge midpoints (robust for collages).
+        function _sampleBgColor(px, W, H) {
+            const pts = [
+                [0, 0], [W-1, 0], [0, H-1], [W-1, H-1],
+                [W>>1, 0], [W>>1, H-1], [0, H>>1], [W-1, H>>1]
+            ];
+            let r = 0, g = 0, b = 0;
+            pts.forEach(([x, y]) => { const o = (y*W + x)*4; r += px[o]; g += px[o+1]; b += px[o+2]; });
+            return [r/pts.length, g/pts.length, b/pts.length];
+        }
+        // "Review" the image like a vision pass: label every connected region of
+        // background-colored pixels ANYWHERE (not just from borders) and measure
+        // how flat/uniform each region is. Flat = background. Textured = subject.
+        // Returns { removed, remaining } pixel counts.
+        function _bgVisionPass(ctx, cv, tol) {
+            const d = ctx.getImageData(0, 0, cv.width, cv.height), px = d.data;
+            const W = cv.width, H = cv.height, N = W * H;
+            const [br, bg, bb] = _sampleBgColor(px, W, H);
+            tol = tol || _BG_TOL;
+            // Label connected components of bg-similar, still-opaque pixels.
+            const label = new Int32Array(N).fill(-1);
+            const comps = []; // { size, minVariance tracking via color sum/sumSq }
+            const stack = [];
+            for (let s = 0; s < N; s++) {
+                if (label[s] !== -1) continue;
+                const o = s * 4;
+                if (px[o+3] === 0 || !_isBgColor(px, o, br, bg, bb, tol)) continue;
+                const id = comps.length;
+                const comp = { size: 0, sum: 0, sumSq: 0, touchesBorder: false };
+                stack.length = 0; stack.push(s); label[s] = id;
+                while (stack.length) {
+                    const i = stack.pop();
+                    const x = i % W, y = (i / W) | 0;
+                    if (x === 0 || y === 0 || x === W-1 || y === H-1) comp.touchesBorder = true;
+                    const p = i * 4;
+                    const lum = (px[p] + px[p+1] + px[p+2]) / 3;
+                    comp.size++; comp.sum += lum; comp.sumSq += lum * lum;
+                    // 4-neighbours
+                    if (x > 0 && label[i-1] === -1) { const q=(i-1)*4; if (px[q+3]!==0 && _isBgColor(px,q,br,bg,bb,tol)) { label[i-1]=id; stack.push(i-1); } }
+                    if (x < W-1 && label[i+1] === -1) { const q=(i+1)*4; if (px[q+3]!==0 && _isBgColor(px,q,br,bg,bb,tol)) { label[i+1]=id; stack.push(i+1); } }
+                    if (y > 0 && label[i-W] === -1) { const q=(i-W)*4; if (px[q+3]!==0 && _isBgColor(px,q,br,bg,bb,tol)) { label[i-W]=id; stack.push(i-W); } }
+                    if (y < H-1 && label[i+W] === -1) { const q=(i+W)*4; if (px[q+3]!==0 && _isBgColor(px,q,br,bg,bb,tol)) { label[i+W]=id; stack.push(i+W); } }
+                }
+                comps.push(comp);
+            }
+            // Decide which components are background: border-touching always; and
+            // ANY flat (low-variance) patch of meaningful size — that's how the
+            // enclosed middle strips in collages get caught.
+            let removed = 0;
+            for (let id = 0; id < comps.length; id++) {
+                const c = comps[id];
+                if (c.size < 64) continue; // noise
+                const mean = c.sum / c.size;
+                const variance = Math.max(0, c.sumSq / c.size - mean * mean);
+                const isFlat = variance < 40;          // uniform color patch
+                const isLarge = c.size > N * 0.004;    // >0.4% of image
+                if (c.touchesBorder || (isFlat && isLarge)) {
+                    // Erase this component (feather 1px edge for clean cutout)
+                    for (let i = 0; i < N; i++) {
+                        if (label[i] !== id) continue;
+                        const p = i * 4;
+                        px[p+3] = 0; removed++;
+                        const x = i % W, y = (i / W) | 0;
+                        [[1,0],[-1,0],[0,1],[0,-1]].forEach(([dx,dy]) => {
+                            const nx = x+dx, ny = y+dy;
+                            if (nx<0||ny<0||nx>=W||ny>=H) return;
+                            const ni = ny*W+nx; if (label[ni] !== -1 && label[ni] !== id) return;
+                            const np = ni*4;
+                            if (px[np+3] !== 0 && _isBgColor(px, np, br, bg, bb, tol + 40)) px[np+3] = 0;
+                        });
+                    }
+                }
+            }
+            if (removed) ctx.putImageData(d, 0, 0);
+            // Remaining = still-opaque bg-similar pixels (what a review would flag)
+            let remaining = 0;
+            for (let i = 0; i < N; i++) { const p = i*4; if (px[p+3] !== 0 && _isBgColor(px, p, br, bg, bb, tol)) remaining++; }
+            return { removed, remaining, total: N };
+        }
+
+        function _removeBackground(ctx, cv) {
+            // Pass 1: standard cutout. Pass 2: AI review — re-read the RESULT image
+            // and catch anything the first pass missed (enclosed middle regions etc).
+            _bgVisionPass(ctx, cv, _BG_TOL + 60);   // generous first pass, border-connected
+            return _bgVisionPass(ctx, cv, _BG_TOL); // strict review pass, all regions
+        }
+
+        function _dataURLtoBlob(dataURL) {
+            const parts = dataURL.split(',');
+            const mime = parts[0].match(/:(.*?);/)[1];
+            const bin = atob(parts[1]); const arr = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+            return new Blob([arr], { type: mime });
+        }
+
+        async function applySelectionWithAI() {
+            const panel = document.getElementById('ai-chat-panel');
+            if (panel.classList.contains('hidden')) toggleChatPanel();
+            const t = _getTargetImageCard();
+            if (t) appendChatMsg('assistant', `I have your image ready. Tell me the edit — e.g. <i>"remove the background"</i>, <i>"make it black and white"</i>, <i>"upscale 2x"</i>, <i>"brighten"</i>, <i>"rotate"</i>, <i>"vignette"</i> — I'll apply it instantly, all locally on your device.`);
+            else appendChatMsg('assistant', `Upload an image onto the board (📎 or drag & drop), then tell me any edit — background removal, black &amp; white, upscale, rotate, vignette and more. Everything runs locally, nothing is uploaded anywhere.`);
+            document.getElementById('assistant-input').focus();
+        }
+
+        function toggleChatPanel() {
+            const chatPanel = document.getElementById('ai-chat-panel');
+            chatPanel.classList.toggle('hidden');
+        }
+
+        function minimizeChatPanel() {
+            const chatPanel = document.getElementById('ai-chat-panel');
+            chatPanel.style.height = chatPanel.style.height === '50px' ? '480px' : '50px';
+        }
+
+        function handleSendAssistantMsg(e) {
+            e.preventDefault();
+            const input = document.getElementById('assistant-input');
+            const userMsg = input.value.trim();
+            if(!userMsg) return;
+
+            appendChatMsg('user', userMsg);
+            input.value = '';
+
+            // Smart interactive intent checking triggers
+            setTimeout(() => {
+                processAIIntent(userMsg);
+            }, 600);
+        }
+
+        function appendChatMsg(sender, text) {
+            const container = document.getElementById('chat-logs');
+            const wrapper = document.createElement('div');
+            wrapper.className = "flex gap-2 " + (sender === 'user' ? "justify-end" : "");
+
+            let avatar = '';
+            if (sender === 'user') {
+                avatar = `<div class="w-6 h-6 rounded-lg bg-sky-500/20 text-sky-400 flex items-center justify-center text-[10px] order-last">ME</div>`;
+            } else {
+                avatar = `<div class="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center flex-shrink-0 text-[10px] text-zinc-400"><i class="fa-solid fa-robot"></i></div>`;
+            }
+
+            const bodyClass = sender === 'user' ? 'bg-sky-500/10 border-sky-500/20 text-sky-200' : 'bg-zinc-900/80 border-zinc-800 text-zinc-300';
+
+            wrapper.innerHTML = `
+                ${avatar}
+                <div class="${bodyClass} border rounded-xl px-3.5 py-2.5 max-w-[85%] leading-relaxed shadow-sm">
+                    ${text}
+                </div>
+            `;
+            container.appendChild(wrapper);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function processAIIntent(prompt) {
+            const lower = prompt.toLowerCase();
+            const mid = screenToCanvasCoords(window.innerWidth / 2, window.innerHeight / 2);
+
+            // --- Real edits first: any recognized edit request applies instantly ---
+            for (const [label, e] of Object.entries(AI_EDITS)) {
+                if (e.re && e.re.test(lower)) {
+                    const target = _getTargetImageCard();
+                    if (target) { _applyEditToCard(target, label); return; }
+                }
+            }
+            if (/(remove|delete|erase)/.test(lower) && /(background|bg)/.test(lower)) {
+                const target = _getTargetImageCard();
+                if (target) { _applyEditToCard(target, 'background removal'); return; }
+                appendChatMsg('assistant', `Happy to remove the background! Upload the image onto the board first (drag &amp; drop or the upload button), then ask me again.`);
+                return;
+            }
+
+            if (lower.includes('sticky') || lower.includes('note')) {
+                let noteColor = activeColor;
+                if (lower.includes('red') || lower.includes('rose')) noteColor = '#f43f5e';
+                else if (lower.includes('yellow') || lower.includes('amber')) noteColor = '#f59e0b';
+                else if (lower.includes('blue') || lower.includes('sky')) noteColor = '#0ea5e9';
+
+                const card = createCustomCard({
+                    type: 'sticky',
+                    content: '🤖 Created by AI Assistant prompt!',
+                    x: mid.x - 110,
+                    y: mid.y - 100,
+                    color: noteColor
+                });
+                selectCard(card);
+                appendChatMsg('assistant', `Spawned a custom sticky note at board center for you! I have highlighted it too.`);
+            } else if (lower.includes('text') || lower.includes('title')) {
+                const card = createCustomCard({
+                    type: 'text',
+                    content: 'AI Generated Title',
+                    x: mid.x - 100,
+                    y: mid.y - 40
+                });
+                selectCard(card);
+                appendChatMsg('assistant', `Added a Title text box in the middle of your coordinate viewport.`);
+            } else if (lower.includes('image') || lower.includes('picture') || lower.includes('photo')) {
+                const card = createCustomCard({
+                    type: 'image',
+                    url: 'https://placehold.co/400x300/0ea5e9/ffffff?text=AI+Generated+Art',
+                    x: mid.x - 150,
+                    y: mid.y - 120,
+                    width: 300,
+                    height: 240
+                });
+                selectCard(card);
+                appendChatMsg('assistant', `Added a colorful concept placeholder image onto your canvas.`);
+            } else {
+                appendChatMsg('assistant', `I heard you! I can create cards on this infinite board. Try typing: <span class="text-sky-400 italic font-mono">"create a blue sticky note"</span>.`);
+            }
+        }
+
+        function triggerVoiceInput() {
+            showNotification("Voice Assistant activated (Listening...)");
+        }
+
+        function triggerSearchBoard() {
+            const query = prompt("Find cards on your board:");
+            if(query) {
+                const found = cards.find(c => c.content.toLowerCase().includes(query.toLowerCase()));
+                if(found) {
+                    panX = window.innerWidth / 2 - (found.x * zoom + (found.width * zoom)/2);
+                    panY = window.innerHeight / 2 - (found.y * zoom + (found.height * zoom)/2);
+                    updateCanvasTransform();
+                    clearSelections();
+                    selectCard(found);
+                    showNotification("Focused and centered onto matching card!");
+                } else {
+                    showNotification("No matching cards found on board.");
+                }
+            }
+        }
+
+        function triggerUpgrade() {
+            showNotification("Upgrade tier unlocks unlimited IndexedDB disk space & cloud sync capabilities!");
+        }
+
+        function toggleRenameDropdown() {
+            const currentName = document.getElementById('project-title-display').textContent;
+            const newName = prompt("Rename active workspace project name:", currentName);
+            if(newName && newName.trim() !== '') {
+                document.getElementById('project-title-display').textContent = newName.trim();
+                try { localStorage.setItem(WORKSPACE_PROJECT_NAME_KEY, newName.trim()); } catch (e) {}
+                showNotification("Project renamed successfully.");
+            }
+        }
+
+        function triggerShare() {
+            showNotification("Sharing link copied to clipboard workspace!");
+        }
+
+        function triggerShowExtensions() {
+            showNotification("Custom Canvas integrations: tldraw, Ffmpeg encoder, & Luma core templates connected.");
+        }
+
+        function toggleSettingsModal() {
+            const modal = document.getElementById('settings-modal');
+            modal.classList.toggle('hidden');
+        }
+
+        function toggleGridPattern(checked) {
+            const gc = document.getElementById('grid-canvas');
+            if (gc) gc.style.opacity = checked ? '1' : '0';
+        }
+
+        // ── Infinite dot grid ──────────────────────────────────────────────────
+        // Drawn in SCREEN space using pan/zoom offset mod spacing.
+        // No matter how far you pan or zoom, dots tile seamlessly forever.
+        const gridCanvas = document.getElementById('grid-canvas');
+        const gridCtx = gridCanvas.getContext('2d');
+
+        function resizeGridCanvas() {
+            gridCanvas.width  = window.innerWidth;
+            gridCanvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', () => { resizeGridCanvas(); drawGrid(); });
+        resizeGridCanvas();
+
+        function drawGrid() {
+            const w = gridCanvas.width;
+            const h = gridCanvas.height;
+            gridCtx.clearRect(0, 0, w, h);
+            gridCtx.fillStyle = '#0e0e11';
+            gridCtx.fillRect(0, 0, w, h);
+
+            // Base spacing in canvas units, scaled by zoom
+            const baseSpacing = 24;
+            const spacing = baseSpacing * zoom;
+
+            // Offset of the first dot in screen space (pan mod spacing)
+            const offsetX = ((panX % spacing) + spacing) % spacing;
+            const offsetY = ((panY % spacing) + spacing) % spacing;
+
+            // Dot radius scales subtly with zoom, clamped
+            const r = Math.max(0.6, Math.min(1.4, zoom * 0.9));
+            gridCtx.fillStyle = '#2a2a35';
+
+            for (let x = offsetX - spacing; x < w + spacing; x += spacing) {
+                for (let y = offsetY - spacing; y < h + spacing; y += spacing) {
+                    gridCtx.beginPath();
+                    gridCtx.arc(x, y, r, 0, Math.PI * 2);
+                    gridCtx.fill();
+                }
+            }
+        }
+
+        drawGrid(); // initial draw
+
+        function showNotification(text) {
+            const wrapper = document.getElementById('toast-wrapper');
+            const toast = document.createElement('div');
+            toast.className = 'bg-zinc-900/95 border border-zinc-800 text-zinc-100 px-4 py-2.5 rounded-xl shadow-2xl premium-blur text-xs flex items-center gap-2 animate-bounce';
+            toast.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-500"></i> ${text}`;
+            wrapper.appendChild(toast);
+            setTimeout(() => {
+                toast.remove();
+            }, 3000);
+        }
+    </script>
+
+<!-- FOLDER NAV BAR - injected by add_home_nav.py -->
+<style>
+.envizion-nav-element {
+    position: fixed;
+    z-index: 99999;
+    font-size: 13px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    padding: 10px 18px;
+    border-radius: 30px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15), 0 1px 3px rgba(0, 0, 0, 0.1);
+    transition: transform 0.2s ease, background-color 0.2s ease, opacity 0.3s ease;
+    opacity: 0;
+    pointer-events: none; /* Block interactions until scrolled to bottom */
+    cursor: pointer;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+
+/* Activated state toggled cleanly by JavaScript scroll monitor */
+.envizion-nav-element.visible-at-bottom {
+    opacity: 0.4; /* Base visibility state when user is at the bottom */
+    pointer-events: all;
+}
+
+/* Go Back Up - Maintained height and horizontally centralized */
+#envizion-scroll-up-btn {
+    bottom: 72px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #ffffff;
+    color: #000000;
+    border: none;
+}
+#envizion-scroll-up-btn.visible-at-bottom:hover,
+#envizion-scroll-up-btn.visible-at-bottom:focus {
+    opacity: 1;
+    background: #f0f0f0;
+    transform: translateX(-50%) translateY(-2px);
+}
+#envizion-scroll-up-btn:active {
+    transform: translateX(-50%) translateY(0);
+}
+
+/* Folder Button - Pinned to bottom right corner, raised 9px from the bottom seam */
+#envizion-folder-nav-btn {
+    bottom: 9px;
+    right: 24px;
+    background: #0055ff;
+    color: #ffffff;
+    text-decoration: none;
+}
+#envizion-folder-nav-btn.visible-at-bottom:hover,
+#envizion-folder-nav-btn.visible-at-bottom:focus {
+    opacity: 1;
+    background: #0044cc;
+    transform: translateY(-2px);
+}
+#envizion-folder-nav-btn:active {
+    transform: translateY(0);
+}
+</style>
+
+<button id="envizion-scroll-up-btn" class="envizion-nav-element" onclick="window.scrollTo({top: 0, behavior: 'smooth'})">
+    &#x2191; Go Back Up
+</button>
+
+<script>
+(function() {
+    const upBtn = document.getElementById('envizion-scroll-up-btn');
+    const folderBtn = document.getElementById('envizion-folder-nav-btn');
+
+    function checkScrollPosition() {
+        // Calculate document coordinates and viewport dimensions
+        const windowHeight = window.innerHeight;
+        const scrollY = window.scrollY || window.pageYOffset;
+        const documentHeight = document.documentElement.scrollHeight;
+        const nearBottom = (windowHeight + scrollY) >= (documentHeight - 40);
+        [upBtn, folderBtn].forEach(b => { if (!b) return; if (nearBottom) b.classList.add('visible-at-bottom'); else b.classList.remove('visible-at-bottom'); });
+    }
+
+    window.addEventListener('scroll', checkScrollPosition);
+    window.addEventListener('resize', checkScrollPosition);
+    // Initial run to verify height state on short pages
+    document.addEventListener('DOMContentLoaded', checkScrollPosition);
+    checkScrollPosition();
+})();
+</script>
+<!-- END FOLDER NAV BAR -->
+
+
+
+
+
+
+
+
+
+
+</html>

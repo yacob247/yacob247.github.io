@@ -1,0 +1,38 @@
+name: Pack Games
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v1
+
+      - name: Fetch v86 dependency
+        run: |
+          mkdir -p bottleship-main/vendor
+          git clone https://github.com/copy/v86.git bottleship-main/vendor/v86
+
+      - name: Install dependencies
+        working-directory: bottleship-main
+        run: bun install
+
+      - name: Pack Project IGI
+        working-directory: bottleship-main
+        run: bun tools/make-wgb.ts "Project_IGI_RIP/PC/" ../IGI1.wgb --name "Project IGI" --exe IGI.exe --os win98
+
+      - name: Pack IGI 2
+        working-directory: bottleship-main
+        run: bun tools/make-wgb.ts "IGI 2 - Covert Strike/pc/" ../IGI2.wgb --name "IGI 2 Covert Strike" --exe igi2.exe --os win98
+
+      - name: Install rclone
+        run: curl https://rclone.org/install.sh | sudo bash
+
+      - name: Setup rclone config
+        run: |
+          mkdir -p ~/.config/rclone
+          echo "${{ secrets.RCLONE_CONF }}" > ~/.config/rclone/rclone.conf
+
+      - name: Upload to Cloudflare R2
+        run: |
+          rclone copy IGI1.wgb r2:images-ai/ --s3-no-check-bucket
+          rclone copy IGI2.wgb r2:images-ai/ --s3-no-check-bucket
