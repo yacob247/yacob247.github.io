@@ -25,23 +25,28 @@ window.SEARCH_ENDPOINT_CATALOG = {
       "sources": [
         {
           "name": "BBC News",
-          "domain": "bbc.com"
+          "domain": "bbc.com",
+          "kind": "news"
         },
         {
           "name": "CNN",
-          "domain": "cnn.com"
+          "domain": "cnn.com",
+          "kind": "news"
         },
         {
           "name": "BBC",
-          "domain": "bbc.co.uk"
+          "domain": "bbc.co.uk",
+          "kind": "news"
         },
         {
           "name": "ABC News Australia",
-          "domain": "abc.net.au"
+          "domain": "abc.net.au",
+          "kind": "news"
         },
         {
           "name": "GDELT news index",
-          "domain": "gdeltproject.org"
+          "domain": "gdeltproject.org",
+          "kind": "news"
         },
         {
           "name": "Wikipedia",
@@ -53,7 +58,8 @@ window.SEARCH_ENDPOINT_CATALOG = {
         },
         {
           "name": "Wikinews",
-          "domain": "wikinews.org"
+          "domain": "wikinews.org",
+          "kind": "news"
         }
       ]
     },
@@ -357,31 +363,91 @@ window.SEARCH_ENDPOINT_CATALOG = {
       "sources": [
         {
           "name": "BBC News",
-          "domain": "bbc.com"
+          "domain": "bbc.com",
+          "kind": "news"
         },
         {
           "name": "CNN",
-          "domain": "cnn.com"
+          "domain": "cnn.com",
+          "kind": "news"
         },
         {
           "name": "BBC",
-          "domain": "bbc.co.uk"
+          "domain": "bbc.co.uk",
+          "kind": "news"
         },
         {
           "name": "ABC News Australia",
-          "domain": "abc.net.au"
+          "domain": "abc.net.au",
+          "kind": "news"
         },
         {
           "name": "GDELT",
-          "domain": "gdeltproject.org"
+          "domain": "gdeltproject.org",
+          "kind": "news"
         },
         {
           "name": "Wikinews",
-          "domain": "wikinews.org"
+          "domain": "wikinews.org",
+          "kind": "news"
         },
         {
           "name": "TechCrunch",
-          "domain": "techcrunch.com"
+          "domain": "techcrunch.com",
+          "kind": "news"
+        }
+      ]
+    },
+    {
+      "name": "World calendars, holidays, observances and celebrations",
+      "keywords": [
+        "calendar",
+        "calendars",
+        "holiday",
+        "holidays",
+        "public holiday",
+        "observance",
+        "celebration",
+        "celebrations",
+        "festival",
+        "festivals",
+        "event",
+        "events",
+        "event date",
+        "date",
+        "dates",
+        "what happens",
+        "happening",
+        "ramadan",
+        "eid",
+        "diwali",
+        "easter",
+        "lunar calendar",
+        "hijri",
+        "new year",
+        "school holiday",
+        "religious date"
+      ],
+      "sources": [
+        {
+          "name": "OpenHolidays API",
+          "domain": "openholidaysapi.org",
+          "kind": "calendar"
+        },
+        {
+          "name": "Nager.Date API",
+          "domain": "date.nager.at",
+          "kind": "calendar"
+        },
+        {
+          "name": "AlAdhan Islamic calendar",
+          "domain": "api.aladhan.com",
+          "kind": "calendar"
+        },
+        {
+          "name": "GDELT current events",
+          "domain": "gdeltproject.org",
+          "kind": "news"
         }
       ]
     },
@@ -933,10 +999,7 @@ window.SEARCH_ENDPOINT_CATALOG = {
         "quote",
         "trivia",
         "joke",
-        "humor",
-        "holiday",
-        "calendar",
-        "date"
+        "humor"
       ],
       "sources": [
         {
@@ -958,10 +1021,6 @@ window.SEARCH_ENDPOINT_CATALOG = {
         {
           "name": "JokeAPI",
           "domain": "jokeapi.dev"
-        },
-        {
-          "name": "Nager.Date",
-          "domain": "nager.at"
         }
       ]
     },
@@ -1163,8 +1222,7 @@ window.SEARCH_ENDPOINT_CATALOG = {
         "hospital",
         "atm",
         "park",
-        "station",
-        "holiday"
+        "station"
       ],
       "sources": [
         {
@@ -1178,10 +1236,6 @@ window.SEARCH_ENDPOINT_CATALOG = {
         {
           "name": "OpenStreetMap Overpass",
           "domain": "overpass-api.de"
-        },
-        {
-          "name": "Nager.Date",
-          "domain": "date.nager.at"
         },
         {
           "name": "ABS",
@@ -1433,7 +1487,7 @@ window.SEARCH_ENDPOINT_CATALOG = {
       ]
     },
     {
-      "name": "Names, postcodes, holidays and time",
+      "name": "Names, postcodes and time",
       "keywords": [
         "name origin",
         "nationality",
@@ -1441,8 +1495,6 @@ window.SEARCH_ENDPOINT_CATALOG = {
         "gender by name",
         "postcode",
         "postal code",
-        "holiday",
-        "public holiday",
         "timezone",
         "local time"
       ],
@@ -1462,10 +1514,6 @@ window.SEARCH_ENDPOINT_CATALOG = {
         {
           "name": "Zippopotam.us",
           "domain": "zippopotam.us"
-        },
-        {
-          "name": "Nager.Date",
-          "domain": "nager.at"
         },
         {
           "name": "WorldTimeAPI",
