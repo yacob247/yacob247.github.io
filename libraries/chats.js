@@ -15,7 +15,7 @@
 
   /* ---------- turning attachments into saveable records ---------- */
   const IMG = /^(png|jpe?g|gif|webp|bmp|svg|avif)$/i;
-  const kindOf = f => f.img ? "image" : f.ext === "pdf" ? "pdf" : "text";
+  const kindOf = f => f.kind || (f.img ? "image" : f.ext === "pdf" ? "pdf" : "text");
   async function shrink(url) {                          // images are stored as ≤1600px JPEG/PNG data URLs
     const blob = await (await fetch(url)).blob();
     try {
@@ -28,14 +28,17 @@
   async function snapshot(list) {
     const out = [];
     for (const f of list) {
-      const rec = { name: f.name, ext: f.ext || "", kind: kindOf(f), language: f.ext || "", size: f.size || 0 };
+      const rec = { source: "user_upload", source_role: "user_attachment", name: f.name, ext: f.ext || "", kind: kindOf(f), language: f.ext || "", mime_type: f.blob?.type || "", size: f.blob?.size || f.size || 0,
+        extraction: { method: f.extractionMethod || (f.ocr ? "ocr" : "file_text"), confidence: Number.isFinite(f.extractionConfidence) ? f.extractionConfidence : null, complete: f.extractionComplete !== false } };
       if (f.img) { try { Object.assign(rec, await shrink(f.img)); } catch (_) {} }
-      if (f.text) { rec.text = f.text; rec.ocr = !!f.ocr; }
+      const extracted = f.extractedText ?? f.text ?? "";
+      if (extracted) rec.extracted_text = extracted;
+      if (f.ocr) rec.ocr = true;
       out.push(rec);
     }
     return out;
   }
-  const fileKey = r => r.name + "|" + (r.text ? r.text.length + r.text.slice(0, 60) : (r.data_url || "").length);
+  const fileKey = r => r.name + "|" + (r.extracted_text ? r.extracted_text.length + r.extracted_text.slice(0, 60) : (r.data_url || "").length);
   function registerFiles(chat, recs) {                  // each distinct file is stored once per chat
     return recs.map(r => {
       const k = fileKey(r); let hit = chat.files.find(x => x._k === k);
@@ -67,6 +70,12 @@
     await put(strip(cur)); refresh();
   }
   const strip = c => JSON.parse(JSON.stringify(c));
+  function exportFile(f, chat_id) {
+    const { _k, text, extractedText, extracted_text: storedText, extractionMethod, extractionConfidence, extractionComplete, extraction: storedExtraction, ...rest } = f;
+    return { chat_id, source: "user_upload", source_role: "user_attachment", ...rest,
+      kind: kindOf(f), extracted_text: extractedText ?? storedText ?? text ?? "",
+      extraction: storedExtraction || { method: extractionMethod || (f.ocr ? "ocr" : "file_text"), confidence: Number.isFinite(extractionConfidence) ? extractionConfidence : null, complete: extractionComplete !== false } };
+  }
 
   /* ---------- organised export ---------- */
   function build(chats) {
@@ -81,12 +90,12 @@
         else cat[m.category].push(ref);
         if (m.language) langs[m.language] = (langs[m.language] || 0) + 1;
       });
-      c.files.forEach(f => { const { _k, ...rest } = f; files.push({ chat_id: c.id, ...rest }); });
+      c.files.forEach(f => files.push(exportFile(f, c.id)));
     }
     const filesBy = k => files.filter(f => f.kind === k).length;
     return {
       format: "ai-chat-export", version: 1, exported_at: now(),
-      summary: { chats: chats.length, messages: msgs, files: files.length, images: filesBy("image"), text_files: filesBy("text"), pdfs: filesBy("pdf"),
+      summary: { chats: chats.length, messages: msgs, files: files.length, images: filesBy("image"), text_files: filesBy("text"), pdfs: filesBy("pdf"), archives: filesBy("zip"),
         messages_by_category: { code: Object.values(cat.code).reduce((a, b) => a + b.length, 0), image: cat.image.length, file: cat.file.length, chat: cat.chat.length }, languages: langs },
       categories: cat,
       files,
@@ -100,7 +109,7 @@
       if (u.role !== "user" || a.role !== "assistant" || a.error) continue;
       out.push(JSON.stringify({ chat_id: c.id, exchange: (i / 2 | 0) + 1, category: u.category, language: u.language || null,
         messages: [{ role: "user", content: u.text }, { role: "assistant", content: a.text }],
-        files: (u.file_ids || []).map(id => { const f = c.files.find(x => x.id === id); if (!f) return null; const { _k, ...r } = f; return r; }).filter(Boolean),
+        files: (u.file_ids || []).map(id => { const f = c.files.find(x => x.id === id); return f ? exportFile(f, c.id) : null; }).filter(Boolean),
         code: a.code || null, user_feedback: a.user_feedback }));
     }
     return out.join("\n") + (out.length ? "\n" : "");
