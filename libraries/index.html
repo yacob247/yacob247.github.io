@@ -2128,7 +2128,7 @@ function attachBlock(qt, budget, fallbackToLatest = true) {
 rebuildSources().catch(e => console.warn("sources:", e));
 
 /* ---------- fast parallel loader (R2 only, no fallback) ---------- */
-const CHUNK = (PHONE ? 4 : 8) * 1048576; // mobile uses smaller streamed R2 ranges
+const CHUNK = (PHONE ? 1 : 8) * 1048576; // smaller phone ranges reduce transient buffering while large weights stream
 const STREAMS = 16;                      // parallel range requests for the desktop buffer loader
 const R2_CACHE = "r2-model-v1";  // bump this name if you ever replace the files in the bucket
 const BIGRE = /\.(onnx|onnx_data)$|tokenizer\.json$/;
@@ -2251,7 +2251,12 @@ async function mobileStream(url) {
 }
 let putChain = Promise.resolve();   // cache saves run one at a time, in the background
 const saveLater = (c, url, buf) => { putChain = putChain.then(() => c.put(url, respFor(buf))).then(() => lap("cached " + url.split("/").pop())).catch(e => lap("CACHE SAVE FAILED " + url.split("/").pop() + ": " + (e && e.message || e))); };
-const saveResponseLater = (c, url, response) => { putChain = putChain.then(() => c.put(url, response)).then(() => lap("cached " + url.split("/").pop())).catch(e => lap("CACHE SAVE FAILED " + url.split("/").pop() + ": " + (e && e.message || e))); };
+const saveResponseLater = (c, url, response) => {
+  // On phones, consume each streamed clone immediately. Queuing Cache.put calls
+  // can leave tee branches unread, buffering whole ONNX responses in RAM.
+  if (PHONE) { c.put(url, response).then(() => lap("cached " + url.split("/").pop())).catch(e => lap("CACHE SAVE FAILED " + url.split("/").pop() + ": " + (e && e.message || e))); return; }
+  putChain = putChain.then(() => c.put(url, response)).then(() => lap("cached " + url.split("/").pop())).catch(e => lap("CACHE SAVE FAILED " + url.split("/").pop() + ": " + (e && e.message || e)));
+};
 const pending = new Map();
 function fastGet(url) {
   if (pending.has(url)) return pending.get(url);
