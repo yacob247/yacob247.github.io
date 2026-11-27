@@ -4183,7 +4183,7 @@ async function collectReviewedWebResults(v, query, onActivity = () => {}) {
     let found = current.hits.filter(h => !seen.has(webHitKey(h)));
     found.forEach(h => seen.add(webHitKey(h)));
     found = relevantWebHits(found, current.q, site);
-    const readLimit = site ? 5 : fastCrossEngineLookup ? 4 : calendarLookup ? 6 : socialMetricLookup ? 16 : 10;
+    const readLimit = site ? 5 : fastCrossEngineLookup ? 2 : calendarLookup ? 6 : socialMetricLookup ? 16 : 10;
     const pageRead = await readWebResultPages(diverseReadCandidates(found, readLimit), onActivity, readLimit, 6000);
     if (pageRead.failed) failed.push(pageRead.failed + " result page(s) could not be read");
     // Recheck against the full page after opening it. A SERP parser can attach
@@ -4624,15 +4624,17 @@ function explicitDocumentTask(v) {
 }
 // ---- search policy: code-level guard so a small model's guess can never force (or ignore) a search ----
 const NO_SEARCH = /\b(?:do\s*n[o']?t|dont|don'?t|do\s+nto|never|stop|without|avoid)\s+(?:\w+\s+){0,2}(?:search\w*|research\w*|google|look\s*(?:it\s*)?up|browse|the\s+web|internet)\b|\bno\s+(?:web\s+)?(?:search\w*|research\w*|googling|lookups?)\b/i;
-const ASKS_SEARCH = /\b(?:search|searx\w*|google|look\s*up|lookup|check\s+online|find\s+(?:it\s+)?online)\b|\/web\b/i;
-const RETRY_SEARCH = /\bno[,\s]+(?:research|search)\s+again\b|^\s*no[, ]+(?:(?:please|just)\s+)?(?:research|search|look\s+it\s+up)\b/i;
+const ASKS_SEARCH = /\b(?:search|searx\w*|google|look\s*up|lookup|look\s+into|check\s+online|find\s+(?:it\s+)?online)\b|\/web\b/i;
+const RETRY_SEARCH = /\bno[,\s]+(?:research|search)\s+again\b|^\s*(?:no[, ]+)?(?:(?:please|just)\s+)?(?:research|search)(?:\s+(?:it|that|him|her|them))?(?:\s+(?:up|again))?(?:\s+(?:man|bro|mate|dude))?[!. ]*$/i;
 // Engine/search commands are controls for the current lookup, not its subject.
 const SEARCH_DIRECTIVE = /^\s*(?:(?:ok(?:ay)?|yes|yeah|please|man|bro|mate)\s+)*(?:(?:use|try|do)\s+)?(?:(?:the\s+)?(?:web\s+)?search(?:es)?|(?:duckduckgo|google|gogole|bing)(?:\s+or\s+(?:duckduckgo|google|gogole|bing))*\s+search(?:es)?)(?:\s+(?:again|for\s+me))?(?:\s+(?:man|bro|mate|dude))?[!. ]*$/i;
 // Short corrections qualify the previous subject; search both together.
 const SUBJECT_CORRECTION = /^\s*(?:no[, ]+)?(?:it(?:'s|\s+is)|that(?:'s|\s+is)|actually|i\s+mean)\s+(?:a\s+|an\s+)?(?:restaurant|cafe|café|shop|store|business|person|place|website|app)\b/i;
 const READS_URL = /\b(?:what|tell\s+me\s+about|describe|explain|summari[sz]e|open|read|review|inspect|visit|check)\b/i;
 const NEEDS_FRESH = /\b(?:latest|newest|current(?:ly)?|today|tonight|right now|breaking|news|event(?:s)?|calendar|date|dates|holiday(?:s)?|festival(?:s)?|celebration(?:s)?|observance|ramadan|eid|diwali|easter|lunar|price of|weather|forecast|live score|stock price|exchange rate|who won|release date|just (?:released|announced)|this (?:week|month|year)|subscriber count|subscribers?|follower count|followers?|following count|social media stats|audience size)\b/i;
-const FACT_Q = /^\s*(?:(?:ok|and|so|now|then)\s+)*(?:who\s+(?:is|was|are|were)|when\s+(?:was|did|is)|where\s+(?:is|was)|how\s+(?:old|tall|rich)\s+is|what\s+(?:is|happened\s+(?:to|with)))\s+(?!you\b|i\b|we\b|me\b|your\b)\S+|\bis\s+.{2,60}?\s+(?:married|dating|alive|dead|real|still\s+\w+)\b|\btell\s+me\s+about\s+(?!you\b|yourself\b)\S+/i;
+const FACT_Q = /^\s*(?:(?:ok|and|so|now|then)\s+)*(?:who\s+(?:is|was|are|were)|when\s+(?:was|did|is)|where\s+(?:is|was)|how\s+(?:old|tall|rich)\s+is|what\s+happened\s+(?:to|with))\s+(?!you\b|i\b|we\b|me\b|your\b)\S+|\bis\s+.{2,60}?\s+(?:married|dating|alive|dead|real|still\s+\w+)\b|\btell\s+me\s+about\s+(?!you\b|yourself\b)\S+/i;
+const SPECIFIC_DEFINITION_Q = /^\s*(?:ok\s+)?what\s+(?:is|are)\s+(?!a\s|an\s|the\s).{0,70}\b(?:ai|website|school|university|company|organization|organisation|app|software|service|brand|platform)\b/i;
+const NAMED_DEFINITION_Q = /^\s*(?:ok\s+)?what\s+(?:is|are)\s+(?!(?:[Aa]|[Aa][Nn]|[Tt][Hh][Ee])\s)[A-Z][\w.-]*(?:\s+[A-Z][\w.-]*){0,3}\s*[?.!]*$/;
 const ABOUT_ASSISTANT = /\bhow\s+(?:fast|quick|good|smart|big|old)\s+are\s+you\b|\bare\s+you\s+(?:able|fast|smart|an?\s+ai)\b|\bwho\s+(?:made|created|built|trained)\s+you\b|\bwhat\s+(?:model|are)\s+you\b|\bwho\s+are\s+you\b|\byour\s+(?:speed|name|model|abilities|limits)\b/i;
 function searchPolicy(v, modes = {}) {
   const text = String(v || "");
@@ -4642,7 +4644,7 @@ function searchPolicy(v, modes = {}) {
   const self = ABOUT_ASSISTANT.test(text);
   const asked = !blocked && (retry || directUrlRead || ASKS_SEARCH.test(text));
   const fresh = !blocked && !self && NEEDS_FRESH.test(text);
-  const factual = !blocked && !self && FACT_Q.test(text);
+  const factual = !blocked && !self && (FACT_Q.test(text) || SPECIFIC_DEFINITION_Q.test(text) || NAMED_DEFINITION_Q.test(text));
   return { blocked, self, asked, fresh, factual, allowed: !blocked && !self && (asked || fresh || factual || !!modes.search) };
 }
 // Subject for a lookup: the user's wording minus filler; "search him up" borrows the subject from the last real question.
@@ -4660,7 +4662,7 @@ function resolveSearchQuery(v) {
     const context = recent.map(m => clean(m.content)).filter(Boolean).join(" ");
     if (context) return clean(context);
   }
-  if (RETRY_SEARCH.test(String(v || ""))) {
+  if (RETRY_SEARCH.test(String(v || "")) || /^\s*(?:no[, ]+)?\s*(?:please\s+)?(?:search|look\s+it\s+up)(?:\s+(?:man|bro|mate|dude))?[!. ]*$/i.test(String(v || ""))) {
     for (const m of [...history].reverse()) {
       if (m.role !== "user" || RETRY_SEARCH.test(m.content) || NO_SEARCH.test(m.content)) continue;
       const previousSite = extractWebsite(m.content);
@@ -4668,7 +4670,7 @@ function resolveSearchQuery(v) {
       if (ASKS_SEARCH.test(m.content)) return clean(m.content);
     }
   }
-  const own = clean(String(v).replace(/\b(?:no\s+)?(?:sir|search|searx\w*|google|look\s*up|lookup|use|function|web|online|internet|up|ok|okay|now|again|you are right)\b/ig, " "));
+  const own = clean(String(v).replace(/\b(?:no\s+)?(?:sir|search|searx\w*|google|look\s*up|lookup|look\s+into|use|function|web|online|internet|up|ok|okay|now|again|man|bro|mate|dude|you are right)\b/ig, " "));
   const pointsBack = /\b(?:him|her|it|them|this|that|he|she)\b/i.test(v);
   if (own.split(/\s+/).filter(w => w.length > 2).length && !pointsBack) return own;
   for (const m of [...history].reverse()) {
@@ -4702,6 +4704,11 @@ async function route(v, modes = {}) {
   // Explicit search ask or a plain fact question about a person/place/thing: look it up directly, no extra routing call.
   if ((pol.asked || pol.factual || pol.fresh) && !pol.blocked && !pol.self && !/\b(?:create|make|build|write|code|calculate|draw)\b/i.test(v))
     return { intent: "SEARCH", query: resolveSearchQuery(v), research: true, check: false, useFiles: false };
+  // Route everyday explanations straight to chat. A model based intent-planning
+  // call adds latency but does not help answer stable questions like "what is a monkey?".
+  const commonExplanation = /^\s*(?:(?:ok|and|so)\s+)*(?:what\s+(?:is|are)|why\s+(?:is|are|do|does)|how\s+(?:does|do)|explain|define)\b/i.test(v);
+  if (commonExplanation && !pol.asked && !pol.fresh && !SPECIFIC_DEFINITION_Q.test(v) && !NAMED_DEFINITION_Q.test(v))
+    return { intent: "CHAT", query: "", research: false, check: false, useFiles: tempFiles.length > 0 };
   const it = await understand(v, { allowSearch: pol.allowed });
   if (it && !pol.allowed) { if (it.intent === "SEARCH") { it.intent = "CHAT"; it.query = ""; } it.research = false; }
   return it;
