@@ -3372,6 +3372,87 @@ function parseReaderSerp(text, source, limit = 10) {
   }
   return out;
 }
+function sitemapHost(value) {
+  try { return new URL(/^https?:\/\//i.test(value) ? value : "https://" + value).hostname.toLowerCase().replace(/^www\./, ""); }
+  catch (_) { return String(value || "").toLowerCase().replace(/^www\./, "").split("/")[0]; }
+}
+function sitemapLocations(text) {
+  const xml = String(text || ""), out = [], seen = new Set();
+  const loc = /<loc\b[^>]*>([\s\S]*?)<\/loc\s*>/gi;
+  let m;
+  while ((m = loc.exec(xml))) {
+    const raw = m[1].replace(/<!\[CDATA\[|\]\]>/g, "").replace(/&amp;/g, "&").trim();
+    try {
+      const url = new URL(raw);
+      if (!/^https?:$/.test(url.protocol) || seen.has(url.href)) continue;
+      seen.add(url.href); out.push(url.href);
+    } catch (_) {}
+  }
+  // Some readable proxies turn sitemap XML into plain text. Recover its URLs.
+  if (!out.length) {
+    const bare = /https?:\/\/[^\s<>"']+/g;
+    while ((m = bare.exec(xml))) {
+      const raw = m[0].replace(/&amp;|[),.;]+$/g, "");
+      try { const url = new URL(raw); if (!seen.has(url.href)) { seen.add(url.href); out.push(url.href); } } catch (_) {}
+    }
+  }
+  return out;
+}
+async function fetchSitemapDocument(url) {
+  let directError;
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(3500) });
+    if (response.ok) return { url, text: (await response.text()).slice(0, 1200000) };
+    if (response.status !== 403 && response.status !== 429 && response.status < 500) throw new Error("HTTP " + response.status);
+    directError = new Error("HTTP " + response.status);
+  } catch (error) { directError = error; }
+  const response = await fetch("https://r.jina.ai/" + url, { signal: AbortSignal.timeout(5500) });
+  if (!response.ok) throw new Error("Sitemap unavailable directly and through reader (" + (directError?.message || "request failed") + "; HTTP " + response.status + ")");
+  const text = (await response.text()).slice(0, 1200000);
+  if (!sitemapLocations(text).length) throw new Error("No sitemap URLs were readable");
+  return { url, text };
+}
+async function searchDomainSitemap(domain, query) {
+  const root = "https://" + String(domain || "").replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+  const host = sitemapHost(root);
+  if (!host || !host.includes(".")) return [];
+  let documents = await Promise.allSettled(["/sitemap.xml", "/sitemap_index.xml", "/sitemap-index.xml"].map(path => fetchSitemapDocument(root + path)));
+  let maps = documents.filter(x => x.status === "fulfilled").map(x => x.value);
+  if (!maps.length) {
+    // Robots files often point to a sitemap stored at a nonstandard path.
+    try {
+      const robots = await fetchSitemapDocument(root + "/robots.txt");
+      const custom = [...robots.text.matchAll(/^\s*Sitemap:\s*(https?:\/\/\S+)/gim)].map(x => x[1]);
+      maps = (await Promise.allSettled(custom.slice(0, 4).map(fetchSitemapDocument))).filter(x => x.status === "fulfilled").map(x => x.value);
+    } catch (_) {}
+  }
+  if (!maps.length) return [];
+  let pageUrls = [], nested = [];
+  for (const map of maps) {
+    const locations = sitemapLocations(map.text);
+    if (/sitemapindex|<sitemap\b/i.test(map.text.slice(0, 12000)) || locations.some(url => /sitemap[^/]*\.xml(?:$|\?)/i.test(url))) nested.push(...locations);
+    else pageUrls.push(...locations);
+  }
+  if (nested.length) {
+    const nestedDocs = await Promise.allSettled([...new Set(nested)].filter(url => {
+      const childHost = sitemapHost(url); return childHost === host || childHost.endsWith("." + host);
+    }).slice(0, 8).map(fetchSitemapDocument));
+    pageUrls.push(...nestedDocs.filter(x => x.status === "fulfilled").flatMap(x => sitemapLocations(x.value.text)));
+  }
+  const queryText = String(query || "").replace(/https?:\/\/\S+/ig, " ").replace(/\b(?:www\.)?[a-z0-9.-]+\.[a-z]{2,}\b/ig, " ").replace(/site:[^\s]+/ig, " ");
+  const terms = [...new Set(queryTokens(queryText).filter(w => w.length > 2))];
+  const seen = new Set();
+  const ranked = pageUrls.filter(url => {
+    try { const itemHost = sitemapHost(url); return (itemHost === host || itemHost.endsWith("." + host)) && !seen.has(url) && (seen.add(url), true); }
+    catch (_) { return false; }
+  }).map(url => {
+    let path = ""; try { const parsed = new URL(url); path = decodeURIComponent(parsed.pathname + parsed.search); } catch (_) {}
+    const matched = terms.filter(term => path.toLowerCase().includes(term));
+    const title = path.split(/[\/?#=_-]+/).filter(Boolean).slice(-5).join(" ") || url;
+    return { url, path, matched, score: matched.length, title };
+  }).filter(x => !terms.length || x.score > 0).sort((a, b) => b.score - a.score);
+  return ranked.slice(0, 10).map(item => ({ title: item.title, url: item.url, text: "Discovered in " + host + " sitemap.xml" + (item.matched.length ? "; URL path matches: " + item.matched.join(", ") : ""), src: "Sitemap.xml " + host }));
+}
 const WEB_SOURCES = [
   { name: "SearXNG", run: async q => {
       // All instances race in parallel; the first one that answers with JSON wins. Most public instances block browsers (CORS/JSON off), so /searx <your-instance-url> is the reliable way.
@@ -3385,10 +3466,16 @@ const WEB_SOURCES = [
   { name: "Website page", when: v => !!extractWebsite(v), run: async q => {
       const site = extractWebsite(v) || extractWebsite(q); if (!site) return [];
       const target = /^https?:\/\//i.test(site) ? site : "https://" + site;
-      const response = await fetch("https://r.jina.ai/" + target, { signal: AbortSignal.timeout(WEB_TIMEOUT) });
-      if (!response.ok) throw new Error("HTTP " + response.status);
-      const text = (await response.text()).trim().slice(0, 5000);
-      return text ? [{ title: "Website content for " + new URL(target).hostname, url: target, text }] : [];
+      const [page, sitemap] = await Promise.all([
+        (async () => {
+          const response = await fetch("https://r.jina.ai/" + target, { signal: AbortSignal.timeout(WEB_TIMEOUT) });
+          if (!response.ok) throw new Error("HTTP " + response.status);
+          const text = (await response.text()).trim().slice(0, 5000);
+          return text ? [{ title: "Website content for " + new URL(target).hostname, url: target, text }] : [];
+        })().catch(() => []),
+        searchDomainSitemap(new URL(target).hostname, v).catch(() => [])
+      ]);
+      return [...page, ...sitemap];
   } },
   { name: "OpenHolidays public and school calendar", when: v => /\b(calendar|date|dates|holiday|holidays|observance|celebration|festival|ramadan|eid|diwali|easter|hijri|lunar)\b/i.test(v), run: async q => {
       const date = calendarDateFrom(q), year = calendarYearFrom(q, date), country = await matchCalendarCountry(q);
@@ -3658,7 +3745,7 @@ async function searchCatalogFor(v, focusedQuery = v) {
     if (chosen) ranked = [{ c: chosen, score: 1 }];
   }
   if (!isCalendarLookup && !isSocialMetricLookup && engine && categories.length) {
-      const choices = categories.map((c, i) => i + ". " + c.name + " — request clues: " + (c.keywords || []).join(", ") + (c.searchExamples?.length ? " — example requests: " + c.searchExamples.join("; ") : "") + (c.searchGuidance ? " — search guidance: " + c.searchGuidance : "") + " — websites: " + c.sources.map(s => s.name + " (" + s.domain + ")").join(", ")).join("\n");
+      const choices = categories.map((c, i) => i + ". " + c.name + " — request clues: " + (c.keywords || []).join(", ") + (c.searchExamples?.length ? " — example requests: " + c.searchExamples.join("; ") : "") + (c.searchGuidance ? " — search guidance: " + c.searchGuidance : "") + " — websites: " + c.sources.map(s => s.name + " (" + s.domain + ")" + (s.url ? " [" + s.url + "]" : "")).join(", ")).join("\n");
     try {
       const response = await engine.chat.completions.create({ messages: [
         { role: "system", content: "First understand the complete request and the evidence needed to answer it. Inspect the source directory and select two or three relevant categories. Do not route only by whether the subject is a person, place, or product. Catalog website entries are domains to SEARCH INSIDE, never pages to open as search results. For each selected domain, issue a web-search query restricted to that domain (for example, site:bbc.com Georgina Rodriguez marriage), inspect the returned result links, open the actual matching article pages, and read their contents. Opening a domain homepage is not searching that domain. If the request concerns a changeable status or recent event, include a news/current-events category. Use zero-based category indexes. Return JSON only: {\"categories\":[integer indexes]}" },
@@ -3681,7 +3768,7 @@ async function searchCatalogFor(v, focusedQuery = v) {
   if (!isCalendarLookup && personQuestion && peopleCategory) ranked = [{ c: peopleCategory, score: 1 }];
   if (!isCalendarLookup && isSocialMetricLookup && socialMetricsCategory) ranked = [{ c: socialMetricsCategory, score: 1 }];
   if (!ranked.length) ranked = categoryScores.filter(x => x.score).sort((a, b) => b.score - a.score).slice(0, 3);
-  const text = ranked.map(({ c }) => c.name + ": " + c.sources.map(s => s.name + " (" + s.domain + ")").join(", ") + (c.searchExamples?.length ? "\nExample requests: " + c.searchExamples.join("; ") : "") + (c.searchGuidance ? "\nSearch guidance: " + c.searchGuidance : "")).join("\n");
+  const text = ranked.map(({ c }) => c.name + ": " + c.sources.map(s => s.name + " (" + s.domain + ")" + (s.url ? " [" + s.url + "]" : "")).join(", ") + (c.searchExamples?.length ? "\nExample requests: " + c.searchExamples.join("; ") : "") + (c.searchGuidance ? "\nSearch guidance: " + c.searchGuidance : "")).join("\n");
   // Keep every exact destination while querying each domain only once.
   const grouped = new Map();
   const allSources = categories.flatMap(c => c.sources || []);
@@ -3729,7 +3816,7 @@ async function searchCatalogFor(v, focusedQuery = v) {
     category: x.category, domains: [x.domain], kind: x.kind, directSources: x.directSources,
     isIslamicCalendar, year: desiredYear,
     query: "site:" + x.domain + " " + String(focusedQuery || v || "").replace(/[?!.]+$/, "").trim(),
-    label: "Searching inside " + x.domain
+    label: "Searching inside " + x.domain + " and checking sitemap.xml"
   }));
   return { text, scopes };
 }
@@ -3779,9 +3866,11 @@ async function searchInsideCatalogDomain(scope) {
       return hits;
     } catch (error) { throw error; }
   });
-  let searchHits = [];
-  try { searchHits = await Promise.any([searxAttempt, ...readerAttempts]); } catch (_) {}
-  let hits = [...new Map(searchHits.map(hit => [hit.url.toLowerCase(), hit])).values()];
+  const [searchHits, sitemapHits] = await Promise.all([
+    Promise.any([searxAttempt, ...readerAttempts]).catch(() => []),
+    searchDomainSitemap(domain, terms).catch(() => [])
+  ]);
+  let hits = [...new Map([...searchHits, ...sitemapHits].map(hit => [hit.url.toLowerCase(), hit])).values()];
   const wordSet = [...new Set(terms.toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 2))];
   const directHits = (scope.directSources || []).map(source => ({
     title: source.name || scope.category + " source page", url: source.url,

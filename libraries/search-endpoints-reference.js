@@ -2243,6 +2243,70 @@ window.SEARCH_ENDPOINT_CATALOG = {
         "Which public social profiles belong to [creator], and what counts do they show?"
       ],
       "searchGuidance": "Search for the named person or handle together with the requested platform and metric (subscribers, followers, or following). Prefer the matching profile/count page, open it, record the displayed count and access time, and keep followers distinct from following. For multiple platforms, search each relevant platform and public counter source; treat a missing or hidden count as unavailable, not zero."
+    },
+    {
+      "name": "My website pages and tools",
+      "keywords": [
+        "envizion.work",
+        "envizion website",
+        "my website",
+        "my site",
+        "website pages",
+        "site pages",
+        "website tools",
+        "online tools",
+        "tools page",
+        "tools folder",
+        "tools2",
+        "tools 2",
+        "tools directory",
+        "find a tool on my site",
+        "search my website",
+        "sitemap",
+        "gamehub"
+      ],
+      "sources": [
+        {
+          "name": "Envizion website sitemap (all indexed pages)",
+          "domain": "envizion.work",
+          "url": "https://envizion.work/sitemap.xml",
+          "type": "XML sitemap",
+          "description": "Use the sitemap to discover and search all indexed pages on the user's website."
+        },
+        {
+          "name": "Envizion tools pages",
+          "domain": "envizion.work",
+          "url": "https://envizion.work/tools/",
+          "description": "Tools directory and pages under /tools/."
+        },
+        {
+          "name": "Envizion GameHub pages",
+          "domain": "envizion.work",
+          "url": "https://envizion.work/gamehub/",
+          "description": "The user's GameHub directory and its game/category pages under /gamehub/."
+        },
+        {
+          "name": "Envizion tools2 pages",
+          "domain": "envizion.work",
+          "url": "https://envizion.work/tools2/",
+          "description": "Tools directory and pages under /tools2/."
+        },
+        {
+          "name": "Envizion website",
+          "domain": "envizion.work",
+          "url": "https://envizion.work/",
+          "description": "The user's complete website; search pages across the domain."
+        }
+      ],
+      "searchExamples": [
+        "Find a tool on my website for [task].",
+        "Search my /tools/ pages for [capability].",
+        "Search my /tools2/ pages for [capability].",
+        "Search my GameHub pages on envizion.work for [game or feature].",
+        "Find the page on envizion.work that explains [topic].",
+        "Search all pages in my website sitemap for [query]."
+      ],
+      "searchGuidance": "Search the user's own website, envizion.work. Search its sitemap.xml to discover matching page URLs across the whole site, then open and read the actual matching pages. Include /tools/ and /tools2/ when looking for tools. Do not stop at opening only the homepage or directory index; search and inspect relevant child pages. If sitemap access fails, use site:envizion.work queries and try opening matching results. The site sitemap currently indexes the user's GameHub section under /gamehub/, tools under /tools/, and tools2 under /tools2/; search relevant child pages in each section when requested."
     }
   ]
 };
