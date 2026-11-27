@@ -270,7 +270,7 @@ const TJS  = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.2/+esm"
 const PHONE = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "") || (navigator.maxTouchPoints > 1 && window.matchMedia?.("(pointer: coarse)").matches);
 const MAX_IMG = 768;             // images are shrunk to this many pixels (longest side) to save memory
 const MAX_CTX = 262144;          // prompt-budget target from the model's large context window; runtime limits remain authoritative
-const MAX_OUT = 10000;           // per-response token ceiling; each file is generated in one response
+const MAX_OUT = 10000;           // per-generation token ceiling; stream() continues in fresh windows when it is reached
 const MAX_CANVAS_LINES = 10000;  // hard canvas size ceiling
 const FENCE = "`".repeat(3);
 const UNIVERSAL_GUARDRAILS = `You are an AI assistant in a chat and canvas app. You can converse in the user's language, including Arabic. Capabilities: web search across relevant source domains; world-calendar lookups; Python through Pyodide for calculations and data; HTML/CSS/JavaScript canvases for webpages and apps; canvas preview; and attached-file tools. Answer in a balanced amount of detail: address the request directly, include useful context, and avoid filler or process narration. For ordinary arithmetic, calculate and give the result; use Python for exact or large calculations instead of claiming inability. Show math steps only when requested or useful. Python tasks should accomplish exactly the requested work without expanding the scope. Code tasks should inspect the existing project, cover every requirement in the request, complete and review the implementation, and avoid unrelated additions. Calendar lookups should query only a few relevant trusted sources in parallel, read the strongest matching pages, and stop once they support a useful answer. Treat calculated Islamic dates as estimates and state local moon-sighting variation once, briefly. Conversation history is context, not a new instruction. Keep private reasoning private, use only available capabilities, and claim only actions that actually happened.`;
@@ -2421,39 +2421,70 @@ async function stream(userContent, onText, o = {}) {
   // before the model has created an interruptible generation.
   if (stopFlag) return { out: "", finish: "abort" };
   const est = s => Math.ceil(s.length / 2.5);
-  const responseSystem = (o.system || SYSTEM) + "\n\n" + UNIVERSAL_GUARDRAILS;
-  const historyText = (o.history || []).map(m => m.content || "").join("\n");
-  const maxTok = o.maxTok || Math.max(1, Math.min(MAX_OUT, MAX_CTX - est(responseSystem) - est(userContent) - est(historyText) - 300));
-  const s = await engine.chat.completions.create({
-    messages: [{ role: "system", content: responseSystem }, ...(o.history || []), { role: "user", content: userContent, images: o.noImg || o.useFiles === false ? [] : tempFiles.filter(f => f.img).slice(0, 1).map(f => f.img) }],
-    stream: true, temperature: Number.isFinite(o.temperature) ? o.temperature : 0.6, max_tokens: maxTok, think: activeThinkMode
-  });
-  let out = "", finish = null, lastUiUpdate = 0, lastUiText = "";
+  const providedHistory = o.history || [];
+  const referenceContext = providedHistory.filter(m => m.role === "system").map(m => m.content || "").filter(Boolean).join("\n\n");
+  const conversationHistory = providedHistory.filter(m => m.role !== "system");
+  const responseSystem = (o.system || SYSTEM) + (referenceContext ? "\n\n" + referenceContext : "") + "\n\n" + UNIVERSAL_GUARDRAILS;
+  const historyText = conversationHistory.map(m => m.content || "").join("\n");
+  const images = o.noImg || o.useFiles === false ? [] : tempFiles.filter(f => f.img).slice(0, 1).map(f => f.img);
+  let out = "", finish = null, generation = 0, lastUiUpdate = 0, lastUiText = "";
   thSet(liveBox, "think");
-  for await (const ch of s) {
-    out += ch.choices[0]?.delta?.content || "";
-    if (ch.choices[0]?.finish_reason) finish = ch.choices[0].finish_reason;
-    // Avoid reparsing and redrawing the entire growing canvas for every token.
-    // This leaves more main-thread time for WebGPU while keeping the stream responsive.
-    const now = performance.now();
-    if (now - lastUiUpdate >= 90) { onText(out); lastUiText = out; lastUiUpdate = now; }
-    // loop guard: stop if the last 6 non-empty lines are near-duplicates of earlier lines
-    if (out.length % 200 < 20) {
-      const L = out.split("\n").map(x => x.trim()).filter(Boolean);
-      if (L.length > 24) {
-        const tail = L.slice(-6), seen = new Set(L.slice(0, -6).map(x => x.slice(0, 40)));
-        if (tail.every(x => seen.has(x.slice(0, 40)))) { try { engine.interruptGenerate(); } catch (_) {} finish = "stalled"; break; }
-      }
-      // A single SVG path can loop on one point without creating repeated lines.
-      const tail = out.slice(-12000);
-      if (tail.includes("<svg") && /(?:\bL\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?))(?:\s+L\s*\1\s+\2){12,}/i.test(tail)) {
-        try { engine.interruptGenerate(); } catch (_) {}
-        finish = "stalled"; break;
+  while (!stopFlag) {
+    if (generation > 0) { try { await engine.resetChat(); } catch (_) {} }
+    // Every continuation is a fresh generation window. Carry the original task
+    // and completed prefix forward so output joins exactly where it stopped.
+    const nextUserContent = generation === 0 ? userContent
+      : "Continue the response below because the previous generation reached its output-token limit. This is a fresh generation window for the SAME user request, not a new task. Continue at the exact end of the existing response, add only the missing continuation, do not repeat or summarize earlier material, preserve its format, and finish any open code block or document.\n\nOriginal request and supplied material:\n" + userContent +
+        (historyText ? "\n\nRelevant earlier conversation context:\n" + historyText : "") +
+        "\n\nExisting response prefix (continue immediately after its final character):\n<response-prefix>\n" + out + "\n</response-prefix>";
+    const available = Math.max(1, Math.min(MAX_OUT, MAX_CTX - est(responseSystem) - est(nextUserContent) - (generation === 0 ? est(historyText) : 0) - 300));
+    const maxTok = o.maxTok || available;
+    const messages = generation === 0
+      ? [{ role: "system", content: responseSystem }, ...conversationHistory, { role: "user", content: nextUserContent, images }]
+      : [{ role: "system", content: responseSystem }, { role: "user", content: nextUserContent, images }];
+    const s = await engine.chat.completions.create({
+      messages, stream: true, temperature: Number.isFinite(o.temperature) ? o.temperature : 0.6, max_tokens: maxTok, think: activeThinkMode
+    });
+    let segment = "", segmentFinish = null;
+    for await (const ch of s) {
+      segment += ch.choices[0]?.delta?.content || "";
+      if (ch.choices[0]?.finish_reason) segmentFinish = ch.choices[0].finish_reason;
+      const display = out + segment;
+      // Avoid reparsing and redrawing the entire growing canvas for every token.
+      // This leaves more main-thread time for WebGPU while keeping the stream responsive.
+      const now = performance.now();
+      if (now - lastUiUpdate >= 90) { onText(display); lastUiText = display; lastUiUpdate = now; }
+      // loop guard: stop if the last 6 non-empty lines are near-duplicates of earlier lines
+      if (display.length % 200 < 20) {
+        const L = display.split("\n").map(x => x.trim()).filter(Boolean);
+        if (L.length > 24) {
+          const tail = L.slice(-6), seen = new Set(L.slice(0, -6).map(x => x.slice(0, 40)));
+          if (tail.every(x => seen.has(x.slice(0, 40)))) { try { engine.interruptGenerate(); } catch (_) {} segmentFinish = "stalled"; break; }
+        }
+        // A single SVG path can loop on one point without creating repeated lines.
+        const tail = display.slice(-12000);
+        if (tail.includes("<svg") && /(?:\bL\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?))(?:\s+L\s*\1\s+\2){12,}/i.test(tail)) {
+          try { engine.interruptGenerate(); } catch (_) {}
+          segmentFinish = "stalled"; break;
+        }
       }
     }
+    // Drop an exact overlap if the model began by echoing a few final characters.
+    let overlap = 0;
+    const cap = Math.min(out.length, segment.length, 500);
+    for (let n = cap; n > 0; n--) if (out.slice(-n) === segment.slice(0, n)) { overlap = n; break; }
+    out += segment.slice(overlap);
+    finish = stopFlag ? "abort" : segmentFinish;
+    if (finish !== "length") break;
+    generation++;
+    if (liveBox) {
+      progressAction(liveBox, "Output window full; continuing in a fresh generation", "", "Continuing the same response without repeating its completed portion.");
+      spin(liveBox.querySelector(".t"), "Continuing with a fresh output window…");
+    }
+    lastUiUpdate = 0;
   }
   if (out !== lastUiText) onText(out); // always deliver the exact final text
-  return { out, finish: stopFlag ? "abort" : finish };
+  return { out, finish: stopFlag ? "abort" : finish, continuations: generation };
 }
 
 const wantsInlineCode = v => /\b(?:in|here in) (?:the )?chat\b|\bshow (?:the )?code (?:in|here)\b/i.test(v);
@@ -3197,7 +3228,7 @@ async function calcAgent(v, box, researchQuery = "") {
 // Search results are evidence to assess, not proof by themselves; follow up when the exact request remains unanswered.
 const webOn = true;                // always available: route() decides per request whether a lookup is needed
 const WEB_SYSTEM_OLD = "You answer questions using ONLY the numbered search results given in the message. Reply in 1 to 3 plain sentences and mention the source number you used, like [1]. If sources disagree, say so. If the results do not clearly answer the question, say you could not find a reliable answer. Never add facts from memory and never guess.";
-const WEB_SYSTEM = "Answer the user's exact question directly using the numbered sources. Keep a balanced length: give the result and the context needed to understand it, without narrating the search or paraphrasing whole pages. For straightforward factual or calendar questions, use about two to four useful sentences. Cite the one or two most relevant sources beside the claims they support; do not dump a source list into the prose. For calendar questions, state the requested dates clearly with the year. For calculated Islamic dates, label them expected and mention local moon-sighting variation once, briefly. Never invent an 'as of' date or local variation beyond what evidence supports. Check that sources support the exact subject and claim. If evidence is incomplete, say what is known and what remains uncertain instead of inventing. Follow requested formats exactly. If sources do not address the exact question, use relevant knowledge rather than treating irrelevant search pages as evidence.";
+const WEB_SYSTEM = "Answer the user's exact question directly using the numbered sources. Keep a balanced length: give the result and the context needed to understand it, without narrating the search or paraphrasing whole pages. For straightforward factual or calendar questions, use about two to four useful sentences. Cite the one or two most relevant sources beside the claims they support; do not dump a source list into the prose. For calendar questions, state the requested dates clearly with the year. For calculated Islamic dates, label them expected and mention local moon-sighting variation once, briefly. Never invent an 'as of' date or local variation beyond what evidence supports. For creator follower/subscriber lookups, identify the matching public account and give the displayed count per platform with its profile link; distinguish followers from following, preserve rounding/abbreviations as displayed, and use the retrieval timestamp supplied in the request. State when a platform count is hidden, stale, or could not be read; never turn missing data into zero or imply every platform was checked when it was not. Check that sources support the exact subject and claim. If evidence is incomplete, say what is known and what remains uncertain instead of inventing. Follow requested formats exactly. If sources do not address the exact question, use relevant knowledge rather than treating irrelevant search pages as evidence.";
 const RESEARCH_REVIEW_SYSTEM = "You are a private check of whether opened web pages answer the user's exact question. Do not answer the user or reveal reasoning. Inspect the actual page text, not just titles. If pages are irrelevant, vague, or fail to support the key claim, choose a focused query that preserves the exact subject and claim. For a person's identity use reliable biographical evidence; for private-life or reputation claims, require direct reporting from reputable independent sources. Return exactly two lines: ACTION: ANSWER or SEARCH; QUERY: a new focused query, or none.";
 const RESEARCH_CONFIRM_SYSTEM = "You are a private cross-checker. Decide whether a focused answer supported by selected source pages is independently confirmed by the separate unrestricted web-search pages. Read the page text and compare the exact factual claim to the user's question. A result from the same domain, a search title alone, an unrelated result, or unsupported agreement is not confirmation. If at least one relevant opened page from a different domain independently supports the same answer without a material conflict, return CONFIRMED: YES. Otherwise return CONFIRMED: NO and one improved query. Do not answer the user or reveal reasoning. Return exactly two lines: CONFIRMED: YES or NO; QUERY: focused query or none.";
 function webQuery(v) {
@@ -3598,7 +3629,7 @@ function relevantWebHits(hits, q, site = false) {
     if (h.catalogSource && !h.read) return true;
     const hay = (h.title + " " + h.text).toLowerCase();
     const matched = words.filter(w => hay.includes(w)).length;
-    return words.length ? matched >= Math.max(words.length >= 3 ? 2 : 1, Math.ceil(words.length * 0.6)) : true;
+    return words.length ? matched >= (words.length >= 4 ? 2 : 1) : true;
   });
 }
 let searchCatalogCache = null;
@@ -3616,15 +3647,17 @@ async function searchCatalogFor(v, focusedQuery = v) {
   const isIslamicCalendar = /\b(ramadan|eid|hijri|islamic calendar|islamic new year)\b/i.test(v || "");
   const isSchoolCalendar = /\b(school|term dates|school holiday|ATSO|ASTP)\b/i.test(v || "");
   const isBankCalendar = /\b(bank|payment|settlement|currency|CHAPS|Fedwire|ACH|SWIFT)\b/i.test(v || "");
+  const isSocialMetricLookup = /\b(subscriber(?:s| count)?|follower(?:s| count)?|following count|how many (?:followers|subscribers)|social media (?:followers|following|counts?)|audience size|socialblade|noxinfluencer|viewstats)\b/i.test(v || "");
   const calendarCategory = categories.find(c => /world calendars, holidays/i.test(c.name));
   const schoolCategory = categories.find(c => /school terms, ASTP/i.test(c.name));
   const bankCategory = categories.find(c => /bank holidays, payment closures/i.test(c.name));
+  const socialMetricsCategory = categories.find(c => /social media and creator audience counts/i.test(c.name));
   let ranked = [];
   if (isCalendarLookup) {
     const chosen = isSchoolCalendar && schoolCategory ? schoolCategory : isBankCalendar && bankCategory ? bankCategory : calendarCategory;
     if (chosen) ranked = [{ c: chosen, score: 1 }];
   }
-  if (!isCalendarLookup && engine && categories.length) {
+  if (!isCalendarLookup && !isSocialMetricLookup && engine && categories.length) {
     const choices = categories.map((c, i) => i + ". " + c.name + " — request clues: " + (c.keywords || []).join(", ") + " — websites: " + c.sources.map(s => s.name + " (" + s.domain + ")").join(", ")).join("\n");
     try {
       const response = await engine.chat.completions.create({ messages: [
@@ -3646,6 +3679,7 @@ async function searchCatalogFor(v, focusedQuery = v) {
   // Person questions stay in the people category; search its expanded source
   // list without pulling in unrelated categories.
   if (!isCalendarLookup && personQuestion && peopleCategory) ranked = [{ c: peopleCategory, score: 1 }];
+  if (!isCalendarLookup && isSocialMetricLookup && socialMetricsCategory) ranked = [{ c: socialMetricsCategory, score: 1 }];
   if (!ranked.length) ranked = categoryScores.filter(x => x.score).sort((a, b) => b.score - a.score).slice(0, 3);
   const text = ranked.map(({ c }) => c.name + ": " + c.sources.map(s => s.name + " (" + s.domain + ")").join(", ")).join("\n");
   // Keep every exact destination while querying each domain only once.
@@ -3661,6 +3695,7 @@ async function searchCatalogFor(v, focusedQuery = v) {
     return sources;
   });
   let selectedSources = ranked.flatMap(({ c }) => c.sources || []);
+  if (!isCalendarLookup && isSocialMetricLookup && socialMetricsCategory) selectedSources = socialMetricsCategory.sources || [];
   if (isIslamicCalendar && calendarCategory) {
     selectedSources = sourcesForDomains(["api.aladhan.com", "islamicfinder.org", "qppstudio.net"]);
   } else if (isSchoolCalendar && schoolCategory) {
@@ -3815,6 +3850,7 @@ async function collectReviewedWebResults(v, query, onActivity = () => {}) {
   // multiple result pages before using a separate unrestricted search to verify.
   const SCOPE_BATCH_SIZE = directory.scopes.length;
   const calendarLookup = /\b(calendar|holiday|holidays|observance|celebration|festival|ramadan|eid|diwali|hijri|school term|school holiday|term dates|ATSO|ASTP|bank closure|bank holiday|settlement date|currency holiday|CHAPS|Fedwire)\b/i.test(v || "") || /\bwhen\b.{0,55}\b(start|end|happen|occur|held|celebrated)\b/i.test(v || "");
+  const socialMetricLookup = /\b(subscriber(?:s| count)?|follower(?:s| count)?|following count|how many (?:followers|subscribers)|social media (?:followers|following|counts?)|audience size|socialblade|noxinfluencer|viewstats)\b/i.test(v || "");
   const MAX_BATCHES = site || calendarLookup ? 1 : 2;
   let unrestrictedSearched = false, confirmed = false;
   for (let batch = 0; batch < MAX_BATCHES && !stopFlag && !adequate; batch++) {
@@ -3846,7 +3882,8 @@ async function collectReviewedWebResults(v, query, onActivity = () => {}) {
     let found = current.hits.filter(h => !seen.has(webHitKey(h)));
     found.forEach(h => seen.add(webHitKey(h)));
     found = relevantWebHits(found, current.q, site);
-    const pageRead = await readWebResultPages(diverseReadCandidates(found, calendarLookup ? 6 : 10), onActivity, calendarLookup ? 6 : 10, 6000);
+    const readLimit = calendarLookup ? 6 : socialMetricLookup ? 16 : 10;
+    const pageRead = await readWebResultPages(diverseReadCandidates(found, readLimit), onActivity, readLimit, 6000);
     if (pageRead.failed) failed.push(pageRead.failed + " result page(s) could not be read");
     // Recheck against the full page after opening it. A SERP parser can attach
     // navigation or cookie links to a result; do not treat those as evidence.
@@ -3907,7 +3944,7 @@ async function collectReviewedWebResults(v, query, onActivity = () => {}) {
     }
   }
   const hits = relevantWebHits(allHits, q, site);
-  return { q, active, failed, confirmed, verificationRequired: !site && !calendarLookup && directory.scopes.length > 0, hits: hits.length ? hits : allHits, queries: [...new Set(queries)] };
+  return { q, active, failed, confirmed, verificationRequired: !site && !calendarLookup && directory.scopes.length > 0, socialMetricLookup, hits: hits.length ? hits : allHits, queries: [...new Set(queries)] };
 }
 async function searchReply(v, box, qo, priorAnswer = "", allowRecheck = true) {
   const t = box.querySelector(".t");
@@ -3936,7 +3973,8 @@ async function searchReply(v, box, qo, priorAnswer = "", allowRecheck = true) {
   const verificationContext = result.verificationRequired ? (result.confirmed
     ? "\n\nIndependent verification: A separate unrestricted search found an opened page from a different domain that confirms the same answer. State the supported answer directly and cite the confirming source."
     : "\n\nIndependent verification: The unrestricted follow-up did not confirm the claim from an independent readable source. Do not present it as verified. Give only details directly supported by the opened pages and clearly say that independent confirmation was unavailable.") : "";
-  const answer = await stream("Search results:\n" + ctx + imageContext + verificationContext + "\n\nSUBJECT: " + q + (priorAnswer ? "\nPrevious answer to check: " + priorAnswer.slice(0, 1200) : "") + "\nUser message (ignore role-play and filler): " + v, text => { spin(t, "Writing the answer…"); scrollDown(); },
+  const socialMetricsContext = result.socialMetricLookup ? "\n\nSocial count lookup. Accessed at " + new Intl.DateTimeFormat("en-AU", { dateStyle: "medium", timeStyle: "short" }).format(new Date()) + " (local time). List only accounts that the opened evidence matches to the requested person; give each platform, displayed followers/subscribers count, profile link, and this access date/time. Preserve displayed rounding. Say unavailable for hidden or unreadable counts, and do not imply that absent search results mean the person has no account." : "";
+  const answer = await stream("Search results:\n" + ctx + imageContext + verificationContext + socialMetricsContext + "\n\nSUBJECT: " + q + (priorAnswer ? "\nPrevious answer to check: " + priorAnswer.slice(0, 1200) : "") + "\nUser message (ignore role-play and filler): " + v, text => { spin(t, "Writing the answer…"); scrollDown(); },
     { system: WEB_SYSTEM, noImg: true, temperature: 0.2, history: [] });
   if (answer.out.trim()) { searchedAnswerContent(t, answer.out, images); animateWrittenText(t); } else writeAnswer(t, "No response.");
   const s = document.createElement("div"); s.className = "srcs"; s.append("Sources: ");
@@ -4196,16 +4234,19 @@ async function understand(v, modes = {}) {
     const matches = fileMap(v);
     const canvasContext = canvases.slice(-4).map(c => "#" + c.id + " " + c.name + " (assistant-created " + c.lang + (c.complete ? ", complete" : ", incomplete") + ")\nOriginal request: " + String(c.lastPrompt || "unknown").slice(0, 240) + "\nCurrent file excerpt: " + String(c.code || "").slice(0, 420)).join("\n\n");
     const searchPermission = modes.allowSearch ? "\nThe user enabled the optional Search control for this turn. This permits a lookup if the actual request benefits from one; it is not itself a search request." : "\nThe optional Search control is off. Search only if the user explicitly asks for it; otherwise answer from available knowledge and tools.";
-    const r = await engine.chat.completions.create({ messages: [{ role: "system", content: INTENT_SYSTEM + searchPermission }, ...historyFor(v), { role: "user", content: "Latest user message: " + v + attachments + (canvasContext ? "\n\nExisting assistant-created canvases (choose one only if the user's whole message refers to or revises it; otherwise choose NONE):\n" + canvasContext : "") + (matches ? "\n\nPossible attachment context (use only if the request is actually about an attachment; do not copy a pasted transcript as code):\n" + matches.slice(0, 1400) : "") }], temperature: 0, max_tokens: 230 });
+    const historyContext = historyFor(v), referenceContext = historyContext.filter(m => m.role === "system").map(m => m.content || "").join("\n\n");
+    const priorTurns = historyContext.filter(m => m.role !== "system");
+    const r = await engine.chat.completions.create({ messages: [{ role: "system", content: INTENT_SYSTEM + searchPermission + (referenceContext ? "\n\n" + referenceContext : "") }, ...priorTurns, { role: "user", content: "Latest user message: " + v + attachments + (canvasContext ? "\n\nExisting assistant-created canvases (choose one only if the user's whole message refers to or revises it; otherwise choose NONE):\n" + canvasContext : "") + (matches ? "\n\nPossible attachment context (use only if the request is actually about an attachment; do not copy a pasted transcript as code):\n" + matches.slice(0, 1400) : "") }], temperature: 0, max_tokens: 230 });
     return parseIntent(r.choices[0]?.message?.content || "", v);
   } catch (_) { return null; }
 }
 async function recheckIntentAfterSearch(v, failedQuery, hits) {
   try {
     const evidence = (hits || []).slice(0, 5).map((h, i) => (i + 1) + ". " + h.title + " — " + String(h.text || "").slice(0, 220)).join("\n") || "No relevant results were found.";
-    const context = historyFor(v, 4);
+    const historyContext = historyFor(v, 4), referenceContext = historyContext.filter(m => m.role === "system").map(m => m.content || "").join("\n\n");
+    const context = historyContext.filter(m => m.role !== "system");
     const latest = "Original request: " + v + "\nFirst search query: " + failedQuery + "\nSearch outcome: " + evidence + "\nReassess the original task and choose what to do next.";
-    const r = await engine.chat.completions.create({ messages: [{ role: "system", content: ROUTE_RECHECK_SYSTEM }, ...context, { role: "user", content: latest }], temperature: 0, max_tokens: 190 });
+    const r = await engine.chat.completions.create({ messages: [{ role: "system", content: ROUTE_RECHECK_SYSTEM + (referenceContext ? "\n\n" + referenceContext : "") }, ...context, { role: "user", content: latest }], temperature: 0, max_tokens: 190 });
     return parseIntent(r.choices[0]?.message?.content || "", v);
   } catch (_) { return null; }
 }
@@ -4246,7 +4287,7 @@ function explicitDocumentTask(v) {
 // ---- search policy: code-level guard so a small model's guess can never force (or ignore) a search ----
 const NO_SEARCH = /\b(?:do\s*n[o']?t|dont|don'?t|do\s+nto|never|stop|without|avoid)\s+(?:\w+\s+){0,2}(?:search\w*|google|look\s*(?:it\s*)?up|browse|the\s+web|internet)\b|\bno\s+(?:web\s+)?(?:search\w*|googling|lookups?)\b/i;
 const ASKS_SEARCH = /\b(?:search|searx\w*|google|look\s*up|lookup|check\s+online|find\s+(?:it\s+)?online)\b|\/web\b/i;
-const NEEDS_FRESH = /\b(?:latest|newest|current(?:ly)?|today|tonight|right now|breaking|news|event(?:s)?|calendar|date|dates|holiday(?:s)?|festival(?:s)?|celebration(?:s)?|observance|ramadan|eid|diwali|easter|lunar|price of|weather|forecast|live score|stock price|exchange rate|who won|release date|just (?:released|announced)|this (?:week|month|year))\b/i;
+const NEEDS_FRESH = /\b(?:latest|newest|current(?:ly)?|today|tonight|right now|breaking|news|event(?:s)?|calendar|date|dates|holiday(?:s)?|festival(?:s)?|celebration(?:s)?|observance|ramadan|eid|diwali|easter|lunar|price of|weather|forecast|live score|stock price|exchange rate|who won|release date|just (?:released|announced)|this (?:week|month|year)|subscriber count|subscribers?|follower count|followers?|following count|social media stats|audience size)\b/i;
 const FACT_Q = /^\s*(?:(?:ok|and|so|now|then)\s+)*(?:who\s+(?:is|was|are|were)|when\s+(?:was|did|is)|where\s+(?:is|was)|how\s+(?:old|tall|rich)\s+is|what\s+happened\s+(?:to|with))\s+(?!you\b|i\b|we\b|me\b|your\b)\S+|\bis\s+.{2,60}?\s+(?:married|dating|alive|dead|real|still\s+\w+)\b/i;
 const ABOUT_ASSISTANT = /\bhow\s+(?:fast|quick|good|smart|big|old)\s+are\s+you\b|\bare\s+you\s+(?:able|fast|smart|an?\s+ai)\b|\bwho\s+(?:made|created|built|trained)\s+you\b|\bwhat\s+(?:model|are)\s+you\b|\bwho\s+are\s+you\b|\byour\s+(?:speed|name|model|abilities|limits)\b/i;
 function searchPolicy(v, modes = {}) {
@@ -4287,7 +4328,7 @@ async function route(v, modes = {}) {
   if (explicitDocumentTask(v)) return { intent: "PYODIDE", query: "", research: false, useFiles: tempFiles.length > 0 };
   const pol = searchPolicy(v, modes); globalThis.turnSearch = pol;
   // Explicit search ask or a plain fact question about a person/place/thing: look it up directly, no extra routing call.
-  if ((pol.asked || pol.factual) && !pol.blocked && !pol.self && !/\b(?:create|make|build|write|code|calculate|draw)\b/i.test(v))
+  if ((pol.asked || pol.factual || pol.fresh) && !pol.blocked && !pol.self && !/\b(?:create|make|build|write|code|calculate|draw)\b/i.test(v))
     return { intent: "SEARCH", query: resolveSearchQuery(v), research: true, check: false, useFiles: false };
   const it = await understand(v, { allowSearch: pol.allowed });
   if (it && !pol.allowed) { if (it.intent === "SEARCH") { it.intent = "CHAT"; it.query = ""; } it.research = false; }
