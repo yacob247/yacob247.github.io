@@ -3232,10 +3232,16 @@ const WEB_SYSTEM = "Answer the user's exact question directly using the numbered
 const RESEARCH_REVIEW_SYSTEM = "You are a private check of whether opened web pages answer the user's exact question. Do not answer the user or reveal reasoning. Inspect the actual page text, not just titles. If pages are irrelevant, vague, or fail to support the key claim, choose a focused query that preserves the exact subject and claim. For a person's identity use reliable biographical evidence; for private-life or reputation claims, require direct reporting from reputable independent sources. Return exactly two lines: ACTION: ANSWER or SEARCH; QUERY: a new focused query, or none.";
 const RESEARCH_CONFIRM_SYSTEM = "You are a private cross-checker. Decide whether a focused answer supported by selected source pages is independently confirmed by the separate unrestricted web-search pages. Read the page text and compare the exact factual claim to the user's question. A result from the same domain, a search title alone, an unrelated result, or unsupported agreement is not confirmation. If at least one relevant opened page from a different domain independently supports the same answer without a material conflict, return CONFIRMED: YES. Otherwise return CONFIRMED: NO and one improved query. Do not answer the user or reveal reasoning. Return exactly two lines: CONFIRMED: YES or NO; QUERY: focused query or none.";
 function webQuery(v) {
-  return v.replace(/^\s*\/web\b/i, "")
-    .replace(/\b(please|can you|could you|search( the web| online| up| for)?|look up|google|wikipedia|tell me about|tell me|explain|define|meaning of)\b/ig, " ")
+  const websiteUrlIntent = /\b(?:exact|official|main)\s+(?:website|site|url|homepage)\b|\b(?:website|site|url|homepage)\b.{0,20}\b(?:for|of)\b/i.test(String(v || ""));
+  let query = String(v || "").replace(/^\s*\/web\b/i, "");
+  query = query.replace(/^\s*(?:wow\s*[:,!-]?\s*)?(?:search|look)\s+(?:it\s+)?up\s*[:,!-]?\s*/i, "");
+  query = query.replace(/^\s*it\s+up\s*[:,!-]?\s*/i, "");
+  query = query.replace(/\bhe(?=\s+exact\s+url)\b/ig, "the").replace(/\bmai\s+nwebsite\b/ig, "main website");
+  query = query
+    .replace(/\b(please|can you|could you|search( the web| online| up| for)?|look up|google|wikipedia|tell me about|tell me|explain|define|meaning of|i want|i need|the exact url(?: link)? for|exact url(?: link)? for|main website(?: for)?|official website(?: for)?)\b/ig, " ")
     .replace(/^\s*(who|whom|what|when|where|which|whose|how (many|much|old|tall|long|far|big))(\s+(is|are|was|were|does|do|did|has|have|the|a|an)\b)*\s*/i, "")
-    .replace(/[?!.]+$/, "").replace(/\s+/g, " ").trim();
+    .replace(/[?!.:]+$/, "").replace(/\s+/g, " ").trim();
+  return websiteUrlIntent && query && !/\b(?:website|homepage)\b/i.test(query) ? query + " official website" : query;
 }
 function extractWebsite(value) {
   const match = String(value || "").match(/(?:https?:\/\/)?(?:www\.)?[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)+(?:\/[^\s<>"']*)?/i);
@@ -3344,9 +3350,12 @@ function parseReaderSerp(text, source, limit = 10) {
       else if (/bing\.com$/i.test(parsed.hostname) && /\/ck\/a$/.test(parsed.pathname)) {
         const token = parsed.searchParams.get("u") || "";
         if (token.startsWith("a1")) { const b64 = token.slice(2).replace(/-/g, "+").replace(/_/g, "/"); url = decodeURIComponent(escape(atob(b64))); }
-      }
+      } else if (/duckduckgo\.com$/i.test(parsed.hostname) && /^\/l\/?$/i.test(parsed.pathname)) url = parsed.searchParams.get("uddg") || parsed.searchParams.get("url") || "";
       parsed = new URL(url);
-      if (!/^https?:$/.test(parsed.protocol) || /(?:^|\.)google\.|(?:^|\.)bing\.com$/i.test(parsed.hostname)) return;
+      if (!/^https?:$/.test(parsed.protocol) || /(?:^|\.)(?:google|bing)\./i.test(parsed.hostname)
+        || /^(?:external-content\.duckduckgo\.com)$/i.test(parsed.hostname)
+        || /(?:^|\/)(?:favicon|apple-touch-icon)(?:[-_.]|\/|$)/i.test(parsed.pathname)
+        || /\.(?:ico|woff2?|ttf|css|js)(?:$|\?)/i.test(parsed.pathname)) return;
     } catch (_) { return; }
     const key = url.toLowerCase();
     if (seen.has(key) || out.length >= limit) return;
@@ -3815,6 +3824,17 @@ function searchedAnswerContent(host, text, images) {
   appendRich(text.slice(last));
   host.style.display = text ? "" : "none";
 }
+function guardExactUrlAnswer(answer, hits, request) {
+  if (!/\b(?:exact|official|main)\b.{0,35}\b(?:url|website|site|homepage|home page)\b|\b(?:url|website|homepage)\b.{0,25}\b(?:for|of)\b/i.test(request || "")) return answer;
+  const clean = value => { try { const u = new URL(value); u.hash = ""; return u.href.replace(/\/$/, "").toLowerCase(); } catch (_) { return ""; } };
+  const allowed = new Set((hits || []).filter(hit => hit.read && /^https?:\/\//i.test(hit.url || "")).map(hit => clean(hit.url)).filter(Boolean));
+  const mentioned = String(answer || "").match(/https?:\/\/[^\s)\]>`]+/g) || [];
+  if (!mentioned.some(url => !allowed.has(clean(url)))) return answer;
+  const verified = (hits || []).find(hit => hit.read && /^https?:\/\//i.test(hit.url || ""));
+  return verified
+    ? "I could verify this page: " + verified.url + ". The opened results did not verify that it is the school's main homepage."
+    : "I couldn't verify the exact homepage URL from the pages I could open.";
+}
 function webContext(result) {
   const top = result.hits.slice(0, 10);
   const text = "Live web research. Cite the numbered sources when appropriate. For code, prefer official documentation and established libraries; check versions and APIs against evidence.\n" + top.map((h,i) => "["+(i+1)+"] "+h.src+" — "+h.title+"\nURL: "+h.url+"\n"+h.text.replace(/\s+/g," ").slice(0, h.src === "Website page" ? 4000 : 1600)).join("\n\n");
@@ -3878,6 +3898,8 @@ async function searchCatalogFor(v, focusedQuery = v) {
   const ownWebsiteCategory = categories.find(c => /my website pages and tools/i.test(c.name));
   const personQuestion = /\b(who|married|marriage|spouse|wife|husband|partner|dating|relationship|child|children|son|daughter|family|age|name)\b/i.test(v || "");
   const schoolStaffLookup = /\b(teacher|teachers|school staff|staff directory|school employee|principal|faculty|head teacher)\b/i.test(v || "");
+  const schoolWebsiteLookup = /\b(?:school|schools|high school|primary school|secondary school)\b/i.test(v || "")
+    && /\b(?:website|web site|url|homepage|home page|official site|main site|address)\b/i.test(v || "");
   const isOwnSiteQuestion = /\b(?:gamehub|envizion\.work|my website|my site)\b/i.test(v || "");
   if (!isCalendarLookup && isOwnSiteQuestion && ownWebsiteCategory) {
     ranked = [{ c: ownWebsiteCategory, score: 2 }, ...ranked.filter(item => item.c !== ownWebsiteCategory)].slice(0, 3);
@@ -3888,6 +3910,7 @@ async function searchCatalogFor(v, focusedQuery = v) {
   if (!isCalendarLookup && schoolStaffLookup && educationCategory && !isOwnSiteQuestion) {
     ranked = [{ c: educationCategory, score: 2 }, ...(peopleCategory ? [{ c: peopleCategory, score: 1 }] : [])];
   }
+  if (!isCalendarLookup && schoolWebsiteLookup && educationCategory && !isOwnSiteQuestion) ranked = [{ c: educationCategory, score: 2 }];
   if (!isCalendarLookup && isSocialMetricLookup && socialMetricsCategory) ranked = [{ c: socialMetricsCategory, score: 1 }];
   if (!ranked.length) ranked = categoryScores.filter(x => x.score).sort((a, b) => b.score - a.score).slice(0, 3);
   const text = ranked.map(({ c }) => c.name + ": " + c.sources.map(s => s.name + " (" + s.domain + ")" + (s.url ? " [" + s.url + "]" : "")).join(", ") + (c.searchExamples?.length ? "\nExample requests: " + c.searchExamples.join("; ") : "") + (c.searchGuidance ? "\nSearch guidance: " + c.searchGuidance : "")).join("\n");
@@ -3924,9 +3947,11 @@ async function searchCatalogFor(v, focusedQuery = v) {
       : ["openholidaysapi.org", "nagerholidays.com", "timeanddate.com"];
     selectedSources = sourcesForDomains(domains);
   }
-  if (schoolStaffLookup && !isOwnSiteQuestion) {
-    const schoolDomains = /\b(australia|australian|nsw|new south wales|arthur phillip)\b/i.test(v || "")
-      ? ["education.nsw.gov.au", "education.gov.au", "linkedin.com"]
+  if ((schoolStaffLookup || schoolWebsiteLookup) && !isOwnSiteQuestion) {
+    const australianSchool = /\b(australia|australian|nsw|new south wales|arthur phillip)\b/i.test(v || "");
+    const schoolDomains = schoolWebsiteLookup && australianSchool
+      ? ["education.nsw.gov.au", "education.gov.au", "nsw.gov.au"]
+      : australianSchool ? ["education.nsw.gov.au", "education.gov.au", "linkedin.com"]
       : ["linkedin.com", "indeed.com", "education.gov.au"];
     selectedSources = [
       ...sourcesForDomains(schoolDomains),
@@ -4248,9 +4273,13 @@ async function searchReply(v, box, qo, priorAnswer = "", allowRecheck = true) {
     ? "\n\nIndependent verification: A separate unrestricted search found an opened page from a different domain that confirms the same answer. State the supported answer directly and cite the confirming source."
     : "\n\nIndependent verification: The unrestricted follow-up did not confirm the claim from an independent readable source. Do not present it as verified. Give only details directly supported by the opened pages and clearly say that independent confirmation was unavailable.") : "";
   const socialMetricsContext = result.socialMetricLookup ? "\n\nSocial count lookup. Accessed at " + new Intl.DateTimeFormat("en-AU", { dateStyle: "medium", timeStyle: "short" }).format(new Date()) + " (local time). List only accounts that the opened evidence matches to the requested person; give each platform, displayed followers/subscribers count, profile link, and this access date/time. Preserve displayed rounding. Say unavailable for hidden or unreadable counts, and do not imply that absent search results mean the person has no account." : "";
-  const answer = await stream("Search results:\n" + ctx + imageContext + verificationContext + socialMetricsContext + "\n\nSUBJECT: " + q + (priorAnswer ? "\nPrevious answer to check: " + priorAnswer.slice(0, 1200) : "") + "\nUser message (ignore role-play and filler): " + v, text => { spin(t, "Writing the answer…"); scrollDown(); },
+  const exactUrlContext = /\b(?:exact|official|main)\b.{0,35}\b(?:url|website|site|homepage|home page)\b|\b(?:url|website|homepage)\b.{0,25}\b(?:for|of)\b/i.test(v || "")
+    ? "\n\nExact-URL request: use only URLs from pages that were actually opened and read. Never make up a page path. If the main homepage was not among the verified pages, say so instead of guessing. Verified opened page URLs: " + top.filter(h => h.read).map(h => h.url).join(" | ")
+    : "";
+  const answer = await stream("Search results:\n" + ctx + imageContext + verificationContext + socialMetricsContext + exactUrlContext + "\n\nSUBJECT: " + q + (priorAnswer ? "\nPrevious answer to check: " + priorAnswer.slice(0, 1200) : "") + "\nUser message (ignore role-play and filler): " + v, text => { spin(t, "Writing the answer…"); scrollDown(); },
     { system: WEB_SYSTEM, noImg: true, temperature: 0.2, history: [] });
-  if (answer.out.trim()) { searchedAnswerContent(t, answer.out, images); animateWrittenText(t); } else writeAnswer(t, "No response.");
+  const finalAnswer = guardExactUrlAnswer(answer.out, top, v);
+  if (finalAnswer.trim()) { searchedAnswerContent(t, finalAnswer, images); animateWrittenText(t); } else writeAnswer(t, "No response.");
   const s = document.createElement("div"); s.className = "srcs"; s.append("Sources: ");
   top.forEach((h, i) => {
     if (!/^https?:\/\//.test(h.url || "")) return;
@@ -4507,7 +4536,7 @@ async function understand(v, modes = {}) {
     const attachments = tempFiles.length ? "\nAvailable attachments: " + tempFiles.map(file => file.name + (file.img ? " (image)" : " (file)" )).join(", ") : "";
     const matches = fileMap(v);
     const canvasContext = canvases.slice(-4).map(c => "#" + c.id + " " + c.name + " (assistant-created " + c.lang + (c.complete ? ", complete" : ", incomplete") + ")\nOriginal request: " + String(c.lastPrompt || "unknown").slice(0, 240) + "\nCurrent file excerpt: " + String(c.code || "").slice(0, 420)).join("\n\n");
-    const searchPermission = modes.allowSearch ? "\nThe user enabled the optional Search control for this turn. This permits a lookup if the actual request benefits from one; it is not itself a search request." : "\nThe optional Search control is off. Search only if the user explicitly asks for it; otherwise answer from available knowledge and tools.";
+    const searchPermission = modes.allowSearch ? "\nThe user enabled the optional Search control for this turn. This permits a lookup if the actual request benefits from one; it is not itself a search request." : "\nThe optional Search control being off does not prohibit useful factual lookups. Search automatically for exact URLs, specific organizations or schools, named people in public professional contexts, current facts, and obscure or locally specific questions. Do not fabricate an answer when search is needed. Use CHAT without searching for conversation, ordinary writing, stable common knowledge, or when the user explicitly asks you not to research.";
     const historyContext = historyFor(v), referenceContext = historyContext.filter(m => m.role === "system").map(m => m.content || "").join("\n\n");
     const priorTurns = historyContext.filter(m => m.role !== "system");
     const r = await engine.chat.completions.create({ messages: [{ role: "system", content: INTENT_SYSTEM + searchPermission + (referenceContext ? "\n\n" + referenceContext : "") }, ...priorTurns, { role: "user", content: "Latest user message: " + v + attachments + (canvasContext ? "\n\nExisting assistant-created canvases (choose one only if the user's whole message refers to or revises it; otherwise choose NONE):\n" + canvasContext : "") + (matches ? "\n\nPossible attachment context (use only if the request is actually about an attachment; do not copy a pasted transcript as code):\n" + matches.slice(0, 1400) : "") }], temperature: 0, max_tokens: 230 });
