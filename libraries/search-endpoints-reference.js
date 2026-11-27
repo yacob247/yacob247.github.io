@@ -436,7 +436,7 @@ window.SEARCH_ENDPOINT_CATALOG = {
         },
         {
           "name": "Nager.Date API",
-          "domain": "date.nager.at",
+          "domain": "nagerholidays.com",
           "kind": "calendar"
         },
         {
