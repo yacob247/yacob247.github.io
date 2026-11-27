@@ -3620,17 +3620,21 @@ async function searchCatalogFor(v) {
   }
   if (!ranked.length) ranked = categoryScores.filter(x => x.score).sort((a, b) => b.score - a.score).slice(0, 3);
   const text = ranked.map(({ c }) => c.name + ": " + c.sources.map(s => s.name + " (" + s.domain + ")").join(", ")).join("\n");
-  // Start with one domain from each category, then keep other domains as
-  // fallbacks. Avoid duplicate domains when categories overlap.
-  const primary = [], usedDomains = new Set();
-  for (const { c } of ranked) {
-    const source = c.sources.find(s => s.domain);
-    if (source?.domain && !usedDomains.has(source.domain)) { primary.push({ category: c.name, domain: source.domain, kind: source.kind }); usedDomains.add(source.domain); }
+  // Keep every exact destination while querying each domain only once.
+  const grouped = new Map();
+  for (const { c } of ranked) for (const source of c.sources.filter(s => s.domain)) {
+    const domain = source.domain.toLowerCase();
+    if (!grouped.has(domain)) grouped.set(domain, { category: c.name, domain, kind: source.kind, directSources: [] });
+    if (source.url && !grouped.get(domain).directSources.some(x => x.url === source.url)) grouped.get(domain).directSources.push(source);
   }
-  const fallback = ranked.flatMap(({ c }) => c.sources.filter(s => s.domain).map(s => ({ category: c.name, domain: s.domain, kind: s.kind })))
-    .filter(x => !usedDomains.has(x.domain) && usedDomains.add(x.domain));
+  const allDomains = [...grouped.values()], primary = [], usedDomains = new Set();
+  for (const { c } of ranked) {
+    const source = allDomains.find(x => x.category === c.name && !usedDomains.has(x.domain));
+    if (source) { primary.push(source); usedDomains.add(source.domain); }
+  }
+  const fallback = allDomains.filter(x => !usedDomains.has(x.domain));
   const scopes = [...primary, ...fallback].map(x => ({
-    category: x.category, domains: [x.domain], kind: x.kind,
+    category: x.category, domains: [x.domain], kind: x.kind, directSources: x.directSources,
     query: "site:" + x.domain + " " + String(v || "").replace(/[?!.]+$/, "").trim(),
     label: "Searching inside " + x.domain
   }));
@@ -3643,28 +3647,55 @@ async function searchInsideCatalogDomain(scope) {
   if (scope.kind === "calendar") {
     const name = domain === "nagerholidays.com" ? "Nager.Date worldwide calendar" : domain === "api.aladhan.com" ? "AlAdhan Islamic calendar" : "OpenHolidays public and school calendar";
     const source = WEB_SOURCES.find(s => s.name === name);
-    return source ? await source.run(terms).catch(() => []) : [];
+    const records = source ? await source.run(terms).catch(() => []) : [];
+    if (records.length) return records;
   }
   const isNews = scope.kind === "news" || domain === "gdeltproject.org";
   if (isNews) {
     const index = WEB_SOURCES.find(s => s.name === "GDELT DOC article search");
     return index ? await index.run(domain === "gdeltproject.org" ? terms : scope.query).catch(() => []) : [];
   }
-  const targets = [
-    "https://" + domain + "/search?" + new URLSearchParams({ q: terms }),
-    "https://" + domain + "/?" + new URLSearchParams({ s: terms })
+  const siteQuery = "site:" + domain + " " + terms;
+  const exactDomain = hit => {
+    try { const host = new URL(hit.url).hostname.toLowerCase(); return host === domain || host.endsWith("." + domain); }
+    catch (_) { return false; }
+  };
+  // Search the domain through search services. Do not guess that every site
+  // has a /search or ?s= route; those routes often return homepages or 404s.
+  const searxBase = searxBases()[0];
+  const searxAttempt = (async () => {
+    const base = searxBase;
+    const response = await fetch(base.replace(/\/+$/, "") + "/search?" + new URLSearchParams({ q: siteQuery, format: "json", language: "en" }), { signal: AbortSignal.timeout(6000) });
+    if (!response.ok) throw new Error("SearXNG HTTP " + response.status);
+    const data = await response.json();
+    const hits = (data.results || []).map(r => ({ title: r.title || r.url, url: r.url, text: String(r.content || "").trim(), src: "SearXNG " + domain })).filter(h => h.text && exactDomain(h)).slice(0, 10);
+    if (!hits.length) throw new Error("no matching domain results");
+    return hits;
+  })();
+  const readerSearchUrls = [
+    "https://www.google.com/search?" + new URLSearchParams({ q: siteQuery, num: "10" }),
+    "https://www.bing.com/search?" + new URLSearchParams({ q: siteQuery, count: "10" }),
+    "https://html.duckduckgo.com/html/?" + new URLSearchParams({ q: siteQuery })
   ];
-  const attempts = await Promise.all(targets.map(async target => {
+  const readerAttempts = readerSearchUrls.map(async target => {
     try {
       const response = await fetch("https://r.jina.ai/" + target, { signal: AbortSignal.timeout(5000) });
       if (!response.ok) return [];
-      return parseReaderSerp((await response.text()).slice(0, 30000), domain, 10).filter(hit => {
-        try { const host = new URL(hit.url).hostname.toLowerCase(); return host === domain || host.endsWith("." + domain); }
-        catch (_) { return false; }
-      });
+      return parseReaderSerp((await response.text()).slice(0, 30000), "Web search " + domain, 10).filter(exactDomain);
     } catch (_) { return []; }
-  }));
-  return [...new Map(attempts.flat().map(hit => [hit.url.toLowerCase(), hit])).values()].slice(0, 10);
+  });
+  const attempts = await Promise.allSettled([searxAttempt, ...readerAttempts]);
+  let hits = [...new Map(attempts.flatMap(r => r.status === "fulfilled" ? r.value : []).flat().map(hit => [hit.url.toLowerCase(), hit])).values()];
+  const wordSet = [...new Set(terms.toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 2))];
+  const directHits = (scope.directSources || []).map(source => ({
+    title: source.name || scope.category + " source page", url: source.url,
+    text: [source.description, source.coverage && "Coverage: " + source.coverage, source.access && "Access: " + source.access, source.notes].filter(Boolean).join(". ") || terms,
+    src: "Catalog direct source"
+  })).filter(h => /^https?:\/\//i.test(h.url || ""));
+  const score = h => wordSet.reduce((n, word) => n + ((h.title + " " + h.text).toLowerCase().includes(word) ? 1 : 0), 0);
+  hits = [...new Map([...hits, ...directHits].map(hit => [hit.url.toLowerCase(), hit])).values()];
+  hits.sort((a, b) => score(b) - score(a));
+  return hits.slice(0, 10);
 }
 async function reviewSearchEvidence(v, result, directory = "") {
   try {
@@ -3688,13 +3719,16 @@ async function collectReviewedWebResults(v, query, onActivity = () => {}) {
   const site = scopedSearch ? "" : extractWebsite(v) || extractWebsite(query);
   const directory = await searchCatalogFor(v);
   let q = normalizeSearchQuery(query || webQuery(v) || v, v), active = [], failed = [], queries = [], allHits = [], seen = new Set(), adequate = false, page = 0, refined = false;
-  const MAX_BATCHES = site ? 1 : Math.ceil(directory.scopes.length / 2) + 1;
+  // Run all chosen catalog domains together to build a broad candidate pool
+  // quickly (often dozens of URLs), then read only the strongest ten pages.
+  const SCOPE_BATCH_SIZE = Math.max(2, directory.scopes.length);
+  const MAX_BATCHES = site ? 1 : 2;
   for (let batch = 0; batch < MAX_BATCHES && !stopFlag && !adequate; batch++) {
     onActivity("Search pass " + (batch + 1) + " for: " + q);
     let current;
     if (page === 0 && !active.length) {
       const index = WEB_SOURCES.find(s => s.name === "GDELT DOC article search");
-      const firstScopes = site ? [] : directory.scopes.slice(0, 2);
+      const firstScopes = site ? [] : directory.scopes.slice(0, SCOPE_BATCH_SIZE);
       if (!firstScopes.length && !(index && index.when(v))) {
         current = await collectWebResults(v, q, onActivity, 0);
       } else {
@@ -3706,8 +3740,8 @@ async function collectReviewedWebResults(v, query, onActivity = () => {}) {
       current = { q, hits: [...scoped.flat(), ...(general || [])], active: [...(firstScopes.length ? [{ name: "Catalog domain search" }] : []), ...(usedGdelt ? [index] : [])], failed: [] };
       }
     }
-    else if (!site && directory.scopes.slice(batch * 2, batch * 2 + 2).length) {
-      const index = WEB_SOURCES.find(s => s.name === "GDELT DOC article search"), scopes = directory.scopes.slice(batch * 2, batch * 2 + 2);
+    else if (!site && batch === 0 && directory.scopes.slice(0, SCOPE_BATCH_SIZE).length) {
+      const index = WEB_SOURCES.find(s => s.name === "GDELT DOC article search"), scopes = directory.scopes.slice(0, SCOPE_BATCH_SIZE);
       const scoped = await Promise.all(scopes.map(async scope => {
         onActivity(scope.label);
         return searchInsideCatalogDomain(scope);
@@ -3721,7 +3755,7 @@ async function collectReviewedWebResults(v, query, onActivity = () => {}) {
     active = [...new Map([...active, ...current.active].map(s => [s.name, s])).values()];
     failed = [...new Set([...failed, ...current.failed])];
     queries.push(current.q);
-    if (!site) queries.push(...directory.scopes.slice(batch * 2, batch * 2 + 2).map(s => s.query));
+    if (!site && batch === 0) queries.push(...directory.scopes.slice(0, SCOPE_BATCH_SIZE).map(s => s.query));
     let found = current.hits.filter(h => !seen.has(webHitKey(h)));
     found.forEach(h => seen.add(webHitKey(h)));
     found = relevantWebHits(found, current.q, site);
@@ -3734,7 +3768,7 @@ async function collectReviewedWebResults(v, query, onActivity = () => {}) {
     // failed page prevent trying the other results or a later batch.
     allHits.push(...found.filter(h => !pageRead.read.some(r => r.url === h.url)).slice(0, Math.max(0, 10 - pageRead.read.length)));
     allHits = [...new Map(allHits.map(h => [webHitKey(h), h])).values()];
-    if (site || stopFlag || !directory.scopes.length) { adequate = true; break; }
+    if (site || stopFlag || !directory.scopes.length || batch > 0) { adequate = true; break; }
     if (allHits.length) {
       const review = await reviewSearchEvidence(v, { q, hits: allHits.slice(-10) }, directory.text);
       adequate = review.action === "ANSWER";

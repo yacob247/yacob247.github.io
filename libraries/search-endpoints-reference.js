@@ -430,8 +430,9 @@ window.SEARCH_ENDPOINT_CATALOG = {
       ],
       "sources": [
         {
-          "name": "OpenHolidays API",
+          "name": "OpenHolidays API docs",
           "domain": "openholidaysapi.org",
+          "url": "https://openholidaysapi.org/swagger/index.html",
           "kind": "calendar"
         },
         {
@@ -445,9 +446,66 @@ window.SEARCH_ENDPOINT_CATALOG = {
           "kind": "calendar"
         },
         {
+          "name": "Timeanddate worldwide holidays",
+          "domain": "timeanddate.com",
+          "url": "https://www.timeanddate.com/holidays/"
+        },
+        {
+          "name": "United Nations observances",
+          "domain": "un.org",
+          "url": "https://www.un.org/en/observances/list-days-weeks"
+        },
+        {
+          "name": "IslamicFinder Islamic calendar",
+          "domain": "islamicfinder.org",
+          "url": "https://www.islamicfinder.org/islamic-calendar/"
+        },
+        {
+          "name": "Hebcal Jewish calendar",
+          "domain": "hebcal.com",
+          "url": "https://www.hebcal.com/"
+        },
+        {
+          "name": "Australian Government schooling",
+          "domain": "education.gov.au",
+          "url": "https://www.education.gov.au/schooling"
+        },
+        {
+          "name": "Wikivoyage festivals directory",
+          "domain": "wikivoyage.org",
+          "url": "https://en.wikivoyage.org/wiki/Festivals"
+        },
+        {
           "name": "GDELT current events",
           "domain": "gdeltproject.org",
           "kind": "news"
+        },
+        {
+          "domain": "dev.timeanddate.com",
+          "description": "Structured holidays and observances",
+          "url": "https://dev.timeanddate.com/",
+          "coverage": "230 countries",
+          "type": "API",
+          "access": "Account or API access may be required",
+          "name": "Timeanddate Holiday API access"
+        },
+        {
+          "domain": "hebcal.com",
+          "description": "Jewish holidays and Hebrew calendar data",
+          "url": "https://www.hebcal.com/home/developer-apis",
+          "coverage": "Jewish calendar",
+          "type": "API",
+          "access": "Public API documentation",
+          "name": "Hebcal developer API"
+        },
+        {
+          "domain": "api.aladhan.com",
+          "description": "Hijri/Gregorian conversion and Islamic calendar",
+          "url": "https://api.aladhan.com/v1/",
+          "coverage": "Islamic calendar",
+          "type": "API",
+          "access": "Public endpoint; computed dates may differ by local moon sighting",
+          "name": "AlAdhan Islamic calendar API"
         }
       ]
     },
@@ -1583,6 +1641,443 @@ window.SEARCH_ENDPOINT_CATALOG = {
         {
           "name": "CISA",
           "domain": "cisa.gov"
+        }
+      ]
+    },
+    {
+      "name": "School terms, ASTP and education schedules",
+      "keywords": [
+        "school term",
+        "school terms",
+        "term dates",
+        "school holiday",
+        "school holidays",
+        "school calendar",
+        "education dates",
+        "ASTP",
+        "ATSO",
+        "contractor pay ending",
+        "school development days"
+      ],
+      "sources": [
+        {
+          "domain": "education.nsw.gov.au",
+          "description": "ASTP pay dates, application deadlines, training and NSW school terms",
+          "url": "https://education.nsw.gov.au/schooling/parents-and-carers/going-to-school/astp/key-dates",
+          "coverage": "NSW, Australia",
+          "type": "HTML",
+          "access": "Public",
+          "name": "NSW ASTP Key Dates"
+        },
+        {
+          "domain": "education.nsw.gov.au",
+          "description": "2026 school terms, holidays, ATSO and contractor dates",
+          "url": "https://education.nsw.gov.au/content/dam/main-education/public-schools/astp/media/documents/astp-calendar.pdf",
+          "coverage": "NSW, Australia",
+          "type": "PDF",
+          "access": "Public",
+          "name": "NSW ASTP 2026 Calendar PDF"
+        },
+        {
+          "domain": "education.nsw.gov.au",
+          "description": "Contractor service delivery information",
+          "url": "https://education.nsw.gov.au/schooling/parents-and-carers/going-to-school/astp/contractors/contractor-service-delivery-faqs",
+          "coverage": "NSW ASTP",
+          "type": "HTML",
+          "access": "Public",
+          "name": "NSW ASTP Contractor Service FAQs"
+        },
+        {
+          "domain": "education.nsw.gov.au",
+          "description": "Contractor information and portal links",
+          "url": "https://education.nsw.gov.au/schooling/parents-and-carers/going-to-school/astp/contractors",
+          "coverage": "NSW ASTP",
+          "type": "HTML",
+          "access": "Public",
+          "name": "NSW ASTP Contractors"
+        },
+        {
+          "domain": "education.nsw.gov.au",
+          "description": "Agreement, pay schedules, forms and contractor guides",
+          "url": "https://education.nsw.gov.au/schooling/parents-and-carers/going-to-school/astp/contractors/forms-and-reference-guides",
+          "coverage": "NSW ASTP",
+          "type": "HTML",
+          "access": "Public",
+          "name": "NSW ASTP Contractor Resources"
+        },
+        {
+          "domain": "education.nsw.gov.au",
+          "description": "Contract scheme and eligibility",
+          "url": "https://education.nsw.gov.au/schooling/parents-and-carers/going-to-school/astp/contractors/astp-scheme",
+          "coverage": "NSW ASTP",
+          "type": "HTML",
+          "access": "Public",
+          "name": "NSW ASTP Scheme"
+        },
+        {
+          "domain": "education.nsw.gov.au",
+          "description": "2026 contractor agreement",
+          "url": "https://education.nsw.gov.au/content/dam/main-education/public-schools/astp/media/documents/astp-agreement.pdf",
+          "coverage": "NSW ASTP",
+          "type": "PDF",
+          "access": "Public",
+          "name": "NSW ASTP Agreement 2026"
+        },
+        {
+          "domain": "education.nsw.gov.au",
+          "description": "Contractor rates for school terms 1 and 2",
+          "url": "https://education.nsw.gov.au/content/dam/main-education/public-schools/astp/media/documents/astp-scheme-rates-term-1-and-term-2.pdf",
+          "coverage": "NSW ASTP",
+          "type": "PDF",
+          "access": "Public",
+          "name": "NSW ASTP Schedule of Rates Terms 1 and 2 2026"
+        },
+        {
+          "domain": "education.nsw.gov.au",
+          "description": "Contractor rates for school terms 3 and 4",
+          "url": "https://education.nsw.gov.au/content/dam/main-education/public-schools/astp/media/documents/astp-scheme-rates-term-3-and-term-4.pdf",
+          "coverage": "NSW ASTP",
+          "type": "PDF",
+          "access": "Public",
+          "name": "NSW ASTP Schedule of Rates Terms 3 and 4 2026"
+        },
+        {
+          "domain": "education.nsw.gov.au",
+          "description": "Contractor portal, claims, run cards and key dates",
+          "url": "https://education.nsw.gov.au/content/dam/main-education/public-schools/astp/media/documents/astp-online-for-contractors-user-guide.pdf",
+          "coverage": "NSW ASTP",
+          "type": "PDF",
+          "access": "Public",
+          "name": "NSW ASTP Contractor User Guide"
+        },
+        {
+          "domain": "education.nsw.gov.au",
+          "description": "Safety vest order deadlines and form",
+          "url": "https://education.nsw.gov.au/content/dam/main-education/public-schools/astp/media/documents/safety-vest-order-form.pdf",
+          "coverage": "NSW ASTP",
+          "type": "PDF",
+          "access": "Public",
+          "name": "NSW ATSO Safety Vest Order Form"
+        },
+        {
+          "domain": "education.gov.au",
+          "description": "National schooling information; school term dates are set by state and territory authorities",
+          "url": "https://www.education.gov.au/schooling",
+          "coverage": "Australia",
+          "type": "HTML",
+          "access": "Public",
+          "name": "Australian Government Schooling"
+        },
+        {
+          "url": "https://education.nsw.gov.au/schooling/parents-and-carers/going-to-school/astp/contractors/contractor-responsibilities",
+          "description": "Contractor responsibilities",
+          "access": "Public",
+          "coverage": "NSW ASTP",
+          "domain": "education.nsw.gov.au",
+          "name": "NSW ASTP Contractor Responsibilities",
+          "type": "HTML"
+        },
+        {
+          "url": "https://education.nsw.gov.au/content/dam/main-education/public-schools/astp/media/documents/astp-form-add-or-remove-an-approved-vehicle-to-an-astp-run.pdf",
+          "description": "Add or remove an approved vehicle from an ASTP run",
+          "access": "Public",
+          "coverage": "NSW ASTP",
+          "domain": "education.nsw.gov.au",
+          "name": "NSW ASTP Approved Vehicle Form",
+          "type": "PDF"
+        }
+      ]
+    },
+    {
+      "name": "Bank holidays, payment closures and settlement dates",
+      "keywords": [
+        "bank holiday",
+        "bank holidays",
+        "bank closure",
+        "bank closures",
+        "payment holiday",
+        "payment cutoff",
+        "payment cut-off",
+        "payment settlement",
+        "settlement date",
+        "currency holiday",
+        "swift",
+        "CHAPS",
+        "RTGS",
+        "Fedwire",
+        "ACH"
+      ],
+      "sources": [
+        {
+          "domain": "federalreserve.gov",
+          "description": "Federal Reserve System holidays",
+          "url": "https://www.federalreserve.gov/aboutthefed/k8.htm",
+          "coverage": "United States",
+          "type": "HTML",
+          "access": "Public",
+          "name": "Federal Reserve Holidays K.8 2026-2030"
+        },
+        {
+          "domain": "frbservices.org",
+          "description": "Federal Reserve payment service schedules",
+          "url": "https://www.frbservices.org/about/holiday-schedules",
+          "coverage": "United States payment services",
+          "type": "HTML",
+          "access": "Public",
+          "name": "Federal Reserve Financial Services Holiday Schedule"
+        },
+        {
+          "domain": "gov.uk",
+          "description": "UK bank holidays with downloadable calendar data",
+          "url": "https://www.gov.uk/bank-holidays",
+          "coverage": "England, Wales, Scotland and Northern Ireland",
+          "type": "HTML/JSON/ICS",
+          "access": "Public",
+          "name": "UK Bank Holidays"
+        },
+        {
+          "domain": "bankofengland.co.uk",
+          "description": "RTGS, CHAPS and settlement system timetable",
+          "url": "https://www.bankofengland.co.uk/payments/summary-of-rtgs-daily-timetable",
+          "coverage": "United Kingdom",
+          "type": "HTML",
+          "access": "Public",
+          "name": "Bank of England RTGS and CHAPS Daily Timetable"
+        },
+        {
+          "domain": "bankofengland.co.uk",
+          "coverage": "United Kingdom",
+          "name": "Bank of England CHAPS FAQs",
+          "access": "Public",
+          "type": "HTML",
+          "url": "https://www.bankofengland.co.uk/payment-and-settlement/faqs",
+          "description": "CHAPS and CREST settlement FAQs"
+        },
+        {
+          "domain": "www2.swift.com",
+          "description": "SWIFTRef product documentation; CCH is scheduled to end as a separate product in November 2026 and transition into CALENDARS",
+          "url": "https://www2.swift.com/knowledgecentre/rest/v1/publications/udic/_latest/udic.pdf?logDownload=true",
+          "coverage": "International payment reference data",
+          "type": "PDF",
+          "access": "Documentation public; calendar data may require licensing",
+          "name": "SWIFTRef user documentation"
+        },
+        {
+          "domain": "swift.com",
+          "description": "Product and directory file access information",
+          "url": "https://www.swift.com/myswift/ordering/terminate-deactivate/swiftref-directory-files",
+          "coverage": "International payment reference data",
+          "type": "HTML",
+          "access": "Commercial subscription",
+          "name": "SWIFTRef directory files"
+        },
+        {
+          "domain": "ausbanking.org.au",
+          "description": "Example bank closure announcement; check the individual bank for actual service details",
+          "url": "https://www.ausbanking.org.au/bank-branches-to-close-for-national-day-of-mourning/",
+          "coverage": "Australia, one-off announcement",
+          "type": "HTML",
+          "access": "Public",
+          "name": "Australian Banking Association closure announcement"
+        },
+        {
+          "url": "https://www.bankofengland.co.uk/payment-and-settlement/chaps",
+          "description": "CHAPS operating hours and payments",
+          "access": "Public",
+          "coverage": "United Kingdom",
+          "domain": "bankofengland.co.uk",
+          "name": "Bank of England CHAPS",
+          "type": "HTML"
+        },
+        {
+          "url": "https://www.bankofengland.co.uk/payments/payment-settlement",
+          "description": "Payment and settlement systems",
+          "access": "Public",
+          "coverage": "United Kingdom",
+          "domain": "bankofengland.co.uk",
+          "name": "Bank of England Payment and Settlement",
+          "type": "HTML"
+        },
+        {
+          "url": "https://www.bankofengland.co.uk/-/media/boe/files/payments/chaps/chaps-reference-manual.pdf",
+          "description": "CHAPS operating hours and settlement rules",
+          "access": "Public",
+          "coverage": "United Kingdom",
+          "domain": "bankofengland.co.uk",
+          "name": "Bank of England CHAPS Reference Manual",
+          "type": "PDF"
+        },
+        {
+          "url": "https://www2.swift.com/knowledgecentre/rest/v1/publications/sref_rl_20240119/1.0/sref_rl_20240119.pdf?logDownload=true",
+          "description": "SWIFTRef calendar-related release information",
+          "access": "Public technical release note; calendar data may require subscription",
+          "coverage": "International payment reference data",
+          "domain": "www2.swift.com",
+          "name": "SWIFTRef Calendar Release Note",
+          "type": "PDF"
+        },
+        {
+          "url": "https://www.swift.com/sites/default/files/documents/swift_legal_swiftref_products_terms_and_conditions_june2017.pdf",
+          "description": "SWIFTRef product terms",
+          "access": "Commercial product terms",
+          "coverage": "International payment reference data",
+          "domain": "swift.com",
+          "name": "SWIFTRef Terms and Conditions",
+          "type": "PDF"
+        }
+      ]
+    },
+    {
+      "name": "Elections, tax deadlines and awareness days",
+      "keywords": [
+        "election date",
+        "elections",
+        "referendum",
+        "tax date",
+        "tax deadline",
+        "tax year",
+        "financial year",
+        "awareness day",
+        "national day",
+        "informal holiday",
+        "days of the year",
+        "celebration date"
+      ],
+      "sources": [
+        {
+          "domain": "daysoftheyear.com",
+          "description": "API documentation for day and observance data",
+          "url": "https://www.daysoftheyear.com/api-docs/",
+          "coverage": "Awareness and informal observances",
+          "type": "API",
+          "access": "API authorization may be required",
+          "name": "Days Of The Year API documentation"
+        },
+        {
+          "domain": "daysoftheyear.com",
+          "description": "API and data access information",
+          "url": "https://www.daysoftheyear.com/api-data-services/",
+          "coverage": "Awareness and informal observances",
+          "type": "API",
+          "access": "API authorization may be required",
+          "name": "Days Of The Year API access"
+        },
+        {
+          "domain": "electionguide.org",
+          "description": "Elections by country and year",
+          "url": "https://www.electionguide.org/elections/",
+          "coverage": "Worldwide elections and referendums",
+          "type": "HTML",
+          "access": "Public search; full database access may require a request",
+          "name": "IFES Worldwide Elections"
+        },
+        {
+          "domain": "taxsummaries.pwc.com",
+          "description": "Corporate financial year and tax deadlines",
+          "url": "https://taxsummaries.pwc.com/australia/corporate/tax-administration",
+          "coverage": "Australia",
+          "type": "HTML",
+          "access": "Public",
+          "name": "PwC Australia corporate tax administration"
+        },
+        {
+          "domain": "taxsummaries.pwc.com",
+          "description": "Corporate tax information",
+          "url": "https://taxsummaries.pwc.com/australia/corporate/taxes-on-corporate-income",
+          "coverage": "Australia",
+          "type": "HTML",
+          "access": "Public",
+          "name": "PwC Australia corporate income tax"
+        },
+        {
+          "domain": "taxsummaries.pwc.com",
+          "description": "Withholding tax information",
+          "url": "https://taxsummaries.pwc.com/australia/corporate/withholding-taxes",
+          "coverage": "Australia",
+          "type": "HTML",
+          "access": "Public",
+          "name": "PwC Australia corporate withholding taxes"
+        },
+        {
+          "domain": "taxsummaries.pwc.com",
+          "description": "Tax summaries and quick rates and dates",
+          "url": "https://taxsummaries.pwc.com/australia",
+          "coverage": "Australia",
+          "type": "HTML",
+          "access": "Public",
+          "name": "PwC Australia overview"
+        },
+        {
+          "domain": "qppstudio.net",
+          "description": "Country holiday portal",
+          "url": "https://www.qppstudio.net/worldwide-public-holidays/country-portal.htm",
+          "coverage": "Worldwide; detailed future database licensed",
+          "type": "HTML",
+          "access": "Public pages plus commercial database",
+          "name": "QppStudio public holidays by country"
+        },
+        {
+          "domain": "qppstudio.net",
+          "description": "Worldwide public holidays for the current date",
+          "url": "https://www.qppstudio.net/public-holidays-by-date/today.htm",
+          "coverage": "Worldwide",
+          "type": "HTML",
+          "access": "Public date listing",
+          "name": "QppStudio worldwide holidays by date"
+        },
+        {
+          "domain": "qppstudio.net",
+          "description": "Global holidays and observances portal",
+          "url": "https://www.qppstudio.net/worldwide-public-holidays/global-portal.htm",
+          "coverage": "Worldwide global observances",
+          "type": "HTML",
+          "access": "Public portal",
+          "name": "QppStudio worldwide global observances"
+        },
+        {
+          "domain": "qppstudio.net",
+          "description": "2026 global holidays and observances",
+          "url": "https://www.qppstudio.net/global-holidays-observances/2026.htm",
+          "coverage": "Worldwide, 2026",
+          "type": "HTML",
+          "access": "Public",
+          "name": "QppStudio global observances 2026"
+        },
+        {
+          "domain": "qppstudio.net",
+          "description": "2027 global holidays and observances",
+          "url": "https://www.qppstudio.net/global-holidays-observances/2027.htm",
+          "coverage": "Worldwide, 2027",
+          "type": "HTML",
+          "access": "Public",
+          "name": "QppStudio global observances 2027"
+        },
+        {
+          "domain": "qppstudio.net",
+          "description": "Licensing details for complete date dataset",
+          "url": "https://www.qppstudio.net/worldwide-public-holidays/licensing-data.htm",
+          "coverage": "Worldwide",
+          "type": "HTML",
+          "access": "Paid license for full database",
+          "name": "QppStudio data licensing"
+        },
+        {
+          "url": "https://www.qppstudio.net/worldwide-public-holidays/date-portal.htm",
+          "description": "Worldwide public holiday dates portal",
+          "access": "Public portal; full data access may be licensed",
+          "coverage": "Worldwide",
+          "domain": "qppstudio.net",
+          "name": "QppStudio public holidays by date portal",
+          "type": "HTML"
+        },
+        {
+          "url": "https://www.qppstudio.net/worldwide-public-holidays/continent-portal.htm",
+          "description": "Worldwide public holidays grouped by continent",
+          "access": "Public portal; full data access may be licensed",
+          "coverage": "Worldwide",
+          "domain": "qppstudio.net",
+          "name": "QppStudio public holidays by continent portal",
+          "type": "HTML"
         }
       ]
     }
