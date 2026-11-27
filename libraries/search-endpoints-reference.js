@@ -2139,7 +2139,23 @@ window.SEARCH_ENDPOINT_CATALOG = {
         "channel subscribers",
         "how many followers",
         "how many subscribers",
-        "profile followers"
+        "profile followers",
+        "current subscriber count",
+        "live subscriber count",
+        "subscriber statistics",
+        "subscriber tracker",
+        "YouTube live subscribers",
+        "creator followers",
+        "number of followers",
+        "followers by platform",
+        "social media follower count",
+        "Instagram follower count",
+        "TikTok follower count",
+        "X followers",
+        "channel stats",
+        "creator stats",
+        "followers vs following",
+        "social media accounts and follower counts"
       ],
       "sources": [
         {
@@ -2209,8 +2225,24 @@ window.SEARCH_ENDPOINT_CATALOG = {
         {
           "name": "ViewStats",
           "domain": "viewstats.com"
+        },
+        {
+          "name": "LiveCounts",
+          "domain": "livecounts.io"
+        },
+        {
+          "name": "SubscriberCounter",
+          "domain": "subscribercounter.com"
         }
-      ]
+      ],
+      "searchExamples": [
+        "How many subscribers does [creator] have on YouTube?",
+        "How many followers does [creator] have on Instagram or TikTok?",
+        "What are [creator]'s follower counts across social platforms?",
+        "Find [creator]'s current YouTube live subscriber count.",
+        "Which public social profiles belong to [creator], and what counts do they show?"
+      ],
+      "searchGuidance": "Search for the named person or handle together with the requested platform and metric (subscribers, followers, or following). Prefer the matching profile/count page, open it, record the displayed count and access time, and keep followers distinct from following. For multiple platforms, search each relevant platform and public counter source; treat a missing or hidden count as unavailable, not zero."
     }
   ]
 };

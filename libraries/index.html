@@ -3639,9 +3639,9 @@ async function searchCatalogFor(v, focusedQuery = v) {
     try { const r = await fetch(new URL("search-endpoints-reference.json", location.href), { cache: "no-cache" }); return r.ok ? await r.json() : { categories: [] }; }
     catch (_) { return { categories: [] }; }
   });
-  const catalog = await searchCatalogCache, words = String(v || "").toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 2);
+  const catalog = await searchCatalogCache, requestText = String(v || "").toLowerCase(), words = requestText.split(/[^a-z0-9]+/).filter(w => w.length > 2);
   const categories = catalog.categories || [];
-  const categoryScores = categories.map(c => ({ c, score: (c.keywords || []).reduce((n, k) => n + (words.some(w => w === k || w.includes(k) || k.includes(w)) ? 1 : 0), 0) }));
+  const categoryScores = categories.map(c => ({ c, score: (c.keywords || []).reduce((n, k) => { const key = String(k).toLowerCase(); return n + (requestText.includes(key) || words.some(w => w === key || w.includes(key) || key.includes(w)) ? 1 : 0); }, 0) }));
   const hasKeywordMatch = categoryScores.some(x => x.score > 0);
   const isCalendarLookup = /\b(calendar|holiday|holidays|observance|celebration|festival|ramadan|eid|diwali|hijri|school term|school holiday|term dates|ATSO|ASTP|bank closure|bank holiday|settlement date|currency holiday|CHAPS|Fedwire)\b/i.test(v || "") || /\bwhen\b.{0,55}\b(start|end|happen|occur|held|celebrated)\b/i.test(v || "");
   const isIslamicCalendar = /\b(ramadan|eid|hijri|islamic calendar|islamic new year)\b/i.test(v || "");
@@ -3658,7 +3658,7 @@ async function searchCatalogFor(v, focusedQuery = v) {
     if (chosen) ranked = [{ c: chosen, score: 1 }];
   }
   if (!isCalendarLookup && !isSocialMetricLookup && engine && categories.length) {
-    const choices = categories.map((c, i) => i + ". " + c.name + " — request clues: " + (c.keywords || []).join(", ") + " — websites: " + c.sources.map(s => s.name + " (" + s.domain + ")").join(", ")).join("\n");
+      const choices = categories.map((c, i) => i + ". " + c.name + " — request clues: " + (c.keywords || []).join(", ") + (c.searchExamples?.length ? " — example requests: " + c.searchExamples.join("; ") : "") + (c.searchGuidance ? " — search guidance: " + c.searchGuidance : "") + " — websites: " + c.sources.map(s => s.name + " (" + s.domain + ")").join(", ")).join("\n");
     try {
       const response = await engine.chat.completions.create({ messages: [
         { role: "system", content: "First understand the complete request and the evidence needed to answer it. Inspect the source directory and select two or three relevant categories. Do not route only by whether the subject is a person, place, or product. Catalog website entries are domains to SEARCH INSIDE, never pages to open as search results. For each selected domain, issue a web-search query restricted to that domain (for example, site:bbc.com Georgina Rodriguez marriage), inspect the returned result links, open the actual matching article pages, and read their contents. Opening a domain homepage is not searching that domain. If the request concerns a changeable status or recent event, include a news/current-events category. Use zero-based category indexes. Return JSON only: {\"categories\":[integer indexes]}" },
@@ -3681,7 +3681,7 @@ async function searchCatalogFor(v, focusedQuery = v) {
   if (!isCalendarLookup && personQuestion && peopleCategory) ranked = [{ c: peopleCategory, score: 1 }];
   if (!isCalendarLookup && isSocialMetricLookup && socialMetricsCategory) ranked = [{ c: socialMetricsCategory, score: 1 }];
   if (!ranked.length) ranked = categoryScores.filter(x => x.score).sort((a, b) => b.score - a.score).slice(0, 3);
-  const text = ranked.map(({ c }) => c.name + ": " + c.sources.map(s => s.name + " (" + s.domain + ")").join(", ")).join("\n");
+  const text = ranked.map(({ c }) => c.name + ": " + c.sources.map(s => s.name + " (" + s.domain + ")").join(", ") + (c.searchExamples?.length ? "\nExample requests: " + c.searchExamples.join("; ") : "") + (c.searchGuidance ? "\nSearch guidance: " + c.searchGuidance : "")).join("\n");
   // Keep every exact destination while querying each domain only once.
   const grouped = new Map();
   const allSources = categories.flatMap(c => c.sources || []);
