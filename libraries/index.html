@@ -2510,7 +2510,7 @@ async function chatReply(v, box, inlineCode = false, fallbackContext = "", inclu
       if (limited.capped && !hitCanvasCap) { hitCanvasCap = true; try { engine.interruptGenerate(); } catch (_) {} }
     } else spin(t, "Thinking…");
     scrollDown();
-  }, { system: inlineCode ? SYSTEM + " The user explicitly asked to see code in chat. Return the complete requested code in one fenced code block, without creating a canvas." : att && hasDocuments ? CHAT_SYSTEM + " The relevant attached file text is supplied in the message; use it when it helps answer the current request." : CHAT_SYSTEM + (fallbackContext ? " The prior web lookup found no useful results. Answer from your own knowledge when reasonably confident; do not repeat the search failure as the answer. If unsure, say what you are uncertain about." : lookupHint()), history: historyFor(v), useFiles: includeFiles, temperature: 0.25 });
+  }, { system: inlineCode ? SYSTEM + " The user explicitly asked to see code in chat. Return the complete requested code in one fenced code block, without creating a canvas." : att && hasDocuments ? CHAT_SYSTEM + " The relevant attached file text is supplied in the message; use it when it helps answer the current request." : CHAT_SYSTEM + (fallbackContext ? (extractWebsite(v) ? " The user asked about a specific website, but the lookup could not retrieve readable page content. Do not guess, invent, or describe typical site features from its name or URL. Briefly say the page could not be read and ask the user to retry or paste its text. Reply in the language of the latest user message." : " The prior web lookup found no useful results. Answer from your own knowledge when reasonably confident; do not repeat the search failure as the answer. If unsure, say what you are uncertain about.") : lookupHint()), history: historyFor(v), useFiles: includeFiles, temperature: 0.25 });
   const lk = !ctgt && !inlineCode && !fallbackContext ? /(?:^|\n)\s*LOOKUP\s*:\s*(.+)/i.exec(privateText(res.out)) : null;
   if (lk && !(globalThis.turnSearch || {}).blocked && !(globalThis.turnSearch || {}).self && !stopFlag) { await searchReply(v, box, normalizeSearchQuery(lk[1], v), "", false); return; }
   if (ctgt) {
@@ -3486,7 +3486,15 @@ const WEB_SOURCES = [
           const text = (await response.text()).trim().slice(0, 18000);
           return text ? [{ title: "Website content for " + new URL(target).hostname, url: target, text, read: true }] : [];
         })().catch(() => []),
-        searchDomainSitemap(new URL(target).hostname, v).catch(() => [])
+        // A sitemap tells us which pages exist, while a site-restricted search
+        // finds the page whose contents answer the user's actual question.
+        searchInsideCatalogDomain({
+          domains: [new URL(target).hostname],
+          query: "site:" + new URL(target).hostname + " " + webQuery(v)
+            .replace(/https?:\/\/[^\s<>()]+/ig, " ")
+            .replace(/\b(?:open|read|website|web\s*site|page|answer|english|cite|source)\b/ig, " ")
+            .replace(/\s+/g, " ").trim()
+        }).catch(() => [])
       ]);
       return [...page, ...sitemap];
   } },
@@ -4063,7 +4071,9 @@ async function searchReply(v, box, qo, priorAnswer = "", allowRecheck = true) {
   const relevant = hits;
   if (!relevant.length) {
     box.querySelector(".refs").textContent = "The search tried several focused queries and sources but found no reliable result for the exact question.";
-      await chatReply(v, box, false, "The web lookup returned no readable evidence. Reply in the same language as the latest user message. Do not invent specific names, relationships, dates, or biographical details. State briefly that the search could not retrieve a source to verify the answer.");
+      await chatReply(v, box, false, extractWebsite(v)
+        ? "The requested website page could not be opened or searched successfully. Do not speculate from the domain name or general knowledge."
+        : "The web lookup returned no readable evidence. Do not invent specific names, relationships, dates, or biographical details. State briefly that the search could not retrieve a source to verify the answer.");
     return;
   }
   result.hits = relevant;                                                    // only relevant results reach the model and the source list
