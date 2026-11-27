@@ -88,6 +88,11 @@ window.SEARCH_ENDPOINT_CATALOG = {
           "name": "Free Press Journal Sports",
           "domain": "freepressjournal.in",
           "kind": "news"
+        },
+        {
+          "name": "Al Jazeera",
+          "domain": "aljazeera.com",
+          "kind": "news"
         }
       ]
     },
@@ -422,6 +427,11 @@ window.SEARCH_ENDPOINT_CATALOG = {
         {
           "name": "TechCrunch",
           "domain": "techcrunch.com",
+          "kind": "news"
+        },
+        {
+          "name": "Al Jazeera",
+          "domain": "aljazeera.com",
           "kind": "news"
         }
       ]
