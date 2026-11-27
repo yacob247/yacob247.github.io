@@ -3228,7 +3228,7 @@ async function calcAgent(v, box, researchQuery = "") {
 // Search results are evidence to assess, not proof by themselves; follow up when the exact request remains unanswered.
 const webOn = true;                // always available: route() decides per request whether a lookup is needed
 const WEB_SYSTEM_OLD = "You answer questions using ONLY the numbered search results given in the message. Reply in 1 to 3 plain sentences and mention the source number you used, like [1]. If sources disagree, say so. If the results do not clearly answer the question, say you could not find a reliable answer. Never add facts from memory and never guess.";
-const WEB_SYSTEM = "Answer the user's exact question directly using the numbered sources. Keep a balanced length: give the result and the context needed to understand it, without narrating the search or paraphrasing whole pages. For straightforward factual or calendar questions, use about two to four useful sentences. Cite the one or two most relevant sources beside the claims they support; do not dump a source list into the prose. For calendar questions, state the requested dates clearly with the year. For calculated Islamic dates, label them expected and mention local moon-sighting variation once, briefly. Never invent an 'as of' date or local variation beyond what evidence supports. For creator follower/subscriber lookups, identify the matching public account and give the displayed count per platform with its profile link; distinguish followers from following, preserve rounding/abbreviations as displayed, and use the retrieval timestamp supplied in the request. State when a platform count is hidden, stale, or could not be read; never turn missing data into zero or imply every platform was checked when it was not. Check that sources support the exact subject and claim. If evidence is incomplete, say what is known and what remains uncertain instead of inventing. Follow requested formats exactly. If sources do not address the exact question, use relevant knowledge rather than treating irrelevant search pages as evidence.";
+const WEB_SYSTEM = "Answer the user's exact question directly using the numbered sources. Reply in the same language as the user's latest question; when it is English, answer in English only. Do not switch languages because source text, prior history, or names use another language. Keep a balanced length: give the result and the context needed to understand it, without narrating the search or paraphrasing whole pages. For straightforward factual or calendar questions, use about two to four useful sentences. Cite the one or two most relevant sources beside the claims they support; do not dump a source list into the prose. For calendar questions, state the requested dates clearly with the year. For calculated Islamic dates, label them expected and mention local moon-sighting variation once, briefly. Never invent an 'as of' date or local variation beyond what evidence supports. For creator follower/subscriber lookups, identify the matching public account and give the displayed count per platform with its profile link; distinguish followers from following, preserve rounding/abbreviations as displayed, and use the retrieval timestamp supplied in the request. State when a platform count is hidden, stale, or could not be read; never turn missing data into zero or imply every platform was checked when it was not. Check that sources support the exact subject and claim. If evidence is incomplete, say what is known and what remains uncertain instead of inventing. Follow requested formats exactly. If sources do not address the exact question, use relevant knowledge rather than treating irrelevant search pages as evidence.";
 const RESEARCH_REVIEW_SYSTEM = "You are a private check of whether opened web pages answer the user's exact question. Do not answer the user or reveal reasoning. Inspect the actual page text, not just titles. If pages are irrelevant, vague, or fail to support the key claim, choose a focused query that preserves the exact subject and claim. For a person's identity use reliable biographical evidence; for private-life or reputation claims, require direct reporting from reputable independent sources. Return exactly two lines: ACTION: ANSWER or SEARCH; QUERY: a new focused query, or none.";
 const RESEARCH_CONFIRM_SYSTEM = "You are a private cross-checker. Decide whether a focused answer supported by selected source pages is independently confirmed by the separate unrestricted web-search pages. Read the page text and compare the exact factual claim to the user's question. A result from the same domain, a search title alone, an unrelated result, or unsupported agreement is not confirmation. If at least one relevant opened page from a different domain independently supports the same answer without a material conflict, return CONFIRMED: YES. Otherwise return CONFIRMED: NO and one improved query. Do not answer the user or reveal reasoning. Return exactly two lines: CONFIRMED: YES or NO; QUERY: focused query or none.";
 function webQuery(v) {
@@ -3468,10 +3468,23 @@ const WEB_SOURCES = [
       const target = /^https?:\/\//i.test(site) ? site : "https://" + site;
       const [page, sitemap] = await Promise.all([
         (async () => {
+          // Try the real page in the user's browser first. This works for same-origin
+          // sites and pages that permit CORS; remove scripts/styles before extracting
+          // visible content so the useful text is not crowded out by source code.
+          try {
+            const response = await fetch(target, { signal: AbortSignal.timeout(4500), credentials: "omit" });
+            if (response.ok) {
+              const html = await response.text(), doc = new DOMParser().parseFromString(html, "text/html");
+              doc.querySelectorAll("script,style,noscript,template,svg,iframe").forEach(node => node.remove());
+              const visible = String(doc.body?.innerText || doc.body?.textContent || "").replace(/\s+/g, " ").trim();
+              if (visible.length > 80) return [{ title: doc.title || "Website content for " + new URL(target).hostname, url: target, text: visible.slice(0, 18000), read: true }];
+            }
+          } catch (_) {}
+          // Cross-origin/CORS failures fall back to the readable-page service.
           const response = await fetch("https://r.jina.ai/" + target, { signal: AbortSignal.timeout(WEB_TIMEOUT) });
           if (!response.ok) throw new Error("HTTP " + response.status);
-          const text = (await response.text()).trim().slice(0, 5000);
-          return text ? [{ title: "Website content for " + new URL(target).hostname, url: target, text }] : [];
+          const text = (await response.text()).trim().slice(0, 18000);
+          return text ? [{ title: "Website content for " + new URL(target).hostname, url: target, text, read: true }] : [];
         })().catch(() => []),
         searchDomainSitemap(new URL(target).hostname, v).catch(() => [])
       ]);
@@ -3705,7 +3718,7 @@ function searchedAnswerContent(host, text, images) {
 }
 function webContext(result) {
   const top = result.hits.slice(0, 10);
-  const text = "Live web research. Cite the numbered sources when appropriate. For code, prefer official documentation and established libraries; check versions and APIs against evidence.\n" + top.map((h,i) => "["+(i+1)+"] "+h.src+" — "+h.title+"\nURL: "+h.url+"\n"+h.text.replace(/\s+/g," ").slice(0,1600)).join("\n\n");
+  const text = "Live web research. Cite the numbered sources when appropriate. For code, prefer official documentation and established libraries; check versions and APIs against evidence.\n" + top.map((h,i) => "["+(i+1)+"] "+h.src+" — "+h.title+"\nURL: "+h.url+"\n"+h.text.replace(/\s+/g," ").slice(0, h.src === "Website page" ? 4000 : 1600)).join("\n\n");
   return { top, text };
 }
 function relevantWebHits(hits, q, site = false) {
@@ -3971,7 +3984,7 @@ async function collectReviewedWebResults(v, query, onActivity = () => {}) {
     let found = current.hits.filter(h => !seen.has(webHitKey(h)));
     found.forEach(h => seen.add(webHitKey(h)));
     found = relevantWebHits(found, current.q, site);
-    const readLimit = calendarLookup ? 6 : socialMetricLookup ? 16 : 10;
+    const readLimit = site ? 5 : calendarLookup ? 6 : socialMetricLookup ? 16 : 10;
     const pageRead = await readWebResultPages(diverseReadCandidates(found, readLimit), onActivity, readLimit, 6000);
     if (pageRead.failed) failed.push(pageRead.failed + " result page(s) could not be read");
     // Recheck against the full page after opening it. A SERP parser can attach
@@ -4050,7 +4063,7 @@ async function searchReply(v, box, qo, priorAnswer = "", allowRecheck = true) {
   const relevant = hits;
   if (!relevant.length) {
     box.querySelector(".refs").textContent = "The search tried several focused queries and sources but found no reliable result for the exact question.";
-    await chatReply(v, box, false, "The web lookup returned no readable evidence. Do not invent specific names, relationships, dates, or biographical details. State briefly that the search could not retrieve a source to verify the answer.");
+      await chatReply(v, box, false, "The web lookup returned no readable evidence. Reply in the same language as the latest user message. Do not invent specific names, relationships, dates, or biographical details. State briefly that the search could not retrieve a source to verify the answer.");
     return;
   }
   result.hits = relevant;                                                    // only relevant results reach the model and the source list
