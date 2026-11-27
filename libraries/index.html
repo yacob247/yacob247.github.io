@@ -3236,11 +3236,15 @@ function webQuery(v) {
   let query = String(v || "").replace(/^\s*\/web\b/i, "");
   query = query.replace(/^\s*(?:wow\s*[:,!-]?\s*)?(?:search|look)\s+(?:it\s+)?up\s*[:,!-]?\s*/i, "");
   query = query.replace(/^\s*it\s+up\s*[:,!-]?\s*/i, "");
-  query = query.replace(/\bhe(?=\s+exact\s+url)\b/ig, "the").replace(/\bmai\s+nwebsite\b/ig, "main website");
+  query = query.replace(/\bhe(?=\s+(?:exact|official|main)\s+(?:url|website|site|homepage))\b/ig, "the")
+    .replace(/\bhte(?=\s+(?:exact|official|main)\b)/ig, "the")
+    .replace(/\byou\s+ot\s+give\s+me\b/ig, " ")
+    .replace(/\bmai\s+nwebsite\b/ig, "main website");
   query = query
-    .replace(/\b(please|can you|could you|search( the web| online| up| for)?|look up|google|wikipedia|tell me about|tell me|explain|define|meaning of|i want|i need|the exact url(?: link)? for|exact url(?: link)? for|main website(?: for)?|official website(?: for)?)\b/ig, " ")
+    .replace(/\b(please|can you|could you|search( the web| online| up| for)?|look up|google|wikipedia|tell me about|tell me|give me|show me|explain|define|meaning of|i want|i need|you to|the exact (?:url|website|site)(?: link)? for|exact (?:url|website|site)(?: link)? for|the official (?:url|website|site)(?: link)? for|official (?:url|website|site)(?: link)? for|main website(?: for)?|official website(?: for)?)\b/ig, " ")
     .replace(/^\s*(who|whom|what|when|where|which|whose|how (many|much|old|tall|long|far|big))(\s+(is|are|was|were|does|do|did|has|have|the|a|an)\b)*\s*/i, "")
-    .replace(/[?!.:]+$/, "").replace(/\s+/g, " ").trim();
+    .replace(/[?!.:]+$/, "").replace(/\s+/g, " ").trim()
+    .replace(/\b(?:official|main|exact)\s*$/i, "").trim();
   return websiteUrlIntent && query && !/\b(?:website|homepage)\b/i.test(query) ? query + " official website" : query;
 }
 function extractWebsite(value) {
@@ -3738,9 +3742,11 @@ async function collectWebResults(v, qo, onActivity = () => {}, page = 0) {
   const q = normalizeSearchQuery(qo || webQuery(v) || v, v);
   const scopedSearch = /(?:^|\s)site:\S+/i.test(q);
   const website = scopedSearch ? "" : extractWebsite(v) || extractWebsite(q);
+  const officialWebsiteLookup = /\b(?:exact|official|main)\s+(?:website|site|url|homepage)\b|\b(?:website|site|url|homepage)\b.{0,25}\b(?:for|of)\b/i.test(v || "");
   // A supplied domain is a direct page-reading task; broad knowledge indexes
   // tend to return noisy matches for URL fragments, so keep the lookup focused.
-  const active = WEB_SOURCES.filter(s => website ? s.name === "Website page" : (!s.when || s.when(v)));
+  const searchProviders = new Set(["SearXNG", "Google, Bing and DuckDuckGo web search"]);
+  const active = WEB_SOURCES.filter(s => website ? s.name === "Website page" : officialWebsiteLookup ? searchProviders.has(s.name) : (!s.when || s.when(v)));
   if (website) onActivity("Opening the requested URL", /^https?:\/\//i.test(website) ? website : "https://" + website);
   else onActivity("Searching " + active.map(s => s.name).join(", ") + " for: " + q);
   const settled = await Promise.allSettled(active.map(s => s.run(q, page * 10)));
@@ -3867,6 +3873,8 @@ async function searchCatalogFor(v, focusedQuery = v) {
   const isSchoolCalendar = /\b(school|term dates|school holiday|ATSO|ASTP)\b/i.test(v || "");
   const isBankCalendar = /\b(bank|payment|settlement|currency|CHAPS|Fedwire|ACH|SWIFT)\b/i.test(v || "");
   const isSocialMetricLookup = /\b(subscriber(?:s| count)?|follower(?:s| count)?|following count|how many (?:followers|subscribers)|social media (?:followers|following|counts?)|audience size|socialblade|noxinfluencer|viewstats)\b/i.test(v || "");
+  const officialWebsiteLookup = /\b(?:exact|official|main)\s+(?:website|site|url|homepage)\b|\b(?:website|site|url|homepage)\b.{0,25}\b(?:for|of)\b/i.test(v || "");
+  if (officialWebsiteLookup) return { text: "General web search for the named organization's official website.", scopes: [], initialScopes: [], fallbackScopes: [] };
   const calendarCategory = categories.find(c => /world calendars, holidays/i.test(c.name));
   const schoolCategory = categories.find(c => /school terms, ASTP/i.test(c.name));
   const bankCategory = categories.find(c => /bank holidays, payment closures/i.test(c.name));
