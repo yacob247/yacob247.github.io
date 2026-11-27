@@ -3398,6 +3398,60 @@ function sitemapLocations(text) {
   }
   return out;
 }
+function summarizeStructuredPageData(value, depth = 0) {
+  if (depth > 7 || value == null) return "";
+  if (Array.isArray(value)) return value.slice(0, 250).map(item => summarizeStructuredPageData(item, depth + 1)).filter(Boolean).join("\n");
+  if (typeof value !== "object") return "";
+  const useful = /^(title|name|description|summary|category|categories|tag|tags|date|startdate|enddate|label|provider|type|headline|event|location|country|status)$/i;
+  const privateKey = /token|secret|password|credential|authorization|cookie|session|apikey/i;
+  const fields = Object.entries(value).filter(([key, item]) => useful.test(key) && !privateKey.test(key) && (typeof item === "string" || typeof item === "number" || Array.isArray(item)))
+    .map(([key, item]) => key + ": " + (Array.isArray(item) ? item.filter(x => typeof x === "string" || typeof x === "number").join(", ") : String(item)).slice(0, 500));
+  const children = Object.entries(value).filter(([key, item]) => !privateKey.test(key) && item && typeof item === "object").map(([, item]) => summarizeStructuredPageData(item, depth + 1));
+  return [...(fields.length ? [fields.join(" | ")] : []), ...children.filter(Boolean)].join("\n");
+}
+async function extractWebsitePageEvidence(target, html) {
+  const doc = new DOMParser().parseFromString(html, "text/html"), pageUrl = new URL(target), scriptText = [];
+  for (const script of doc.querySelectorAll("script")) if (script.textContent) scriptText.push(script.textContent);
+  const scriptUrls = [...new Set([...doc.querySelectorAll("script[src]")].map(node => {
+    try { const url = new URL(node.getAttribute("src"), pageUrl); return url.origin === pageUrl.origin ? url.href : ""; } catch (_) { return ""; }
+  }).filter(Boolean))].slice(0, 5);
+  const scriptBodies = await Promise.allSettled(scriptUrls.map(async url => {
+    const response = await fetch(url, { signal: AbortSignal.timeout(2800), credentials: "omit" });
+    if (!response.ok) throw new Error("HTTP " + response.status);
+    return (await response.text()).slice(0, 350000);
+  }));
+  scriptText.push(...scriptBodies.filter(x => x.status === "fulfilled").map(x => x.value));
+  const refs = new Set();
+  for (const source of scriptText) {
+    const matches = source.matchAll(/["'`]([^"'`]{1,240}\.(?:json|xml|csv)(?:\?[^"'`]*)?)["'`]/gi);
+    for (const match of matches) {
+      try {
+        const url = new URL(match[1], pageUrl);
+        if (url.origin === pageUrl.origin && /\.(?:json|xml|csv)$/i.test(url.pathname)) refs.add(url.href);
+      } catch (_) {}
+    }
+  }
+  const dataFiles = await Promise.allSettled([...refs].slice(0, 8).map(async url => {
+    const response = await fetch(url, { signal: AbortSignal.timeout(3500), credentials: "omit" });
+    if (!response.ok) throw new Error("HTTP " + response.status);
+    const raw = (await response.text()).slice(0, 800000);
+    let contents = "";
+    try { contents = summarizeStructuredPageData(JSON.parse(raw)); } catch (_) { contents = stripTags(raw); }
+    return "Page data file " + new URL(url).pathname + ":\n" + contents.slice(0, 9000);
+  }));
+  doc.querySelectorAll("script,style,noscript,template,svg,iframe").forEach(node => node.remove());
+  const visible = String(doc.body?.innerText || doc.body?.textContent || "").replace(/\s+/g, " ").trim();
+  const sections = [...visible.matchAll(/\b(?:popular games|most played|trending now|featured games|top games|new games|about this (?:page|site|website))\b/ig)]
+    .map(match => visible.slice(Math.max(0, match.index - 180), Math.min(visible.length, match.index + 2200)));
+  const relevantSections = [...new Set(sections)].slice(0, 5);
+  const datasets = dataFiles.filter(x => x.status === "fulfilled").map(x => x.value);
+  return [
+    "Page title: " + (doc.title || pageUrl.hostname),
+    relevantSections.length ? "Relevant page sections:\n" + relevantSections.join("\n---\n") : "",
+    datasets.length ? "Same-origin data files referenced by this page:\n" + datasets.join("\n\n") : "",
+    "Page text:\n" + visible.slice(0, 9000)
+  ].filter(Boolean).join("\n\n").slice(0, 18000);
+}
 async function fetchSitemapDocument(url) {
   let directError;
   try {
@@ -3427,17 +3481,24 @@ async function searchDomainSitemap(domain, query) {
     } catch (_) {}
   }
   if (!maps.length) return [];
-  let pageUrls = [], nested = [];
-  for (const map of maps) {
-    const locations = sitemapLocations(map.text);
-    if (/sitemapindex|<sitemap\b/i.test(map.text.slice(0, 12000)) || locations.some(url => /sitemap[^/]*\.xml(?:$|\?)/i.test(url))) nested.push(...locations);
-    else pageUrls.push(...locations);
-  }
-  if (nested.length) {
-    const nestedDocs = await Promise.allSettled([...new Set(nested)].filter(url => {
-      const childHost = sitemapHost(url); return childHost === host || childHost.endsWith("." + host);
-    }).slice(0, 8).map(fetchSitemapDocument));
-    pageUrls.push(...nestedDocs.filter(x => x.status === "fulfilled").flatMap(x => sitemapLocations(x.value.text)));
+  // Follow nested sitemap indexes (common on large sites) across a few bounded
+  // parallel waves. Keep this host-scoped so one site's sitemap cannot send the
+  // reader to unrelated domains.
+  let pageUrls = [], pending = maps, visitedMaps = new Set(maps.map(map => map.url)), mapCount = maps.length;
+  for (let depth = 0; pending.length && depth < 3; depth++) {
+    const next = [];
+    for (const map of pending) {
+      const locations = sitemapLocations(map.text);
+      const isIndex = /sitemapindex|<sitemap\b/i.test(map.text.slice(0, 12000)) || locations.some(url => /sitemap[^/]*\.xml(?:$|\?)/i.test(url));
+      if (!isIndex) { pageUrls.push(...locations); continue; }
+      for (const url of locations) {
+        const childHost = sitemapHost(url);
+        if ((childHost === host || childHost.endsWith("." + host)) && !visitedMaps.has(url) && mapCount < 12) {
+          visitedMaps.add(url); next.push(url); mapCount++;
+        }
+      }
+    }
+    pending = (await Promise.allSettled(next.map(fetchSitemapDocument))).filter(x => x.status === "fulfilled").map(x => x.value);
   }
   const queryText = String(query || "").replace(/https?:\/\/\S+/ig, " ").replace(/\b(?:www\.)?[a-z0-9.-]+\.[a-z]{2,}\b/ig, " ").replace(/site:[^\s]+/ig, " ");
   const terms = [...new Set(queryTokens(queryText).filter(w => w.length > 2))];
@@ -3451,7 +3512,7 @@ async function searchDomainSitemap(domain, query) {
     const title = path.split(/[\/?#=_-]+/).filter(Boolean).slice(-5).join(" ") || url;
     return { url, path, matched, score: matched.length, title };
   }).filter(x => !terms.length || x.score > 0).sort((a, b) => b.score - a.score);
-  return ranked.slice(0, 10).map(item => ({ title: item.title, url: item.url, text: "Discovered in " + host + " sitemap.xml" + (item.matched.length ? "; URL path matches: " + item.matched.join(", ") : ""), src: "Sitemap.xml " + host }));
+  return ranked.slice(0, 8).map(item => ({ title: item.title, url: item.url, text: "Discovered in " + host + " sitemap.xml" + (item.matched.length ? "; URL path matches: " + item.matched.join(", ") : ""), src: "Sitemap.xml " + host }));
 }
 const WEB_SOURCES = [
   { name: "SearXNG", run: async q => {
@@ -3462,6 +3523,24 @@ const WEB_SOURCES = [
         if (!out.length) throw new Error("empty"); return out;
       };
       return await Promise.any(searxBases().map(one));
+  } },
+  { name: "Google, Bing and DuckDuckGo web search", run: async q => {
+      const urls = [
+        "https://www.google.com/search?" + new URLSearchParams({ q, num: "10" }),
+        "https://www.bing.com/search?" + new URLSearchParams({ q, count: "10" }),
+        "https://html.duckduckgo.com/html/?" + new URLSearchParams({ q })
+      ];
+      const results = await Promise.allSettled(urls.map(async url => {
+        const response = await fetch("https://r.jina.ai/" + url, { signal: AbortSignal.timeout(4500) });
+        if (!response.ok) throw new Error("Search reader HTTP " + response.status);
+        const hits = parseReaderSerp((await response.text()).slice(0, 30000), "Web search", 10);
+        if (!hits.length) throw new Error("No readable search results");
+        return hits;
+      }));
+      const hits = results.filter(x => x.status === "fulfilled").flatMap(x => x.value);
+      const unique = [...new Map(hits.map(hit => [webHitKey(hit), hit])).values()].slice(0, 12);
+      if (!unique.length) throw new Error("Search providers returned no readable results");
+      return unique;
   } },
   { name: "Website page", when: v => !!extractWebsite(v), run: async q => {
       const site = extractWebsite(v) || extractWebsite(q); if (!site) return [];
@@ -3474,10 +3553,8 @@ const WEB_SOURCES = [
           try {
             const response = await fetch(target, { signal: AbortSignal.timeout(4500), credentials: "omit" });
             if (response.ok) {
-              const html = await response.text(), doc = new DOMParser().parseFromString(html, "text/html");
-              doc.querySelectorAll("script,style,noscript,template,svg,iframe").forEach(node => node.remove());
-              const visible = String(doc.body?.innerText || doc.body?.textContent || "").replace(/\s+/g, " ").trim();
-              if (visible.length > 80) return [{ title: doc.title || "Website content for " + new URL(target).hostname, url: target, text: visible.slice(0, 18000), read: true }];
+              const html = await response.text(), evidence = await extractWebsitePageEvidence(target, html);
+              if (evidence.length > 80) return [{ title: "Website content for " + new URL(target).hostname, url: target, text: evidence, read: true }];
             }
           } catch (_) {}
           // Cross-origin/CORS failures fall back to the readable-page service.
@@ -3675,6 +3752,20 @@ async function readWebResultPages(hits, onActivity = () => {}, limit = 10, timeo
     if (h.read) { onActivity("Using calendar API record " + (i + 1) + " of " + candidates.length, h.url); return h; }
     if (!/^https?:\/\//i.test(h.url || "")) throw new Error("invalid URL");
     onActivity("Opening and reading matched page " + (i + 1) + " of " + candidates.length, h.url);
+    // For pages on this app's own origin, read the page through the browser
+    // first so its normal same-origin JSON/XML/CSV discovery can expose dynamic
+    // listings. Use the text reader for other origins or when local extraction
+    // is blocked or empty.
+    try {
+      if (new URL(h.url).origin === location.origin) {
+        const local = await fetch(h.url, { signal: AbortSignal.timeout(timeout), credentials: "omit" });
+        if (local.ok) {
+          const html = await local.text();
+          const evidence = await extractWebsitePageEvidence(h.url, html);
+          if (evidence.length >= 80) return { ...h, text: evidence.slice(0, 9000), read: true };
+        }
+      }
+    } catch (_) {}
     const response = await fetch("https://r.jina.ai/" + h.url, { signal: AbortSignal.timeout(timeout) });
     if (!response.ok) throw new Error("HTTP " + response.status);
     const text = stripTags(await response.text()).trim().slice(0, 9000);
@@ -3783,14 +3874,25 @@ async function searchCatalogFor(v, focusedQuery = v) {
     } catch (_) {}
   }
   const peopleCategory = categories.find(c => /people, biographies, relationships/i.test(c.name));
+  const educationCategory = categories.find(c => /jobs, careers and education/i.test(c.name));
+  const ownWebsiteCategory = categories.find(c => /my website pages and tools/i.test(c.name));
   const personQuestion = /\b(who|married|marriage|spouse|wife|husband|partner|dating|relationship|child|children|son|daughter|family|age|name)\b/i.test(v || "");
+  const schoolStaffLookup = /\b(teacher|teachers|school staff|staff directory|school employee|principal|faculty|head teacher)\b/i.test(v || "");
+  const isOwnSiteQuestion = /\b(?:gamehub|envizion\.work|my website|my site)\b/i.test(v || "");
+  if (!isCalendarLookup && isOwnSiteQuestion && ownWebsiteCategory) {
+    ranked = [{ c: ownWebsiteCategory, score: 2 }, ...ranked.filter(item => item.c !== ownWebsiteCategory)].slice(0, 3);
+  }
   // Person questions stay in the people category; search its expanded source
   // list without pulling in unrelated categories.
-  if (!isCalendarLookup && personQuestion && peopleCategory) ranked = [{ c: peopleCategory, score: 1 }];
+  if (!isCalendarLookup && personQuestion && peopleCategory && !isOwnSiteQuestion) ranked = [{ c: peopleCategory, score: 1 }];
+  if (!isCalendarLookup && schoolStaffLookup && educationCategory && !isOwnSiteQuestion) {
+    ranked = [{ c: educationCategory, score: 2 }, ...(peopleCategory ? [{ c: peopleCategory, score: 1 }] : [])];
+  }
   if (!isCalendarLookup && isSocialMetricLookup && socialMetricsCategory) ranked = [{ c: socialMetricsCategory, score: 1 }];
   if (!ranked.length) ranked = categoryScores.filter(x => x.score).sort((a, b) => b.score - a.score).slice(0, 3);
   const text = ranked.map(({ c }) => c.name + ": " + c.sources.map(s => s.name + " (" + s.domain + ")" + (s.url ? " [" + s.url + "]" : "")).join(", ") + (c.searchExamples?.length ? "\nExample requests: " + c.searchExamples.join("; ") : "") + (c.searchGuidance ? "\nSearch guidance: " + c.searchGuidance : "")).join("\n");
-  // Keep every exact destination while querying each domain only once.
+  // Keep every exact destination while querying each domain only once. Select
+  // a small, varied first wave; retain the rest for later only if needed.
   const grouped = new Map();
   const allSources = categories.flatMap(c => c.sources || []);
   const desiredYear = Number(/\b(20\d{2})\b/.exec(v || "")?.[1]) || (new Date().getUTCMonth() >= 8 ? new Date().getUTCFullYear() + 1 : new Date().getUTCFullYear());
@@ -3822,24 +3924,53 @@ async function searchCatalogFor(v, focusedQuery = v) {
       : ["openholidaysapi.org", "nagerholidays.com", "timeanddate.com"];
     selectedSources = sourcesForDomains(domains);
   }
+  if (schoolStaffLookup && !isOwnSiteQuestion) {
+    const schoolDomains = /\b(australia|australian|nsw|new south wales|arthur phillip)\b/i.test(v || "")
+      ? ["education.nsw.gov.au", "education.gov.au", "linkedin.com"]
+      : ["linkedin.com", "indeed.com", "education.gov.au"];
+    selectedSources = [
+      ...sourcesForDomains(schoolDomains),
+      ...selectedSources.filter(source => !schoolDomains.includes(source.domain))
+    ];
+  }
   for (const source of selectedSources.filter(s => s.domain)) {
     const domain = source.domain.toLowerCase();
     if (!grouped.has(domain)) grouped.set(domain, { category: ranked[0]?.c?.name || "Calendar source", domain, kind: source.kind, directSources: [] });
     if (source.url && !grouped.get(domain).directSources.some(x => x.url === source.url)) grouped.get(domain).directSources.push(source);
   }
-  const allDomains = [...grouped.values()], primary = [], usedDomains = new Set();
-  for (const { c } of ranked) {
-    const source = allDomains.find(x => x.category === c.name && !usedDomains.has(x.domain));
-    if (source) { primary.push(source); usedDomains.add(source.domain); }
+  const allDomains = [...grouped.values()], initialDomains = [], usedDomains = new Set();
+  const addInitial = source => {
+    if (!source?.domain || usedDomains.has(source.domain) || initialDomains.length >= 3) return;
+    const match = allDomains.find(item => item.domain === source.domain);
+    if (match) { initialDomains.push(match); usedDomains.add(source.domain); }
+  };
+  if (isIslamicCalendar || isSchoolCalendar || isBankCalendar || isCalendarLookup || isSocialMetricLookup || schoolStaffLookup) {
+    selectedSources.forEach(addInitial);
+  } else {
+    const sourceBuckets = ranked.map(({ c }) => {
+      const sources = (c.sources || []).filter(source => selectedSources.some(item => item.domain === source.domain));
+      if (/people, biographies, relationships/i.test(c.name)) {
+        const news = sources.filter(source => source.kind === "news");
+        const reference = sources.filter(source => source.kind !== "news");
+        const statusQuestion = /\b(?:married|marriage|dating|current|latest|recent|now|announced|202[5-9])\b/i.test(v || "");
+        return statusQuestion ? [...news.slice(0, 2), ...reference, ...news.slice(2)] : [...reference, ...news];
+      }
+      return sources;
+    });
+    for (let column = 0; column < Math.max(0, ...sourceBuckets.map(bucket => bucket.length)) && initialDomains.length < 3; column++)
+      sourceBuckets.forEach(bucket => addInitial(bucket[column]));
   }
-  const fallback = allDomains.filter(x => !usedDomains.has(x.domain));
-  const scopes = [...primary, ...fallback].map(x => ({
+  // If explicit source routing produced fewer than three domains, fill only
+  // from the already selected categories, not the whole global catalog.
+  for (const { c } of ranked) for (const source of c.sources || []) addInitial(source);
+  const orderedDomains = [...initialDomains, ...allDomains.filter(item => !usedDomains.has(item.domain))];
+  const scopes = orderedDomains.map(x => ({
     category: x.category, domains: [x.domain], kind: x.kind, directSources: x.directSources,
     isIslamicCalendar, year: desiredYear,
     query: "site:" + x.domain + " " + String(focusedQuery || v || "").replace(/[?!.]+$/, "").trim(),
-    label: "Searching inside " + x.domain + " and checking sitemap.xml"
+    label: "Searching inside " + x.domain
   }));
-  return { text, scopes };
+  return { text, scopes, initialScopes: scopes.slice(0, 3), fallbackScopes: scopes.slice(3) };
 }
 async function searchInsideCatalogDomain(scope) {
   const domain = String(scope.domains?.[0] || "").toLowerCase();
@@ -3887,10 +4018,10 @@ async function searchInsideCatalogDomain(scope) {
       return hits;
     } catch (error) { throw error; }
   });
-  const [searchHits, sitemapHits] = await Promise.all([
-    Promise.any([searxAttempt, ...readerAttempts]).catch(() => []),
-    searchDomainSitemap(domain, terms).catch(() => [])
-  ]);
+  const searchHits = await Promise.any([searxAttempt, ...readerAttempts]).catch(() => []);
+  // Sitemap crawling is a fallback for missing/ambiguous search results, not
+  // work to repeat for every ordinary query.
+  const sitemapHits = scope.useSitemap ? await searchDomainSitemap(domain, terms).catch(() => []) : [];
   let hits = [...new Map([...searchHits, ...sitemapHits].map(hit => [hit.url.toLowerCase(), hit])).values()];
   const wordSet = [...new Set(terms.toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 2))];
   const directHits = (scope.directSources || []).map(source => ({
@@ -3958,7 +4089,7 @@ async function collectReviewedWebResults(v, query, onActivity = () => {}) {
   const directory = await searchCatalogFor(v, q);
   // Search every domain in the selected relevant category together, then read
   // multiple result pages before using a separate unrestricted search to verify.
-  const SCOPE_BATCH_SIZE = directory.scopes.length;
+  const SCOPE_BATCH_SIZE = (directory.initialScopes || directory.scopes).length;
   const calendarLookup = /\b(calendar|holiday|holidays|observance|celebration|festival|ramadan|eid|diwali|hijri|school term|school holiday|term dates|ATSO|ASTP|bank closure|bank holiday|settlement date|currency holiday|CHAPS|Fedwire)\b/i.test(v || "") || /\bwhen\b.{0,55}\b(start|end|happen|occur|held|celebrated)\b/i.test(v || "");
   const socialMetricLookup = /\b(subscriber(?:s| count)?|follower(?:s| count)?|following count|how many (?:followers|subscribers)|social media (?:followers|following|counts?)|audience size|socialblade|noxinfluencer|viewstats)\b/i.test(v || "");
   const MAX_BATCHES = site || calendarLookup ? 1 : 2;
@@ -3968,7 +4099,7 @@ async function collectReviewedWebResults(v, query, onActivity = () => {}) {
     let current;
     if (page === 0 && !active.length) {
       const index = WEB_SOURCES.find(s => s.name === "GDELT DOC article search");
-      const firstScopes = site ? [] : directory.scopes.slice(0, SCOPE_BATCH_SIZE);
+      const firstScopes = site ? [] : (directory.initialScopes || directory.scopes).slice(0, SCOPE_BATCH_SIZE);
       if (!firstScopes.length && !(index && !calendarLookup && index.when(v))) {
         current = await collectWebResults(v, q, onActivity, 0);
       } else {
@@ -4002,10 +4133,41 @@ async function collectReviewedWebResults(v, query, onActivity = () => {}) {
     // failed page prevent trying the other results or a later batch.
     allHits.push(...found.filter(h => !pageRead.read.some(r => r.url === h.url) && !(calendarLookup && h.catalogSource)).slice(0, Math.max(0, (calendarLookup ? 4 : 10) - pageRead.read.length)));
     allHits = [...new Map(allHits.map(h => [webHitKey(h), h])).values()];
-    if (calendarLookup || site || stopFlag) { adequate = true; break; }
+    if (site && !stopFlag) {
+      const websiteHits = allHits.filter(h => h.src === "Website page");
+      const review = websiteHits.length ? await reviewSearchEvidence(v, { q, hits: websiteHits.slice(0, 8) }, "Exact website URL and its indexed pages") : { action: "SEARCH" };
+      if (review.action !== "ANSWER") {
+        let host = ""; try { host = new URL(site).hostname; } catch (_) { try { host = new URL("https://" + site).hostname; } catch (_) {} }
+        if (host) {
+          onActivity("Checking " + host + " sitemap.xml to find relevant pages");
+          const sitemapHits = await searchDomainSitemap(host, q).catch(() => []);
+          const sitemapRead = await readWebResultPages(sitemapHits, onActivity, 8, 6000);
+          const opened = sitemapRead.read.map(h => ({ ...h, src: "Website page" }));
+          allHits.push(...opened);
+          allHits = [...new Map(allHits.map(h => [webHitKey(h), h])).values()];
+        }
+      }
+      adequate = true; break;
+    }
+    if (calendarLookup || stopFlag) { adequate = true; break; }
     if (allHits.length) {
       const review = await reviewSearchEvidence(v, { q, hits: allHits.slice(-10) }, directory.text);
       adequate = review.action === "ANSWER";
+      if (!adequate && batch === 0 && directory.fallbackScopes?.length && !stopFlag) {
+        const sitemapScopes = directory.fallbackScopes.slice(0, 2);
+        onActivity("Checking relevant source sitemaps because the first pages did not answer");
+        const sitemapResults = await Promise.all(sitemapScopes.map(scope => searchDomainSitemap(scope.domains[0], q).catch(() => [])));
+        const sitemapFound = sitemapResults.flat().filter(h => !seen.has(webHitKey(h)));
+        sitemapFound.forEach(h => seen.add(webHitKey(h)));
+        const sitemapRead = await readWebResultPages(sitemapFound, onActivity, 8, 6000);
+        allHits.push(...sitemapRead.read);
+        allHits = [...new Map(allHits.map(h => [webHitKey(h), h])).values()];
+        if (sitemapRead.read.length) {
+          const sitemapReview = await reviewSearchEvidence(v, { q, hits: sitemapRead.read.slice(0, 8) }, directory.text);
+          adequate = sitemapReview.action === "ANSWER";
+          if (!adequate && sitemapReview.query) q = sitemapReview.query;
+        }
+      }
       let confirmationRefinement = false;
       if (adequate && !unrestrictedSearched && directory.scopes.length) {
         onActivity("Running an unrestricted web search to confirm the answer");
@@ -4307,7 +4469,7 @@ const INTENT_SYSTEM = [
   "Available actions: CHAT for conversation and writing; SEARCH for web facts and calendar dates, using search-endpoints-reference.json to select relevant categories and search inside their domains before opening result pages; PYTHON for calculations and data work; CODE for HTML/CSS/JavaScript webpages, apps, and interactive canvases; PYODIDE for attached-file work and supported document tasks. These are the app's available capabilities.",
   "Route exact arithmetic, including large integers, to the calculator/Python path. Show steps only when requested or useful. For Python, choose only the operation needed to complete the user's request. For CODE, preserve the full stated scope and implement every requested feature without unrelated additions.",
   "For calendar lookups, select only a few relevant trusted sources and let the search path check them in parallel; do not add unrelated news or encyclopedia sources just to increase source count.",
-  "A request to explain, summarize, inspect, or read a supplied website URL requires SEARCH and opening that exact URL, even if the user does not say 'search'. A correction like 'no, research again' or 'no research again' means retry the previous lookup; only explicit wording like 'do not research again' means stop searching. For SEARCH, silently correct obvious spelling, spacing, and name errors, then write a natural, focused query for the intended fact. Do not simply copy malformed wording. Resolve pronouns and short follow-ups (such as 'they', 'his name', 'what about the son') from the most recent relevant user request and established conversation facts; include the actual names in the query. Do not adopt an earlier assistant's unsupported guess as fact. Search only a few matching source domains concurrently, then open matching result pages. Never search every catalog URL one at a time or open a site's homepage as a substitute for searching it.",
+  "A request to explain, summarize, inspect, or read a supplied website URL requires SEARCH and opening that exact URL, even if the user does not say 'search'. Search a few relevant category domains and open their matching result pages first. Use that site's sitemap.xml, common sitemap-index paths, and robots.txt declarations only when the exact page or initial results do not answer the request, or when the user asks to find content across a large site; follow same-host nested indexes, select matching URLs, and read the actual pages. If a page references same-origin JSON/XML/CSV data, read it when it contains requested dynamic content. A sitemap discovers pages; it is not evidence for page contents. When category results are insufficient, continue with a general web search outside the catalog and read relevant openable pages; do not restrict research to listed domains. Do not search every catalog URL one at a time or all categories at once. A correction like 'no, research again' means retry; only 'do not research again' means stop. For SEARCH, silently correct obvious spelling and name errors, then form a natural focused query for the intended fact. Resolve pronouns and short follow-ups from the most recent relevant request, and never treat an earlier unsupported assistant guess as fact.",
   "Choose the action and query that fit the current request. Preserve requested language and format. Use existing conversation context for follow-ups. Do not invent tool access or completed actions. Return exactly six lines:\nINTENT: SEARCH or CHAT or CODE or PYTHON or PYODIDE\nQUERY: focused corrected search query or none\nRESEARCH: YES or NO\nCHECK: YES or NO\nFILES: YES or NO\nCANVAS: existing canvas number or NONE"
 ].join("\n");
 const ROUTE_RECHECK_SYSTEM = [
