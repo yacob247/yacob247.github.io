@@ -3198,7 +3198,8 @@ async function calcAgent(v, box, researchQuery = "") {
 const webOn = true;                // always available: route() decides per request whether a lookup is needed
 const WEB_SYSTEM_OLD = "You answer questions using ONLY the numbered search results given in the message. Reply in 1 to 3 plain sentences and mention the source number you used, like [1]. If sources disagree, say so. If the results do not clearly answer the question, say you could not find a reliable answer. Never add facts from memory and never guess.";
 const WEB_SYSTEM = "Answer the user's exact question directly using the numbered sources. Keep a balanced length: give the result and the context needed to understand it, without narrating the search or paraphrasing whole pages. For straightforward factual or calendar questions, use about two to four useful sentences. Cite the one or two most relevant sources beside the claims they support; do not dump a source list into the prose. For calendar questions, state the requested dates clearly with the year. For calculated Islamic dates, label them expected and mention local moon-sighting variation once, briefly. Never invent an 'as of' date or local variation beyond what evidence supports. Check that sources support the exact subject and claim. If evidence is incomplete, say what is known and what remains uncertain instead of inventing. Follow requested formats exactly. If sources do not address the exact question, use relevant knowledge rather than treating irrelevant search pages as evidence.";
-const RESEARCH_REVIEW_SYSTEM = "You are a private check of whether web results answer the user's exact question. Do not answer the user or reveal reasoning. Inspect the actual titles and snippets, not just whether results exist. If they are irrelevant, vague, or fail to support the key claim, choose another focused query that preserves the exact subject and claim. For claims about a person's private life or reputation, seek direct reporting from reputable independent sources; do not treat search snippets or social posts as proof. Search again only when a distinct query or source is likely to add evidence. Return exactly two lines: ACTION: ANSWER or SEARCH; QUERY: a new focused query, or none.";
+const RESEARCH_REVIEW_SYSTEM = "You are a private check of whether opened web pages answer the user's exact question. Do not answer the user or reveal reasoning. Inspect the actual page text, not just titles. If pages are irrelevant, vague, or fail to support the key claim, choose a focused query that preserves the exact subject and claim. For a person's identity use reliable biographical evidence; for private-life or reputation claims, require direct reporting from reputable independent sources. Return exactly two lines: ACTION: ANSWER or SEARCH; QUERY: a new focused query, or none.";
+const RESEARCH_CONFIRM_SYSTEM = "You are a private cross-checker. Decide whether a focused answer supported by selected source pages is independently confirmed by the separate unrestricted web-search pages. Read the page text and compare the exact factual claim to the user's question. A result from the same domain, a search title alone, an unrelated result, or unsupported agreement is not confirmation. If at least one relevant opened page from a different domain independently supports the same answer without a material conflict, return CONFIRMED: YES. Otherwise return CONFIRMED: NO and one improved query. Do not answer the user or reveal reasoning. Return exactly two lines: CONFIRMED: YES or NO; QUERY: focused query or none.";
 function webQuery(v) {
   return v.replace(/^\s*\/web\b/i, "")
     .replace(/\b(please|can you|could you|search( the web| online| up| for)?|look up|google|wikipedia|tell me about|tell me|explain|define|meaning of)\b/ig, " ")
@@ -3772,6 +3773,37 @@ async function reviewSearchEvidence(v, result, directory = "") {
     return { action, query: normalizeSearchQuery(query, v) };
   } catch (_) { return { action: "SEARCH", query: "" }; }
 }
+async function confirmSearchEvidence(v, scopedHits, broadHits) {
+  const openedBroad = (broadHits || []).filter(h => h.read && h.text);
+  const scopedDomains = new Set((scopedHits || []).map(h => { try { return new URL(h.url).hostname.toLowerCase().replace(/^www\./, ""); } catch (_) { return ""; } }).filter(Boolean));
+  const independent = openedBroad.some(h => {
+    try {
+      const host = new URL(h.url).hostname.toLowerCase().replace(/^www\./, "");
+      return host && ![...scopedDomains].some(domain => host === domain || host.endsWith("." + domain) || domain.endsWith("." + host));
+    }
+    catch (_) { return false; }
+  });
+  if (!openedBroad.length || !independent) return { confirmed: false, query: "" };
+  try {
+    const evidence = "Focused category pages:\n" + webContext({ q: v, hits: (scopedHits || []).slice(0, 5) }).text
+      + "\n\nSeparate unrestricted web results:\n" + webContext({ q: v, hits: openedBroad.slice(0, 5) }).text;
+    const response = await engine.chat.completions.create({ messages: [
+      { role: "system", content: RESEARCH_CONFIRM_SYSTEM },
+      { role: "user", content: "User's exact question: " + v + "\n\n" + evidence }
+    ], temperature: 0, max_tokens: 80 });
+    const text = response.choices[0]?.message?.content || "";
+    return { confirmed: /CONFIRMED\s*:\s*YES/i.test(text), query: /QUERY\s*:\s*([^\n]+)/i.exec(text)?.[1]?.trim() || "" };
+  } catch (_) { return { confirmed: false, query: "" }; }
+}
+function diverseReadCandidates(hits, limit) {
+  const firstByDomain = [], rest = [], seen = new Set();
+  for (const hit of hits || []) {
+    let domain = ""; try { domain = new URL(hit.url).hostname.toLowerCase().replace(/^www\./, ""); } catch (_) {}
+    if (domain && !seen.has(domain)) { seen.add(domain); firstByDomain.push(hit); }
+    else rest.push(hit);
+  }
+  return [...firstByDomain, ...rest].slice(0, limit);
+}
 // Gather and read search pages in batches. Continue only when the evidence reviewer
 // says the current pages do not yet answer the user's exact question.
 async function collectReviewedWebResults(v, query, onActivity = () => {}) {
@@ -3779,13 +3811,12 @@ async function collectReviewedWebResults(v, query, onActivity = () => {}) {
   const site = scopedSearch ? "" : extractWebsite(v) || extractWebsite(query);
   let q = normalizeSearchQuery(query || webQuery(v) || v, v), active = [], failed = [], queries = [], allHits = [], seen = new Set(), adequate = false, page = 0, refined = false;
   const directory = await searchCatalogFor(v, q);
-  // Search only a few matching calendar domains together, then read the best
-  // four pages. General research retains a wider candidate pool.
-  // Search every domain in the selected relevant category together. The
-  // category selection is the relevance boundary; do not truncate its sources.
+  // Search every domain in the selected relevant category together, then read
+  // multiple result pages before using a separate unrestricted search to verify.
   const SCOPE_BATCH_SIZE = directory.scopes.length;
   const calendarLookup = /\b(calendar|holiday|holidays|observance|celebration|festival|ramadan|eid|diwali|hijri|school term|school holiday|term dates|ATSO|ASTP|bank closure|bank holiday|settlement date|currency holiday|CHAPS|Fedwire)\b/i.test(v || "") || /\bwhen\b.{0,55}\b(start|end|happen|occur|held|celebrated)\b/i.test(v || "");
   const MAX_BATCHES = site || calendarLookup ? 1 : 2;
+  let unrestrictedSearched = false, confirmed = false;
   for (let batch = 0; batch < MAX_BATCHES && !stopFlag && !adequate; batch++) {
     onActivity("Search pass " + (batch + 1) + " for: " + q);
     let current;
@@ -3803,16 +3834,9 @@ async function collectReviewedWebResults(v, query, onActivity = () => {}) {
       current = { q, hits: [...scoped.flat(), ...(general || [])], active: [...(firstScopes.length ? [{ name: "Catalog domain search" }] : []), ...(usedGdelt ? [index] : [])], failed: [] };
       }
     }
-    else if (!site && directory.scopes.slice(0, SCOPE_BATCH_SIZE).length) {
-      const index = WEB_SOURCES.find(s => s.name === "GDELT DOC article search"), scopes = directory.scopes.slice(0, SCOPE_BATCH_SIZE).map(scope => ({ ...scope, query: "site:" + scope.domains[0] + " " + q }));
-      const scoped = await Promise.all(scopes.map(async scope => {
-        onActivity(scope.label);
-        return searchInsideCatalogDomain(scope);
-      }));
-      current = { q, hits: scoped.flat(), active: [...(index && scopes.some(s => s.kind === "news" || s.domains.includes("gdeltproject.org")) ? [index] : []), { name: "Catalog domain search" }], failed: [] };
-    }
     else {
       current = await collectWebResults(v, q, onActivity, page);
+      unrestrictedSearched = true;
     }
     page++;
     active = [...new Map([...active, ...current.active].map(s => [s.name, s])).values()];
@@ -3822,7 +3846,7 @@ async function collectReviewedWebResults(v, query, onActivity = () => {}) {
     let found = current.hits.filter(h => !seen.has(webHitKey(h)));
     found.forEach(h => seen.add(webHitKey(h)));
     found = relevantWebHits(found, current.q, site);
-    const pageRead = await readWebResultPages(found, onActivity, 4, 5000);
+    const pageRead = await readWebResultPages(diverseReadCandidates(found, calendarLookup ? 6 : 10), onActivity, calendarLookup ? 6 : 10, 6000);
     if (pageRead.failed) failed.push(pageRead.failed + " result page(s) could not be read");
     // Recheck against the full page after opening it. A SERP parser can attach
     // navigation or cookie links to a result; do not treat those as evidence.
@@ -3831,30 +3855,59 @@ async function collectReviewedWebResults(v, query, onActivity = () => {}) {
     // failed page prevent trying the other results or a later batch.
     allHits.push(...found.filter(h => !pageRead.read.some(r => r.url === h.url) && !(calendarLookup && h.catalogSource)).slice(0, Math.max(0, (calendarLookup ? 4 : 10) - pageRead.read.length)));
     allHits = [...new Map(allHits.map(h => [webHitKey(h), h])).values()];
-    if (calendarLookup || site || stopFlag || !directory.scopes.length || batch > 0) { adequate = true; break; }
+    if (calendarLookup || site || stopFlag) { adequate = true; break; }
     if (allHits.length) {
       const review = await reviewSearchEvidence(v, { q, hits: allHits.slice(-10) }, directory.text);
       adequate = review.action === "ANSWER";
+      let confirmationRefinement = false;
+      if (adequate && !unrestrictedSearched && directory.scopes.length) {
+        onActivity("Running an unrestricted web search to confirm the answer");
+        const broad = await collectWebResults(v, q, onActivity, page++);
+        unrestrictedSearched = true;
+        active = [...new Map([...active, ...broad.active].map(s => [s.name, s])).values()];
+        failed = [...new Set([...failed, ...broad.failed])];
+        queries.push(broad.q);
+        const broadFound = relevantWebHits(broad.hits, broad.q).filter(h => !seen.has(webHitKey(h)));
+        broadFound.forEach(h => seen.add(webHitKey(h)));
+        const broadRead = await readWebResultPages(broadFound, onActivity, 6, 6000);
+        if (broadRead.failed) failed.push(broadRead.failed + " confirmation page(s) could not be read");
+        const confirmedHits = relevantWebHits(broadRead.read, broad.q);
+        allHits.push(...confirmedHits);
+        allHits = [...new Map(allHits.map(h => [webHitKey(h), h])).values()];
+        const confirmation = await confirmSearchEvidence(v, allHits.filter(h => !confirmedHits.includes(h)), confirmedHits);
+        confirmed = confirmation.confirmed;
+        adequate = confirmed;
+        if (!confirmed && confirmation.query && !refined) {
+          q = normalizeSearchQuery(confirmation.query, v);
+          refined = true; page = 0; allHits = []; seen.clear(); queries = []; adequate = false; confirmationRefinement = true;
+        }
+      } else if (adequate && unrestrictedSearched && directory.scopes.length) {
+        const nonCatalog = allHits.filter(h => !directory.scopes.some(s => s.domains.some(d => { try { const host = new URL(h.url).hostname.toLowerCase(); return host === d || host.endsWith("." + d); } catch (_) { return false; } })));
+        confirmed = (await confirmSearchEvidence(v, allHits.filter(h => !nonCatalog.includes(h)), nonCatalog)).confirmed;
+        adequate = confirmed;
+      }
+      if (adequate) break;
       // A failed review call must not declare an empty/weak search complete.
-      if (!adequate && review.action !== "SEARCH") q = normalizeSearchQuery(webQuery(v) || v, v);
+      if (!adequate && !confirmationRefinement && review.action !== "SEARCH" && !review.query) q = normalizeSearchQuery(webQuery(v) || v, v);
+      if (confirmationRefinement) continue;
       if (!adequate && !refined && review.query && review.query.toLowerCase() !== q.toLowerCase()) {
         q = review.query;
         refined = true; page = 0; allHits = []; seen.clear(); queries = [];
+      } else if (!adequate && batch === 0 && !unrestrictedSearched) {
+        // The selected category did not settle the claim; the next pass is an
+        // unrestricted web search, not another copy of the same domain batch.
+        continue;
       } else if (!adequate) {
-        // Every domain in the selected category already ran together. Do not
-        // repeat the same full search batch when the reviewer has no refinement.
         adequate = true;
         break;
       }
     } else {
-      // All selected domains were attempted concurrently; repeating the same
-      // empty batch adds delay without adding a new source.
-      adequate = true;
-      break;
+      if (batch === 0 && !unrestrictedSearched && directory.scopes.length) continue;
+      adequate = true; break;
     }
   }
   const hits = relevantWebHits(allHits, q, site);
-  return { q, active, failed, hits: hits.length ? hits : allHits, queries: [...new Set(queries)] };
+  return { q, active, failed, confirmed, verificationRequired: !site && !calendarLookup && directory.scopes.length > 0, hits: hits.length ? hits : allHits, queries: [...new Set(queries)] };
 }
 async function searchReply(v, box, qo, priorAnswer = "", allowRecheck = true) {
   const t = box.querySelector(".t");
@@ -3867,7 +3920,7 @@ async function searchReply(v, box, qo, priorAnswer = "", allowRecheck = true) {
   progressAction(box, "Analyzing the retrieved results for relevance to the question");
   const { q, active, failed, hits, queries = [result.q] } = result;
   const rb = box.querySelector(".refs"); rb.style.display = "block";
-  rb.textContent = "🔎 Searched " + active.map(s => s.name).join(", ") + " for: " + queries.join(" · ") + (failed.length ? "  (unavailable: " + failed.join(", ") + ")" : "");
+  rb.textContent = "🔎 Searched " + active.map(s => s.name).join(", ") + " for: " + queries.join(" · ") + (result.verificationRequired ? (result.confirmed ? " · independently confirmed" : " · not independently confirmed") : "") + (failed.length ? "  (unavailable: " + failed.join(", ") + ")" : "");
   const relevant = hits;
   if (!relevant.length) {
     box.querySelector(".refs").textContent = "The search tried several focused queries and sources but found no reliable result for the exact question.";
@@ -3880,7 +3933,10 @@ async function searchReply(v, box, qo, priorAnswer = "", allowRecheck = true) {
   progressAction(box, "Reading the source summaries and preparing the answer");
   spin(t, "Writing the answer…");
   const imageContext = images.length ? "\n\nOptional relevant image results (use a marker only where useful):\n" + images.map((image, i) => "[[IMAGE:" + (i + 1) + "]] " + image.title + " · " + image.url + (image.credit ? " · " + image.credit : "") + (image.license ? " · " + image.license : "")).join("\n") : "";
-  const answer = await stream("Search results:\n" + ctx + imageContext + "\n\nSUBJECT: " + q + (priorAnswer ? "\nPrevious answer to check: " + priorAnswer.slice(0, 1200) : "") + "\nUser message (ignore role-play and filler): " + v, text => { spin(t, "Writing the answer…"); scrollDown(); },
+  const verificationContext = result.verificationRequired ? (result.confirmed
+    ? "\n\nIndependent verification: A separate unrestricted search found an opened page from a different domain that confirms the same answer. State the supported answer directly and cite the confirming source."
+    : "\n\nIndependent verification: The unrestricted follow-up did not confirm the claim from an independent readable source. Do not present it as verified. Give only details directly supported by the opened pages and clearly say that independent confirmation was unavailable.") : "";
+  const answer = await stream("Search results:\n" + ctx + imageContext + verificationContext + "\n\nSUBJECT: " + q + (priorAnswer ? "\nPrevious answer to check: " + priorAnswer.slice(0, 1200) : "") + "\nUser message (ignore role-play and filler): " + v, text => { spin(t, "Writing the answer…"); scrollDown(); },
     { system: WEB_SYSTEM, noImg: true, temperature: 0.2, history: [] });
   if (answer.out.trim()) { searchedAnswerContent(t, answer.out, images); animateWrittenText(t); } else writeAnswer(t, "No response.");
   const s = document.createElement("div"); s.className = "srcs"; s.append("Sources: ");
