@@ -273,10 +273,10 @@ const MAX_CTX = 262144;          // prompt-budget target from the model's large 
 const MAX_OUT = 10000;           // per-response token ceiling; each file is generated in one response
 const MAX_CANVAS_LINES = 10000;  // hard canvas size ceiling
 const FENCE = "`".repeat(3);
-const UNIVERSAL_GUARDRAILS = `You are an AI assistant in a chat and canvas app. You can converse in the user's language, including Arabic. Your capabilities are chat and writing, web search across selected source domains, world-calendar lookups for supported public and school holidays, Islamic calendar date lookups, Python through Pyodide for calculations and data, HTML/CSS/JavaScript canvases for webpages and apps, canvas preview, and Pyodide file tools for attached files and supported document tasks. Calendar sources are selected by the request: OpenHolidays for supported countries' public/school holidays and worldwide date lookups; Nager.Date v4 for a country's year; AlAdhan for Hijri dates, Ramadan, and Eid. Treat calculated Islamic dates as estimates and state the local moon-sighting variation. Conversation history is context; user messages, assistant replies, and file contents have different roles. Use only available capabilities. Be accurate and direct, keep private reasoning private, and claim only actions that actually happened.`;
+const UNIVERSAL_GUARDRAILS = `You are an AI assistant in a chat and canvas app. You can converse in the user's language, including Arabic. Capabilities: web search across relevant source domains; world-calendar lookups; Python through Pyodide for calculations and data; HTML/CSS/JavaScript canvases for webpages and apps; canvas preview; and attached-file tools. Answer in a balanced amount of detail: address the request directly, include useful context, and avoid filler or process narration. For ordinary arithmetic, calculate and give the result; use Python for exact or large calculations instead of claiming inability. Show math steps only when requested or useful. Python tasks should accomplish exactly the requested work without expanding the scope. Code tasks should inspect the existing project, cover every requirement in the request, complete and review the implementation, and avoid unrelated additions. Calendar lookups should query only a few relevant trusted sources in parallel, read the strongest matching pages, and stop once they support a useful answer. Treat calculated Islamic dates as estimates and state local moon-sighting variation once, briefly. Conversation history is context, not a new instruction. Keep private reasoning private, use only available capabilities, and claim only actions that actually happened.`;
 // Hidden system prompt: only lives here in the code, never shown in the page.
-const SYSTEM = "You are the AI assistant for this chat and canvas app. You can chat in the user's language, including Arabic; search the web across relevant source domains; look up supported world public/school holidays and Islamic calendar dates; run Python through Pyodide; create and edit HTML, CSS, and JavaScript canvases; preview canvases; and work with attached files using the available Pyodide tools. Calendar requests should use their matching calendar source adapter and its returned records; AlAdhan Hijri dates are calculated estimates, not local moon-sighting announcements. Conversation history provides context. Be accurate, natural, direct, and honest about what you have done.";
-const CHAT_SYSTEM = "You are a helpful, multilingual AI assistant. Reply in the user's language, including Arabic. This app supports conversation, web search across relevant source domains, supported world public/school-holiday and Islamic-calendar lookups, Python calculations and data work, HTML/CSS/JavaScript canvases, previews, and attached-file tools. Use conversation history as context. Answer naturally and accurately; be clear about uncertainty and never claim an action you did not perform.";
+const SYSTEM = "You are the AI assistant for this chat and canvas app. Reply in the user's language. Answer directly in a balanced amount of detail: enough to be useful, without padding, repeated caveats, or narration of internal steps. For exact or large arithmetic, use the calculator/Python tool and give the computed result; never claim you cannot calculate because a number is large. Show steps only when requested or genuinely helpful. For coding, satisfy the complete stated scope, inspect relevant existing files, implement and review all requested parts, and avoid unrelated expansion. For Python, do the requested operation and stop when it is complete. Use web evidence when a lookup is needed, cite the most relevant sources, and distinguish estimates from confirmed dates. For Islamic calendar dates, use the calendar records and mention local moon-sighting variation once. Conversation history is context. Be accurate about what you have done and never expose private reasoning.";
+const CHAT_SYSTEM = "You are a helpful multilingual assistant. Reply in the user's language, including Arabic. Answer the request directly with enough explanation to be useful, but do not pad, repeat yourself, or narrate hidden steps. Use the app's web, calendar, Python, coding/canvas, and file tools when they materially help. For ordinary calculations, return the computed answer; use Python for exact or large values. Show math steps when asked. Code work should complete the user's stated requirements without unrelated additions. Python work should stay within the requested task. Be accurate about uncertainty and actions.";
 let history = [];   // recent normal-chat turns
 let pendingSearch = false, pendingThink = false, activeThinkMode = false;
 const $ = id => document.getElementById(id);
@@ -2578,7 +2578,7 @@ async function generate(v, cv, box, researchQuery = "", includeFiles = false, ar
 const PY_STEPS = 5;
 const PY_IMG = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", svg: "image/svg+xml" };
 const pyOn = true;                 // always available: route() decides per request whether Python is needed
-const PY_SYSTEM = "You can RUN Python in the user's browser (Pyodide). First understand the complete request and relevant conversation, including whether the user means an attachment, a prior assistant answer, or a new topic. Python is one available capability: use it when execution, exact counting, analysis, or file work helps; answer directly in chat when that is enough. Use the minimum context needed: search a relevant file for surrounding passages when a question concerns a topic, and let Python read the full selected source for exact counts or whole-file operations instead of feeding all file text into the model. Attached originals are copied into /mnt/data; extracted text companions for images, PDFs, and Office documents are named <filename>.extracted.txt. Use the appropriate original or companion and print the requested result. For calculations, data analysis, file inspection, or file creation, reply with exactly ONE " + FENCE + "python code block and nothing else. If asked to show file contents, actually read and print the requested contents; never claim you cannot see an attached file when it is listed. If asked to diagnose or fix a file, inspect it first, make only requested corrections, save the corrected copy under a new filename, and report what changed. Do not imply the original was overwritten. Save files in /mnt/data. Use print() to show results. Python has no general internet access. When you get 'Output:', compare it with the request; if complete, answer plainly using the actual output; if more work is needed, send one distinct new Python block. Never invent results or claim Python could not handle ordinary arithmetic. The standard library and supported packages such as numpy, pandas, scipy, sympy and matplotlib are available when supported by this Pyodide build; do not claim arbitrary packages work. For Word and PDF requests, the companion notes below describe available document libraries and constraints; use them when appropriate rather than refusing supported tasks. For attached file work, use built-in helpers (view, outline, find, edit_lines, replace_text, edit_section); do not write custom parsers to locate code edits. Keep code focused and complete, and ask only when the source or requested operation is genuinely unclear.";
+const PY_SYSTEM = "You can RUN Python in the user's browser (Pyodide). First understand the complete request and relevant conversation, including whether the user means an attachment, a prior assistant answer, or a new topic. Use Python when execution is needed for exact calculation, counting, analysis, or file work; otherwise answer directly. Keep the operation focused on the user's requested result. For ordinary and very large arithmetic, calculate exactly and return the result; do not claim the number is too large to handle. Show derivation only if requested or useful. Use the minimum context needed: search a relevant file for surrounding passages when a question concerns a topic, and let Python read the full selected source for exact counts or whole-file operations instead of feeding all file text into the model. Attached originals are copied into /mnt/data; extracted text companions for images, PDFs, and Office documents are named <filename>.extracted.txt. Use the appropriate original or companion and print the requested result. For calculations, data analysis, file inspection, or file creation, reply with exactly ONE " + FENCE + "python code block and nothing else. If asked to show file contents, actually read and print the requested contents; never claim you cannot see an attached file when it is listed. If asked to diagnose or fix a file, inspect it first, make only requested corrections, save the corrected copy under a new filename, and report what changed. Do not imply the original was overwritten. Save files in /mnt/data. Use print() to show results. Python has no general internet access. When you get 'Output:', compare it with the request; if complete, answer plainly using the actual output; if more work is needed, send one distinct new Python block. Never invent results or claim Python could not handle ordinary arithmetic. The standard library and supported packages such as numpy, pandas, scipy and matplotlib are available when supported by this Pyodide build; do not claim arbitrary packages work. For Word and PDF requests, the companion notes below describe available document libraries and constraints; use them when appropriate rather than refusing supported tasks. For attached file work, use built-in helpers (view, outline, find, edit_lines, replace_text, edit_section); do not write custom parsers to locate code edits. Keep code focused and complete, and ask only when the source or requested operation is genuinely unclear.";
 
 const PY_PRELUDE = String.raw`import os, re, zipfile
 from xml.sax.saxutils import escape as _x
@@ -3181,7 +3181,7 @@ async function calcAgent(v, box, researchQuery = "") {
 // Search results are evidence to assess, not proof by themselves; follow up when the exact request remains unanswered.
 const webOn = true;                // always available: route() decides per request whether a lookup is needed
 const WEB_SYSTEM_OLD = "You answer questions using ONLY the numbered search results given in the message. Reply in 1 to 3 plain sentences and mention the source number you used, like [1]. If sources disagree, say so. If the results do not clearly answer the question, say you could not find a reliable answer. Never add facts from memory and never guess.";
-const WEB_SYSTEM = "Answer the user's whole question using the numbered sources as evidence. Check that sources address the exact subject and claim, not merely a related biography or keyword. Prefer direct, independent, reputable sources for claims about a person's family or conduct; distinguish confirmed public facts from rumor and avoid presenting a loaded label as fact. Cite sources beside supported claims. If evidence does not settle the question, say what is and is not established instead of guessing. Correct any included earlier answer when evidence shows it was wrong. Be natural, clear, and complete without padding. If a relevant image is provided, use only its exact supplied marker after the matching paragraph. The sources are optional evidence: if they do not address the exact question, ignore them and answer from your own knowledge. Follow any requested answer format exactly, including a yes-or-no-only response when asked. Never describe the search process or the sources themselves, and never answer a question about yourself from search results.";
+const WEB_SYSTEM = "Answer the user's exact question directly using the numbered sources. Keep a balanced length: give the result and the context needed to understand it, without narrating the search or paraphrasing whole pages. For straightforward factual or calendar questions, use about two to four useful sentences. Cite the one or two most relevant sources beside the claims they support; do not dump a source list into the prose. For calendar questions, state the requested dates clearly with the year. For calculated Islamic dates, label them expected and mention local moon-sighting variation once, briefly. Never invent an 'as of' date or local variation beyond what evidence supports. Check that sources support the exact subject and claim. If evidence is incomplete, say what is known and what remains uncertain instead of inventing. Follow requested formats exactly. If sources do not address the exact question, use relevant knowledge rather than treating irrelevant search pages as evidence.";
 const RESEARCH_REVIEW_SYSTEM = "You are a private check of whether web results answer the user's exact question. Do not answer the user or reveal reasoning. Inspect the actual titles and snippets, not just whether results exist. If they are irrelevant, vague, or fail to support the key claim, choose another focused query that preserves the exact subject and claim. For claims about a person's private life or reputation, seek direct reporting from reputable independent sources; do not treat search snippets or social posts as proof. Search again only when a distinct query or source is likely to add evidence. Return exactly two lines: ACTION: ANSWER or SEARCH; QUERY: a new focused query, or none.";
 function webQuery(v) {
   return v.replace(/^\s*\/web\b/i, "")
@@ -3513,13 +3513,13 @@ async function collectWebResults(v, qo, onActivity = () => {}, page = 0) {
   hits.slice(0, 4).forEach(h => onActivity(website ? "Reading webpage result: " + h.title : "Reading search result: " + h.title, h.url));
   return { q, active, failed, hits };
 }
-async function readWebResultPages(hits, onActivity = () => {}) {
-  const candidates = hits.slice(0, 10);
+async function readWebResultPages(hits, onActivity = () => {}, limit = 10, timeout = 8000) {
+  const candidates = hits.slice(0, limit);
   const settled = await Promise.allSettled(candidates.map(async (h, i) => {
     if (h.read) { onActivity("Using calendar API record " + (i + 1) + " of " + candidates.length, h.url); return h; }
     if (!/^https?:\/\//i.test(h.url || "")) throw new Error("invalid URL");
     onActivity("Opening and reading matched page " + (i + 1) + " of " + candidates.length, h.url);
-    const response = await fetch("https://r.jina.ai/" + h.url, { signal: AbortSignal.timeout(8000) });
+    const response = await fetch("https://r.jina.ai/" + h.url, { signal: AbortSignal.timeout(timeout) });
     if (!response.ok) throw new Error("HTTP " + response.status);
     const text = stripTags(await response.text()).trim().slice(0, 9000);
     if (!text || text.length < 80) throw new Error("page has no readable text");
@@ -3578,6 +3578,7 @@ function relevantWebHits(hits, q, site = false) {
   const stop = new Set("the a an of in on at to for and or is are was were who what when where which how do does did tell me about land".split(" "));
   const words = String(q || "").toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 2 && !stop.has(w));
   return hits.filter(h => {
+    if (h.catalogSource && !h.read) return true;
     const hay = (h.title + " " + h.text).toLowerCase();
     const matched = words.filter(w => hay.includes(w)).length;
     return words.length ? matched >= Math.max(words.length >= 3 ? 2 : 1, Math.ceil(words.length * 0.6)) : true;
@@ -3594,8 +3595,19 @@ async function searchCatalogFor(v) {
   const categories = catalog.categories || [];
   const categoryScores = categories.map(c => ({ c, score: (c.keywords || []).reduce((n, k) => n + (words.some(w => w === k || w.includes(k) || k.includes(w)) ? 1 : 0), 0) }));
   const hasKeywordMatch = categoryScores.some(x => x.score > 0);
+  const isCalendarLookup = /\b(calendar|holiday|holidays|observance|celebration|festival|ramadan|eid|diwali|hijri|school term|school holiday|term dates|ATSO|ASTP|bank closure|bank holiday|settlement date|currency holiday|CHAPS|Fedwire)\b/i.test(v || "") || /\bwhen\b.{0,55}\b(start|end|happen|occur|held|celebrated)\b/i.test(v || "");
+  const isIslamicCalendar = /\b(ramadan|eid|hijri|islamic calendar|islamic new year)\b/i.test(v || "");
+  const isSchoolCalendar = /\b(school|term dates|school holiday|ATSO|ASTP)\b/i.test(v || "");
+  const isBankCalendar = /\b(bank|payment|settlement|currency|CHAPS|Fedwire|ACH|SWIFT)\b/i.test(v || "");
+  const calendarCategory = categories.find(c => /world calendars, holidays/i.test(c.name));
+  const schoolCategory = categories.find(c => /school terms, ASTP/i.test(c.name));
+  const bankCategory = categories.find(c => /bank holidays, payment closures/i.test(c.name));
   let ranked = [];
-  if (engine && categories.length) {
+  if (isCalendarLookup) {
+    const chosen = isSchoolCalendar && schoolCategory ? schoolCategory : isBankCalendar && bankCategory ? bankCategory : calendarCategory;
+    if (chosen) ranked = [{ c: chosen, score: 1 }];
+  }
+  if (!isCalendarLookup && engine && categories.length) {
     const choices = categories.map((c, i) => i + ". " + c.name + " — request clues: " + (c.keywords || []).join(", ") + " — websites: " + c.sources.map(s => s.name + " (" + s.domain + ")").join(", ")).join("\n");
     try {
       const response = await engine.chat.completions.create({ messages: [
@@ -3612,19 +3624,55 @@ async function searchCatalogFor(v) {
         .sort((a, b) => (categoryScores.find(x => x.c === b.c)?.score || 0) - (categoryScores.find(x => x.c === a.c)?.score || 0));
     } catch (_) {}
   }
-  if (ranked.length < 2) {
-    const supplemental = categoryScores.map((item, i) => ({ ...item, i }))
-      .filter(x => x.score > 0 && !ranked.some(r => r.c === x.c))
-      .sort((a, b) => b.score - a.score);
-    for (const item of supplemental) { ranked.push({ c: item.c, score: item.score }); if (ranked.length >= 2) break; }
-  }
+  const peopleCategory = categories.find(c => /people, biographies, relationships/i.test(c.name));
+  const personQuestion = /\b(who|married|marriage|spouse|wife|husband|partner|dating|relationship|child|children|son|daughter|family|age|name)\b/i.test(v || "");
+  const sportsQuestion = /\b(sport|football|soccer|player|team|club|league|match|goal|transfer|roster|career|stats)\b/i.test(v || "");
+  // A person can be an athlete, but a relationship question does not need
+  // unrelated sports APIs or other neighboring categories.
+  if (!isCalendarLookup && personQuestion && peopleCategory) ranked = [{ c: peopleCategory, score: 1 }];
   if (!ranked.length) ranked = categoryScores.filter(x => x.score).sort((a, b) => b.score - a.score).slice(0, 3);
   const text = ranked.map(({ c }) => c.name + ": " + c.sources.map(s => s.name + " (" + s.domain + ")").join(", ")).join("\n");
   // Keep every exact destination while querying each domain only once.
   const grouped = new Map();
-  for (const { c } of ranked) for (const source of c.sources.filter(s => s.domain)) {
+  const allSources = categories.flatMap(c => c.sources || []);
+  const desiredYear = Number(/\b(20\d{2})\b/.exec(v || "")?.[1]) || (new Date().getUTCMonth() >= 8 ? new Date().getUTCFullYear() + 1 : new Date().getUTCFullYear());
+  const sourcesForDomains = domains => domains.flatMap(domain => {
+    const sources = allSources.filter(s => s.domain === domain);
+    if (domain === "qppstudio.net" && isIslamicCalendar) {
+      const yearly = sources.find(s => String(s.url || "").includes("/global-holidays-observances/" + desiredYear + ".htm"));
+      return [yearly || { name: "QppStudio global observances " + desiredYear, domain, url: "https://www.qppstudio.net/global-holidays-observances/" + desiredYear + ".htm", type: "HTML", coverage: "Worldwide calendar year " + desiredYear, description: "Global holidays, Ramadan and Eid dates" }];
+    }
+    return sources;
+  });
+  let selectedSources = ranked.flatMap(({ c }) => c.sources || []);
+  if (!isCalendarLookup && personQuestion && peopleCategory) {
+    const preferred = sportsQuestion
+      ? ["transfermarkt.com", "es.wikipedia.org", "sportbible.com", "timesofindia.indiatimes.com", "worldsoccertalk.com", "freepressjournal.in"]
+      : ["bbc.com", "cnn.com", "sportbible.com", "timesofindia.indiatimes.com", "worldsoccertalk.com", "freepressjournal.in"];
+    const byDomain = new Map(selectedSources.map(s => [s.domain, s]));
+    selectedSources = preferred.map(domain => byDomain.get(domain)).filter(Boolean).slice(0, 4);
+  }
+  if (isIslamicCalendar && calendarCategory) {
+    selectedSources = sourcesForDomains(["api.aladhan.com", "islamicfinder.org", "qppstudio.net"]);
+  } else if (isSchoolCalendar && schoolCategory) {
+    const domains = /\b(astp|atso|nsw|australia)\b/i.test(v || "")
+      ? ["openholidaysapi.org", "education.nsw.gov.au", "education.gov.au"]
+      : ["openholidaysapi.org"];
+    selectedSources = sourcesForDomains(domains);
+  } else if (isBankCalendar && bankCategory) {
+    const country = /\b(uk|britain|united kingdom|england|wales|scotland)\b/i.test(v || "") ? ["gov.uk", "bankofengland.co.uk"]
+      : /\b(usa|united states|us bank|federal reserve|fedwire|ach)\b/i.test(v || "") ? ["federalreserve.gov", "frbservices.org"]
+      : /\b(australia|australian|aud)\b/i.test(v || "") ? ["ausbanking.org.au", "timeanddate.com"]
+      : ["federalreserve.gov", "gov.uk", "timeanddate.com"];
+    selectedSources = sourcesForDomains(country);
+  } else if (isCalendarLookup && calendarCategory) {
+    const domains = /\b(festival|celebration|carnival)\b/i.test(v || "") ? ["timeanddate.com", "wikivoyage.org"]
+      : ["openholidaysapi.org", "nagerholidays.com", "timeanddate.com"];
+    selectedSources = sourcesForDomains(domains);
+  }
+  for (const source of selectedSources.filter(s => s.domain)) {
     const domain = source.domain.toLowerCase();
-    if (!grouped.has(domain)) grouped.set(domain, { category: c.name, domain, kind: source.kind, directSources: [] });
+    if (!grouped.has(domain)) grouped.set(domain, { category: ranked[0]?.c?.name || "Calendar source", domain, kind: source.kind, directSources: [] });
     if (source.url && !grouped.get(domain).directSources.some(x => x.url === source.url)) grouped.get(domain).directSources.push(source);
   }
   const allDomains = [...grouped.values()], primary = [], usedDomains = new Set();
@@ -3633,8 +3681,9 @@ async function searchCatalogFor(v) {
     if (source) { primary.push(source); usedDomains.add(source.domain); }
   }
   const fallback = allDomains.filter(x => !usedDomains.has(x.domain));
-  const scopes = [...primary, ...fallback].map(x => ({
+  const scopes = [...primary, ...fallback].slice(0, 4).map(x => ({
     category: x.category, domains: [x.domain], kind: x.kind, directSources: x.directSources,
+    isIslamicCalendar, year: desiredYear,
     query: "site:" + x.domain + " " + String(v || "").replace(/[?!.]+$/, "").trim(),
     label: "Searching inside " + x.domain
   }));
@@ -3650,7 +3699,7 @@ async function searchInsideCatalogDomain(scope) {
     const records = source ? await source.run(terms).catch(() => []) : [];
     if (records.length) return records;
   }
-  const isNews = scope.kind === "news" || domain === "gdeltproject.org";
+  const isNews = domain === "gdeltproject.org";
   if (isNews) {
     const index = WEB_SOURCES.find(s => s.name === "GDELT DOC article search");
     return index ? await index.run(domain === "gdeltproject.org" ? terms : scope.query).catch(() => []) : [];
@@ -3665,7 +3714,7 @@ async function searchInsideCatalogDomain(scope) {
   const searxBase = searxBases()[0];
   const searxAttempt = (async () => {
     const base = searxBase;
-    const response = await fetch(base.replace(/\/+$/, "") + "/search?" + new URLSearchParams({ q: siteQuery, format: "json", language: "en" }), { signal: AbortSignal.timeout(6000) });
+    const response = await fetch(base.replace(/\/+$/, "") + "/search?" + new URLSearchParams({ q: siteQuery, format: "json", language: "en" }), { signal: AbortSignal.timeout(3000) });
     if (!response.ok) throw new Error("SearXNG HTTP " + response.status);
     const data = await response.json();
     const hits = (data.results || []).map(r => ({ title: r.title || r.url, url: r.url, text: String(r.content || "").trim(), src: "SearXNG " + domain })).filter(h => h.text && exactDomain(h)).slice(0, 10);
@@ -3679,18 +3728,21 @@ async function searchInsideCatalogDomain(scope) {
   ];
   const readerAttempts = readerSearchUrls.map(async target => {
     try {
-      const response = await fetch("https://r.jina.ai/" + target, { signal: AbortSignal.timeout(5000) });
-      if (!response.ok) return [];
-      return parseReaderSerp((await response.text()).slice(0, 30000), "Web search " + domain, 10).filter(exactDomain);
-    } catch (_) { return []; }
+      const response = await fetch("https://r.jina.ai/" + target, { signal: AbortSignal.timeout(3500) });
+      if (!response.ok) throw new Error("Reader search HTTP " + response.status);
+      const hits = parseReaderSerp((await response.text()).slice(0, 30000), "Web search " + domain, 10).filter(exactDomain);
+      if (!hits.length) throw new Error("no matching domain results");
+      return hits;
+    } catch (error) { throw error; }
   });
-  const attempts = await Promise.allSettled([searxAttempt, ...readerAttempts]);
-  let hits = [...new Map(attempts.flatMap(r => r.status === "fulfilled" ? r.value : []).flat().map(hit => [hit.url.toLowerCase(), hit])).values()];
+  let searchHits = [];
+  try { searchHits = await Promise.any([searxAttempt, ...readerAttempts]); } catch (_) {}
+  let hits = [...new Map(searchHits.map(hit => [hit.url.toLowerCase(), hit])).values()];
   const wordSet = [...new Set(terms.toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 2))];
   const directHits = (scope.directSources || []).map(source => ({
     title: source.name || scope.category + " source page", url: source.url,
-    text: [source.description, source.coverage && "Coverage: " + source.coverage, source.access && "Access: " + source.access, source.notes].filter(Boolean).join(". ") || terms,
-    src: "Catalog direct source"
+    text: [source.description, source.coverage && "Coverage: " + source.coverage, source.access && "Access: " + source.access, source.notes, scope.isIslamicCalendar && domain === "qppstudio.net" && ("Ramadan expected start and end dates for " + scope.year)].filter(Boolean).join(". ") || terms,
+    src: source.name || "Catalog source", catalogSource: true
   })).filter(h => /^https?:\/\//i.test(h.url || ""));
   const score = h => wordSet.reduce((n, word) => n + ((h.title + " " + h.text).toLowerCase().includes(word) ? 1 : 0), 0);
   hits = [...new Map([...hits, ...directHits].map(hit => [hit.url.toLowerCase(), hit])).values()];
@@ -3719,28 +3771,29 @@ async function collectReviewedWebResults(v, query, onActivity = () => {}) {
   const site = scopedSearch ? "" : extractWebsite(v) || extractWebsite(query);
   const directory = await searchCatalogFor(v);
   let q = normalizeSearchQuery(query || webQuery(v) || v, v), active = [], failed = [], queries = [], allHits = [], seen = new Set(), adequate = false, page = 0, refined = false;
-  // Run all chosen catalog domains together to build a broad candidate pool
-  // quickly (often dozens of URLs), then read only the strongest ten pages.
-  const SCOPE_BATCH_SIZE = Math.max(2, directory.scopes.length);
-  const MAX_BATCHES = site ? 1 : 2;
+  // Search only a few matching calendar domains together, then read the best
+  // four pages. General research retains a wider candidate pool.
+  const SCOPE_BATCH_SIZE = Math.min(4, directory.scopes.length);
+  const calendarLookup = /\b(calendar|holiday|holidays|observance|celebration|festival|ramadan|eid|diwali|hijri|school term|school holiday|term dates|ATSO|ASTP|bank closure|bank holiday|settlement date|currency holiday|CHAPS|Fedwire)\b/i.test(v || "") || /\bwhen\b.{0,55}\b(start|end|happen|occur|held|celebrated)\b/i.test(v || "");
+  const MAX_BATCHES = site || calendarLookup ? 1 : 2;
   for (let batch = 0; batch < MAX_BATCHES && !stopFlag && !adequate; batch++) {
     onActivity("Search pass " + (batch + 1) + " for: " + q);
     let current;
     if (page === 0 && !active.length) {
       const index = WEB_SOURCES.find(s => s.name === "GDELT DOC article search");
       const firstScopes = site ? [] : directory.scopes.slice(0, SCOPE_BATCH_SIZE);
-      if (!firstScopes.length && !(index && index.when(v))) {
+      if (!firstScopes.length && !(index && !calendarLookup && index.when(v))) {
         current = await collectWebResults(v, q, onActivity, 0);
       } else {
       const [general, ...scoped] = await Promise.all([
-        index && index.when(v) ? index.run(q, 0).catch(() => []) : [],
+        index && !calendarLookup && index.when(v) ? index.run(q, 0).catch(() => []) : [],
         ...firstScopes.map(async scope => { onActivity(scope.label); return searchInsideCatalogDomain(scope); })
       ]);
-      const usedGdelt = !!(index && (index.when(v) || firstScopes.some(s => s.kind === "news" || s.domains.includes("gdeltproject.org"))));
+      const usedGdelt = !!(index && !calendarLookup && (index.when(v) || firstScopes.some(s => s.kind === "news" || s.domains.includes("gdeltproject.org"))));
       current = { q, hits: [...scoped.flat(), ...(general || [])], active: [...(firstScopes.length ? [{ name: "Catalog domain search" }] : []), ...(usedGdelt ? [index] : [])], failed: [] };
       }
     }
-    else if (!site && batch === 0 && directory.scopes.slice(0, SCOPE_BATCH_SIZE).length) {
+    else if (!site && directory.scopes.slice(0, SCOPE_BATCH_SIZE).length) {
       const index = WEB_SOURCES.find(s => s.name === "GDELT DOC article search"), scopes = directory.scopes.slice(0, SCOPE_BATCH_SIZE);
       const scoped = await Promise.all(scopes.map(async scope => {
         onActivity(scope.label);
@@ -3759,16 +3812,16 @@ async function collectReviewedWebResults(v, query, onActivity = () => {}) {
     let found = current.hits.filter(h => !seen.has(webHitKey(h)));
     found.forEach(h => seen.add(webHitKey(h)));
     found = relevantWebHits(found, current.q, site);
-    const pageRead = await readWebResultPages(found, onActivity);
+    const pageRead = await readWebResultPages(found, onActivity, 4, 5000);
     if (pageRead.failed) failed.push(pageRead.failed + " result page(s) could not be read");
     // Recheck against the full page after opening it. A SERP parser can attach
     // navigation or cookie links to a result; do not treat those as evidence.
     allHits.push(...relevantWebHits(pageRead.read, current.q, site));
     // Retain useful index excerpts when a page blocks the reader; never let a
     // failed page prevent trying the other results or a later batch.
-    allHits.push(...found.filter(h => !pageRead.read.some(r => r.url === h.url)).slice(0, Math.max(0, 10 - pageRead.read.length)));
+    allHits.push(...found.filter(h => !pageRead.read.some(r => r.url === h.url) && !(calendarLookup && h.catalogSource)).slice(0, Math.max(0, (calendarLookup ? 4 : 10) - pageRead.read.length)));
     allHits = [...new Map(allHits.map(h => [webHitKey(h), h])).values()];
-    if (site || stopFlag || !directory.scopes.length || batch > 0) { adequate = true; break; }
+    if (calendarLookup || site || stopFlag || !directory.scopes.length || batch > 0) { adequate = true; break; }
     if (allHits.length) {
       const review = await reviewSearchEvidence(v, { q, hits: allHits.slice(-10) }, directory.text);
       adequate = review.action === "ANSWER";
@@ -4026,7 +4079,10 @@ async function behaviourLoop(cv, request, box) {
 const INTENT_SYSTEM = [
   "You are the multilingual action router for this AI chat and canvas app. Conversation history supplies context; the latest user turn is the current request. Responding in Arabic and other user languages is supported.",
   "Available actions: CHAT for conversation and writing; SEARCH for web facts and calendar dates, using search-endpoints-reference.json to select relevant categories and search inside their domains before opening result pages; PYTHON for calculations and data work; CODE for HTML/CSS/JavaScript webpages, apps, and interactive canvases; PYODIDE for attached-file work and supported document tasks. These are the app's available capabilities.",
-  "Choose the action and query that fit the current request. Preserve requested language and format. Use existing conversation context for follow-ups. Do not invent tool access or completed actions. Return exactly six lines:\nINTENT: SEARCH or CHAT or CODE or PYTHON or PYODIDE\nQUERY: focused search query or none\nRESEARCH: YES or NO\nCHECK: YES or NO\nFILES: YES or NO\nCANVAS: existing canvas number or NONE"
+  "Route exact arithmetic, including large integers, to the calculator/Python path. Show steps only when requested or useful. For Python, choose only the operation needed to complete the user's request. For CODE, preserve the full stated scope and implement every requested feature without unrelated additions.",
+  "For calendar lookups, select only a few relevant trusted sources and let the search path check them in parallel; do not add unrelated news or encyclopedia sources just to increase source count.",
+  "For SEARCH, silently correct obvious spelling, spacing, and name errors, then write a natural, focused query for the intended fact. Do not simply copy malformed wording. Resolve pronouns and short follow-ups (such as 'they', 'his name', 'what about the son') from the most recent relevant user request and established conversation facts; include the actual names in the query. Do not adopt an earlier assistant's unsupported guess as fact. Search only a few matching source domains concurrently, then open matching result pages. Never search every catalog URL one at a time or open a site's homepage as a substitute for searching it.",
+  "Choose the action and query that fit the current request. Preserve requested language and format. Use existing conversation context for follow-ups. Do not invent tool access or completed actions. Return exactly six lines:\nINTENT: SEARCH or CHAT or CODE or PYTHON or PYODIDE\nQUERY: focused corrected search query or none\nRESEARCH: YES or NO\nCHECK: YES or NO\nFILES: YES or NO\nCANVAS: existing canvas number or NONE"
 ].join("\n");
 const ROUTE_RECHECK_SYSTEM = [
   "You are the action router for a multilingual AI chat and canvas app. Conversation history supplies context; the latest user turn is the current request. Available actions are CHAT, SEARCH, PYTHON, CODE, and PYODIDE for conversation, web lookup, calculation/data work, canvas creation, and attached-file work. Choose the action that fits the request; preserve its language and format. Do not claim unavailable tools or actions that did not happen.",
